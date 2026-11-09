@@ -1,0 +1,36 @@
+{
+  "candidate_mount": "read-only",
+  "database": "PostgreSQL",
+  "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)",
+  "date": "2026-11-09",
+  "environment": "isolated-container-frozen-gate",
+  "errors": 0,
+  "failures": 0,
+  "frozen_source_gate": {
+    "file_count": 157,
+    "full_backend_suite": true,
+    "passed": true,
+    "source_sha256": "e21645f0d7874b988d33ae28090e74d27b18b830f2ddab4f6d1fbb8bdc73900b"
+  },
+  "gate": "docs/roadmap/2026-11-06-functional-parity/testing/frozen-source-gate.py (unmodified)",
+  "image": "kairos-test:rq",
+  "network": "none",
+  "note": "Same gate run on the refactored tree; 194 = 191 + 3 test_store_surface. The sha256 differs from the before receipt because the tree differs (see before receipt note).",
+  "passed": true,
+  "product_database_accessed": false,
+  "skipped": 0,
+  "source_tree": "working tree after T-05 (store.py 30 lines + 7 store_*.py, 157 files)",
+  "stage": "after-refactor",
+  "store_modules_in_manifest": [
+    "memory_platform/store.py",
+    "memory_platform/store_auth.py",
+    "memory_platform/store_common.py",
+    "memory_platform/store_documents.py",
+    "memory_platform/store_graph.py",
+    "memory_platform/store_ingest.py",
+    "memory_platform/store_jobs.py",
+    "memory_platform/store_vectors.py"
+  ],
+  "store_py_lines": 30,
+  "tests": 194
+}

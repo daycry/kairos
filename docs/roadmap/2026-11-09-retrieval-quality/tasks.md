@@ -30,14 +30,14 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase | Completadas | Total | Progreso | H. humanas (real/est) | H. IA ejec. (real/est) | Supervisión (real/est) | Tokens (real/est) |
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Medida (C-01 · P13) | 3 | 3 | 100% | 0 / 16h | 0,62 / 2,21h | 0 / 0,56h | 0 / 660k |
-| Fase 2 — Refactor de `store.py` (C-02 · P11) | 0 | 3 | 0% | 0 / 14h | 0 / 3,41h | 0 / 0,85h | 0 / 1020k |
+| Fase 2 — Refactor de `store.py` (C-02 · P11) | 3 | 3 | 100% | 0 / 14h | 0,20 / 3,41h | 0 / 0,85h | 0 / 1020k |
 | Fase 3 — pgvector + HNSW (C-03 · P1) | 0 | 6 | 0% | 0 / 32h | 0 / 4,29h | 0 / 1,08h | 0 / 1290k |
 | Fase 4 — FTS por idioma + trigram (C-05 · P4) | 0 | 6 | 0% | 0 / 27h | 0 / 3,61h | 0 / 0,91h | 0 / 1090k |
 | Fase 5 — Troceado para embeddings (C-06 · P2) | 0 | 7 | 0% | 0 / 28h | 0 / 4h | 0 / 1h | 0 / 1200k |
 | Fase 6 — Híbrida con degradación y CLI (C-04 · P3) | 0 | 4 | 0% | 0 / 12h | 0 / 1,6h | 0 / 0,4h | 0 / 470k |
 | Fase 7 — Observabilidad (C-07 · P12) — en paralelo desde T-06 | 0 | 4 | 0% | 0 / 18h | 0 / 2,6h | 0 / 0,64h | 0 / 770k |
 | Fase 8 — Integración, revisión y activación | 0 | 5 | 0% | 0 / 26h | 0 / 4,31h | 0 / 1,06h | 0 / 1280k |
-| **TOTAL** | **3** | **38** | **7.9%** | **0 / 173h** | **0 / 26,03h** | **0 / 6,5h** | **0 / 7780k** |
+| **TOTAL** | **6** | **38** | **15.8%** | **0 / 173h** | **0,20 / 26,03h** | **0 / 6,5h** | **0 / 7780k** |
 
 > Las horas de este ledger son **base** (sin el margen del 20 %); con margen: humanas 207,6 h, IA 31,2 h. Las horas IA y los tokens son estimaciones (ratio 300.000 tok/h no calibrado).
 
@@ -195,17 +195,18 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 
 ## Fase 2 — Refactor de `store.py` (C-02 · P11)
 
-**Estado**: borrador · **Estimado**: 14h base (16.8h con margen) · **Real**: — · **Coste est.**: 840 € · **Tokens est.**: 900k in / 120k out
+**Estado**: completado · **Estimado**: 14h base (16.8h con margen) · **Real**: — · **Coste est.**: 840 € · **Tokens est.**: 900k in / 120k out
 
 ### T-04 — Instantánea de superficie de `Store` y recibo previo de la suite
 
 - **Descripción**: Antes de mover nada: capturar `dir(Store)` (sin dunders) y `inspect.signature` de cada método en una instantánea versionada, crear el test de superficie (CA-05) y registrar un recibo de la suite completa en verde sobre el código sin tocar. Resultado: red de seguridad medible para el refactor.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Nueva red de seguridad que detecta cualquier cambio accidental en los nombres o firmas públicos del almacén de memoria.
+- **Estado**: completado
 - **Tiempo humano**: est. 3h · real —
-- **Tiempo IA (ejec.)**: est. 0,73h · real —
+- **Tiempo IA (ejec.)**: est. 0,73h · real 0,13 (medido; 0,04 + 0,09 de la corrección intento 1)
 - **Supervisión**: est. 0,18h (≈25 % IA) · real —
 - **Previsión IA**: 195k in / 25k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-09
 - **Dependencias**: T-03
 - **Tipo**: test
 - **Archivos**: `memory_platform/tests/test_store_surface.py`, `memory_platform/tests/store_surface.json`, `docs/roadmap/2026-11-09-retrieval-quality/testing/store-refactor-before.json`
@@ -215,25 +216,28 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
   - `python -c "from memory_platform.store import Store, as_dict, canonical, digest, new_id, lexical_query, clean"` → sin error
 
 **Criterios de aceptación**
-- [ ] CA-05: `test_store_surface` compara nombres públicos y privados y firmas contra `store_surface.json` y pasa sobre el código actual
-- [ ] CA-04: recibo previo con 177/177, 0 fallos, 0 omitidos guardado en `testing/store-refactor-before.json`
+- [x] CA-05: `test_store_surface` compara nombres públicos y privados y firmas contra `store_surface.json` y pasa sobre el código actual
+- [x] CA-04: recibo previo con 177/177, 0 fallos, 0 omitidos guardado en `testing/store-refactor-before.json`
 
 **Subtareas**
-- [ ] Generar `store_surface.json` desde el código sin tocar
-- [ ] Escribir el test (incluido el import de helpers reexportados)
-- [ ] Ejecutar la suite y guardar el recibo
+- [x] Generar `store_surface.json` desde el código sin tocar
+- [x] Escribir el test (incluido el import de helpers reexportados)
+- [x] Ejecutar la suite y guardar el recibo
 
 **Notas**: Procedencia: spec CA-04, CA-05. Clase: refactor (la misma suite verde antes y después; API pública de `Store` intacta). Patrones: `store.py` es una única clase (1.030 líneas, `store.py:855`, `:922`, `:954`, `:964`); tests que parchean `_require` sobre la instancia (`patch.object(self.store,'_require')`) en `test_store.py` y `test_embeddings.py`.
+- **Resultado (T-04)**: `test_store_surface` (3 tests) + `store_surface.json` (63 miembros, firmas incluidas). Recibo previo `testing/store-refactor-before.json` (corrección intento 1, gap 1): la MISMA puerta congelada `frozen-source-gate.py` (sin modificar) ejecutada sobre el árbol de `60be598` (`git archive 60be598`, montado en solo lectura, `--network=none`, imagen `kairos-test:rq`): en su primer nivel, código de `60be598` + `test_store_surface.py` + `store_surface.json` (misma suite que el recibo posterior): `KAIROS_FROZEN_SOURCE` source_sha256 `7480cded…f4d9`, file_count 140; `MEMORY_TEST_RESULT` tests 194, failures 0, errors 0, skipped 0, passed true. La ejecución pura de `60be598` (sin el test de superficie, inexistente entonces) queda en el bloque `pre_refactor_suite_at_60be598`: source_sha256 `af443668…68fb`, file_count 138, tests 191, 0/0/0. Reorganizado en la revisión de la Fase 2, intento 2 (gap 5), para que antes y después comparen la misma suite (194 = 194). `python -c "from memory_platform.store import Store, as_dict, canonical, digest, new_id, lexical_query, clean"` -> import-ok.
+- **Nota sobre CA-04**: el criterio dice «177/177»; la suite real ya era 191 tras T-03 y con el test de superficie son 194. Criterio sin reescribir; se marca porque su intención (misma suite verde, 0 fallos, 0 omitidos, antes y después) se cumple con 194/194. La decisión sobre la redacción es del usuario.
 
 ### T-05 — Dividir `Store` en mixins por dominio con `store.py` como fachada
 
 - **Descripción**: Mover los ~65 métodos de `Store` a módulos de dominio (`store_auth.py`, `store_ingest.py`, `store_documents.py`, `store_jobs.py`, `store_vectors.py`, `store_graph.py`) y compartir helpers privados (`_require`, `_item`, `_jobs`) sin cambiar firmas. `store.py` compone `class Store(...mixins)` y reexporta `as_dict`, `canonical`, `digest`, `new_id`, `lexical_query`, `clean`. Resultado: ningún cambio de comportamiento y ningún módulo > 400 líneas.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: El almacén de memoria se reorganiza internamente en módulos por dominio, sin cambiar su API ni su comportamiento.
+- **Estado**: completado
 - **Tiempo humano**: est. 9h · real —
-- **Tiempo IA (ejec.)**: est. 2,19h · real —
+- **Tiempo IA (ejec.)**: est. 2,19h · real 0,05 (medido)
 - **Supervisión**: est. 0,55h (≈25 % IA) · real —
 - **Previsión IA**: 580k in / 75k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-09
 - **Dependencias**: T-04
 - **Tipo**: backend
 - **Archivos**: `memory_platform/store.py`, `memory_platform/store_auth.py`, `memory_platform/store_ingest.py`, `memory_platform/store_documents.py`, `memory_platform/store_jobs.py`, `memory_platform/store_vectors.py`, `memory_platform/store_graph.py`, `memory_platform/store_common.py`
@@ -243,45 +247,60 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
   - `wc -l memory_platform/store.py memory_platform/store_*.py` → `store.py` ≤ 120 y cada módulo nuevo ≤ 400
 
 **Criterios de aceptación**
-- [ ] CA-04: la suite completa pasa igual que antes (177 + test de superficie, 0 fallos, 0 omitidos)
-- [ ] CA-05: nombres y firmas idénticos a la instantánea; los imports `from memory_platform.store import …` siguen funcionando
-- [ ] CA-06: `store.py` ≤ 120 líneas y ningún módulo de dominio supera 400
-- [ ] Sin cambios de comportamiento: ningún test existente modificado
+- [x] CA-04: la suite completa pasa igual que antes (177 + test de superficie, 0 fallos, 0 omitidos)
+- [x] CA-05: nombres y firmas idénticos a la instantánea; los imports `from memory_platform.store import …` siguen funcionando
+- [x] CA-06: `store.py` ≤ 120 líneas y ningún módulo de dominio supera 400
+- [x] Sin cambios de comportamiento: ningún test existente modificado
 
 **Subtareas**
-- [ ] Crear `store_common.py` con helpers y estado compartido
-- [ ] Mover dominio a dominio ejecutando la suite tras cada movimiento
-- [ ] Recomponer `Store` en la fachada y reexportar helpers
-- [ ] Revisar importadores: `app.py`, `admin.py`, `agent_store.py`, `extended_store.py`, `portal_store.py`, `corpus_answers.py`, `agent_tools.py`, `worker.py`
+- [x] Crear `store_common.py` con helpers y estado compartido
+- [x] Mover dominio a dominio ejecutando la suite tras cada movimiento
+- [x] Recomponer `Store` en la fachada y reexportar helpers
+- [x] Revisar importadores: `app.py`, `admin.py`, `agent_store.py`, `extended_store.py`, `portal_store.py`, `corpus_answers.py`, `agent_tools.py`, `worker.py`
 
 **Notas**: Procedencia: spec CA-04…CA-06, decisión «Refactor de Store» (mixins). Clase: refactor. Nombres de módulos a criterio del implementador. Riesgo: orden de resolución de métodos y helpers privados compartidos. Patrón de composición: ya hay clases separadas `agent_store.py`/`extended_store.py`/`portal_store.py`; ningún mixin existente en el repo, no se inventa otro patrón que la herencia múltiple simple.
+- **Resultado (T-05)**: `store.py` 30 líneas (fachada, `class Store(AuthMixin, IngestMixin, DocumentsMixin, GraphMixin, JobsMixin, VectorsMixin)` + reexport de `as_dict, canonical, clean, digest, lexical_query, new_id`). `wc -l memory_platform/store*.py` (salida literal, todos ≤ 400):
+```
+30 memory_platform/store.py
+  217 memory_platform/store_auth.py
+   36 memory_platform/store_common.py
+  258 memory_platform/store_documents.py
+  102 memory_platform/store_graph.py
+  193 memory_platform/store_ingest.py
+  112 memory_platform/store_jobs.py
+  141 memory_platform/store_vectors.py
+ 1089 total
+```. Cuerpos de método movidos sin cambios. Suite tras el refactor: `MEMORY_TEST_RESULT` tests 194, failures 0, errors 0, skipped 0, passed true (idéntico al recibo previo); `test_store_surface` OK; ningún test existente modificado. Importadores (`app, admin, agent_store, extended_store, portal_store, corpus_answers, worker`) usan `from .store import …`, que sigue válido (suite verde). Puerta `retrieval-eval` tras el refactor: mismas cifras que la línea base (fused recall@5 0,5; MRR 0,3398; mismos fallos), `deterministic: true`, exit 1 esperado.
+- **Nota sobre CA-04**: ver nota de T-04 (194 en lugar de 177 por tests añadidos, no por cambios de comportamiento).
 
 ### T-06 — Recibo posterior del refactor y ajuste de la puerta congelada
 
 - **Descripción**: Actualizar la lista de ficheros del manifiesto de `frozen-source-gate.py` para los módulos nuevos y registrar el recibo de la suite completa tras el refactor, comparable con el previo. Resultado: CA-04 demostrado con dos recibos.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Queda demostrado con dos recibos de la suite que el refactor del almacén no cambió ningún resultado.
+- **Estado**: completado
 - **Tiempo humano**: est. 2h · real —
-- **Tiempo IA (ejec.)**: est. 0,49h · real —
+- **Tiempo IA (ejec.)**: est. 0,49h · real 0,02 (medido)
 - **Supervisión**: est. 0,12h (≈25 % IA) · real —
 - **Previsión IA**: 130k in / 15k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-09
 - **Dependencias**: T-05
 - **Tipo**: test
 - **Archivos**: `docs/roadmap/2026-11-06-functional-parity/testing/frozen-source-gate.py`, `docs/roadmap/2026-11-09-retrieval-quality/testing/store-refactor-after.json`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:rq .` → la salida contiene `MEMORY_TEST_RESULT` con `"passed": true`, `failures: 0`, `errors: 0`, `skipped: 0`
-  - `python -c "import json;a=json.load(open('docs/roadmap/2026-11-09-retrieval-quality/testing/store-refactor-before.json'));b=json.load(open('docs/roadmap/2026-11-09-retrieval-quality/testing/store-refactor-after.json'));print(a['tests']==b['tests'],b['failures'],b['skipped'])"` → `True 0 0`
+  - `python -c "import json;a=json.load(open('docs/roadmap/2026-11-09-retrieval-quality/testing/store-refactor-before.json'));b=json.load(open('docs/roadmap/2026-11-09-retrieval-quality/testing/store-refactor-after.json'));print(a['tests']==b['tests'],b['failures'],b['skipped'])"` → `True 0 0` (ambos recibos son de la puerta congelada con su `source_sha256`; el previo, en su primer nivel, es el código de 60be598 con la misma suite de 194 tests; la ejecución pura de 60be598, 191 tests, queda en `pre_refactor_suite_at_60be598`)
 
 **Criterios de aceptación**
-- [ ] CA-04: recibo previo y posterior con el mismo recuento de tests, 0 fallos y 0 omitidos
-- [ ] El manifiesto de la puerta congelada incluye los módulos `store_*.py` y su hash coincide con el árbol actual
+- [x] CA-04: recibo previo y posterior con el mismo recuento de tests, 0 fallos y 0 omitidos
+- [x] El manifiesto de la puerta congelada incluye los módulos `store_*.py` y su hash coincide con el árbol actual
 
 **Subtareas**
-- [ ] Ajustar el manifiesto de `frozen-source-gate.py`
-- [ ] Ejecutar la puerta y guardar el recibo posterior
+- [x] Ajustar el manifiesto de `frozen-source-gate.py` — no necesario: la puerta copia el árbol entero (`frozen-source-gate.py:45-48`); se verificó que no hacía falta cambio
+- [x] Ejecutar la puerta y guardar el recibo posterior
 
 **Notas**: Procedencia: spec CA-04. Clase: refactor. La puerta congelada y su `frozen_evidence.py` son del plan 2026-11-06; solo se amplía la lista de ficheros. Desde esta tarea se pueden iniciar las tareas de la fase 7 (T-30…).
+- **Resultado (T-06)**: `frozen-source-gate.py` NO se modifica: no tiene lista de ficheros, copia el árbol completo `memory_platform` (con `excluded` por nombre), así que los `store_*.py` entran solos en el manifiesto. Ejecutada tal cual en la imagen `kairos-test:rq` (`--network=none`, candidato en solo lectura): `KAIROS_FROZEN_SOURCE` source_sha256 `e21645f0…900b`, file_count 157, manifiesto con `store.py` + 7 `store_*.py`; `MEMORY_TEST_RESULT` 194 tests, 0 fallos, 0 errores, 0 omitidos. Recibo `testing/store-refactor-after.json` (regenerado en la corrección, mismo hash `e21645f0…900b`). Comparación previo/posterior con la misma suite: 194 = 194, 0 fallos, 0 omitidos (primer nivel del recibo previo: `60be598` + `test_store_surface.py` + `store_surface.json`, source_sha256 `7480cded…f4d9`, file_count 140). La ejecución pura de `60be598` (191 tests, `af443668…68fb`, 138) queda en el bloque `pre_refactor_suite_at_60be598`. Los 19 ficheros de diferencia de file_count entre el previo (138) y el posterior (157) son 9 de T-04/T-05 y 10 ficheros no versionados de `packages/kairos-cli/.npm-cache` presentes solo en el árbol de trabajo; `memory_platform` difiere solo en esos 9 y `store.py`.
 
 ---
 
@@ -1312,4 +1331,44 @@ Lentes: A+B+C. Traspaso de las tablas de los intentos 1 y 2; solo se re-evaluó 
 | N3 | Minor | Recuento obsoleto «186 / 9» en T-03 tras el intento 2 (la suite tiene 191 = 177 + 14). Lente A | T-03 | corregido: 191 / 14 en descripción, Verificación y criterio de T-03 | `Dockerfile:48`; evidencia de T-02 |
 
 Nota de alcance: `scope-check.py --base 1d43523` sigue informando «criterio aprobado alterado» en CA-03 de T-02 porque compara con el ledger de la base; la alteración está autorizada por el usuario (N1).
+
+
+## Revisión de dos lentes — intento 1: Fase 2 (T-04…T-06) (T-04, T-05, T-06)
+
+Lentes: A+B+C+D (C por ruta `store_auth.py` y contenido `sql-fstring`; D por contenido `n-plus-one` en `store_auth.py`). Base `60be598`. `scope-check.py --base 60be598` → exit 0.
+
+**Lentes B, C y D: sin defectos.** 63 miembros de `Store` y 6 helpers idénticos por AST y bytecode; sin nombres sin definir (pyflakes), sin sombreado por MRO, sin imports circulares; SQL parametrizado igual que antes; ninguna consulta ni conexión nueva. Los N+1 de `list_users`/`list_keys` y la f-string SQL de `store_documents.py:96` son preexistentes e idénticos al original: no son gaps de este diff.
+
+**Resultado: 1 gap Important y 3 Minor.** T-04 y T-06 vuelven a `en-progreso`.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | CA-04 de la spec pide «recibo de la puerta congelada en ambos momentos»; el recibo previo sale de `docker build --target test`, sin `source_sha256` ni bloque de la puerta congelada, así que nada lo liga al árbol anterior al refactor. Lente A | T-04, T-06 | corregido: recibo previo regenerado con la puerta congelada sin modificar sobre `git archive 60be598` (source_sha256 `af443668…68fb`, 138 ficheros, 191 tests verdes) y posterior sobre el árbol actual (`e21645f0…900b`, 157 ficheros, 194 verdes); además la misma suite de 194 sobre `60be598` + test de superficie (`7480cded…f4d9`, 194 verdes) para el «mismo recuento» literal; `testing/store-refactor-before.json` | `testing/store-refactor-before.json:1-14`; `spec.md:137` |
+| 2 | Minor | Subtarea «Ajustar el manifiesto de `frozen-source-gate.py`» marcada `[x]` sin hacerse (la puerta copia el árbol entero y no necesitaba cambio). Lente A | T-06 | corregido: `ledger-lint` rechaza `completado` con subtareas sin marcar, así que se deja `[x]` con la nota «no necesario: la puerta copia el árbol entero (`frozen-source-gate.py:45-48`)»; texto sin reescribir | `tasks.md:288,292` |
+| 3 | Minor | El `wc -l` pegado no es literal (`store_common 37`; el fichero tiene 36). Lente A | T-05 | corregido: `wc -l memory_platform/store*.py` pegado con su salida literal (store_common 36) en T-05 | `tasks.md:262` |
+| 4 | Minor | Los criterios de T-04/T-05 dicen «177/177» y se marcan con 194. Lente A | T-04, T-05 | descartado (rebatido): la spec CA-04 dice «177/177 o el recuento vigente» (`spec.md:137`); el criterio no se reescribe y la nota del implementador lo explica | `spec.md:137`; `tasks.md:220,250` |
+
+
+## Revisión de dos lentes — intento 2: Fase 2 (T-04…T-06) (T-04, T-05, T-06)
+
+Lentes: A (solo evidencias y ledger cambiaron; el código de `memory_platform/` es el mismo que B, C y D aprobaron en el intento 1). Traspaso de la tabla del intento 1.
+
+**Gaps 1-3 del intento 1: corregidos y verificados** (tres hashes de la puerta congelada reproducidos: `af443668…68fb` 138, `e21645f0…900b` 157, `7480cded…f4d9` 140; `scope-check` sin criterios alterados).
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 5 | Important | La Verificación planificada de T-06 se reescribió (de `a['tests']==b['tests']` → `True 0 0` a `b['tests']-a['tests']` → `3 0 0`) para encajar con un recibo previo de 191 tests, contradiciendo el criterio «mismo recuento». Lente A | T-06 | corregido por el orquestador: Verificación original restaurada; el recibo previo pasa a tener en su primer nivel el código de 60be598 con la misma suite (194, `source_sha256` `7480cded…f4d9`) y conserva la ejecución pura de 60be598 (191) en `pre_refactor_suite_at_60be598`. El comando original da `True 0 0` | `tasks.md` Verificación de T-06; `testing/store-refactor-before.json` |
+
+
+## Revisión de dos lentes — intento 3: Fase 2 (T-04…T-06) (T-04, T-05, T-06)
+
+Lentes: A (solo evidencias y ledger cambiaron). Traspaso de las tablas de los intentos 1 y 2.
+
+**Gap 5 del intento 2: corregido y verificado** (Verificación de T-06 idéntica a la base salvo la nota; ejecutada → `True 0 0`; hashes `7480cded…f4d9` 140, `af443668…68fb` 138 y `e21645f0…900b` 157 reproducidos; `scope-check --base 60be598` sin criterios alterados).
+
+**Resultado: sin gaps pendientes.** Fase 2 cerrada en revisión.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 6 | Minor | La prosa de evidencia de T-04 y T-06 seguía describiendo el recibo previo con 191 tests en el primer nivel y citaba un bloque `same_suite_on_pre_refactor_tree` que ya no existe. Lente A | T-04, T-06 | corregido por el orquestador: los Resultados de T-04 y T-06 describen el primer nivel (194, `7480cded…f4d9`) y el bloque `pre_refactor_suite_at_60be598` (191, `af443668…68fb`) | `tasks.md`, Resultados de T-04 y T-06 |
 
