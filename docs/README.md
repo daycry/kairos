@@ -1,6 +1,6 @@
 # Documentación
 
-Última actualización: 2026-11-06.
+Última actualización: 2026-11-09.
 
 El punto de entrada es el [índice de documentación](index.md). Para el uso cotidiano abre el [manual de Kairos](manual.md); para integrar un agente empieza por [instalación](install.md) y continúa con el [contrato MCP](integration.md).
 

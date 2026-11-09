@@ -1,6 +1,6 @@
 # Conectar un cliente mediante MCP
 
-Última actualización: 2026-11-05.
+Última actualización: 2026-11-09.
 
 ## Requisitos
 
@@ -14,7 +14,7 @@ Guarda la clave sin prefijo `Bearer`, comillas ni JSON en un fichero privado ext
 
 ## Distribución disponible
 
-El paquete propio se llama `@daycry/kairos`, versión `0.2.0`. Su publicación en npm está pendiente. Por tanto, no se presenta `npx @daycry/kairos` como una instalación pública ya disponible. Usa el archivo local preparado en `packages/kairos-cli/artifacts/daycry-kairos-0.2.0.tgz`.
+El paquete propio se llama `@daycry/kairos`, versión `0.2.0`. Su publicación en npm está pendiente: el tarball revisado superó de nuevo `release:check` el 9 de noviembre de 2026, pero el registro todavía no contiene el paquete. Por tanto, no se presenta `npx @daycry/kairos` como una instalación pública ya disponible. Usa el archivo local preparado en `packages/kairos-cli/artifacts/daycry-kairos-0.2.0.tgz`.
 
 Desde la raíz de este repositorio, comprueba su versión:
 

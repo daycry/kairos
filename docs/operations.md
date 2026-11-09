@@ -1,6 +1,6 @@
 # Operación y recuperación
 
-Última actualización: 2026-11-06.
+Última actualización: 2026-11-09.
 
 ## Identidad y datos existentes
 
@@ -15,6 +15,8 @@ No ejecutes `down -v`, limpiezas de volúmenes ni una restauración sobre la bas
 La actualización del 5 de noviembre añade `capture_policy` y un argumento opcional `project_id` a `event_status`; no necesita migración adicional ni reindexación. Despliega y verifica el servidor antes de activar los hooks nuevos en consumidores. Una comprobación `doctor --online` con automatización configurada detecta un servidor que todavía no ofrece ese contrato. Las colas locales anteriores y sus recibos deben conservarse. Cambiar el servidor o la identidad del proyecto crea otra partición local; no copies a ciegas una cola a otra conexión. Los modos, estados y recuperación local están en [instalación](install.md).
 
 La ampliación del 6 de noviembre añade tablas de trabajo compartido y consultas generadas mediante migraciones aditivas. Conserva las listas privadas, memorias, documentos, identidades y hashes anteriores. No requiere reindexar ni reenviar fuentes. El despliegue verifica las nuevas herramientas de observaciones, equipo y corpus: un servidor anterior con sólo las herramientas básicas no se considera actualizado. El panel debe mostrar **Observaciones**, **Reglas del proyecto**, **Actividad** y **Consultar corpus** después de actualizar su imagen. El análisis local de código requiere actualizar explícitamente el runtime del cliente; desplegar la web no modifica los proyectos consumidores.
+
+La instalación local ejecuta esta ampliación desde el 9 de noviembre de 2026: el despliegue completó sus diez fases, hizo copia antes de migrar y verificó 34 herramientas, 2 proyectos y 21 documentos. El registro está en [activación](roadmap/2026-11-06-functional-parity/testing/activation.json).
 
 Antes de actualizar, revisa [el ledger y sus evidencias](roadmap/2026-11-06-functional-parity/tasks.md). Las pruebas aisladas no acreditan que estas imágenes estén activas en tu instalación. La publicación del paquete npm y su instalación pública se verifican por separado en [entrega CLI](release-cli.md).
 
@@ -63,6 +65,17 @@ Lee la salida completa y comprueba su resultado final. El script es la fuente pa
 La limpieza de código y la recreación de contenedores son operaciones distintas. Que una imagen se construya no demuestra que la instalación esté usando esa imagen. Antes de declarar una entrega aplicada, registra la imagen activa y realiza la comprobación funcional siguiente.
 
 El informe privado conserva `previous_images`, las identidades inmutables de las imágenes de API, trabajador y web antes de construir. Si falla después de recrear servicios, conserva ese informe y el dump. El procedimiento no revierte automáticamente la base ni borra sus tablas. El operador puede preparar un override de Compose apuntando a esas identidades y arrancar sólo los servicios afectados con `--no-build --no-deps`; antes debe comprobar que la versión anterior admite el esquema aditivo vigente. Para recuperar datos, utiliza primero la restauración aislada descrita más abajo. No restaures el dump sobre producción para resolver un fallo únicamente de web.
+
+### Si el despliegue se detiene en `start`
+
+La fase `start` espera a que todos los servicios estén sanos. El caso más habitual es el proxy `ollama` en estado `unhealthy`: su comprobación consulta `/api/version` y recibe `502 Bad Gateway` porque el servidor Ollama de destino (`OLLAMA_UPSTREAM`, por defecto `host.docker.internal:11434`) no está en marcha.
+
+1. Comprueba el estado: `docker compose ps` y `docker logs --tail 20 knowledge-graphs-ollama-1`. Un `connect() failed (111: Connection refused)` confirma que no hay servidor en el destino.
+2. Arranca Ollama en el equipo de destino y comprueba que responde: `http://127.0.0.1:11434/api/version` desde ese equipo.
+3. Confirma que los modelos configurados están disponibles (`ollama list`): `MEMORY_LLM_MODEL` y `MEMORY_EMBEDDING_MODEL`.
+4. Repite `python scripts/deploy-memory.py --apply`. Hará una copia nueva antes de migrar; la migración ya aplicada es aditiva y no se repite de forma destructiva.
+
+Mientras Ollama no responda, la API puede seguir aceptando operaciones, pero los trabajos de extracción y embeddings quedarán pendientes o fallarán; revísalos después en **Operaciones**.
 
 ## Comprobar una instalación
 

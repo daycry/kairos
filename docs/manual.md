@@ -1,6 +1,8 @@
 # Manual de uso de Kairos
 
-Última actualización: 2026-11-06.
+Última actualización: 2026-11-09.
+
+Las capturas de este manual proceden de las pruebas de interfaz con datos sintéticos aislados; tu panel mostrará tus propios proyectos.
 
 ## Para qué sirve
 
@@ -11,6 +13,8 @@ Aprender significa conservar una experiencia que pueda recuperarse más adelante
 El flujo habitual es consultar antes de actuar, trabajar sobre el proyecto, guardar un resumen pequeño de lo aprendido y comprobar su procesamiento. Las conversaciones completas y los repositorios enteros no son la unidad recomendada de captura.
 
 ## Primer acceso
+
+![Pantalla de acceso al panel privado](assets/screenshots/acceso.jpg)
 
 Abre `http://127.0.0.1:5173/` para la web pública. El panel privado está en `/app/` y la documentación publicada en `/docs/`. En una instalación remota usa la dirección HTTPS que facilite su administrador; `127.0.0.1` siempre se refiere a tu propio equipo.
 
@@ -53,6 +57,8 @@ El contador muestra listas visibles frente a listas cargadas y tareas guardadas 
 
 ## Observaciones y reglas
 
+![Vista Actividad con las entregas registradas por proyecto](assets/screenshots/actividad.jpg)
+
 **Observaciones** muestra la memoria vigente del proyecto. Al retirarla o sustituirla deja de aparecer como vigente. **Historia** conserva el recorrido de entregas y no debe confundirse con la última versión. Los títulos, etiquetas y fuentes se muestran como texto; una etiqueta que contiene comas sigue siendo una sola etiqueta.
 
 **Reglas del proyecto** utiliza la etiqueta exacta `kairos:rule`. Pulsa **Nueva regla**, indica título, contenido, sesión y autor y añade la procedencia. La categoría permanece disponible para organizar reglas, por ejemplo `backend` o `despliegue`. Guardar una regla no la aprueba: el estado validado exige permiso de validación y referencias de evidencia. El servidor no ejecuta su contenido. Los agentes deben tratarla como información recuperada y contrastarla con las instrucciones autorizadas de su tarea. Para dejar de usarla, retírala; para corregirla, crea su siguiente versión.
@@ -60,6 +66,8 @@ El contador muestra listas visibles frente a listas cargadas y tareas guardadas 
 **Actividad** enumera eventos realmente recibidos, su fecha y referencia. Un evento recibido no demuestra que la extracción o los embeddings hayan terminado; compruébalo en **Operaciones**. Con un proyecto seleccionado, la barra de actividad puede anunciar nuevas entregas y actualizar memoria, observaciones, reglas o actividad. Si se corta la conexión aparece una acción de reconexión; no se simula actividad.
 
 ## Consultar un corpus
+
+![Respuesta generada sobre un corpus, con cita y referencia a la fuente](assets/screenshots/corpus.jpg)
 
 1. Selecciona un único proyecto y abre **Consultar corpus**. Cada usuario conserva sus propias selecciones.
 2. Escribe un nombre y, opcionalmente, palabras de búsqueda y etiquetas exactas, una por línea. La categoría de la barra lateral acota la selección. **Crear selección** incorpora hasta 500 memorias vigentes; no sube archivos ni añade documentos externos automáticamente.
@@ -105,6 +113,8 @@ Por ejemplo, «8 visibles · 50 cargados · hay más páginas» quiere decir que
 
 ## Buscar información y preparar contexto
 
+![Búsqueda y preparación de contexto con selección de capas](assets/screenshots/buscar-contexto.jpg)
+
 Selecciona el proyecto y escribe una pregunta concreta, por ejemplo: «¿Qué comprobaciones debemos hacer antes de desplegar el backend?». Elige las capas que necesitas: memoria episódica, documentos o relaciones temporales. Añade categoría y etiquetas si quieres restringir el resultado. Ejecuta la búsqueda.
 
 Una tarjeta muestra título, proyecto, capa, estado de validación, versión, extracto y, cuando existe, fuente con hash. Abre el título para ampliar la ficha. No copies un extracto sin abrir su evidencia si la decisión tiene consecuencias.
@@ -114,6 +124,8 @@ La búsqueda combina la recuperación del servidor y, cuando se solicita y está
 La acción de preparar contexto devuelve una selección acotada con procedencia y avisos. Su objetivo es facilitar el siguiente trabajo del agente. Sigue siendo una selección, no una garantía de que todo el conocimiento relevante esté incluido. Si aparece un aviso de resultados parciales, comprueba qué capa no respondió antes de tomarlo como una respuesta completa.
 
 ## Leer una ficha y evaluar su fiabilidad
+
+![Lista de memoria con estado, etiquetas, agente, sesión, versión y fuente](assets/screenshots/memoria.jpg)
 
 La ficha amplía el contenido, el problema, la corrección y la evidencia disponibles. Muestra la versión y avisa si fue sustituida. La fuente puede ser una URL o un identificador; las rutas e identificadores sin URL se muestran como texto y no se ejecutan.
 
@@ -175,6 +187,8 @@ Las listas ofrecen actualización y paginación. Un fallo al cargar más no elim
 
 ## Explorar el mapa
 
+![Mapa con la lista de elementos y relaciones navegable por teclado](assets/screenshots/mapa.jpg)
+
 El mapa representa memorias, documentos y entidades, con relaciones conservadas por el servidor. Selecciona proyectos y categorías; usa el campo de búsqueda y **Aplicar al mapa** para solicitar otra instantánea. **Actualizar mapa** repite la carga y **Centrar mapa** ajusta el encuadre.
 
 Las categorías de cada proyecto reciben colores calculados para distinguir grupos. El color es una ayuda de orientación, no indica calidad, riesgo ni validación. Consulta el nombre del proyecto y categoría en la etiqueta o ficha: no dependas sólo del color. Con muchas categorías una paleta puede tener colores cercanos.
@@ -186,6 +200,8 @@ El botón **Usar vista de lista** permite explorar los mismos datos sin manipula
 No confundas proximidad visual con relación demostrada. Las posiciones responden a la disposición del grafo. Comprueba la arista, su etiqueta y la fuente antes de deducir una dependencia entre elementos.
 
 ## Operaciones: recibido no significa terminado
+
+![Operación fallida con su error y la acción de reintento](assets/screenshots/operaciones.jpg)
 
 Las tarjetas muestran destino, tipo, versión, intentos e identificador. Su estado permite distinguir trabajo pendiente de un fallo real.
 

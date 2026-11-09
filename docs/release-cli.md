@@ -1,6 +1,6 @@
 # CLI release preparation and public verification
 
-The current source version is 0.2.0. A local package, a successful native-client test, and a public npm distribution are separate deliverables. This procedure never treats one as proof of another.
+The current source version is 0.2.0. Status on 2026-11-09: `release:check` passed again on the reviewed tarball (sha256 `c7316e0d813edd584edbca7b0c6d19950e2a7eb2d5809cdc0e088e144da84451`); publication was attempted but not completed and `registry-check` returns exit 2 (version not found). A local package, a successful native-client test, and a public npm distribution are separate deliverables. This procedure never treats one as proof of another.
 
 ## Prepare without publishing
 
@@ -19,6 +19,8 @@ npm run release:check
 The artifact verifier derives the version and managed runtime file allowlist from current source. It validates tar headers, rejects links, duplicates, traversal and unexpected files, checks source equality and emits SHA-256 and SHA-512 integrity. It reports tests and registry availability as unverified because that command does not run them. Keep historical tarballs and their evidence immutable.
 
 ## Confirm account and scope separately
+
+npm requires two-factor confirmation to publish. With a passkey or security key there is no numeric code for `--otp`: run `npm publish` from an interactive terminal so npm can open the browser confirmation. A non-interactive shell receives `EOTP` instead.
 
 An authorized publisher must check `npm whoami --registry=https://registry.npmjs.org/` and their right to publish under `@daycry`. For an existing package, inspect `npm owner ls @daycry/kairos --registry=https://registry.npmjs.org/`; for a new scope/package, confirm organization membership and publication rights in npm. A package-name search or a logged-in account does not establish scope ownership.
 

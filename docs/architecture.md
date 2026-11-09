@@ -1,6 +1,6 @@
 # Cómo está construido Kairos
 
-Última actualización: 2026-11-06.
+Última actualización: 2026-11-09.
 
 ## Componentes y recorrido de una operación
 
@@ -53,7 +53,7 @@ Los títulos, etiquetas y contenidos se muestran como texto. Una fuente recupera
 
 La interfaz MCP implementa 34 herramientas; su lista está en [integración](integration.md). El estado de trabajo privado, el trabajo compartido y los corpus utilizan tablas separadas bajo la misma migración transaccional. Los corpus conservan referencias de generación, sin duplicar el cuerpo de las fuentes; verifican cambios y retiradas antes de devolver evidencia o usar caché. `query_corpus` ofrece recuperación léxica. `corpus_answer` añade síntesis explícita con continuidad acotada, presupuesto de admisión persistido y comprobación de citas. La llamada al proveedor ocurre fuera de la transacción; se revalidan permisos y fuentes antes de guardar o recuperar el resultado. Un timeout conserva su estado incierto sin reenviar.
 
-El instalador configura las tres familias de clientes, verifica el estado local y ofrece una comprobación remota de lectura. Con opciones explícitas fusiona hooks o un adaptador nativo. Un dispatcher Node separado recibe IPC autenticado en loopback y mantiene una outbox privada externa al proyecto. Verifica permisos y política antes de admitir y antes de enviar; los recibos y los cuerpos tienen persistencias distintas. No usa la sesión MCP del agente para tareas internas y no lee transcripciones. El consentimiento local se relee en un dispatcher ya activo. El contexto exige lectura autorizada vigente y no tiene caché local de respaldo. La lectura, el contexto y la captura técnica de resúmenes se aceptaron en los tres clientes reales el 6 de noviembre de 2026, en las versiones indicadas en el [cierre nativo](roadmap/2026-11-05-automatic-memory/testing/native-acceptance-closure.md). Ese resultado no acredita automáticamente las funciones añadidas después ni su activación en el servidor.
+El instalador configura las tres familias de clientes, verifica el estado local y ofrece una comprobación remota de lectura. Con opciones explícitas fusiona hooks o un adaptador nativo. Un dispatcher Node separado recibe IPC autenticado en loopback y mantiene una outbox privada externa al proyecto. Verifica permisos y política antes de admitir y antes de enviar; los recibos y los cuerpos tienen persistencias distintas. No usa la sesión MCP del agente para tareas internas y no lee transcripciones. El consentimiento local se relee en un dispatcher ya activo. El contexto exige lectura autorizada vigente y no tiene caché local de respaldo. La lectura, el contexto y la captura técnica de resúmenes se aceptaron en los tres clientes reales el 6 de noviembre de 2026, en las versiones indicadas en el [cierre nativo](roadmap/2026-11-05-automatic-memory/testing/native-acceptance-closure.md). Ese resultado no acredita automáticamente las funciones añadidas después. Su activación en el servidor local se verificó el 9 de noviembre de 2026 mediante la fase `verify` del despliegue.
 
 El análisis local opcional se realiza en el proxy y tiene una raíz de cliente explícita, exclusiones antes de la lectura y presupuestos. No permite al servidor abrir rutas del cliente ni publica código automáticamente. Véase [análisis local](code-analysis.md).
 
