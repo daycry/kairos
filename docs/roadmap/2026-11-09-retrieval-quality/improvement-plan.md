@@ -294,6 +294,7 @@ Orden: T-01 → T-02 → T-03 → T-04 → T-05 → T-06 → T-07 → … (caden
 | Fecha | Cambio | Autor |
 |-------|--------|-------|
 | 2026-11-09 | Creación del plan (38 tareas en 8 fases) heredando horas de la evaluación; añade portal (+3 h) y CLI (+4 h) por las decisiones P-03 y P-04 | planner |
+| 2026-11-09 | Nota añadida por la implementación de la Fase 3 (no reescribe lo aprobado): si el índice HNSW devuelve menos aciertos de los pedidos, se cuentan los vectores de los proyectos autorizados; hasta 10.000 se recalcula con la ruta exacta (un HNSW aproximado puede dejar vectores duplicados inalcanzables) y por encima la respuesta sale `candidates_truncated`, aunque esté vacía. `search_vectors` devuelve una lista con los atributos `candidates_truncated` y `candidate_limit` para que `retrieval` lo vea. La migración pgvector es la versión de esquema 8 (6 y 7 ya existían) y se omite si ya está aplicada. | implementer |
 
 ---
 

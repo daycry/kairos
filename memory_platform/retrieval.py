@@ -124,9 +124,11 @@ class Retrieval:
                     deadline=time.monotonic()+getattr(self.settings,'embedding_query_timeout',10.0)
                     embedded = await self.embeddings.embed(request.q, query=True)
                     values = await self._scan_vectors(actor,request,embedded,deadline)
-                truncated = any(value.get('candidates_truncated', False) for value in values)
+                # An empty answer can still be truncated, and the hits' own fields are dropped by hit(): read both first.
+                truncated = bool(getattr(values, 'candidates_truncated', False)) or any(value.get('candidates_truncated', False) for value in values)
+                candidate_limit = max((value.get('candidate_limit', 0) for value in values), default=0) or getattr(values, 'candidate_limit', 10000)
                 values = [hit(value) for value in values if value['layer'] in layers and value['project_id'] in request.project_ids and value.get('category') not in request.exclude_categories]
-                return 'semantic', values, {'status': 'partial' if truncated else 'ok', 'count': len(values), 'candidate_limit': 10000, 'candidates_truncated': truncated}
+                return 'semantic', values, {'status': 'partial' if truncated else 'ok', 'count': len(values), 'candidate_limit': candidate_limit, 'candidates_truncated': truncated}
             except Exception:
                 return 'semantic', [], {'status': 'unavailable', 'count': 0}
         results = await asyncio.gather(*(run(layer) for layer in dict.fromkeys(layers)), vectors())

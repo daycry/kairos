@@ -54,3 +54,36 @@ CREATE INDEX IF NOT EXISTS memory_items_recent ON memory.memory_items(project_id
     (event_type='correction' AND payload->>'validation_status'='validated') DESC,occurred_at DESC,id)
     WHERE NOT deleted AND superseded_by IS NULL;
 INSERT INTO memory.schema_versions(version) VALUES (5) ON CONFLICT DO NOTHING;
+
+-- pgvector (schema version 8; 6 and 7 are taken by the extended and corpus-answer migrations). Additive: `vector double precision[]` stays authoritative so a previous release keeps working.
+-- The extension lives in `public` on purpose: without WITH SCHEMA it would land in the first schema of the search path,
+-- which for the role `memory` is the schema `memory` itself. Needs a role allowed to create the extension (the bootstrap superuser of the PostgreSQL image). The partial
+-- HNSW indexes are created by Store.migrate() because the indexed model/dimensions come from MEMORY_VECTOR_INDEXES.
+SET LOCAL lock_timeout = '5s';
+-- The whole block is skipped once version 8 is registered and its columns exist: a repeated `admin migrate` takes
+-- no ACCESS EXCLUSIVE lock and does not walk the table. The first run rewrites the table (generated `dims`),
+-- backfills `embedding` and builds the HNSW indexes; see docs/operations.md for cost and lock window.
+DO $pgvector$
+BEGIN
+    IF EXISTS (SELECT 1 FROM memory.schema_versions WHERE version = 8)
+       AND (SELECT count(*) FROM information_schema.columns WHERE table_schema = 'memory' AND table_name = 'embeddings' AND column_name IN ('embedding', 'dims')) = 2 THEN
+        RETURN;
+    END IF;
+    CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
+    ALTER TABLE memory.embeddings ADD COLUMN IF NOT EXISTS embedding vector;
+    ALTER TABLE memory.embeddings ADD COLUMN IF NOT EXISTS dims integer GENERATED ALWAYS AS (array_length(vector,1)) STORED;
+    CREATE OR REPLACE FUNCTION memory.embedding_sync() RETURNS trigger LANGUAGE plpgsql AS $function$
+    BEGIN
+        -- Rows written by code that only knows `vector` (a previous release, direct SQL) get their `embedding`.
+        IF NEW.embedding IS NULL OR (TG_OP = 'UPDATE' AND NEW.vector IS DISTINCT FROM OLD.vector AND NEW.embedding IS NOT DISTINCT FROM OLD.embedding) THEN
+            NEW.embedding := NEW.vector::vector;
+        END IF;
+        RETURN NEW;
+    END
+    $function$;
+    CREATE OR REPLACE TRIGGER embedding_sync BEFORE INSERT OR UPDATE ON memory.embeddings
+        FOR EACH ROW EXECUTE FUNCTION memory.embedding_sync();
+    UPDATE memory.embeddings SET embedding = vector::vector WHERE embedding IS NULL;
+    INSERT INTO memory.schema_versions(version) VALUES (8) ON CONFLICT DO NOTHING;
+END
+$pgvector$;

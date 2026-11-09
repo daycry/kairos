@@ -1,0 +1,33 @@
+{
+  "conditions": "random 768-dim double precision[] vectors, one model, one project; maintenance_work_mem 256MB, serial index build; HNSW defaults (m=16, ef_construction=64)",
+  "date": "2026-11-09",
+  "reading": "the first migrate is linear-ish in rows for the generated-column rewrite and backfill plus the HNSW build, and holds ACCESS EXCLUSIVE on memory.embeddings for the whole run; the second migrate skips the pgvector block (0.1-0.2 s)",
+  "results": [
+    {
+      "after_table_size": "7288 kB",
+      "after_total_size": "327 MB",
+      "before_total_size": "165 MB",
+      "dims": 768,
+      "first_migrate_seconds": 54.4,
+      "hnsw_index_size": "78 MB",
+      "maintenance_work_mem": "256MB",
+      "parallel_maintenance_workers": 0,
+      "rows": 20000,
+      "second_migrate_seconds": 0.09
+    },
+    {
+      "after_table_size": "18 MB",
+      "after_total_size": "818 MB",
+      "before_total_size": "413 MB",
+      "dims": 768,
+      "first_migrate_seconds": 113.8,
+      "hnsw_index_size": "195 MB",
+      "maintenance_work_mem": "256MB",
+      "parallel_maintenance_workers": 0,
+      "rows": 50000,
+      "second_migrate_seconds": 0.2
+    }
+  ],
+  "task": "T-08-fix1",
+  "what": "wall time of Store.migrate() over an existing schema-7 database, isolated PostgreSQL 17.11 + pgvector 0.8.7 in a container with no limits"
+}

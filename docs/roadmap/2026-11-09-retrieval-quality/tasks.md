@@ -31,13 +31,13 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Medida (C-01 · P13) | 3 | 3 | 100% | 0 / 16h | 0,62 / 2,21h | 0 / 0,56h | 0 / 660k |
 | Fase 2 — Refactor de `store.py` (C-02 · P11) | 3 | 3 | 100% | 0 / 14h | 0,20 / 3,41h | 0 / 0,85h | 0 / 1020k |
-| Fase 3 — pgvector + HNSW (C-03 · P1) | 0 | 6 | 0% | 0 / 32h | 0 / 4,29h | 0 / 1,08h | 0 / 1290k |
+| Fase 3 — pgvector + HNSW (C-03 · P1) | 6 | 6 | 100% | 0 / 32h | 2,21 / 4,29h | 0 / 1,08h | 0 / 1290k |
 | Fase 4 — FTS por idioma + trigram (C-05 · P4) | 0 | 6 | 0% | 0 / 27h | 0 / 3,61h | 0 / 0,91h | 0 / 1090k |
 | Fase 5 — Troceado para embeddings (C-06 · P2) | 0 | 7 | 0% | 0 / 28h | 0 / 4h | 0 / 1h | 0 / 1200k |
 | Fase 6 — Híbrida con degradación y CLI (C-04 · P3) | 0 | 4 | 0% | 0 / 12h | 0 / 1,6h | 0 / 0,4h | 0 / 470k |
 | Fase 7 — Observabilidad (C-07 · P12) — en paralelo desde T-06 | 0 | 4 | 0% | 0 / 18h | 0 / 2,6h | 0 / 0,64h | 0 / 770k |
 | Fase 8 — Integración, revisión y activación | 0 | 5 | 0% | 0 / 26h | 0 / 4,31h | 0 / 1,06h | 0 / 1280k |
-| **TOTAL** | **6** | **38** | **15.8%** | **0 / 173h** | **0,20 / 26,03h** | **0 / 6,5h** | **0 / 7780k** |
+| **TOTAL** | **12** | **38** | **31.6%** | **0 / 173h** | **3,03 / 26,03h** | **0 / 6,5h** | **0 / 7780k** |
 
 > Las horas de este ledger son **base** (sin el margen del 20 %); con margen: humanas 207,6 h, IA 31,2 h. Las horas IA y los tokens son estimaciones (ratio 300.000 tok/h no calibrado).
 
@@ -306,17 +306,18 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 
 ## Fase 3 — pgvector + HNSW (C-03 · P1)
 
-**Estado**: borrador · **Estimado**: 32h base (38.4h con margen) · **Real**: — · **Coste est.**: 1.920 € · **Tokens est.**: 1200k in / 90k out
+**Estado**: completado · **Estimado**: 32h base (38.4h con margen) · **Real**: — · **Coste est.**: 1.920 € · **Tokens est.**: 1200k in / 90k out
 
 ### T-07 — Imagen PostgreSQL derivada con pgvector en compose y target `test`
 
 - **Descripción**: Añadir al Dockerfile una etapa `postgres-pgvector` derivada de `postgres:17-bookworm@sha256:839fbb5a…` que instale `postgresql-17-pgvector` con versión fijada (≥ 0.8.0, a verificar con `apt-cache madison` en el digest), y usarla en `memory-postgres` (compose con `build:`) y como base del target `test` (y derivados `live-probe`, `lifecycle-test`). Resultado: producción y suite comparten binarios, con digest y versión de pgvector fijados.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: PostgreSQL de memoria pasa a una imagen propia con pgvector (versión fijada), la misma que usan las pruebas; los datos existentes siguen siendo compatibles.
+- **Estado**: completado
 - **Tiempo humano**: est. 4h · real —
-- **Tiempo IA (ejec.)**: est. 0,54h · real —
+- **Tiempo IA (ejec.)**: est. 0,54h · real 0,06 (medido)
 - **Supervisión**: est. 0,13h (≈25 % IA) · real —
 - **Previsión IA**: 150k in / 10k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-09
 - **Dependencias**: T-06
 - **Tipo**: devops
 - **Archivos**: `memory_platform/Dockerfile`, `docker-compose.yml`, `docs/roadmap/2026-11-09-retrieval-quality/testing/pgvector-version.txt`
@@ -327,91 +328,111 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:rq .` → la salida contiene `MEMORY_TEST_RESULT` con `"passed": true`, `failures: 0`, `errors: 0`, `skipped: 0` (la suite de 177 sigue verde sobre la imagen nueva)
 
 **Criterios de aceptación**
-- [ ] CA-13: `memory-postgres` y el target `test` usan la misma base con digest `sha256` y pgvector con versión fijada; `docker compose config` lo muestra
-- [ ] La versión de pgvector instalada es ≥ 0.8.0 y consta en `testing/pgvector-version.txt`
-- [ ] `unaccent` y `pg_trgm` están disponibles en el digest fijado (supuesto ⚠️ verificar de la spec)
-- [ ] Volumen existente compatible: misma versión mayor 17, sin `pg_upgrade`
+- [x] CA-13: `memory-postgres` y el target `test` usan la misma base con digest `sha256` y pgvector con versión fijada; `docker compose config` lo muestra
+- [x] La versión de pgvector instalada es ≥ 0.8.0 y consta en `testing/pgvector-version.txt`
+- [x] `unaccent` y `pg_trgm` están disponibles en el digest fijado (supuesto ⚠️ verificar de la spec)
+- [x] Volumen existente compatible: misma versión mayor 17, sin `pg_upgrade`
 
 **Subtareas**
-- [ ] Verificar la versión disponible de `postgresql-17-pgvector` en PGDG para el digest y fijarla
-- [ ] Crear la etapa `postgres-pgvector` y apuntar `test` a ella
-- [ ] Cambiar `memory-postgres` a `build:` con la misma etapa
-- [ ] Comprobar que `deploy-memory.py` sigue construyendo/arrancando `memory-postgres` (fase `database`)
+- [x] Verificar la versión disponible de `postgresql-17-pgvector` en PGDG para el digest y fijarla
+- [x] Crear la etapa `postgres-pgvector` y apuntar `test` a ella
+- [x] Cambiar `memory-postgres` a `build:` con la misma etapa
+- [x] Comprobar que `deploy-memory.py` sigue construyendo/arrancando `memory-postgres` (fase `database`)
 
 **Notas**: Procedencia: spec CA-13, decisión P-01, riesgos R-01/R-02. Clase: cambio de infraestructura. Patrones: `docker-compose.yml:42` (imagen actual), `memory_platform/Dockerfile:24` (target `test`), digests fijados con `@sha256`. Alternativa descartada en la spec: imagen `pgvector/pgvector`. Pendiente verificar: privilegios para `CREATE EXTENSION vector` (R-03) — se comprueba en T-08.
+- **Resultado (T-07)**: etapa `postgres-pgvector` (base `postgres:17-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5`, `ARG PGVECTOR_VERSION=0.8.7-1.pgdg12+1`) y `test` pasa a derivar de ella (así también `live-probe`, `retrieval-eval`, `lifecycle-test`). `memory-postgres` usa `image: kairos-postgres:latest` + `build: {target: postgres-pgvector}`. Versiones verificadas con `apt-cache madison` en el digest: 0.8.7-1.pgdg12+1, 0.8.6-1.pgdg12+2, 0.8.6-1.pgdg12+1; se fija 0.8.7. Recibo en `testing/pgvector-version.txt`. Salidas literales: `psql (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)`; `ls` → `vector.control`, `unaccent.control`, `pg_trgm.control` presentes; `default_version = '0.8.7'`; `dpkg -s` → `Version: 0.8.7-1.pgdg12+1`; imagen `kairos-pg:rq` `sha256:accf607a68cb…`. `docker compose --profile memory config` → `image: kairos-postgres:latest` y `target: postgres-pgvector` (exit 0); `grep -n "postgres:17-bookworm@sha256" memory_platform/Dockerfile docker-compose.yml` → una sola línea (`Dockerfile:27`). Suite sobre la imagen nueva: `MEMORY_TEST_RESULT` tests 194, failures 0, errors 0, skipped 0, passed true, `postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)`. Misma versión mayor 17 y mismo digest base: el volumen existente es compatible sin `pg_upgrade` (se ensaya en T-11). Riesgo anotado: si PGDG retira 0.8.7 del repositorio el build falla (es el comportamiento buscado de un pin) y habrá que subir `PGVECTOR_VERSION` conscientemente. `deploy-memory.py` (fase `database`, línea 196: `up -d --no-deps --wait memory-postgres`) no requiere cambios; `build` de la fase `build` ya usa `compose build`, se confirma en T-11.
+
 
 ### T-08 — Migración aditiva: extensión `vector`, `embedding`, `dims` y relleno
 
 - **Descripción**: Añadir la versión de esquema siguiente (aditiva): `CREATE EXTENSION vector`, columna `embedding vector` y `dims` generada en `memory.embeddings`, relleno desde `vector double precision[]` y el índice HNSW parcial para `nomic-embed-text:768` (configurable con `MEMORY_VECTOR_INDEXES`). La columna original queda intacta. Resultado: base migrada sin pérdida, con hash por fila idéntico.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: La base de memoria incorpora pgvector con una migración aditiva que conserva los vectores existentes y rellena la columna nueva; configurable con MEMORY_VECTOR_INDEXES.
+- **Estado**: completado
 - **Tiempo humano**: est. 5h · real —
-- **Tiempo IA (ejec.)**: est. 0,67h · real —
+- **Tiempo IA (ejec.)**: est. 0,67h · real 0,21 (medido; 0,16 + 0,05 de la corrección intento 1)
 - **Supervisión**: est. 0,17h (≈25 % IA) · real —
 - **Previsión IA**: 190k in / 15k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-09
 - **Dependencias**: T-07
 - **Tipo**: db
-- **Archivos**: `memory_platform/schema.sql`, `memory_platform/config.py`, `memory_platform/admin.py`, `memory_platform/tests/test_pgvector_migration.py`
+- **Archivos**: `memory_platform/schema.sql`, `memory_platform/config.py`, `memory_platform/admin.py`, `memory_platform/tests/test_pgvector_migration.py`, memory_platform/store_auth.py, memory_platform/store_vectors.py, docs/roadmap/2026-11-09-retrieval-quality/testing/migration-cost.json
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:rq .` → la salida contiene `MEMORY_TEST_RESULT` con `"passed": true`, `failures: 0`, `errors: 0`, `skipped: 0` (incluye `test_pgvector_migration`: test en rojo antes de la migración)
   - `grep -nEi "DROP|TRUNCATE|DELETE|ALTER .* TYPE" memory_platform/schema.sql` → ninguna coincidencia en las versiones nuevas (CA-34)
 
 **Criterios de aceptación**
-- [ ] CA-07: tras `python -m memory_platform.admin migrate` sobre una base con embeddings de 2 y 768 dims existe la extensión `vector` ≥ 0.8.0, todas las filas tienen `embedding` no nulo con `dims = array_length(vector,1)`, la columna `vector` es idéntica (hash por fila antes/después) y `memory.schema_versions` registra la versión nueva
-- [ ] CA-34: la migración no contiene `DROP`, `TRUNCATE`, `DELETE` ni `ALTER … TYPE` y `content_manifest().sha256` es igual antes y después
-- [ ] La migración falla antes de cambiar datos si la extensión no está disponible (transacción + bloqueo consultivo actuales)
+- [x] CA-07: tras `python -m memory_platform.admin migrate` sobre una base con embeddings de 2 y 768 dims existe la extensión `vector` ≥ 0.8.0, todas las filas tienen `embedding` no nulo con `dims = array_length(vector,1)`, la columna `vector` es idéntica (hash por fila antes/después) y `memory.schema_versions` registra la versión nueva
+- [x] CA-34: la migración no contiene `DROP`, `TRUNCATE`, `DELETE` ni `ALTER … TYPE` y `content_manifest().sha256` es igual antes y después
+- [x] La migración falla antes de cambiar datos si la extensión no está disponible (transacción + bloqueo consultivo actuales)
 
 **Subtareas**
-- [ ] Escribir primero el test de migración sobre fixture con versión actual y embeddings de 2 y 768 dims
-- [ ] Añadir la migración (extensión, columnas, relleno, índice HNSW parcial)
-- [ ] Leer `MEMORY_VECTOR_INDEXES` (`nomic-embed-text:768` por defecto)
-- [ ] Comprobar el rol del DSN de migración para `CREATE EXTENSION` y documentar el resultado (R-03)
+- [x] Escribir primero el test de migración sobre fixture con versión actual y embeddings de 2 y 768 dims
+- [x] Añadir la migración (extensión, columnas, relleno, índice HNSW parcial)
+- [x] Leer `MEMORY_VECTOR_INDEXES` (`nomic-embed-text:768` por defecto)
+- [x] Comprobar el rol del DSN de migración para `CREATE EXTENSION` y documentar el resultado (R-03)
 
 **Notas**: Procedencia: spec CA-07, CA-34, decisiones P-01/P-02. Clase: cambio de comportamiento (test nuevo en rojo). Patrones: versiones aditivas con `INSERT INTO memory.schema_versions … ON CONFLICT DO NOTHING` en `memory_platform/schema.sql:21`, `:26`; columna actual `memory.embeddings` en `schema.sql:34-45`; `lock_timeout` ya usado en `schema.sql`. Los índices dentro de la transacción de `migrate` son aceptables por el volumen (21 documentos).
+- **Resultado (T-08)**: versión de esquema 8 en `schema.sql` (la 6 y la 7 ya las registran `extended_store` y `corpus_answers`; corregido en T-11, ver «Corrección»): `CREATE EXTENSION vector WITH SCHEMA public`, columnas `embedding vector` y `dims` (generada de `array_length(vector,1)`), función+trigger `memory.embedding_sync` (rellena `embedding` en cualquier INSERT/UPDATE que solo conozca `vector`: es lo que mantiene válidos los tests existentes que insertan SQL directo y la vuelta atrás con código anterior, R-01), relleno `UPDATE … WHERE embedding IS NULL` (idempotente en cada migrate) e inserción de la versión 8. `embedding` queda NULLABLE a propósito (el código anterior no la escribe). Índices HNSW parciales creados por `migrate_vector_indexes` (`store_vectors.py`, llamado desde `AuthMixin.migrate` en la misma transacción y bajo el bloqueo consultivo) para cada par de `config.vector_indexes()` (`MEMORY_VECTOR_INDEXES`, por defecto `nomic-embed-text:768`, 1..2000 dims, validado). Fuera del `Archivos` original: `store_auth.py`, `store_vectors.py` (añadidos). **Rojo previo**: `RED: test_pgvector_migration falló (4 de 5 tests: 'extension vector must exist after migrate', UndefinedColumn embedding, ImportError vector_indexes, 'Error not raised') · 2026-11-09` (ejecutado con el código previo a la migración). Verde: 5/5 en solitario; suite completa `MEMORY_TEST_RESULT` tests 199, failures 0, errors 0, skipped 0, passed true (194 + 5). `sed -n '/VALUES (5) ON CONFLICT/,$p' schema.sql | grep -nEi "DROP|TRUNCATE|DELETE|ALTER .* TYPE"` → exit 1 (sin coincidencias; el grep sobre el fichero entero casa con `NOT deleted` de versiones antiguas, no con las nuevas). Los tests comprueban: extensión ≥ 0.8.0, 6 filas (2 y 768 dims) con `embedding` no nulo y `dims = array_length`, hash md5 por fila de `vector` idéntico antes/después, `content_manifest().sha256` idéntico, versión 8 registrada (conjunto exacto 1…8 sobre un estado previo 1…7, igual que la instalación real), índice `USING hnsw … vector_cosine_ops` con `model`/`dims = 768`, segunda migración idempotente, y que un rol sin privilegio de extensión falla (`CREATE EXTENSION`) dejando sin columnas nuevas ni versión 8 y con los vectores intactos.
+- **R-03**: en el entorno de pruebas el DSN es el superusuario `postgres` (initdb); sin ese privilegio la migración aborta limpiamente (test). En producción el rol es `memory` = `POSTGRES_USER` de la imagen oficial (superusuario de arranque); se confirma con `SELECT rolsuper` en T-11. Subtarea marcada con esa salvedad.
+- **Corrección (T-11)**: el ensayo de despliegue destapó dos defectos de esta tarea, ya corregidos y con prueba: (1) la versión «6» que registraba la migración ya estaba tomada por `extended_store` (6) y `corpus_answers` (7), así que el `INSERT … ON CONFLICT DO NOTHING` no registraba nada en una base real y la prueba original lo daba por bueno sin serlo; ahora es la versión 8 y la prueba parte de un estado previo con las versiones 1…7 y exige el conjunto exacto 1…8; (2) sin `WITH SCHEMA`, la extensión se creaba en el primer esquema del `search_path`, que para el rol `memory` es el esquema `memory` (en las pruebas, con el rol `postgres`, caía en `public`); ahora `WITH SCHEMA public` y una prueba comprueba el esquema. Suite tras las correcciones: 215/215 (ver T-11).
+- **Nota de alcance**: `memory_platform/admin.py` (declarado en `Archivos`) no necesitó cambios: `admin migrate` ya llama a `Store.migrate()`, que ejecuta `schema.sql` y `migrate_vector_indexes`.
+- **Corrección intento 1 (T-08-fix1, revisión de dos lentes)**: gaps #3, #4, #11, #14. (a) Todo el bloque v8 de `schema.sql` va ahora en un `DO $pgvector$` que sale sin hacer nada si la versión 8 está registrada y existen `embedding` y `dims`: un `admin migrate` repetido no toma `ACCESS EXCLUSIVE` ni recorre la tabla. (b) `migrate_vector_indexes` consulta `pg_indexes` y solo crea el HNSW que falta (`CREATE INDEX` sin `IF NOT EXISTS`, tras comprobar el nombre). (c) `AuthMixin.migrate` fija `maintenance_work_mem` (`MEMORY_MIGRATION_MAINTENANCE_WORK_MEM`, defecto `256MB`, validado en `config.migration_maintenance_work_mem`) y `max_parallel_maintenance_workers = 0`; `shm_size` NO se toca: sin trabajadores paralelos la construcción no usa `/dev/shm` (64 MB por defecto) y se evita cambiar el contenedor de producción (justificación en `docs/operations.md`). (d) timeout de la fase `migrate`: ver T-11. (e) coste y ventana de bloqueo documentados (R-06) con medición real. #11: `store_auth.py` y `store_vectors.py` añadidos al campo `Archivos` (fueron necesarios para el índice parametrizable y la sesión de migración). #14: deuda aceptada (doubles que desbordan float4 abortan la migración entera, sin cambios parciales; los proveedores reales no los producen). Tests nuevos en `test_pgvector_migration` (10 en total): `test_repeated_migrate_neither_rewrites_the_table_nor_rebuilds_the_index` (mismos `relfilenode` de `memory.embeddings` y del índice, mismos `xmin` de filas), `test_repeated_migrate_takes_no_exclusive_lock_on_embeddings` (un lector `ACCESS SHARE` no bloquea la segunda migración; **rojo comprobado**: con la guarda desactivada, `ERROR: test_repeated_migrate_takes_no_exclusive_lock_on_embeddings`, `SUB_RESULT 10 0 1 0`; con ella `SUB_RESULT 10 0 0 0`), `test_new_index_is_built_once_on_a_migrated_database`, `test_migration_sets_a_configurable_maintenance_memory_and_builds_serially`, `test_maintenance_memory_setting_is_validated`.
+- **Coste medido** (`testing/migration-cost.json`, PostgreSQL 17.11 + pgvector 0.8.7 aislado, vectores de 768 dims, 256 MB, serie): 20.000 filas → primera migración 54,4 s (tabla total 165 MB → 327 MB, HNSW 78 MB), segunda 0,09 s; 50.000 filas → 113,8 s (413 MB → 818 MB, HNSW 195 MB), segunda 0,2 s. Ensayo repetido (T-11): `relfilenode` de `embeddings` e índice idénticos tras un `admin migrate` posterior (`embeddings=17085`, `memory_embedding_hnsw_d8113c0d26a9b5c0=17106` antes y después).
+- **Corrección intento 2 (T-08-fix2)**: gaps #1, #3, #5, #6. #1: Suite completa sobre el árbol actual (`docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:rq .`, exit 0), línea literal: `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 235}`. #3: `MEMORY_MIGRATION_MAINTENANCE_WORK_MEM: ${MEMORY_MIGRATION_MAINTENANCE_WORK_MEM:-256MB}` añadido a `x-memory-environment` de `docker-compose.yml` (llega a `memory-migrate`/`memory-admin`; `docker compose --profile memory config` exit 0 y la variable aparece 4 veces en la configuración efectiva); `test_deploy` compara las redes y los volúmenes del Compose, no `x-memory-environment`, así que su expectativa no cambia y sigue verde en la suite. Cambia el hash de configuración de api/worker/migrate, que de todos modos se recrean en el despliegue por la imagen nueva. #5/#6: `docs/operations.md` y `docs/configuration.md` documentan que añadir un par a `MEMORY_VECTOR_INDEXES` construye un HNSW con bloqueo `SHARE` (bloquea las escrituras de embeddings; las búsquedas siguen), el umbral aproximado de ~6,5·10^4 filas (768 dims, m=16, 256 MB; cifra del revisor, no medida aquí) a partir del cual el grafo deja de caber en `maintenance_work_mem` y la construcción es mucho más lenta, y que entonces conviene subir `MEMORY_MIGRATION_MAINTENANCE_WORK_MEM`; el texto de la extrapolación del coste ya no afirma linealidad por encima de lo medido (50.000 filas).
 
 ### T-09 — Búsqueda vectorial con HNSW, escaneo iterativo, ruta exacta y doble escritura
 
 - **Descripción**: Reescribir `search_vectors`, `_vector_candidates` y `has_vectors` en `store_vectors.py` para usar el operador `<=>` de pgvector: HNSW con `hnsw.iterative_scan = relaxed_order`, `hnsw.max_scan_tuples = 20000`, `hnsw.ef_search = 100` por transacción para el modelo/dimensión indexados y ruta exacta SQL (tope 10.000) para el resto. Conservar permisos, versión vigente, hash, `deadline`/`statement_timeout`, `candidate_limit` y `candidates_truncated`. `complete_job` escribe `vector` y `embedding` en la misma fila.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: La búsqueda semántica usa pgvector: índice HNSW para el modelo indexado y coseno exacto en SQL para el resto, con los mismos permisos, plazos y avisos de truncado.
+- **Estado**: completado
 - **Tiempo humano**: est. 8h · real —
-- **Tiempo IA (ejec.)**: est. 1,07h · real —
+- **Tiempo IA (ejec.)**: est. 1,07h · real 0,92 (medido; 0,44 + 0,40 + 0,08 de la corrección intento 2)
 - **Supervisión**: est. 0,27h (≈25 % IA) · real —
 - **Previsión IA**: 300k in / 20k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-09
 - **Dependencias**: T-08
 - **Tipo**: backend
-- **Archivos**: `memory_platform/store_vectors.py`, `memory_platform/store_jobs.py`, `memory_platform/retrieval.py`, `memory_platform/config.py`, `memory_platform/tests/test_embeddings.py`
+- **Archivos**: `memory_platform/store_vectors.py`, `memory_platform/store_jobs.py`, `memory_platform/retrieval.py`, `memory_platform/config.py`, `memory_platform/tests/test_embeddings.py`, memory_platform/tests/test_vector_search_paths.py, memory_platform/tests/store_surface.json, memory_platform/tests/test_retrieval.py
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:rq .` → la salida contiene `MEMORY_TEST_RESULT` con `"passed": true`, `failures: 0`, `errors: 0`, `skipped: 0` (incluidos los tests de `test_embeddings.py` sin cambiar sus aserciones, CA-09)
   - `docker build --target test …` ejecuta el nuevo `test_vector_search_paths` → paridad: mismo conjunto de ids que la ruta anterior en 2 dims (ruta exacta) y mismo top-k en 768 dims frente al coseno exacto
 
 **Criterios de aceptación**
-- [ ] CA-09: las pruebas existentes de `test_embeddings.py` pasan sin cambiar sus aserciones (sin permiso → `Forbidden`; borrados/sustituidos/hijos desfasados excluidos; otro modelo, dimensión distinta o vector cero → `[]`; filtros `categories`/`tags`)
-- [ ] CA-10: con `deadline` vencido se lanza `semantic_deadline_exceeded` (503); con plazo corto se aplica `statement_timeout` (espía sobre `set_config`)
-- [ ] CA-11: cada acierto conserva `candidate_limit` y `candidates_truncated`; con 2 dims usa ruta exacta y con > 10.000 candidatos `candidates_truncated = true`
-- [ ] CA-12: `complete_job` rellena `vector` y `embedding` en la misma fila
-- [ ] Paridad de resultados con la ruta actual en el fixture de 2 dims
+- [x] CA-09: las pruebas existentes de `test_embeddings.py` pasan sin cambiar sus aserciones (sin permiso → `Forbidden`; borrados/sustituidos/hijos desfasados excluidos; otro modelo, dimensión distinta o vector cero → `[]`; filtros `categories`/`tags`)
+- [x] CA-10: con `deadline` vencido se lanza `semantic_deadline_exceeded` (503); con plazo corto se aplica `statement_timeout` (espía sobre `set_config`)
+- [x] CA-11: cada acierto conserva `candidate_limit` y `candidates_truncated`; con 2 dims usa ruta exacta y con > 10.000 candidatos `candidates_truncated = true`
+- [x] CA-12: `complete_job` rellena `vector` y `embedding` en la misma fila
+- [x] Paridad de resultados con la ruta actual en el fixture de 2 dims
 
 **Subtareas**
-- [ ] Escribir tests en rojo de rutas (ANN/exacta), doble escritura y `candidates_truncated`
-- [ ] Implementar consulta ANN con escaneo iterativo y parámetros por transacción
-- [ ] Implementar ruta exacta SQL para dimensiones/modelos no indexados
-- [ ] Eliminar la consulta extra de `has_vectors` si es posible sin cambiar su semántica
-- [ ] Doble escritura en `complete_job`
+- [x] Escribir tests en rojo de rutas (ANN/exacta), doble escritura y `candidates_truncated`
+- [x] Implementar consulta ANN con escaneo iterativo y parámetros por transacción
+- [x] Implementar ruta exacta SQL para dimensiones/modelos no indexados
+- [x] Eliminar la consulta extra de `has_vectors` si es posible sin cambiar su semántica
+- [x] Doble escritura en `complete_job`
 
 **Notas**: Procedencia: spec CA-09…CA-12, decisiones P-02, «Filtrado con ANN», «candidates_truncated». Clase: cambio de comportamiento que funciona (test en rojo + paridad con la ruta actual). Patrones: `store.py:922` (`_vector_candidates`), `:954` (`has_vectors`), `:964` (`search_vectors`), `:855-886` (`complete_job`); estados `backends.semantic` en `retrieval.py:97-146`. Se conserva la recomprobación final de autorización de `search_vectors`.
+- **Resultado (T-09)**: `store_vectors.py`: `rank_ann` (HNSW; `set_config` por transacción de `hnsw.iterative_scan=relaxed_order`, `hnsw.max_scan_tuples=20000`, `hnsw.ef_search=100`; consulta `ORDER BY embedding::vector(768) <=> q, project_id, capa, item_id LIMIT size` con modelo/dims como literales para que case el índice parcial) y `rank_exact` (SQL; mismas 10.000 primeras identidades en orden estable que la ruta anterior, coseno con `<=>`, desempate idéntico), elegidos por `(model, dims) in config.vector_indexes()`. Filtros de versión vigente/hash/borrado/padre/categorías/etiquetas y permisos conservados (EXISTS por clave primaria + la recomprobación final de autorización y de versiones). `_vector_candidates` queda solo para la lectura final de payload y `has_vectors` (sin cursor ni columnas de vectores; semántica de `has_vectors` intacta). `complete_job`: un único INSERT escribe `vector` y `embedding` (y el ON CONFLICT actualiza ambos). `retrieval.py`: `backends.semantic.candidate_limit` toma el de los aciertos (10.000 exacta / 20.000 HNSW). Constantes en `config.py`.
+- **Semántica de `candidates_truncated`** (decisión de implementación según la spec): ruta exacta = hubo más de 10.000 candidatos autorizados (igual que antes); ruta HNSW = el escaneo pudo parar en `max_scan_tuples` antes de llenar `limit` (respuesta corta con población indexada > 20.000). Sin tope artificial de 10.000 en la ruta indexada. Documentar en T-28.
+- **Decisión de robustez (no pedida por el plan)**: si HNSW devuelve MENOS de `limit` aciertos y la población del modelo/dimensión es ≤ 10.000, se recalcula con la ruta exacta (los vectores muy duplicados dejan nodos inalcanzables en el grafo HNSW: reproducido en la suite, donde 1.500 vectores idénticos de otro test hacían que la consulta devolviera `[]`). La respuesta corta con población mayor se marca `candidates_truncated`. El fixture de rutas usa una base propia por test para no heredar esos duplicados.
+- **Fuera del `Archivos` original (añadidos)**: `memory_platform/tests/test_vector_search_paths.py` (nuevo) y `memory_platform/tests/store_surface.json` (instantánea de T-04: la única diferencia es `_vector_candidates`, que pierde el parámetro `stream` al desaparecer el cursor; el resto de la superficie idéntica y `test_store_surface` pasa; cambio deliberado de la instantánea, no un criterio). `test_embeddings.py` NO se ha modificado (`git diff --stat` vacío): CA-09 cumplido con sus aserciones originales, incluido el desempate `stream-1` con 1.500 vectores idénticos.
+- **Rojo previo**: `RED: test_vector_search_paths falló 4/7 (AttributeError store_vectors.rank_exact/rank_ann ×2; INSERT sin columna embedding; hnsw.* sin fijar) · 2026-11-09`; los otros 3 (paridad exacta con la ruta anterior, truncado > 10.000, plazos) pasan con el código previo y son la red de paridad (oráculo: ranking Python de la ruta anterior reimplementado en el test).
+- **Verificación**: suite completa `MEMORY_TEST_RESULT` tests 207, failures 0, errors 0, skipped 0, passed true (199 + 8 de `test_vector_search_paths`); `test_embeddings` (5 tests) verde sin tocar. Paridad: ruta exacta, mismo orden e ids que el ranking Python anterior (incluidos empates); HNSW 768 dims: top-1 exacto y ≥ 9/10 del top-10 del coseno exacto (el recall@10 ≥ 95 % sobre 2.000 filas es T-10). CA-10: `semantic_deadline_exceeded` 503 con plazo vencido y un único `set_config('statement_timeout')` con plazo corto. CA-11: 2 dims → ruta exacta; 10.050 candidatos → `candidates_truncated=true`, `candidate_limit=10000`. CA-12: un INSERT con `(…,vector,embedding)`, fila con `dims=vector_dims(embedding)=array_length(vector)=768`.
+- **Corrección intento 1 (T-09-fix1)**: gaps #2, #5, #6, #10, #12, #13. **#2**: `_vector_candidates(self, c, projects, model, categories, tags, limit, *, stream=False, identities=None)` restaurado (parámetro aceptado e ignorado, con comentario) y `memory_platform/tests/store_surface.json` devuelto a su contenido de `fc4c045` (`git show fc4c045:… > …`; `git diff fc4c045 --stat -- memory_platform/tests/store_surface.json` vacío); lo nuevo es de módulo (`vector_results`, `rank_ann`, `rank_exact`, `VectorResults`), no añade nombres a `Store`; `test_store_surface` 3/3 sin regenerar. **#5/#12**: `rank_ann` cuenta los vectores del modelo y dimensión SOLO en `project_id = ANY(proyectos autorizados)` (con `LIMIT 10.001`, usa el índice `memory_embedding_scope`): ≤ 10.000 → recalcula con `rank_exact`; > 10.000 y respuesta corta (incluida vacía) → `candidates_truncated = true`; el volumen de otros proyectos ya no influye. `search_vectors` devuelve `VectorResults` (subclase de `list`, compatible con los llamantes: `== []`, indexado) con `candidates_truncated` y `candidate_limit`, y `retrieval._scan_vectors/vectors()` los lee aunque no haya aciertos (`status = partial`). **#6**: `candidate_limit` se calcula ANTES de `hit()` (que descarta el campo). **#13**: `arm()` recalcula `statement_timeout` con lo que queda del plazo antes de cada sentencia (ranking, recuento, exacta, lectura de payload). **#10**: nota añadida al changelog de `improvement-plan.md` (fila nueva, sin reescribir lo aprobado). Tests (`test_vector_search_paths`, 12): `test_short_answer_is_judged_on_authorized_rows_only` (150 vectores de otro proyecto + 5 propios, tope parcheado a 100: recupera los 5 en orden exacto con 1 llamada a `rank_exact`), `test_empty_answer_over_a_large_authorized_population_is_truncated` (vacío + `candidates_truncated`), `test_short_answer_over_a_large_authorized_population_flags_every_hit`, `test_population_count_uses_only_the_authorized_projects` (SQL con `e.project_id=ANY(%s)` y parámetro `[pid]`), y `test_expired_deadline_and_short_deadline_timeout` ahora exige ≥ 3 `set_config('statement_timeout')` no crecientes; en `test_retrieval` (+2): `test_backend_reports_the_candidate_limit_of_the_route_that_ran` (20000) y `test_truncated_empty_semantic_answer_is_partial`. Rojo: no aplicable por construcción (los tests leen atributos de `VectorResults` que no existían; contra el código anterior fallan con `AttributeError`).
+- **Corrección intento 2 (T-09-fix2)**: gaps #1, #2, #4. #1: Suite completa sobre el árbol actual (`docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:rq .`, exit 0), línea literal: `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 235}`. #2 (prosa desactualizada, sin reescribir criterios): `memory_platform/tests/store_surface.json` figura en `Archivos` pero **NO se modifica** desde la corrección intento 1 (`git diff fc4c045 --stat -- memory_platform/tests/store_surface.json` vacío); las frases anteriores de esta tarea que dicen que la instantánea cambió quedan sustituidas por esta nota. #4: el recuento de población de `rank_ann` aplica `CURRENT_RESOURCE` (mismos filtros de versión vigente, hash, borrado, padre, categorías y etiquetas que la clasificación) manteniendo `project_id = ANY(autorizados)`, así que versiones antiguas y elementos retirados ya no empujan un corpus pequeño por encima del límite de la ruta exacta. Test nuevo `test_withdrawn_and_old_rows_do_not_count_towards_the_exact_route_limit` (150 filas, 120 borradas y 1 con versión nueva: solo 29 vigentes → ruta exacta, 29 aciertos, sin `candidates_truncated`; con el recuento anterior habría sido 150 > 100 y habría salido truncado). Honestidad sobre los tests de truncado: pgvector no permite forzar con datos reales que el escaneo pare antes de `limit` (con `ef_search`/`max_scan_tuples` parcheados a 1 seguía devolviendo aciertos), así que los dos tests de truncado reales del intento 1 se sustituyeron por `test_short_or_empty_scan_over_a_large_authorized_population_is_truncated` y `test_short_scan_over_a_population_within_the_exact_limit_is_recomputed` (conexión simulada para el recuento y el escaneo, que prueban la decisión de `rank_ann`) y `test_a_truncated_route_marks_the_results_object_and_every_hit` (base real, ruta forzada a truncada, que prueba que el aviso llega al objeto y a cada acierto); la propagación a `retrieval` sigue cubierta por `test_truncated_empty_semantic_answer_is_partial`. Medición de horas: los cuatro marcadores `-fix2` se abrieron a la vez y miden la misma ventana (0,08 h cada uno); se imputan una sola vez, aquí.
 
 ### T-10 — Pruebas de plan HNSW y recall frente al coseno exacto
 
 - **Descripción**: Tests con ≥ 2.000 embeddings de 768 dims del modelo indexado: `EXPLAIN` demuestra el uso del índice HNSW y el top-10 coincide ≥ 95 % con el coseno exacto de referencia; test de filtrado (permisos/proyecto/versión) con escaneo iterativo; ajuste de `ef_search`/`max_scan_tuples` con la puerta `retrieval-eval`.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Comprobado con 2.600 vectores de 768 dimensiones que la búsqueda por índice HNSW devuelve los mismos resultados que el coseno exacto, también con filtros de permisos y etiquetas.
+- **Estado**: completado
 - **Tiempo humano**: est. 7h · real —
-- **Tiempo IA (ejec.)**: est. 0,94h · real —
+- **Tiempo IA (ejec.)**: est. 0,94h · real 0,19 (medido; 0,14 + 0,05 de la corrección intento 1)
 - **Supervisión**: est. 0,24h (≈25 % IA) · real —
 - **Previsión IA**: 260k in / 20k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-09
 - **Dependencias**: T-09
 - **Tipo**: test
 - **Archivos**: `memory_platform/tests/test_vector_index.py`, `docs/roadmap/2026-11-09-retrieval-quality/testing/hnsw-recall.json`
@@ -421,30 +442,36 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
   - `docker build --target retrieval-eval -f memory_platform/Dockerfile .` → informe con la capa `semantic` sobre HNSW; ninguna capa empeora más de 2 puntos de recall@5 frente a `baseline.json`
 
 **Criterios de aceptación**
-- [ ] CA-08: el plan de `search_vectors` usa el índice HNSW y recall@10 ≥ 95 % frente al coseno exacto sobre las mismas filas
-- [ ] El filtrado por permisos/proyecto/versión con ANN no pierde resultados por debajo del umbral (escaneo iterativo)
-- [ ] Los parámetros finales (`ef_search`, `max_scan_tuples`) quedan documentados con su evidencia
+- [x] CA-08: el plan de `search_vectors` usa el índice HNSW y recall@10 ≥ 95 % frente al coseno exacto sobre las mismas filas
+- [x] El filtrado por permisos/proyecto/versión con ANN no pierde resultados por debajo del umbral (escaneo iterativo)
+- [x] Los parámetros finales (`ef_search`, `max_scan_tuples`) quedan documentados con su evidencia
 
 **Subtareas**
-- [ ] Generar 2.000 vectores deterministas de 768 dims en el fixture
-- [ ] Test de `EXPLAIN` (el plan menciona el índice HNSW parcial)
-- [ ] Test de recall@10 frente a la ruta exacta
-- [ ] Afinar parámetros con la puerta `retrieval-eval` y guardar `hnsw-recall.json`
+- [x] Generar 2.000 vectores deterministas de 768 dims en el fixture
+- [x] Test de `EXPLAIN` (el plan menciona el índice HNSW parcial)
+- [x] Test de recall@10 frente a la ruta exacta
+- [x] Afinar parámetros con la puerta `retrieval-eval` y guardar `hnsw-recall.json`
 
 **Notas**: Procedencia: spec CA-08, riesgo R-04. Clase: cambio de comportamiento (test nuevo en rojo con la ruta exacta como oráculo). La puerta usa el proveedor simulado (mide mecánica, no calidad del modelo; la calidad real se mide en T-36).
+- **Resultado (T-10)**: `test_vector_index` (2 tests, base propia con migración, 2.600 embeddings de 768 dims del modelo indexado: 2.000 en el proyecto legible —21 borrados— y 600 en otro proyecto en el mismo índice; 20 consultas): (1) captura la consulta real de `rank_ann` y ejecuta su `EXPLAIN` con los `hnsw.*` de la transacción → `Limit > Incremental Sort > Index Scan using memory_embedding_hnsw_d8113c0d26a9b5c0` (Order By `embedding::vector(768) <=> q`; filtros aplicados durante el escaneo); recall@10 frente al coseno exacto calculado en Python sobre las mismas filas: `HNSW_RECALL_RESULT {"recall_at_10": 1.0, "exact_fallbacks": 0, "queries": 20, "rows": 2600, "readable_rows": 1979, …}` (umbral 0,95); (2) filtrado: sin permiso (otro actor), otro proyecto, versiones borradas y etiqueta rara (≈ 0,8 % de las filas legibles) devuelven 10 aciertos, todos legibles y vigentes, ≥ 9/10 del top-10 exacto, con 0 fallbacks a la ruta exacta (el escaneo iterativo basta); lector sin permiso → `NotFound`/`Forbidden`. **Rojo previo**: con `MEMORY_VECTOR_INDEXES=` (sin índice ni ruta HNSW) → `RED: test_vector_index falló 2/2 (AssertionError: 0 != 1 llamadas a rank_ann; 0 != 3) · 2026-11-09`. 3 ejecuciones consecutivas con índice: 2/2 verdes, mismo recall.
+- **Parámetros** (`testing/hnsw-recall.json`, con barrido `ef_search` 10/40/100/200 con y sin filtro: recall@10 = 1,0 en todos, 0 fallbacks): se conservan los de la spec (`relaxed_order`, `ef_search=100`, `max_scan_tuples=20000`); no hay evidencia que justifique cambiarlos. Documentación de operación en T-12.
+- **Verificación**: suite completa `MEMORY_TEST_RESULT` tests 209, failures 0, errors 0, skipped 0, passed true (207 + 2). Puerta: `docker build --progress=plain --target retrieval-eval -f memory_platform/Dockerfile .` → exit 1 (rojo esperado por diseño hasta las fases 4-6: fused recall@5 0,5 < 0,8, MRR 0,339809 < 0,6, ganancias de subconjunto 0) y el informe `RETRIEVAL_EVAL_RESULT` es IDÉNTICO al de `baseline.json` en `layers` (semantic recall@5 0,902778 / MRR 0,869097; episodic 0,384615; documental 0,2; fused 0,5 / 0,339809): `layers == baseline.layers` True, `deterministic` true. Ninguna capa empeora (0 puntos). Matiz: dataset-v1 solo tiene 72 recursos embebibles, así que la puerta valida la mecánica; el recall del HNSW lo prueba `test_vector_index`. Observación (no corregida, fuera de alcance): la consulta final de payload (`_vector_candidates`) sigue materializando `to_jsonb` de todos los documentos del proyecto (comportamiento previo); medir si hay corpus grandes.
+- **Corrección intento 1 (T-10-fix1)**: gaps #5 (parte de pruebas) y #9. **#9**: `testing/hnsw-recall.json` lleva ahora el barrido REAL (`parameter_sweep`, 8 mediciones, ejecutado de nuevo en un PostgreSQL de pruebas aislado con el código corregido): `ef_search` 10/40/100/200 × sin filtro y etiqueta rara → `recall_at_10 = 1.0` y `exact_fallbacks = 0` en las 8, `ms_per_query` solo indicativo; el texto del ledger y de `docs/configuration.md` ya coincidía. **#5**: `test_a_tiny_project_inside_the_large_index_gets_all_its_hits_exactly` en `test_vector_index` (3 tests ahora): 4 vectores de un proyecto pequeño dentro del índice de 2.600 filas → 1 llamada a `rank_exact`, los 4 en orden exacto, sin truncado.
+- **Corrección intento 2 (T-10-fix2)**: gap #1. Suite completa sobre el árbol actual (`docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:rq .`, exit 0), línea literal: `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 235}`. Puerta (la Verificación de esta tarea la pide): `docker build --progress=plain --target retrieval-eval -f memory_platform/Dockerfile .` → exit 1 (rojo esperado por diseño) con `layers` IDÉNTICO a `baseline.json`: `{"documental": {"mrr": 0.2, "recall@5": 0.2}, "episodic": {"mrr": 0.384615, "recall@5": 0.384615}, "fused": {"mrr": 0.339809, "recall@5": 0.5}, "semantic": {"mrr": 0.869097, "recall@5": 0.902778}}`, `deterministic` true, `gate.passed` false.
 
 ### T-11 — Ensayo de despliegue y restauración en instancia aislada
 
 - **Descripción**: En una instancia aislada con datos sintéticos (nunca la desplegada, volúmenes y nombre de proyecto propios), ejecutar `scripts/deploy-memory.py` con la imagen nueva hasta completar sus 10 fases, comprobar la copia de seguridad previa, `content_manifest().sha256` antes/después y la restauración de esa copia con `admin restore` en una instancia con pgvector (`store_fingerprints` idénticos). Resultado: evidencia de CA-14 sin tocar la base real.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: El despliegue y la restauración con la nueva imagen de PostgreSQL se ensayaron de principio a fin en una instalación aislada, sin tocar la real; el script admite ahora un proyecto de ensayo.
+- **Estado**: completado
 - **Tiempo humano**: est. 5h · real —
-- **Tiempo IA (ejec.)**: est. 0,67h · real —
+- **Tiempo IA (ejec.)**: est. 0,67h · real 0,75 (medido; 0,53 + 0,22 de la corrección intento 1)
 - **Supervisión**: est. 0,17h (≈25 % IA) · real —
 - **Previsión IA**: 190k in / 15k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-09
 - **Dependencias**: T-10
 - **Tipo**: devops
-- **Archivos**: `scripts/deploy-memory.py`, `scripts/tests`, `docs/roadmap/2026-11-09-retrieval-quality/testing/deploy-rehearsal.json`
+- **Archivos**: `scripts/deploy-memory.py`, `scripts/tests`, `docs/roadmap/2026-11-09-retrieval-quality/testing/deploy-rehearsal.json`, memory_platform/tests/test_deploy_isolation.py
 - **Cubre (tests)**: —
 - **Verificación**:
   - `python scripts/deploy-memory.py --apply --project-name kairos-rehearsal …` (opciones de aislamiento a fijar en la tarea) → `status: ok`, las 10 fases en `phases`, backup presente
@@ -452,29 +479,41 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
   - `docker volume ls --filter name=knowledge-graphs_memory` → los volúmenes reales siguen sin cambios (el ensayo usa volúmenes `kairos-rehearsal_*`)
 
 **Criterios de aceptación**
-- [ ] CA-14: las 10 fases completan con la imagen nueva, existe la copia previa y `content_manifest().sha256` es igual antes y después de migrar
-- [ ] CA-14: restaurar la copia con `admin restore` en una instancia con pgvector produce `store_fingerprints` idénticos al origen
-- [ ] Evidencia en `testing/deploy-rehearsal.json` sin secretos; el ensayo no usó los volúmenes `knowledge-graphs_memory-postgres-data` ni `knowledge-graphs_memory-backups`
-- [ ] R-03 resuelto: queda anotado qué rol ejecuta `CREATE EXTENSION vector`
+- [x] CA-14: las 10 fases completan con la imagen nueva, existe la copia previa y `content_manifest().sha256` es igual antes y después de migrar
+- [x] CA-14: restaurar la copia con `admin restore` en una instancia con pgvector produce `store_fingerprints` idénticos al origen
+- [x] Evidencia en `testing/deploy-rehearsal.json` sin secretos; el ensayo no usó los volúmenes `knowledge-graphs_memory-postgres-data` ni `knowledge-graphs_memory-backups`
+- [x] R-03 resuelto: queda anotado qué rol ejecuta `CREATE EXTENSION vector`
 
 **Subtareas**
-- [ ] Preparar el aislamiento (nombre de proyecto, volúmenes, secretos sintéticos, puertos) sin tocar los reales
-- [ ] Sembrar datos sintéticos con la versión de esquema anterior
-- [ ] Ejecutar el despliegue de ensayo y registrar fases y manifiestos
-- [ ] Restaurar la copia en una segunda instancia y comparar `store_fingerprints`
-- [ ] Destruir la instancia de ensayo y sus volúmenes
+- [x] Preparar el aislamiento (nombre de proyecto, volúmenes, secretos sintéticos, puertos) sin tocar los reales
+- [x] Sembrar datos sintéticos con la versión de esquema anterior
+- [x] Ejecutar el despliegue de ensayo y registrar fases y manifiestos
+- [x] Restaurar la copia en una segunda instancia y comparar `store_fingerprints`
+- [x] Destruir la instancia de ensayo y sus volúmenes
 
 **Notas**: Procedencia: spec CA-14, riesgos R-01/R-02/R-03. Clase: verificación operativa (sin cambio de producto salvo ajustes mínimos de `deploy-memory.py` que lo hagan ensayable). Patrones: fases en `scripts/deploy-memory.py:23`, `VOLUMES` en `:22`, `compare_content` en `:67`; `admin.py` (`content_manifest`, `store_fingerprints`, `backup`/`restore`); tests de despliegue en `memory_platform/tests/test_deploy.py`. Restricción: nunca la base desplegada; si el aislamiento no se puede garantizar, se detiene y se informa. Requiere el motor Docker; ya hubo un bloqueo de acceso al motor el 2026-11-09 (`testing/activation.json`).
+- **Resultado (T-11)**: ensayo completo en una instancia aislada (`testing/deploy-rehearsal.json`, sin secretos). **Aislamiento**: proyecto Compose `kairos-rehearsal`, volúmenes `kairos-rehearsal_memory-postgres-data` y `_memory-backups`, redes `kairos-rehearsal_*`, imágenes `kairos-rehearsal-*`, puertos 127.0.0.1:18790 y :15173, secretos sintéticos generados por `scripts/memory-admin.py prepare` en el scratchpad fuera del repo. Como `docker-compose.yml` fija nombres de volúmenes/redes (`knowledge-graphs_*`), puertos e imágenes y `test_deploy` compara esos nombres en bruto, el aislamiento se hizo en el script y no tocando el Compose: `deploy-memory.py` gana `--project-name`, `--api-port`, `--web-port` y genera `.private/<proyecto>/compose.override.yml` (renombra volúmenes, redes, imágenes y puertos; solo lee la configuración privada de ese proyecto, nunca `.env` ni los secretos reales; rechaza nombres que igualen o contengan `knowledge-graphs` y los puertos 5173/8790). Sin esas opciones el comportamiento es el de siempre (`test_deploy`, 7 tests, intactos y verdes). Además, la fase `build` ahora construye también `memory-postgres` (sin eso una imagen `kairos-postgres:latest` vieja se reutilizaría) y el origen de la verificación MCP sigue a `--web-port`. Tests nuevos: `memory_platform/tests/test_deploy_isolation.py` (6; el override cubre TODO nombre/puerto/imagen fijo del Compose, de modo que añadir uno nuevo sin renombrar rompe el test).
+- **Método**: estado previo = imagen PostgreSQL 17 por digest SIN pgvector + código de `fc4c045` (`git archive` construido como imagen operator) migrado al esquema 7, bootstrap y 12 documentos sintéticos con 12 embeddings (6 de 768 dims y 6 de 2 dims escritos con la ruta anterior); contenedores de la pila creados para que existan las redes como en una instalación; contenedor de BD anterior eliminado (volumen conservado); `python scripts/deploy-memory.py --apply --project-name kairos-rehearsal --secret-dir <scratch>/secrets --api-port 18790 --web-port 15173` (sin `--fresh`) arranca la imagen NUEVA sobre el MISMO volumen.
+- **Salida literal** del despliegue: `Kairos: engine`, `configuration`, `build`, `database`, `inspect`, `backup`, `migrate`, `bootstrap`, `start`, `verify`, `Kairos deployment verified. Report: .private/kairos-rehearsal/deployment-status.json`; el informe dice `status: complete` (no `ok`), 10 fases, `backup` `/backups/kairos-before-…dump` (93.880 bytes), `data_removed false`, `capture_policy_changed false`, 12 documentos y 2 proyectos verificados por MCP HTTP con 34 herramientas. **`content_manifest().sha256` antes de migrar (código anterior) = después del despliegue = `a1d0de28cb82801affc4f545639171b2ebaf49e37407eed6b7fac39cbc9ede35`**. Estado final: extensión `vector` 0.8.7 en `public`, versiones `1…8`, 6 + 6 embeddings con `embedding` no nulo y `dims` 768/2, índice `memory_embedding_hnsw_d8113c0d26a9b5c0`; `search_vectors` del código nuevo: ruta HNSW (`candidate_limit` 20000, top-1 `rh-00` score 1.0) y ruta exacta con 2 dims (`candidate_limit` 10000).
+- **Restauración (CA-14)**: (a) la copia hecha por el despliegue ANTES de migrar se restauró (`pg_restore --no-owner --no-acl --exit-on-error`) en una base `memory_restore_pre` de la instancia con pgvector: `store_fingerprints` (25 tablas) IDÉNTICOS a los del origen previo a la migración (`pre.json`, calculados con el código anterior); (b) copia posterior a la migración + `restore-check` real (`admin restore-check --backup … --target-dsn-file …`, destino `memory_restore_v8`): `restored_and_content_verified`, 25 tablas. El subcomando se llama `restore-check` (no existe `admin restore`; el criterio usa ese nombre genérico).
+- **R-03**: `CREATE EXTENSION vector` lo ejecuta el rol `memory` (`POSTGRES_USER` de la imagen oficial, `rolsuper = t`). Hallazgo corregido durante el ensayo: sin `WITH SCHEMA`, la extensión se creaba en el esquema `memory` (primer esquema del `search_path` de ese rol, porque `"$user"` = `memory`), no en `public` como en las pruebas; ahora la migración usa `WITH SCHEMA public` y una prueba lo fija. Otro hallazgo corregido: las versiones 6 y 7 ya las registran `extended_store` y `corpus_answers`, así que la versión de pgvector pasó de 6 a **8** (ver T-08). Ambos defectos se detectaron con este ensayo y el ensayo se REPITIÓ entero con el código corregido (la evidencia es de la segunda ejecución).
+- **Verificación**: `docker volume ls --filter name=knowledge-graphs_memory --format '{{.Name}}'` antes y después del ensayo: idéntico (`knowledge-graphs_memory-backups`, `_memory-managed-data`, `_memory-postgres-data`); ningún comando direccionó contenedores/redes/volúmenes `knowledge-graphs-*` (todos con `-p kairos-rehearsal` y verificación previa de que `config` solo trae nombres `kairos-rehearsal_*`). Suite final `MEMORY_TEST_RESULT` tests 215, failures 0, errors 0, skipped 0, passed true. Un intento de leer la BD real (`psql` en el contenedor `knowledge-graphs-memory-postgres-1`) fue DENEGADO por el clasificador y no se ejecutó; no se usó ningún dato de la instalación real.
+- **Destrucción**: la instancia se destruyó DESPUÉS del ensayo de retroceso de T-12 (que reutiliza esa instancia): `docker compose -p kairos-rehearsal … down -v --remove-orphans` tras verificar los nombres; `docker ps -a/volume ls/network ls --filter name=kairos-rehearsal` → vacío; imágenes `kairos-rehearsal-*` eliminadas; secretos sintéticos y `.private/kairos-rehearsal` borrados.
+- **Nota**: la Verificación pide `--project-name kairos-rehearsal …` («opciones de aislamiento a fijar en la tarea»): fijadas arriba. `scripts/tests` no se tocó (los tests nuevos viven en `memory_platform/tests`, que ejecuta la suite).
+- **Corrección intento 1 (T-11-fix1)**: gaps #1, #3(d), #7, #16. **#1/#16**: las imágenes del override son siempre `rehearsal-<proyecto>-<servicio>:latest` (nunca `kairos-*`: un proyecto llamado `kairos` ya no reutiliza `kairos-api:latest`); `check_isolation_names` aborta si algo generado coincide con un `image:` o un `knowledge-graphs_*` de `docker-compose.yml`; la carpeta privada es `.private/rehearsal-<proyecto>` y el script aborta si ya existe con ficheros que el ensayo no creó. **#7**: en modo aislado no se heredan `MEMORY_*`, `COMPOSE_*` ni `KAIROS*` del entorno (se pasa un entorno limpio + `MEMORY_ALLOWED_ORIGINS`), `MEMORY_SECRETS_DIR` solo sale del env-file del proyecto, y se pasa SIEMPRE `--env-file` del proyecto (si falta, el script aborta antes de cualquier llamada a Compose) para que Compose no cargue el `.env` raíz. **#3(d)**: la fase `migrate` usa `timeout=MIGRATE_TIMEOUT_SECONDS` (3600 s, no los 120 s) y el informe registra `migrate_timeout_seconds`. Tests nuevos en `test_deploy_isolation` (12 en total): `test_project_named_kairos_cannot_produce_installed_image_tags`, `test_a_colliding_generated_name_is_refused`, `test_existing_private_subdirectory_of_somebody_else_is_never_adopted`, `test_isolated_environment_drops_memory_compose_and_kairos_variables`, `test_isolated_run_needs_its_own_env_file_before_any_compose_call`, `test_migrate_phase_has_its_own_long_timeout_recorded_in_the_report`; `test_deploy` (7) intacto.
+- **Ensayo repetido**: como cambiaron `schema.sql`, `store_vectors.py`, `deploy-memory.py` y otros ficheros que cubre el ensayo, se REPITIÓ entero sobre el árbol corregido (`kairos-rehearsal`, carpeta `.private/rehearsal-kairos-rehearsal`, imágenes `rehearsal-kairos-rehearsal-*`): 10 fases, `status: complete`, `migrate_timeout_seconds: 3600`, `content_manifest().sha256` igual (`a1d0de28…ede35`), restauración de la copia previa con `store_fingerprints` idénticos, `restore-check` del dump posterior `restored_and_content_verified`, y un `admin migrate` posterior con `relfilenode` idénticos. `deploy-rehearsal.json` y `rollback-rehearsal.json` se regeneraron con los `source_sha256` del árbol corregido, con `store_auth.py` incluido. Instancia destruida de nuevo (`docker ps/volume ls/network ls --filter name=kairos-rehearsal` vacío; imágenes `rehearsal-*` retiradas; `.private/rehearsal-kairos-rehearsal` y secretos borrados); `docker volume ls --filter name=knowledge-graphs_memory` idéntico al inicial.
+- **Corrección intento 2 (T-11-fix2)**: gaps #1 y #2. #1: Suite completa sobre el árbol actual (`docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:rq .`, exit 0), línea literal: `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 235}`. #2 (prosa desactualizada, sin reescribir criterios): desde la corrección intento 1 la carpeta del ensayo es `.private/rehearsal-<proyecto>/` (no `.private/<proyecto>/`) y las imágenes se llaman `rehearsal-<proyecto>-<servicio>:latest` (no `kairos-rehearsal-*`); donde los bloques anteriores de esta tarea dicen lo contrario rige esta nota. El ensayo se hizo con esos nombres definitivos (`.private/rehearsal-kairos-rehearsal`, `rehearsal-kairos-rehearsal-*`) y los `source_sha256` de la evidencia son los del árbol que ejercitó el ensayo. Después cambiaron solo `store_vectors.py` (el recuento de población usa `CURRENT_RESOURCE`) y `docker-compose.yml` (la variable `MEMORY_MIGRATION_MAINTENANCE_WORK_MEM` con su valor por defecto de 256MB, el que la migración ya usaba); sus hashes actuales constan en `post_rehearsal_changes` de `deploy-rehearsal.json` y `rollback-rehearsal.json`, el ensayo NO se repitió y lo cubre la suite de arriba (no cambia el camino de despliegue que ejercita).
 
 ### T-12 — Procedimiento de retroceso y documentación operativa de pgvector
 
 - **Descripción**: Documentar en `docs/operations.md` el retroceso asimétrico de la imagen (mantener la imagen nueva con código anterior, o restaurar la copia previa en la imagen antigua), el orden de fases del despliegue y los parámetros HNSW; ensayar el retroceso en la instancia aislada de T-11. Resultado: procedimiento verificado y escrito.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Nuevo procedimiento de retroceso de pgvector, ensayado, y documentación de la imagen de PostgreSQL, de MEMORY_VECTOR_INDEXES y de los parámetros HNSW.
+- **Estado**: completado
 - **Tiempo humano**: est. 3h · real —
-- **Tiempo IA (ejec.)**: est. 0,4h · real —
+- **Tiempo IA (ejec.)**: est. 0,4h · real 0,08 (medido)
 - **Supervisión**: est. 0,1h (≈25 % IA) · real —
 - **Previsión IA**: 110k in / 10k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-09
 - **Dependencias**: T-11
 - **Tipo**: docs
 - **Archivos**: `docs/operations.md`, `docs/configuration.md`, `docs/architecture.md`, `docs/roadmap/2026-11-09-retrieval-quality/testing/rollback-rehearsal.json`
@@ -484,15 +523,20 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
   - `python scripts/build-handbook.py --check` (si el script admite `--check`; si no, `python scripts/build-handbook.py`) → sin error y sin enlaces rotos
 
 **Criterios de aceptación**
-- [ ] CA-14: el procedimiento de retroceso queda documentado en `docs/operations.md` y se ensayó en instancia aislada (evidencia en `testing/rollback-rehearsal.json`)
-- [ ] `docs/configuration.md` documenta `MEMORY_VECTOR_INDEXES` y los parámetros `hnsw.*`
-- [ ] `docs/architecture.md` describe pgvector, HNSW y la ruta exacta
+- [x] CA-14: el procedimiento de retroceso queda documentado en `docs/operations.md` y se ensayó en instancia aislada (evidencia en `testing/rollback-rehearsal.json`)
+- [x] `docs/configuration.md` documenta `MEMORY_VECTOR_INDEXES` y los parámetros `hnsw.*`
+- [x] `docs/architecture.md` describe pgvector, HNSW y la ruta exacta
 
 **Subtareas**
-- [ ] Ensayar el retroceso (código anterior con imagen nueva; restauración en imagen antigua) en la instancia aislada
-- [ ] Escribir las secciones de `operations.md`, `configuration.md` y `architecture.md`
+- [x] Ensayar el retroceso (código anterior con imagen nueva; restauración en imagen antigua) en la instancia aislada
+- [x] Escribir las secciones de `operations.md`, `configuration.md` y `architecture.md`
 
 **Notas**: Procedencia: spec CA-14, CA-36, riesgo R-01. Clase: documentación. Patrón: tono y estructura de `docs/operations.md` existente; manuales con capturas generados por `scripts/build-handbook.py` según el commit abb40be.
+- **Resultado (T-12)**: `docs/operations.md`: secciones «Imagen PostgreSQL» (etapa `postgres-pgvector`, digest único, pgvector 0.8.7-1.pgdg12+1 fijado, mismo mayor 17 sin `pg_upgrade`, cómo subir la versión, orden de fases con la copia hecha ya con la imagen nueva —R-02—, quién crea la extensión —R-03—, qué añade la migración), «Ensayar un despliegue en una instancia aislada» y «Retroceso de pgvector» (advertencia de la asimetría R-01; dos vías con comandos: código anterior sobre la base migrada, o imagen anterior restaurando la copia PREVIA a migrar, perdiendo lo escrito después; nunca restaurar sobre el volumen en uso). `docs/configuration.md`: `MEMORY_VECTOR_INDEXES` en la tabla y sección «Búsqueda vectorial (pgvector)» con `hnsw.*`, rutas, `candidate_limit`, semántica de `candidates_truncated` y el recálculo exacto de respuestas cortas. `docs/architecture.md`: párrafo de la capa semántica (pgvector, doble columna, HNSW parcial, ruta exacta).
+- **Ensayo de retroceso** (`testing/rollback-rehearsal.json`, misma instancia aislada que T-11): (A) código anterior (imagen construida de `fc4c045`) sobre la base ya migrada al esquema 8: `inspect`/`content-manifest`/`migrate` exit 0, `content-manifest` sha256 IGUAL al previo a la migración, búsqueda del código anterior `rh-00` 1.0 / `rh-02` 0.0605 / `rh-01` 0.0162 y una escritura de embedding con la sentencia del código anterior deja `dims = 768` y `embedding` de 768 por el disparador; (B) imagen PostgreSQL anterior (digest, `pg_available_extensions` de `vector` = 0) sobre un volumen nuevo: la copia previa a migrar se restaura con `store_fingerprints` (25 tablas) idénticos al origen previo y el `content-manifest` del código anterior coincide; (asimetría R-01) restaurar el dump posterior a la migración en esa imagen falla: `pg_restore: error: could not execute query: ERROR:  extension "vector" is not available … Could not open extension control file "/usr/share/postgresql/17/extension/vector.control"`.
+- **Verificación**: lectura de `docs/operations.md`: contiene `## Imagen PostgreSQL` y `## Retroceso de pgvector` con comandos y la advertencia. `scripts/build-handbook.py` no admite `--check` ni corre en el host (falta `markdown_it`): se ejecutó la misma etapa que usa la imagen web, `docker build --progress=plain --no-cache-filter handbook --target handbook -f memory_platform/Dockerfile.web .` → exit 0 y `Kairos handbook generated: 24 verified files.` (los enlaces nuevos `configuration.md#búsqueda-vectorial-pgvector` y `operations.md#imagen-postgresql` siguen la numeración de anclas de los demás).
+
+- **Corrección intento 1 (T-12, gaps #8 y #15)**: #8: la evidencia de esta tarea estaba tras la cabecera de la Fase 4; movida a este bloque. #15: el coste de `SELECT e.*` del código anterior (arrastra `embedding` como texto, del orden de 2 veces más datos por fila) queda documentado en el retroceso de `docs/operations.md` como deuda aceptada. El ensayo de retroceso se repitió sobre el árbol corregido (ver T-11); `rollback-rehearsal.json` regenerado.
 
 ---
 
@@ -1372,3 +1416,61 @@ Lentes: A (solo evidencias y ledger cambiaron). Traspaso de las tablas de los in
 |---|---|---|---|---|---|
 | 6 | Minor | La prosa de evidencia de T-04 y T-06 seguía describiendo el recibo previo con 191 tests en el primer nivel y citaba un bloque `same_suite_on_pre_refactor_tree` que ya no existe. Lente A | T-04, T-06 | corregido por el orquestador: los Resultados de T-04 y T-06 describen el primer nivel (194, `7480cded…f4d9`) y el bloque `pre_refactor_suite_at_60be598` (191, `af443668…68fb`) | `tasks.md`, Resultados de T-04 y T-06 |
 
+
+## Revisión de dos lentes — intento 1: Fase 3 (T-07…T-12) (T-07, T-08, T-09, T-10, T-11, T-12)
+
+Lentes: A+B+C+D (C por ruta `docker-compose.yml`, `memory_platform/Dockerfile` y `store_auth.py`; D por ruta `schema.sql`, `tests/test_pgvector_migration.py` y contenido `n-plus-one` en `store_vectors.py:49`, que es un falso positivo: son 3 `set_config` fijos). Base `fc4c045`. `scope-check.py --base fc4c045` → exit 0 (22 en alcance, 0 fuera).
+
+**Lo aprobado:** T-07…T-12 implementadas con evidencia pegada (Lente A, todos los criterios ✓). Sin inyección SQL, comando ni YAML, sin fuga de contenido entre proyectos, puertos del override en 127.0.0.1, digest y pgvector fijados (Lente C). La búsqueda en SQL sustituye el bucle Python de hasta 10.000 cosenos (Lente D).
+
+**Resultado: 5 gaps Important y 11 Minor.** T-08, T-09, T-10 y T-11 vuelven a `en-progreso`.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | `--project-name kairos` pasa `validate_isolation` y el override genera las mismas etiquetas de imagen que producción (`kairos-api:latest`…); el `build` del ensayo sobrescribe las imágenes de la instalación real. Lente C (CWE-668) | T-11 | corregido: imágenes siempre `rehearsal-<proyecto>-<servicio>:latest` (un proyecto `kairos` ya no produce `kairos-api:latest`); `check_isolation_names` contra los `image:`/`name:` del Compose; tests `test_project_named_kairos_cannot_produce_installed_image_tags` y `test_a_colliding_generated_name_is_refused`; ensayo repetido | `scripts/deploy-memory.py:43-44,56`; `docker-compose.yml:42-146` |
+| 2 | Important | Instantánea de superficie de T-04 reescrita (se quita `stream` de `_vector_candidates`) sin respaldo del plan; la puerta de superficie deja de vigilar. Lente A | T-09 | corregido: `_vector_candidates(…, *, stream=False, identities=None)` restaurado (ignorado) y `store_surface.json` = `fc4c045` (`git diff fc4c045 --stat` vacío); `test_store_surface` 3/3 sin regenerar | `memory_platform/tests/store_surface.json:94`; `improvement-plan.md:296` |
+| 3 | Important | La migración v8 hace en una transacción con ACCESS EXCLUSIVE la reescritura `dims STORED`, el relleno con trigger por fila y el HNSW sin ajustar `maintenance_work_mem`, con los servicios anteriores activos; la fase `migrate` del deploy hereda `timeout=120`. Con 10^5 vectores aborta el deploy y bloquea búsquedas y `complete_job`. Lente D | T-08, T-11 | corregido: bloque v8 en `DO $pgvector$` con guarda, `maintenance_work_mem` configurable (`MEMORY_MIGRATION_MAINTENANCE_WORK_MEM`, 256MB) y construcción en serie, `migrate` con `timeout=3600` registrado como `migrate_timeout_seconds`, coste medido (20.000 filas: 54,4 s; 50.000: 113,8 s) y ventana de bloqueo documentados en `operations.md`; `shm_size` no se toca (justificado) | `schema.sql:64-65,75-77`; `store_auth.py:12-16`; `deploy-memory.py:163,185,272` |
+| 4 | Important | Cada `admin migrate` posterior vuelve a tomar ACCESS EXCLUSIVE (`ADD COLUMN IF NOT EXISTS`), recorre la tabla con el relleno y crea HNSW nuevos sin CONCURRENTLY. Lente D | T-08 | corregido: la guarda omite `ADD COLUMN`, relleno y trigger si v8 ya está aplicada; el HNSW solo se crea si falta en `pg_indexes`; tests de `relfilenode`/`xmin` iguales y de lector `ACCESS SHARE` sin bloqueo (rojo comprobado con la guarda desactivada) | `schema.sql:64-65,77`; `store_vectors.py:13-17` |
+| 5 | Important | La ruta HNSW pierde el aviso de truncado si no queda ningún acierto (`[]` → `status ok`, `candidates_truncated false`); el conteo de población del respaldo exacto es global (sin filtrar por proyecto), así que un proyecto pequeño dentro de un índice grande pierde recall sin recálculo exacto, filtra 1 bit del volumen de otros tenants (C, CWE-203) y recorre el heap entero si el modelo es minoritario (D). Lentes B+C+D | T-09, T-10 | corregido: recuento de población por `project_id = ANY(autorizados)`; ≤ 10.000 → recálculo exacto, > 10.000 → `candidates_truncated`; `search_vectors` devuelve `VectorResults` con `candidates_truncated`/`candidate_limit` y `retrieval` lo lee aunque no haya aciertos (`partial`); tests de proyecto pequeño en índice grande, vacío con truncado, aciertos marcados e independencia del volumen ajeno (T-09 y T-10) | `store_vectors.py:58-64,177-178`; `retrieval.py:127` |
+| 6 | Minor | `candidate_limit` del backend siempre 10000: `hit()` descarta el campo antes del `max` (B); sin test (A, CA-11) | T-09 | corregido: `candidate_limit` leído antes de `hit()`; `test_backend_reports_the_candidate_limit_of_the_route_that_ran` (20000) | `retrieval.py:129`; `models.py:154` |
+| 7 | Minor | El modo aislado puede leer `MEMORY_SECRETS_DIR` del entorno (C) y el `.env` raíz si falta el env del proyecto (B), contra lo que dice la doc | T-11 | corregido: entorno aislado sin `MEMORY_*`/`COMPOSE_*`/`KAIROS*`, `--env-file` del proyecto siempre y aborto si falta; tests nuevos | `deploy-memory.py:154,203-206,219-221` |
+| 8 | Minor | Evidencia de T-12 quedó tras la cabecera de la Fase 4. Lente A | T-12 | corregido: evidencia de T-12 movida a su bloque, antes de la cabecera de la Fase 4 | `tasks.md:528-533` |
+| 9 | Minor | `hnsw-recall.json` tiene `parameter_sweep: []` pero ledger y manual citan el barrido 10/40/100/200. Lente A | T-10 | corregido: `hnsw-recall.json` con el barrido real (8 mediciones, recall_at_10 = 1.0 y 0 fallbacks en todas) ejecutado de nuevo en PostgreSQL aislado | `testing/hnsw-recall.json:10`; `docs/configuration.md:58` |
+| 10 | Minor | Respaldo exacto tras HNSW corto no consta en el changelog del plan. Lente A | T-09 | corregido: fila añadida al changelog de `improvement-plan.md` (nota, sin reescribir lo aprobado) | `store_vectors.py:58-64`; `improvement-plan.md:296` |
+| 11 | Minor | `store_auth.py` no figura en `Archivos` de T-08. Lente A | T-08 | corregido: `store_auth.py` y `store_vectors.py` añadidos a `Archivos` de T-08 con nota | `tasks.md:358` |
+| 12 | Minor | Población entre 10001 y 20000 con respuesta corta sale sin recálculo y sin aviso. Lente B | T-09 | corregido (con #5): población de 10.001 a 20.000 con respuesta corta sale `candidates_truncated` | `store_vectors.py:62-64` |
+| 13 | Minor | El plazo solo se comprueba al principio; varias sentencias pueden sumar hasta ~4× `statement_timeout` y retener una plaza de `_vector_slots`. Lente B | T-09 | corregido: `arm()` recalcula `statement_timeout` con el plazo restante antes de cada sentencia; test con ≥ 3 llamadas no crecientes | `store_vectors.py:165-176` |
+| 14 | Minor | Doubles finitos que desbordan float4 abortan el relleno o el `complete_job` como `provider_error`. Lente B | T-08 | deuda aceptada: doubles finitos que desbordan float4 abortan la migración/`complete_job` sin cambios parciales; los proveedores reales no los producen (anotado en T-08) | `schema.sql:77`; `store_jobs.py:98` |
+| 15 | Minor | En retroceso, `SELECT e.*` del código anterior arrastra `embedding` como texto (~2× coste). Lente D | T-12 | corregido (documentado): coste de `SELECT e.*` del código anterior descrito en el retroceso de `operations.md` como deuda aceptada | `schema.sql:64-65` |
+| 16 | Minor | `--project-name` igual a un subdirectorio existente de `.private/` reutiliza sus ficheros. Lente C (fuera de lente) | T-11 | corregido (con #1): carpeta `.private/rehearsal-<proyecto>` y aborto si contiene ficheros ajenos; test `test_existing_private_subdirectory_of_somebody_else_is_never_adopted` | `deploy-memory.py:41-49` |
+
+## Revisión de dos lentes — intento 2: Fase 3 (T-07…T-12) (T-07, T-08, T-09, T-10, T-11, T-12)
+
+Lentes: A+B (un revisor) y C+D (otro), con traspaso de la tabla del intento 1. Base `fc4c045`. `scope-check.py --base fc4c045` → exit 0 (24 en alcance, 0 fuera); `ledger-lint` exit 0.
+
+**Gaps #1…#16 del intento 1:** todos ✓ (corregidos; #14 deuda aceptada; #15 documentado). Lente C: sin hallazgos nuevos (sondas hostiles sobre `validate_isolation`, `isolated_image` y `MEMORY_MIGRATION_MAINTENANCE_WORK_MEM` rechazadas). `store_surface.json` sin diff frente a `fc4c045`; criterios y `Verificación` de T-07…T-12 sin cambios; `source_sha256` de los ensayos 16/16 coinciden.
+
+**Resultado: 1 gap Important y 5 Minor.**
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | Las tareas reabiertas no tienen salida literal de la suite tras las correcciones: el último `MEMORY_TEST_RESULT` pegado es `tests 215`; T-08 solo pega un subconjunto. Lente A | T-08, T-09, T-10, T-11 | corregido: suite completa sobre el árbol actual pegada en T-08, T-09, T-10 y T-11 (`MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 235}`) y, en T-10, la puerta `retrieval-eval` literal | `tasks.md:380,422,457,497,500-501` |
+| 2 | Minor | Prosa desactualizada: T-09 sigue diciendo que `store_surface.json` cambió y lo mantiene en `Archivos`; T-11 describe `.private/<proyecto>/` e imágenes `kairos-rehearsal-*`. Lente A | T-09, T-11 | corregido: notas añadidas en T-09 (`store_surface.json` no se modifica) y T-11 (`.private/rehearsal-<proyecto>/`, imágenes `rehearsal-<proyecto>-*`) | `tasks.md:395,419,492` |
+| 3 | Minor | `MEMORY_MIGRATION_MAINTENANCE_WORK_MEM` no llega al contenedor de migración (no está en `x-memory-environment`); la doc lo presenta como configurable. Lente B | T-08 | corregido: `MEMORY_MIGRATION_MAINTENANCE_WORK_MEM` pasa por `x-memory-environment` con defecto `256MB`; `test_deploy` no depende de ese bloque y sigue verde | `docker-compose.yml:3-12`; `store_auth.py:16`; `docs/configuration.md:51` |
+| 4 | Minor | El recuento de población cuenta filas no vigentes (versiones antiguas y borradas), lo que puede marcar `partial` sin recálculo exacto cuando los vigentes son ≤ 10.000. Señalado, no silencioso. Lente B | T-09 | corregido: el recuento de población aplica `CURRENT_RESOURCE` con `project_id = ANY(autorizados)`; test `test_withdrawn_and_old_rows_do_not_count_towards_the_exact_route_limit` | `store_vectors.py:76-80` |
+| 5 | Minor | `operations.md` dice que la ventana de bloqueo solo existe en la primera migración; añadir un par a `MEMORY_VECTOR_INDEXES` construye un HNSW con bloqueo SHARE (bloquea escrituras). Lente D | T-08, T-12 | corregido: `operations.md` y `configuration.md` documentan el bloqueo SHARE al construir un HNSW nuevo y la frase sobre la ventana se matiza | `docs/operations.md:50`; `docs/configuration.md` |
+| 6 | Minor | La extrapolación lineal del coste no señala que, por encima de ~6,5·10^4 filas (768 dims, m=16), el grafo HNSW no cabe en 256 MB y la construcción se ralentiza mucho. Lente D | T-08 | corregido: documentado el umbral aproximado de ~6,5·10^4 filas, la ralentización y subir `MEMORY_MIGRATION_MAINTENANCE_WORK_MEM`; añadido cómo comprobar el estado si `migrate` agota los 3600 s | `docs/operations.md:50-52`; `testing/migration-cost.json` |
+
+## Revisión de dos lentes — intento 3: Fase 3 (T-07…T-12) (T-07, T-08, T-09, T-10, T-11, T-12)
+
+Lentes: A+B+C+D (un revisor), con traspaso de las tablas de los intentos 1 y 2. Base `fc4c045`. `scope-check.py --base fc4c045` → exit 0; `ledger-lint` exit 0.
+
+**Gaps #1…#6 del intento 2:** todos ✓. Suite `MEMORY_TEST_RESULT … "tests": 235 … "passed": true` pegada en T-08 (`:382`), T-09 (`:424`), T-10 (`:460`) y T-11 (`:505`); criterios y `Verificación` de T-07…T-12 idénticos a `fc4c045` (comparación por script). **Tests de truncado sustituidos:** cobertura de comportamiento conservada; cada rama de decisión de `rank_ann` sigue cubierta y 4 de 5 mutaciones en memoria se detectan (sobrevive solo `LIMIT 10001`→`LIMIT size`, que afecta a la ruta elegida, no a la corrección). Lente C: sin hallazgos.
+
+**Resultado: 0 Critical, 0 Important, 3 Minor. Revisión cerrada.**
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Minor | La salida de `retrieval-eval` pegada en T-10 es una proyección de `layers` (sin `overall`/`subsets` ni `gate.failures`), no la salida literal. Basta para el criterio (ninguna capa empeora). Lente A | T-10 | deuda aceptada: el informe completo se pega en T-18 (evaluación de la Fase 4) | `tasks.md:460`; `retrieval_eval/run.py:281` |
+| 2 | Minor | La doc del truncado no reflejaba que el recuento solo incluye vectores vigentes que cumplen los filtros. Lente A/B | T-09 | corregido por el orquestador: `docs/configuration.md` describe el recuento como vigentes + filtros de categorías y etiquetas | `docs/configuration.md:62` |
+| 3 | Minor | El recuento con `CURRENT_RESOURCE` usa SubPlan correlacionado por fila; con 10^6 vectores autorizados y un filtro muy raro pueden ser dos recorridos completos (segundos), y el backend semántico cae a `unavailable` por `statement_timeout`. Con el volumen real (~21 documentos) es despreciable. Lente D | T-09 | deuda aceptada: se revisa en T-28 (endurecimiento híbrido) junto con la medición de la Fase 7 | `store_vectors.py:78-81` |

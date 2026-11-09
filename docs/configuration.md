@@ -47,8 +47,21 @@ Las siguientes variables las interpreta `memory_platform/config.py`. Para usarla
 | `MEMORY_EMBED_ENABLED` | `1` | Indexación semántica; el Compose la activa explícitamente |
 | `MEMORY_EMBED_QUERY_TIMEOUT` | `10` segundos | Plazo de embeddings de consulta |
 | `MEMORY_EMBED_WORKER_TIMEOUT` | `120` segundos | Plazo de embeddings del worker |
+| `MEMORY_VECTOR_INDEXES` | `nomic-embed-text:768` | Pares `modelo:dimensiones`, separados por comas, que tienen índice HNSW parcial (1 a 2.000 dimensiones; el nombre del modelo puede contener `:`). Lo lee la migración; vacío = ningún índice y todo por la ruta exacta |
+| `MEMORY_MIGRATION_MAINTENANCE_WORK_MEM` | `256MB` | `maintenance_work_mem` de la transacción de migración (construcción de los índices HNSW); tamaño como `256MB` o `1GB`. Solo lo lee `admin migrate` (el Compose lo pasa con este valor por defecto desde `x-memory-environment`); la migración construye los índices en serie (`max_parallel_maintenance_workers = 0`) para no depender de `/dev/shm`, que en un contenedor tiene 64 MB por defecto |
 
 Los presupuestos de respuestas generadas se definen en `AnswerLimits`, en `corpus_answers.py`: no son variables `.env` ni un límite económico por organización. Sus unidades, límites de conversación, estados inciertos y ausencia de reenvío automático están en [consultas de corpus](corpus-generated-answers.md).
+
+## Búsqueda vectorial (pgvector)
+
+La búsqueda semántica usa la extensión pgvector con el operador de distancia coseno. Hay dos rutas, elegidas por modelo y dimensión del vector de consulta:
+
+- **Ruta HNSW:** para cada par de `MEMORY_VECTOR_INDEXES` la migración crea un índice HNSW parcial (`WHERE model = … AND dims = …`). Cada consulta fija por transacción `hnsw.iterative_scan = relaxed_order`, `hnsw.max_scan_tuples = 20000` y `hnsw.ef_search = 100`; el escaneo iterativo sigue leyendo el índice hasta completar el número de aciertos aunque los filtros de permisos, proyecto, versión vigente, categorías y etiquetas descarten filas. Estos valores son constantes de `memory_platform/config.py`, no variables de entorno; con 2.600 vectores de 768 dimensiones dieron un recall@10 de 1,0 frente al coseno exacto para `ef_search` de 10 a 200 (`testing/hnsw-recall.json` de la iniciativa).
+- **Ruta exacta:** cualquier otro modelo o dimensión (o más de 2.000 dimensiones) calcula el coseno exacto en SQL sobre los primeros 10.000 candidatos vigentes en orden estable de identidad.
+
+`candidate_limit` indica el tope de la ruta usada (10.000 la exacta, 20.000 la HNSW). `candidates_truncated` es `true` si en la ruta exacta había más de 10.000 candidatos, o si en la HNSW la respuesta es corta y los vectores autorizados que cuentan superan 10.000 (el escaneo pudo detenerse en `max_scan_tuples`). Si el índice devuelve menos aciertos de los pedidos, se cuentan los vectores de ese modelo y dimensión en los proyectos **autorizados** (nunca el volumen de otros proyectos) que además son vigentes y cumplen los filtros de categorías y etiquetas de la consulta: hasta 10.000 la consulta se recalcula con la ruta exacta, porque un índice aproximado puede dejar inalcanzables vectores muy duplicados; por encima, la respuesta sale marcada como truncada, aunque no quede ningún acierto, y `backends.semantic` pasa a `partial`.
+
+Cambiar `MEMORY_VECTOR_INDEXES` no borra índices antiguos: ejecuta `admin migrate` para crear los nuevos y elimina los que sobren manualmente. Construir un índice nuevo en una base ya migrada toma un bloqueo `SHARE` sobre `memory.embeddings` (bloquea las escrituras de embeddings durante la construcción); por encima de unas 6,5·10^4 filas a 768 dimensiones el grafo deja de caber en los 256 MB de `MEMORY_MIGRATION_MAINTENANCE_WORK_MEM` y la construcción se vuelve mucho más lenta, así que conviene subir ese valor (ver [operación](operations.md#imagen-postgresql)). `MEMORY_VECTOR_INDEXES` debe declararse en `x-memory-environment` del Compose, como el resto de variables avanzadas, para llegar a los contenedores. Los vectores se escriben a la vez en `vector` (`double precision[]`, que permite el retroceso) y en `embedding` (pgvector).
 
 ## Proyectos, categorías y permisos
 

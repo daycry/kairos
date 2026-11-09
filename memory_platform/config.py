@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import json
 import os
+import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -21,6 +22,46 @@ def endpoint(name: str, default: str) -> str:
     parsed = urlsplit(value)
     if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise ValueError(f'{name} must be an HTTP(S) endpoint without credentials or query')
+    return value
+
+
+DEFAULT_VECTOR_INDEXES = 'nomic-embed-text:768'
+HNSW_MAX_DIMENSIONS = 2000  # pgvector indexes `vector` up to 2,000 dimensions
+HNSW_EF_SEARCH = 100  # hnsw.ef_search, per transaction
+HNSW_MAX_SCAN_TUPLES = 20000  # hnsw.max_scan_tuples with hnsw.iterative_scan = relaxed_order
+EXACT_CANDIDATE_LIMIT = 10000  # exact route: candidates scored per query
+
+
+def vector_indexes(environ=None) -> tuple:
+    """(model, dimensions) pairs that get a partial HNSW index; everything else uses the exact route.
+
+    MEMORY_VECTOR_INDEXES="model:dims,model:dims" (the model name may itself contain ':').
+    """
+    environ = os.environ if environ is None else environ
+    raw = environ.get('MEMORY_VECTOR_INDEXES', DEFAULT_VECTOR_INDEXES)
+    result = []
+    for entry in (part.strip() for part in raw.split(',')):
+        if not entry:
+            continue
+        model, separator, dims = entry.rpartition(':')
+        if not separator or not model.strip() or len(model) > 200 or not dims.isdigit() or not 1 <= int(dims) <= HNSW_MAX_DIMENSIONS:
+            raise ValueError(f'MEMORY_VECTOR_INDEXES entries must be model:dimensions with 1..{HNSW_MAX_DIMENSIONS} dimensions')
+        pair = (model, int(dims))
+        if pair in result:
+            raise ValueError('MEMORY_VECTOR_INDEXES contains a duplicate entry')
+        result.append(pair)
+    return tuple(result)
+
+
+DEFAULT_MIGRATION_MAINTENANCE_WORK_MEM = '256MB'
+
+
+def migration_maintenance_work_mem(environ=None) -> str:
+    """maintenance_work_mem for the migration transaction (HNSW builds); MEMORY_MIGRATION_MAINTENANCE_WORK_MEM."""
+    environ = os.environ if environ is None else environ
+    value = environ.get('MEMORY_MIGRATION_MAINTENANCE_WORK_MEM', DEFAULT_MIGRATION_MAINTENANCE_WORK_MEM).strip()
+    if not re.fullmatch(r'[1-9][0-9]{0,5}(kB|MB|GB)', value):
+        raise ValueError('MEMORY_MIGRATION_MAINTENANCE_WORK_MEM must be a size such as 256MB')
     return value
 
 

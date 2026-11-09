@@ -1,0 +1,8 @@
+base_image: postgres:17-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
+postgres: PostgreSQL 17.11 (Debian 17.11-1.pgdg12+2)
+package: postgresql-17-pgvector=0.8.7-1.pgdg12+1
+pgvector_default_version: 0.8.7
+other_available_in_digest_repo: 0.8.6-1.pgdg12+2, 0.8.6-1.pgdg12+1 (apt-cache madison, 2026-11-09)
+extensions_present: vector.control, unaccent.control, pg_trgm.control (/usr/share/postgresql/17/extension)
+image_built_locally_as: kairos-pg:rq sha256:accf607a68cb1b9a5866aa8a57662b6a67858c91544ede872763d777726f1836
+declared_in: memory_platform/Dockerfile (stage postgres-pgvector, ARG PGVECTOR_VERSION); docker-compose.yml memory-postgres build target

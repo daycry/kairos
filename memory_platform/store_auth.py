@@ -2,6 +2,7 @@
 import secrets
 from pathlib import Path
 
+from .config import migration_maintenance_work_mem
 from .auth import SCOPES, hash_password, token_hash
 from .errors import Conflict, Forbidden, MemoryError, NotFound, Unauthorized
 from .store_common import as_dict, canonical, new_id, clean
@@ -11,7 +12,11 @@ class AuthMixin:
     def migrate(self):
         with self.transaction() as c:
             c.execute('SELECT pg_advisory_xact_lock(688090884123)')
+            # HNSW builds need memory; parallel builds need /dev/shm (64 MB in a default container), so build serially.
+            c.execute("SELECT set_config('maintenance_work_mem',%s,true), set_config('max_parallel_maintenance_workers','0',true)",(migration_maintenance_work_mem(),))
             c.execute(Path(__file__).with_name('schema.sql').read_text(encoding='utf-8'))
+            from .store_vectors import migrate_vector_indexes
+            migrate_vector_indexes(c)
             from .agent_store import migrate_agent_schema
             migrate_agent_schema(c)
             from .extended_store import migrate_extended_schema

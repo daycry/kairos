@@ -21,7 +21,14 @@ FROM api AS worker
 ENTRYPOINT ["python", "-m", "memory_platform.worker"]
 CMD []
 
-FROM postgres:17-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5 AS test
+# PostgreSQL with pgvector, shared by memory-postgres (docker-compose.yml) and the test targets.
+# Same major version (17) and same base digest as before, so an existing data volume needs no pg_upgrade.
+# The PGDG repository is already configured in the official image; the package version is pinned.
+FROM postgres:17-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5 AS postgres-pgvector
+ARG PGVECTOR_VERSION=0.8.7-1.pgdg12+1
+RUN apt-get update && apt-get install -y --no-install-recommends postgresql-17-pgvector=${PGVECTOR_VERSION}     && rm -rf /var/lib/apt/lists/*
+
+FROM postgres-pgvector AS test
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv \
     && rm -rf /var/lib/apt/lists/*

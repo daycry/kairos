@@ -41,6 +41,8 @@ Los modelos configurados en la instalación existente son `beam:cloud` para gene
 | Documental | Fuentes publicadas con aprobación y hash | Conocimiento gestionado con procedencia |
 | Temporal | Hechos y relaciones con evidencia | Representación derivada que debe contrastarse con su fuente |
 
+La capa semántica usa PostgreSQL con pgvector (imagen propia, ver [operación](operations.md#imagen-postgresql)). Cada embedding se guarda en `memory.embeddings` en dos columnas: `vector` (`double precision[]`, la original, que permite volver atrás) y `embedding` (tipo `vector` de pgvector, con su dimensión en `dims`). Para el modelo y la dimensión configurados (por defecto `nomic-embed-text` de 768) la consulta usa un índice HNSW parcial con escaneo iterativo; cualquier otro modelo o dimensión usa una ruta exacta en SQL. Ambas rutas aplican los mismos filtros de permisos, proyecto, versión vigente y hash, y la recomprobación final de autorización. Los detalles y parámetros están en [configuración](configuration.md#búsqueda-vectorial-pgvector).
+
 La política de cada proyecto determina qué nuevos eventos se admiten y si se conservan hechos y relaciones. Una memoria generada no recibe automáticamente el estado validado. La eliminación lógica y las versiones evitan recuperar elementos retirados como si siguieran vigentes.
 
 ## Seguridad y fronteras

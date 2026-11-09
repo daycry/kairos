@@ -176,6 +176,25 @@ class RetrievalTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(found['backends']['semantic']['status'],'partial')
         self.assertTrue(found['backends']['semantic']['candidates_truncated'])
 
+    async def test_backend_reports_the_candidate_limit_of_the_route_that_ran(self):
+        from memory_platform.store_vectors import vector_results
+        self.store.has_vectors.return_value=True
+        self.store.search_vectors.return_value=vector_results([dict(self.row,candidate_limit=20000,candidates_truncated=False)],20000,False)
+        found=await self.retrieval.search({},m.Search(project_ids=['a'],q='knowledge'))
+        self.assertEqual(found['backends']['semantic']['candidate_limit'],20000)
+        self.store.search_vectors.return_value=[dict(self.row,candidate_limit=20000)]
+        found=await self.retrieval.search({},m.Search(project_ids=['a'],q='knowledge'))
+        self.assertEqual(found['backends']['semantic']['candidate_limit'],20000)
+
+    async def test_truncated_empty_semantic_answer_is_partial(self):
+        from memory_platform.store_vectors import vector_results
+        self.store.has_vectors.return_value=True
+        self.store.search_vectors.return_value=vector_results([],20000,True)
+        found=await self.retrieval.search({},m.Search(project_ids=['a'],q='knowledge'))
+        self.assertTrue(found['partial'])
+        self.assertEqual(found['backends']['semantic']['status'],'partial')
+        self.assertEqual((found['backends']['semantic']['candidate_limit'],found['backends']['semantic']['candidates_truncated']),(20000,True))
+
     async def test_semantic_unavailable_preserves_native_lexical_and_is_partial(self):
         self.store.has_vectors.return_value = True
         self.embeddings.embed.side_effect = TimeoutError()

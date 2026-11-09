@@ -1,0 +1,109 @@
+{
+  "dataset": "synthetic, deterministic (random.Random seed 11): 2600 embeddings of 768 dims (nomic-embed-text), 40 topic centers, noise 0.35; 2000 in the readable project (1979 current: 21 deleted), 600 in another project in the same index; 20 queries (seed-derived, noise 0.5)",
+  "decision": {
+    "hnsw.ef_search": 100,
+    "hnsw.iterative_scan": "relaxed_order",
+    "hnsw.max_scan_tuples": 20000,
+    "reason": "spec defaults kept: recall@10 = 1.0 for ef_search 10..200 on this data, so no change is justified by evidence; ef_search 100 leaves headroom for the limit cap of 100"
+  },
+  "generated": "2026-11-09",
+  "parameter_sweep": [
+    {
+      "case": "unfiltered",
+      "ef_search": 10,
+      "exact_fallbacks": 0,
+      "ms_per_query": 310.3,
+      "recall_at_10": 1.0
+    },
+    {
+      "case": "tag_rare",
+      "ef_search": 10,
+      "exact_fallbacks": 0,
+      "ms_per_query": 51.9,
+      "recall_at_10": 1.0
+    },
+    {
+      "case": "unfiltered",
+      "ef_search": 40,
+      "exact_fallbacks": 0,
+      "ms_per_query": 267.4,
+      "recall_at_10": 1.0
+    },
+    {
+      "case": "tag_rare",
+      "ef_search": 40,
+      "exact_fallbacks": 0,
+      "ms_per_query": 70.2,
+      "recall_at_10": 1.0
+    },
+    {
+      "case": "unfiltered",
+      "ef_search": 100,
+      "exact_fallbacks": 0,
+      "ms_per_query": 235.6,
+      "recall_at_10": 1.0
+    },
+    {
+      "case": "tag_rare",
+      "ef_search": 100,
+      "exact_fallbacks": 0,
+      "ms_per_query": 53.6,
+      "recall_at_10": 1.0
+    },
+    {
+      "case": "unfiltered",
+      "ef_search": 200,
+      "exact_fallbacks": 0,
+      "ms_per_query": 267.2,
+      "recall_at_10": 1.0
+    },
+    {
+      "case": "tag_rare",
+      "ef_search": 200,
+      "exact_fallbacks": 0,
+      "ms_per_query": 53.8,
+      "recall_at_10": 1.0
+    }
+  ],
+  "parameter_sweep_source": "scratch run on an isolated PostgreSQL 17.11 + pgvector 0.8.7 (same dataset as test_vector_index: 2600 rows, 20 queries), ef_search patched via store_vectors.HNSW_EF_SEARCH; ms_per_query is wall time of search_vectors including connection and payload fetch, indicative only; 2026-11-09, run for the fix1 code",
+  "pgvector": "0.8.7 (postgresql-17-pgvector 0.8.7-1.pgdg12+1)",
+  "plan": {
+    "execution_time_ms": "7.636 ms",
+    "summary": "Limit > Incremental Sort > Index Scan using memory_embedding_hnsw_d8113c0d26a9b5c0 (Order By embedding::vector(768) <=> query); filters (project, current version, hash, norm) applied during the scan"
+  },
+  "postgres": "17.11",
+  "retrieval_eval_gate": {
+    "command": "docker run --rm --network=none -e MEMORY_RETRIEVAL_EVAL=1 kairos-test:rq python -m memory_platform.tests.run_postgres",
+    "dataset_sha256": "1bba8d997c6dcc8e11f2ddceba2a78e8c38c0bd7cafd4aa458dd1547ad4be6f6",
+    "deterministic": true,
+    "exit_code": 1,
+    "identical_to_baseline_json": true,
+    "layers_mrr": {
+      "documental": 0.2,
+      "episodic": 0.384615,
+      "fused": 0.339809,
+      "semantic": 0.869097
+    },
+    "layers_recall_at_5": {
+      "documental": 0.2,
+      "episodic": 0.384615,
+      "fused": 0.5,
+      "semantic": 0.902778
+    },
+    "note": "dataset-v1 has 72 embeddable resources (52 memories + 20 documents); with such a population the planner and the exact fallback (population <= 10,000) decide the route, so the gate shows no regression of the mechanics; HNSW recall is evidenced by test_vector_index (2,600 rows), not by this gate; model quality is measured in T-36",
+    "reason_exit_1": "expected: the gate is red against the thresholds until phases 4-6 (fused recall@5 0.5 < 0.8, fused MRR 0.339809 < 0.6, subset gains 0)"
+  },
+  "sweep_note": "recall@10 vs the exact cosine computed in Python over the same readable rows; ef_search varied by patching config constants in a scratch run; tag_rare = filter matching ~15 of 1979 readable rows (0.8 %) answered by iterative scan with 0 exact fallbacks",
+  "task": "T-10",
+  "test_result": {
+    "ef_search": 100,
+    "exact_fallbacks": 0,
+    "iterative_scan": "relaxed_order",
+    "k": 10,
+    "max_scan_tuples": 20000,
+    "queries": 20,
+    "readable_rows": 1979,
+    "recall_at_10": 1.0,
+    "rows": 2600
+  }
+}

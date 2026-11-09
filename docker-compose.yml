@@ -10,6 +10,7 @@ x-memory-environment: &memory-environment
   MEMORY_EMBEDDING_MODEL: ${MEMORY_EMBEDDING_MODEL:-nomic-embed-text}
   MEMORY_BOOTSTRAP_PASSWORD_FILE: /run/secrets/memory_bootstrap
   MEMORY_EMBED_ENABLED: '1'
+  MEMORY_MIGRATION_MAINTENANCE_WORK_MEM: ${MEMORY_MIGRATION_MAINTENANCE_WORK_MEM:-256MB}
 
 x-process: &process
   read_only: true
@@ -39,7 +40,8 @@ services:
     security_opt: [no-new-privileges:true]
 
   memory-postgres:
-    image: postgres:17-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
+    image: kairos-postgres:latest
+    build: {context: ., dockerfile: memory_platform/Dockerfile, target: postgres-pgvector}
     profiles: [memory]
     restart: unless-stopped
     environment:
