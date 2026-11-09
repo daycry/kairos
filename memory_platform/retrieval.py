@@ -39,6 +39,14 @@ def decode_ref(ref):
         raise MemoryError('invalid_reference', 'Invalid memory reference', 422) from exc
 
 
+def fuzzy_status(status, values):
+    """Marks a layer completed by the trigram fallback (`fuzzy_matches`, only when it happened) or whose fallback timed out (`fuzzy_timeout`)."""
+    fuzzy = sum(1 for value in values if value.get('lexical_match') == 'trigram')
+    status = dict(status, fuzzy_matches=fuzzy) if fuzzy else status
+    # The fallback ran out of its own time: the lexical hits are complete but the fuzzy completion was skipped.
+    return dict(status, fuzzy_timeout=True) if getattr(values, 'fuzzy_timed_out', False) else status
+
+
 def hit(record):
     keys = m.Hit.model_fields
     value = {key: record[key] for key in keys if key in record and record[key] is not None}
@@ -81,7 +89,7 @@ class Retrieval:
         values = await asyncio.to_thread(self.store.search_documents, actor, request.project_ids, request.q,
                                         request.limit, request.categories, request.tags,
                                         match_mode=request.match_mode,exclude_categories=request.exclude_categories)
-        return [hit(value) for value in values], {'native': {'status': 'ok'}}
+        return [hit(value) for value in values], {'native': fuzzy_status({'status': 'ok'}, values)}
 
     async def _temporal(self, actor, request):
         values = await asyncio.to_thread(self.store.search_native_facts, actor, request.project_ids, request.q, request.limit, request.categories, request.tags)
@@ -105,8 +113,8 @@ class Retrieval:
                         values = await asyncio.to_thread(self.store.search_items, actor, request.project_ids, request.q,
                                                          request.limit, request.categories, request.tags,
                                                          match_mode=request.match_mode,exclude_categories=request.exclude_categories)
+                        status = fuzzy_status({'status': 'ok', 'count': len(values)}, values)
                         values = [hit(v) for v in values]
-                        status = {'status': 'ok', 'count': len(values)}
                     else:
                         values, branches = await getattr(self, '_'+layer)(actor, request)
                         failed = sum(v['status'] != 'ok' for v in branches.values())

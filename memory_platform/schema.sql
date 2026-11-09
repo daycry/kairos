@@ -87,3 +87,77 @@ BEGIN
     INSERT INTO memory.schema_versions(version) VALUES (8) ON CONFLICT DO NOTHING;
 END
 $pgvector$;
+
+-- fts-language (schema version 9)
+-- Spanish and English full-text vectors with `unaccent`, plus `pg_trgm` for typo/identifier fallback. Additive: the `simple`
+-- `search_vector` columns and their indexes stay, and a previous release keeps working (documents: generated columns;
+-- memory_items: a trigger completes rows written by code that only knows `search_vector`).
+-- Extensions live in `public` (see the pgvector note above). `unaccent` and `pg_trgm` are trusted extensions.
+-- The block is skipped once version 9 is registered and its columns exist, so a repeated `admin migrate` takes no
+-- ACCESS EXCLUSIVE/SHARE lock and does not walk the tables. The first run rewrites `documents` (generated columns),
+-- adds columns to `memory_items`, backfills it, creates a trigger and builds six indexes. Store.migrate() runs ALL of schema.sql in ONE
+-- transaction, so the strongest lock taken on each table (ACCESS EXCLUSIVE from the ALTER TABLEs, on BOTH `documents` and
+-- `memory_items`) is held until the COMMIT of the whole migration: reads and writes of those two tables by other sessions
+-- wait for the entire run, not only for the statement that took the lock. Cost, window and mitigation: docs/operations.md.
+-- The new indexes are not partial on purpose: they cover every row, so no predicate has to be kept in step with the queries.
+SET LOCAL lock_timeout = '5s';
+DO $fts$
+BEGIN
+    IF EXISTS (SELECT 1 FROM memory.schema_versions WHERE version = 9)
+       AND (SELECT count(*) FROM information_schema.columns WHERE table_schema = 'memory'
+            AND table_name IN ('documents', 'memory_items') AND column_name IN ('search_vector_es', 'search_vector_en')) = 4 THEN
+        RETURN;
+    END IF;
+    CREATE EXTENSION IF NOT EXISTS unaccent WITH SCHEMA public;
+    CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
+    -- `unaccent` is only STABLE; the wrapper pins the dictionary so generated columns and indexes may use it.
+    CREATE OR REPLACE FUNCTION memory.kairos_unaccent(text) RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT
+        AS $f$ SELECT public.unaccent('public.unaccent'::regdictionary, $1) $f$;
+    -- Heading text weighs A, body text B (same weights as the `simple` vectors of memory_items).
+    CREATE OR REPLACE FUNCTION memory.item_fts(config regconfig, heading text, body text) RETURNS tsvector LANGUAGE sql IMMUTABLE PARALLEL SAFE
+        AS $f$ SELECT setweight(to_tsvector(config, memory.kairos_unaccent(COALESCE(heading, ''))), 'A')
+                   || setweight(to_tsvector(config, memory.kairos_unaccent(COALESCE(body, ''))), 'B') $f$;
+    -- Trigram keys: words (lowercase, no accents) and the same string without separators for identifiers (ERR-4471 / err4471).
+    CREATE OR REPLACE FUNCTION memory.trigram_words(text) RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT
+        AS $f$ SELECT lower(memory.kairos_unaccent($1)) $f$;
+    CREATE OR REPLACE FUNCTION memory.trigram_compact(text) RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT
+        AS $f$ SELECT regexp_replace(lower(memory.kairos_unaccent($1)), '[^[:alnum:]]', '', 'g') $f$;
+    CREATE OR REPLACE FUNCTION memory.trigram_key(text) RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT
+        AS $f$ SELECT memory.trigram_words($1) || ' ' || memory.trigram_compact($1) $f$;
+    ALTER TABLE memory.documents
+        ADD COLUMN IF NOT EXISTS search_vector_es tsvector GENERATED ALWAYS AS (
+            setweight(to_tsvector('spanish'::regconfig, memory.kairos_unaccent(COALESCE(body->>'title', ''))), 'A') ||
+            setweight(to_tsvector('spanish'::regconfig, memory.kairos_unaccent(COALESCE(body->>'tags', ''))), 'B') ||
+            setweight(to_tsvector('spanish'::regconfig, memory.kairos_unaccent(COALESCE(body->>'content', ''))), 'C')) STORED,
+        ADD COLUMN IF NOT EXISTS search_vector_en tsvector GENERATED ALWAYS AS (
+            setweight(to_tsvector('english'::regconfig, memory.kairos_unaccent(COALESCE(body->>'title', ''))), 'A') ||
+            setweight(to_tsvector('english'::regconfig, memory.kairos_unaccent(COALESCE(body->>'tags', ''))), 'B') ||
+            setweight(to_tsvector('english'::regconfig, memory.kairos_unaccent(COALESCE(body->>'content', ''))), 'C')) STORED;
+    ALTER TABLE memory.memory_items ADD COLUMN IF NOT EXISTS search_vector_es tsvector, ADD COLUMN IF NOT EXISTS search_vector_en tsvector;
+    UPDATE memory.memory_items SET
+        search_vector_es = memory.item_fts('spanish', concat_ws(' ', payload->>'title', payload->>'problem', payload->>'correction'), payload->>'content'),
+        search_vector_en = memory.item_fts('english', concat_ws(' ', payload->>'title', payload->>'problem', payload->>'correction'), payload->>'content')
+        WHERE search_vector_es IS NULL OR search_vector_en IS NULL;
+    CREATE OR REPLACE FUNCTION memory.item_fts_sync() RETURNS trigger LANGUAGE plpgsql AS $function$
+    BEGIN
+        -- Rows written by code that only knows `search_vector` (a previous release, direct SQL) get the language vectors.
+        IF NEW.search_vector_es IS NULL OR NEW.search_vector_en IS NULL
+           OR (TG_OP = 'UPDATE' AND NEW.search_vector IS DISTINCT FROM OLD.search_vector
+               AND NEW.search_vector_es IS NOT DISTINCT FROM OLD.search_vector_es AND NEW.search_vector_en IS NOT DISTINCT FROM OLD.search_vector_en) THEN
+            NEW.search_vector_es := memory.item_fts('spanish', concat_ws(' ', NEW.payload->>'title', NEW.payload->>'problem', NEW.payload->>'correction'), NEW.payload->>'content');
+            NEW.search_vector_en := memory.item_fts('english', concat_ws(' ', NEW.payload->>'title', NEW.payload->>'problem', NEW.payload->>'correction'), NEW.payload->>'content');
+        END IF;
+        RETURN NEW;
+    END
+    $function$;
+    CREATE OR REPLACE TRIGGER item_fts_sync BEFORE INSERT OR UPDATE ON memory.memory_items
+        FOR EACH ROW EXECUTE FUNCTION memory.item_fts_sync();
+    CREATE INDEX IF NOT EXISTS memory_item_search_es ON memory.memory_items USING gin(search_vector_es);
+    CREATE INDEX IF NOT EXISTS memory_item_search_en ON memory.memory_items USING gin(search_vector_en);
+    CREATE INDEX IF NOT EXISTS memory_document_search_es ON memory.documents USING gin(search_vector_es);
+    CREATE INDEX IF NOT EXISTS memory_document_search_en ON memory.documents USING gin(search_vector_en);
+    CREATE INDEX IF NOT EXISTS memory_item_title_trgm ON memory.memory_items USING gin(memory.trigram_key(payload->>'title') public.gin_trgm_ops);
+    CREATE INDEX IF NOT EXISTS memory_document_title_trgm ON memory.documents USING gin(memory.trigram_key(body->>'title') public.gin_trgm_ops);
+    INSERT INTO memory.schema_versions(version) VALUES (9) ON CONFLICT DO NOTHING;
+END
+$fts$;

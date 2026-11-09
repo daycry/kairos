@@ -7,7 +7,69 @@ from datetime import datetime
 
 from .errors import Conflict, MemoryError, NotFound
 from .privacy import has_sensitive
-from .store_common import as_dict, canonical, digest, lexical_query, clean
+from .store_common import TRIGRAM_FALLBACK_MS, TRIGRAM_THRESHOLD, LexicalResults, as_dict, canonical, digest, fts_match, fts_rank, item_columns, lexical_query, clean, trigram_wanted
+
+
+INDEXED="""EXISTS(SELECT 1 FROM memory.projection_receipts r JOIN memory.jobs j ON j.id=r.job_id
+                    WHERE r.project_id=d.project_id AND r.item_id=d.id AND r.version=d.version
+                    AND r.canonical_hash=d.canonical_hash AND r.destination='embed'
+                    AND j.resource_type='document' AND j.operation='upsert' AND j.state='succeeded'
+                    AND r.receipt->>'verified'='true')"""
+
+
+def bounded_fallback(c,fetch):
+    """Run `fetch()` in a savepoint under the fallback's own statement_timeout; returns (rows, timed_out).
+
+    On timeout the savepoint is rolled back (the transaction stays usable and the timeout setting is restored with it)
+    and no fallback rows are returned. On success the transaction's previous statement_timeout is put back.
+    """
+    from psycopg import errors
+    baseline=c.execute("SELECT current_setting('statement_timeout') AS value").fetchone()['value']
+    try:
+        with c.transaction():
+            c.execute("SELECT set_config('statement_timeout',%s,true)",(str(TRIGRAM_FALLBACK_MS),))
+            c.execute("SELECT set_config('pg_trgm.word_similarity_threshold',%s,true)",(str(TRIGRAM_THRESHOLD),))
+            rows=fetch()
+    except errors.QueryCanceled:
+        return [],True
+    c.execute("SELECT set_config('statement_timeout',%s,true)",(baseline,))
+    return rows,False
+
+
+# `memory.trigram_key` of the title is computed once per candidate row for the score (LATERAL with OFFSET 0, so the
+# planner cannot flatten it and re-substitute the expression); the index recheck is
+# bounded by the fallback's statement_timeout. Parameters: q, q (score), projects, q, q (match), filters, limit.
+def trigram_items(c,project_ids,q,limit,categories,tags,exclude_categories):
+    """Current memory items whose title is close to `q` (pg_trgm, word similarity). Authorization is the caller's.
+
+    Returns (rows, timed_out)."""
+    key="memory.trigram_key(i.payload->>'title')"
+    return bounded_fallback(c,lambda:c.execute(f"""SELECT {item_columns('i.')},GREATEST(word_similarity(memory.trigram_words(%s),k.tkey),word_similarity(memory.trigram_compact(%s),k.tkey)) AS rank
+        FROM memory.memory_items i CROSS JOIN LATERAL (SELECT {key} AS tkey OFFSET 0) k
+        WHERE i.project_id=ANY(%s) AND NOT i.deleted AND i.superseded_by IS NULL
+        AND ({key} %%> memory.trigram_words(%s) OR {key} %%> memory.trigram_compact(%s))
+        AND (%s::text[] IS NULL OR i.payload->>'category'=ANY(%s)) AND (%s::text[] IS NULL OR (i.payload->'tags') ?| %s)
+        AND NOT (coalesce(i.payload->>'category','')=ANY(%s::text[]))
+        ORDER BY rank DESC,i.occurred_at DESC,i.project_id,i.id LIMIT %s""",(q,q,project_ids,q,q,categories,categories,tags,tags,exclude_categories or [],limit)).fetchall())
+
+
+def trigram_documents(c,project_ids,q,limit,categories,tags,exclude_categories):
+    """Same for documents, with the embedding status of each row. Returns (rows, timed_out)."""
+    key="memory.trigram_key(d.body->>'title')"
+    return bounded_fallback(c,lambda:c.execute(f"""SELECT d.project_id,d.id,d.version,d.canonical_hash,d.body,GREATEST(word_similarity(memory.trigram_words(%s),k.tkey),word_similarity(memory.trigram_compact(%s),k.tkey)) AS rank,
+        {INDEXED} AS indexed
+        FROM memory.documents d CROSS JOIN LATERAL (SELECT {key} AS tkey OFFSET 0) k
+        WHERE d.project_id=ANY(%s) AND NOT d.deleted
+        AND ({key} %%> memory.trigram_words(%s) OR {key} %%> memory.trigram_compact(%s))
+        AND (%s::text[] IS NULL OR d.body->>'category'=ANY(%s)) AND (%s::text[] IS NULL OR (d.body->'tags') ?| %s)
+        AND NOT (coalesce(d.body->>'category','')=ANY(%s::text[]))
+        ORDER BY rank DESC,d.project_id,d.id LIMIT %s""",(q,q,project_ids,q,q,categories,categories,tags,tags,exclude_categories or [],limit)).fetchall())
+
+
+def fill_up(found,fallback,limit):
+    """Rows of `fallback` that are not in `found`, as many as still fit under `limit` (a project's id is unique)."""
+    seen={(row['project_id'],row['id']) for row in found}
+    return [row for row in fallback if (row['project_id'],row['id']) not in seen][:limit-len(found)]
 
 
 class DocumentsMixin:
@@ -83,6 +145,7 @@ class DocumentsMixin:
 
     def search_items(self, actor, project_ids, q='', limit=20, categories=None, tags=None, *, match_mode='all',exclude_categories=None):
         categories,tags=categories or None,tags or None
+        asked=q
         query_function,q=lexical_query(q,match_mode)
         if isinstance(project_ids,str):
             project_ids=[project_ids]
@@ -91,10 +154,19 @@ class DocumentsMixin:
         with self.transaction() as c:
             for project in project_ids:
                 self._require(c,actor,project,'read')
-            rank_sql=f"ts_rank_cd(search_vector,{query_function}('simple',%s))" if q else "0::real"
-            rank_args=[q] if q else []
-            rows=c.execute(f"SELECT *,{rank_sql} AS rank FROM memory.memory_items WHERE project_id=ANY(%s) AND NOT deleted AND superseded_by IS NULL AND (%s='' OR search_vector @@ {query_function}('simple',%s)) AND (%s::text[] IS NULL OR payload->>'category'=ANY(%s)) AND (%s::text[] IS NULL OR (payload->'tags') ?| %s) AND NOT (coalesce(payload->>'category','')=ANY(%s::text[])) ORDER BY (event_type='correction' AND payload->>'validation_status'='validated') DESC,rank DESC,occurred_at DESC,project_id,id LIMIT %s",(*rank_args,project_ids,q,q,categories,categories,tags,tags,exclude_categories or [],min(max(limit,1),100))).fetchall()
-            return [self._item(r) for r in rows]
+            rank_sql=fts_rank(query_function) if q else "0::real"
+            rank_args=[q]*3 if q else []
+            rows=c.execute(f"SELECT {item_columns()},{rank_sql} AS rank FROM memory.memory_items WHERE project_id=ANY(%s) AND NOT deleted AND superseded_by IS NULL AND (%s='' OR {fts_match(query_function)}) AND (%s::text[] IS NULL OR payload->>'category'=ANY(%s)) AND (%s::text[] IS NULL OR (payload->'tags') ?| %s) AND NOT (coalesce(payload->>'category','')=ANY(%s::text[])) ORDER BY (event_type='correction' AND payload->>'validation_status'='validated') DESC,rank DESC,occurred_at DESC,project_id,id LIMIT %s",(*rank_args,project_ids,q,q,q,q,categories,categories,tags,tags,exclude_categories or [],min(max(limit,1),100))).fetchall()
+            items=[self._item(r) for r in rows]
+            timed_out=False
+            wanted=min(max(limit,1),100)
+            if trigram_wanted(asked,len(rows),wanted):
+                # The lexical answer is short: complete it with titles close to the query. Marked, never silent.
+                found,timed_out=trigram_items(c,project_ids,asked[:200],wanted+len(rows),categories,tags,exclude_categories)
+                items+=[dict(self._item(r),lexical_match='trigram') for r in fill_up(rows,found,wanted)]
+            items=LexicalResults(items)
+            items.fuzzy_timed_out=timed_out
+            return items
 
     def get_item(self, actor, project_id, item_id):
         with self.transaction() as c:
@@ -125,24 +197,32 @@ class DocumentsMixin:
         if not project_ids:
             return []
         categories,tags=categories or None,tags or None
+        asked=q
         query_function,q=lexical_query(q,match_mode)
         with self.transaction() as c:
             for project_id in project_ids:
                 self._require(c,actor,project_id,'read')
-            rows=c.execute(f"""SELECT d.*,
-                ts_rank_cd(d.search_vector,{query_function}('simple',%s)) AS rank,
-                EXISTS(SELECT 1 FROM memory.projection_receipts r JOIN memory.jobs j ON j.id=r.job_id
-                    WHERE r.project_id=d.project_id AND r.item_id=d.id AND r.version=d.version
-                    AND r.canonical_hash=d.canonical_hash AND r.destination='embed'
-                    AND j.resource_type='document' AND j.operation='upsert' AND j.state='succeeded'
-                    AND r.receipt->>'verified'='true') AS indexed
+            rows=c.execute(f"""SELECT d.project_id,d.id,d.version,d.canonical_hash,d.body,
+                {fts_rank(query_function,'d.search_vector')} AS rank,
+                {INDEXED} AS indexed
                 FROM memory.documents d WHERE d.project_id=ANY(%s) AND NOT d.deleted
-                AND (%s='' OR d.search_vector @@ {query_function}('simple',%s))
+                AND (%s='' OR {fts_match(query_function,'d.search_vector')})
                 AND (%s::text[] IS NULL OR d.body->>'category'=ANY(%s))
                 AND (%s::text[] IS NULL OR (d.body->'tags') ?| %s)
                 AND NOT (coalesce(d.body->>'category','')=ANY(%s::text[]))
-                ORDER BY rank DESC,d.project_id,d.id LIMIT %s""",(q,project_ids,q,q,categories,categories,tags,tags,exclude_categories or [],min(max(limit,1),100))).fetchall()
-            return [dict(row['body'],project_id=row['project_id'],item_id=row['id'],document_id=row['id'],version=row['version'],canonical_hash=row['canonical_hash'],layer='documental',ref=f"documental:{row['project_id']}:{row['id']}:{row['version']}",excerpt=row['body'].get('content','')[:500],validation_status=row['body'].get('validation',{}).get('status','unknown'),index_status='ready' if row['indexed'] else 'pending') for row in rows]
+                ORDER BY rank DESC,d.project_id,d.id LIMIT %s""",(q,q,q,project_ids,q,q,q,q,categories,categories,tags,tags,exclude_categories or [],min(max(limit,1),100))).fetchall()
+            def hit(row):
+                return dict(row['body'],project_id=row['project_id'],item_id=row['id'],document_id=row['id'],version=row['version'],canonical_hash=row['canonical_hash'],layer='documental',ref=f"documental:{row['project_id']}:{row['id']}:{row['version']}",excerpt=row['body'].get('content','')[:500],validation_status=row['body'].get('validation',{}).get('status','unknown'),index_status='ready' if row['indexed'] else 'pending')
+            wanted=min(max(limit,1),100)
+            documents=[hit(row) for row in rows]
+            timed_out=False
+            if trigram_wanted(asked,len(rows),wanted):
+                # The lexical answer is short: complete it with titles close to the query. Marked, never silent.
+                found,timed_out=trigram_documents(c,project_ids,asked[:200],wanted+len(rows),categories,tags,exclude_categories)
+                documents+=[dict(hit(row),lexical_match='trigram') for row in fill_up(rows,found,wanted)]
+            documents=LexicalResults(documents)
+            documents.fuzzy_timed_out=timed_out
+            return documents
 
     def list_documents(self,actor,project_id,limit=20,cursor=None):
         with self.transaction() as c:

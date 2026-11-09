@@ -42,6 +42,53 @@ class PortalCollectionsTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(len(response.json()['items']), 1)
 
+    def test_each_text_filter_matches_a_query_without_accent_or_inflection(self):
+        """Decision P-03: the five text filters use the Spanish/English configurations too (all failed before)."""
+        store, actor, project = create_core()
+        service = PortalStore(store)
+        value = event(project, session_id='session-fts', agent_id='configuración-ágil', payload={
+            'title': 'Configuración de las canciones', 'content': 'La configuración vive en el servidor', 'category': 'API'})
+        store.ingest_event(actor, value)
+        other = event(project, session_id='session-other', agent_id='fixture', payload={'title': 'Sin relación', 'content': 'Texto distinto', 'category': 'API'})
+        store.ingest_event(actor, other)
+        expected = {'sessions': ('configuracion agil', 'id', 'session-fts'), 'jobs': ('upserting', 'item_id', value['item_id']),
+                    'history': ('configuracion cancion', 'event_id', value['event_id']), 'activity-log': ('notes', 'item_id', value['item_id']),
+                    'notes': ('configuracion cancion', 'item_id', value['item_id'])}
+        for kind, (query, key, wanted) in expected.items():
+            with self.subTest(collection=kind):
+                found = [item[key] for item in service.page(actor, project, kind, query=query, limit=50)['items']]
+                self.assertIn(wanted, found)
+        self.assertEqual([i['item_id'] for i in service.page(actor, project, 'notes', query='configuracion cancion')['items']], [value['item_id']])
+        self.assertEqual(service.page(actor, project, 'notes', query='zzzunrelated')['items'], [])
+
+    def test_notes_filter_reads_the_stored_language_vectors(self):
+        """The notes filter uses the indexed `search_vector_es`/`_en` (nothing recomputed per row for those two)."""
+        from contextlib import contextmanager
+        from unittest.mock import patch
+        store, actor, project = create_core()
+        service = PortalStore(store)
+        statements = []
+        original = store.transaction
+
+        @contextmanager
+        def spied():
+            with original() as connection:
+                class Spy:
+                    def execute(_, query, params=None, **kw):
+                        statements.append(str(query))
+                        return connection.execute(query, params, **kw) if params is not None else connection.execute(query, **kw)
+
+                    def __getattr__(_, name):
+                        return getattr(connection, name)
+                yield Spy()
+        with patch.object(store, 'transaction', spied):
+            service.page(actor, project, 'notes', query='configuracion cancion')
+        notes = next(s for s in statements if 'FROM memory.memory_items i' in s)
+        self.assertIn('i.search_vector_es @@', notes)
+        self.assertIn('i.search_vector_en @@', notes)
+        self.assertNotIn("to_tsvector('spanish'", notes)
+        self.assertNotIn('i.*', notes)
+
     def test_filters_precede_paging_cursor_is_bound_and_withdrawal_hides_rule(self):
         store, actor, project = create_core()
         service = PortalStore(store)

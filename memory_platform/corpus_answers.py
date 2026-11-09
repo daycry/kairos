@@ -15,6 +15,7 @@ from .errors import Conflict, MemoryError, NotFound
 from .privacy import has_sensitive
 from .providers import ProviderError, request_json
 from .store import canonical, clean, digest
+from .store_common import fts_match, fts_rank
 
 
 SCHEMA = """
@@ -175,11 +176,11 @@ class CorpusAnswers:
             previous = c.execute("""SELECT question,result FROM memory.corpus_answers WHERE corpus_id=%s AND session_id=%s
                AND generation=%s AND generation_hash=%s AND state='completed' ORDER BY created_at DESC LIMIT 3""",
                                  (corpus['id'], session, generation, corpus['canonical_hash'])).fetchall()
-            sources = c.execute("""SELECT i.id,i.version,i.canonical_hash,i.payload FROM memory.agent_corpus_entries e
+            sources = c.execute(f"""SELECT i.id,i.version,i.canonical_hash,i.payload FROM memory.agent_corpus_entries e
               JOIN memory.memory_items i ON i.id=e.item_id AND i.project_id=%s WHERE e.corpus_id=%s
-              AND i.search_vector @@ websearch_to_tsquery('simple',%s)
-              ORDER BY ts_rank_cd(i.search_vector,websearch_to_tsquery('simple',%s)) DESC,i.id LIMIT %s""",
-                                (project, corpus['id'], question, question, self.limits.max_sources)).fetchall()
+              AND {fts_match('websearch_to_tsquery','i.search_vector')}
+              ORDER BY {fts_rank('websearch_to_tsquery','i.search_vector')} DESC,i.id LIMIT %s""",
+                                (project, corpus['id'], *3*(question,), *3*(question,), self.limits.max_sources)).fetchall()
             # A follow-up such as "Why?" need not repeat a source keyword. Reuse
             # only the earlier verified references, fetching their current pinned
             # records again; generated answer text never becomes new evidence.

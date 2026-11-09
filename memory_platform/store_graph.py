@@ -2,7 +2,9 @@
 import hashlib
 
 from .errors import NotFound
-from .store_common import as_dict, clean
+from .store_common import as_dict, clean, fts_inline
+
+FACT_TEXT="concat_ws(' ',f.fact->>'subject',f.fact->>'predicate',f.fact->>'object',f.fact->>'evidence_quote')"
 
 
 class GraphMixin:
@@ -34,15 +36,15 @@ class GraphMixin:
         with self.transaction() as c:
             for pid in project_ids:
                 self._require(c,actor,pid,'read')
-            rows=c.execute("""SELECT i.*,f.fact,f.ordinality FROM memory.memory_items i
+            rows=c.execute(f"""SELECT i.project_id,i.id,i.version,i.canonical_hash,i.payload,i.occurred_at,f.fact,f.ordinality FROM memory.memory_items i
                 CROSS JOIN LATERAL jsonb_array_elements(COALESCE(i.payload->'facts','[]'::jsonb)) WITH ORDINALITY AS f(fact,ordinality)
                 JOIN memory.projects p ON p.id=i.project_id
                 WHERE i.project_id=ANY(%s) AND NOT i.deleted AND i.superseded_by IS NULL
                 AND COALESCE((p.policy->>'temporal_projection')::boolean,false)
                 AND (%s::text[] IS NULL OR i.payload->>'category'=ANY(%s))
                 AND (%s::text[] IS NULL OR (i.payload->'tags') ?| %s)
-                AND (%s='' OR to_tsvector('simple',concat_ws(' ',f.fact->>'subject',f.fact->>'predicate',f.fact->>'object',f.fact->>'evidence_quote')) @@ plainto_tsquery('simple',%s))
-                ORDER BY (i.payload->>'validation_status'='validated') DESC,i.occurred_at DESC,i.project_id,i.id,f.ordinality LIMIT %s""",(project_ids,categories,categories,tags,tags,q,q,min(max(limit,1),100))).fetchall()
+                AND (%s='' OR {fts_inline(FACT_TEXT)})
+                ORDER BY (i.payload->>'validation_status'='validated') DESC,i.occurred_at DESC,i.project_id,i.id,f.ordinality LIMIT %s""",(project_ids,categories,categories,tags,tags,q,q,q,q,min(max(limit,1),100))).fetchall()
             return [self._native_fact(row) for row in rows]
 
     def _native_fact(self,row):
@@ -78,6 +80,8 @@ class GraphMixin:
             self.require_permission(actor,pid,'read')
         if 'episodic' in layers:
             for item in self.search_items(actor,projects,q,limit,request.get('categories'),request.get('tags')):
+                if item.get('lexical_match'):
+                    continue  # graph nodes come from exact lexical matches only; approximate title matches would be unmarked nodes
                 node({'id':item['ref'],'name':item.get('title',''),'type':'memory','project_id':item['project_id'],'category':item.get('category',''),'tags':item.get('tags',[]),'ref':item['ref'],'validation_status':item['validation_status']})
         if 'documental' in layers:
             for pid in projects:

@@ -165,6 +165,7 @@ class Hit(Model):
     category: str | None = None
     tags: Annotated[list[str], Field(max_length=64)] | None = None
     superseded: bool | None = None
+    lexical_match: Literal['trigram'] | None = None  # present only on hits added by the trigram fallback (approximate title match)
 
 class SearchResult(Model):
     items: Annotated[list[Hit], Field(max_length=100)]

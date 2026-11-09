@@ -24,6 +24,35 @@ class RetrievalTests(unittest.IsolatedAsyncioTestCase):
         self.embeddings = Mock(embed=AsyncMock(return_value={'embedding': [1.0, 0.0], 'model': 'nomic-embed-text', 'verified': True}))
         self.retrieval = Retrieval(self.store, Settings('unused', request_timeout=5), self.embeddings)
 
+    async def test_trigram_fallback_hits_are_reported_in_the_layer_status(self):
+        """A fuzzy (pg_trgm) completion is distinguishable by the caller: `fuzzy_matches` appears only when it happened."""
+        exact = await self.retrieval.search({}, m.Search(project_ids=['a'], q='x', layers=['episodic', 'documental']))
+        self.assertNotIn('fuzzy_matches', exact['backends']['episodic'])
+        self.assertNotIn('fuzzy_matches', exact['backends']['documental']['providers']['native'])
+        self.store.search_items.return_value = [self.row, dict(self.row, item_id='near', ref='episodic:a:near:1', lexical_match='trigram')]
+        self.store.search_documents.return_value = [dict(self.row, layer='documental', item_id='doc', ref='documental:a:doc:1', lexical_match='trigram')]
+        fuzzy = await self.retrieval.search({}, m.Search(project_ids=['a'], q='x', layers=['episodic', 'documental']))
+        self.assertEqual(fuzzy['backends']['episodic']['fuzzy_matches'], 1)
+        self.assertEqual(fuzzy['backends']['documental']['providers']['native']['fuzzy_matches'], 1)
+        self.assertFalse(fuzzy['partial'])
+        marked = {item['item_id']: item.get('lexical_match') for item in fuzzy['items']}
+        self.assertEqual(marked, {'uuid': None, 'near': 'trigram', 'doc': 'trigram'}, 'only fallback hits carry lexical_match')
+        self.assertTrue(all('lexical_match' not in item for item in exact['items']))
+
+    async def test_trigram_fallback_timeout_is_reported_and_keeps_the_lexical_hits(self):
+        from memory_platform.store_common import LexicalResults
+        late = LexicalResults([self.row])
+        late.fuzzy_timed_out = True
+        self.store.search_items.return_value = late
+        timed_out = await self.retrieval.search({}, m.Search(project_ids=['a'], q='x', layers=['episodic']))
+        self.assertEqual([item['item_id'] for item in timed_out['items']], ['uuid'])
+        self.assertTrue(timed_out['backends']['episodic']['fuzzy_timeout'])
+        self.assertEqual(timed_out['backends']['episodic']['status'], 'ok')
+        self.assertNotIn('fuzzy_matches', timed_out['backends']['episodic'])
+        self.store.search_items.return_value = [self.row]
+        again = await self.retrieval.search({}, m.Search(project_ids=['a'], q='x', layers=['episodic']))
+        self.assertNotIn('fuzzy_timeout', again['backends']['episodic'])
+
     async def test_scope_denied_before_all_calls(self):
         self.store.require_permission.side_effect = NotFound()
         with self.assertRaises(NotFound):

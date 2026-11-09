@@ -172,6 +172,51 @@ class IsolatedDeploymentTests(unittest.TestCase):
             self.assertIn('needs its own', str(raised.exception))
             self.assertFalse(any('config' in command for command in commands))
 
+    def migrate_run(self, **changes):
+        """Run the isolated apply() with a fake runner; returns (instance, ordered compose/operator commands)."""
+        with workspace() as root:
+            secrets = self.secrets(root)
+            own = root / '.private' / 'rehearsal-kairos-rehearsal'
+            own.mkdir(parents=True)
+            (own / 'memory-platform.env').write_text('MEMORY_SECRETS_DIR=' + secrets.as_posix() + '\n', encoding='utf-8')
+            instance = deploy.Deployment(arguments(secret_dir=str(secrets), project_name='kairos-rehearsal', api_port=18790, web_port=15173, **changes), root)
+            commands = []
+            answers = {'inspect': '{"tables":{"actors":1}}', 'content-manifest': '{"sha256":"s","documents":[],"projects":[]}',
+                       'backup': '{"status":"backed_up"}', 'migrate': '{"status":"migrated"}'}
+
+            def run(command, **kwargs):
+                commands.append(command)
+                if command[-3:] == ['config', '--format', 'json']:
+                    return json.dumps({'secrets': {'memory_postgres': {'file': str(secrets / 'postgres_password')}}, 'volumes': {str(i): {'name': n} for i, n in enumerate(instance.volumes)}})
+                if 'memory-admin' in command and command[-1] in answers or 'backup' in command:
+                    return answers[next(part for part in command if part in answers)]
+                return ''
+            with patch.object(instance, 'run', side_effect=run), patch.object(deploy, 'verify_runtime', return_value={}), contextlib.redirect_stdout(io.StringIO()):
+                instance.apply()
+            return instance, commands
+
+    def test_services_are_left_running_during_migrate_by_default(self):
+        instance, commands = self.migrate_run()
+        self.assertFalse(any('stop' in command for command in commands))
+        self.assertNotIn('services_stopped_before_migrate', instance.report)
+
+    def test_opt_in_stops_api_and_worker_right_before_migrate(self):
+        instance, commands = self.migrate_run(stop_services_before_migrate=True)
+        stops = [n for n, command in enumerate(commands) if 'stop' in command]
+        migrate = next(n for n, command in enumerate(commands) if 'memory-admin' in command and command[-1] == 'migrate')
+        self.assertEqual(len(stops), 1)
+        self.assertLess(stops[0], migrate)
+        self.assertEqual(commands[stops[0]][-2:], ['memory-api', 'memory-worker'])
+        self.assertTrue(instance.report['services_stopped_before_migrate'])
+
+    def test_a_failure_after_stopping_the_services_says_they_are_still_stopped(self):
+        self.assertEqual(deploy.failure_hints({}, 'migrate'), [])
+        self.assertEqual(deploy.failure_hints({'services_stopped_before_migrate': True}, 'start'), [])
+        for phase in ('migrate', 'bootstrap'):
+            hints = deploy.failure_hints({'services_stopped_before_migrate': True}, phase)
+            self.assertEqual(len(hints), 1)
+            self.assertIn('still stopped', hints[0])
+
     def test_migrate_phase_has_its_own_long_timeout_recorded_in_the_report(self):
         with workspace() as root:
             instance, secrets = self.isolated(root)

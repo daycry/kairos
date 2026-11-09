@@ -11,6 +11,7 @@ import math
 from .errors import Conflict, Forbidden, MemoryError, NotFound
 from .privacy import has_sensitive
 from .store import canonical, clean, digest, new_id
+from .store_common import fts_match, fts_rank
 
 
 SCHEMA = """
@@ -208,15 +209,15 @@ class AgentStore:
 
     def _select(self, c, project, filters):
         # All strings are SQL values. File filters compare provenance URIs only.
-        return c.execute("""SELECT id,version,canonical_hash FROM memory.memory_items
+        return c.execute(f"""SELECT id,version,canonical_hash FROM memory.memory_items
           WHERE project_id=%s AND NOT deleted AND superseded_by IS NULL
-          AND (%s='' OR search_vector @@ websearch_to_tsquery('simple',%s))
-          AND (%s::text[]='{}' OR event_type=ANY(%s) OR payload->>'category'=ANY(%s))
-          AND (%s::text[]='{}' OR COALESCE(payload->'tags','[]'::jsonb) ?| %s)
-          AND (%s::text[]='{}' OR payload->'source'->>'uri'=ANY(%s))
+          AND (%s='' OR {fts_match('websearch_to_tsquery')})
+          AND (%s::text[]='{{}}' OR event_type=ANY(%s) OR payload->>'category'=ANY(%s))
+          AND (%s::text[]='{{}}' OR COALESCE(payload->'tags','[]'::jsonb) ?| %s)
+          AND (%s::text[]='{{}}' OR payload->'source'->>'uri'=ANY(%s))
           AND (%s::timestamptz IS NULL OR occurred_at>=%s::timestamptz)
           AND (%s::timestamptz IS NULL OR occurred_at<=%s::timestamptz)
-          ORDER BY occurred_at DESC,id LIMIT %s""", (project, filters['query'], filters['query'], filters['types'], filters['types'], filters['types'], filters['concepts'], filters['concepts'], filters['files'], filters['files'], filters['date_start'], filters['date_start'], filters['date_end'], filters['date_end'], filters['limit']+1)).fetchall()
+          ORDER BY occurred_at DESC,id LIMIT %s""", (project, filters['query'], *3*(filters['query'],), filters['types'], filters['types'], filters['types'], filters['concepts'], filters['concepts'], filters['files'], filters['files'], filters['date_start'], filters['date_start'], filters['date_end'], filters['date_end'], filters['limit']+1)).fetchall()
 
     def _corpus(self, c, actor, project, name):
         text(name, 'name')
@@ -325,11 +326,11 @@ class AgentStore:
             cached = c.execute('SELECT result FROM memory.agent_corpus_queries WHERE corpus_id=%s AND session_id=%s AND question_hash=%s', (row['id'], row['session_id'], key)).fetchone()
             if cached:
                 return cached['result']
-            rows = c.execute("""SELECT i.id,i.version,i.canonical_hash,i.payload,i.occurred_at,
-              ts_rank_cd(i.search_vector,websearch_to_tsquery('simple',%s)) AS score
+            rows = c.execute(f"""SELECT i.id,i.version,i.canonical_hash,i.payload,i.occurred_at,
+              {fts_rank('websearch_to_tsquery','i.search_vector')} AS score
               FROM memory.agent_corpus_entries e JOIN memory.memory_items i ON i.id=e.item_id AND i.project_id=%s
-              WHERE e.corpus_id=%s AND i.search_vector @@ websearch_to_tsquery('simple',%s)
-              ORDER BY score DESC,i.id LIMIT %s""", (question, project, row['id'], question, limit)).fetchall()
+              WHERE e.corpus_id=%s AND {fts_match('websearch_to_tsquery','i.search_vector')}
+              ORDER BY score DESC,i.id LIMIT %s""", (*3*(question,), project, row['id'], *3*(question,), limit)).fetchall()
             items, remaining, truncated = [], 24_000, False
             for value in rows:
                 payload = value['payload']
@@ -360,9 +361,9 @@ class AgentStore:
             ids = [text(value, 'observation ID', 200) for value in ids]
         with self.store.transaction() as c:
             self.store._require(c, actor, project, 'read')
-            rows = c.execute("""SELECT id,version,canonical_hash,payload,event_type,session_id,occurred_at
+            rows = c.execute(f"""SELECT id,version,canonical_hash,payload,event_type,session_id,occurred_at
              FROM memory.memory_items WHERE project_id=%s AND NOT deleted AND superseded_by IS NULL
              AND (%s::text[] IS NULL OR id=ANY(%s))
-             AND (%s='' OR search_vector @@ websearch_to_tsquery('simple',%s))
-             ORDER BY occurred_at DESC,id LIMIT %s""", (project, ids, ids, query, query, limit)).fetchall()
+             AND (%s='' OR {fts_match('websearch_to_tsquery')})
+             ORDER BY occurred_at DESC,id LIMIT %s""", (project, ids, ids, query, *3*(query,), limit)).fetchall()
             return clean({'project': project, 'mode': 'lexical', 'items': [{**row['payload'], 'id': row['id'], 'version': row['version'], 'hash': row['canonical_hash'], 'type': row['event_type'], 'session_id': row['session_id'], 'occurred_at': row['occurred_at'], 'sourceDetails': row['payload'].get('source')} for row in rows]})

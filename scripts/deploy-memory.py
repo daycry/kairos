@@ -301,6 +301,12 @@ class Deployment:
             stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
             self.report['backup'] = self.operator('backup', '--output', f'/backups/kairos-before-{stamp}.dump')
         self.step('migrate')
+        if getattr(self.args, 'stop_services_before_migrate', False):
+            # Opt-in: the migration holds ACCESS EXCLUSIVE locks until its COMMIT (docs/operations.md); the services of the
+            # previous release would only queue behind them. `start` brings the services back up; if the deployment stops
+            # before `start` they stay stopped.
+            self.run(self.compose + ['stop', '--timeout', '30', 'memory-api', 'memory-worker'])
+            self.report['services_stopped_before_migrate'] = True
         # The first pgvector migration rewrites embeddings and builds HNSW indexes: no 120 s abort. Recorded in the report.
         self.report['migrate_timeout_seconds'] = MIGRATE_TIMEOUT_SECONDS
         self.operator('migrate', timeout=MIGRATE_TIMEOUT_SECONDS)
@@ -422,6 +428,14 @@ def verify_runtime(manifest, secret_dir, key_file=None, origin='http://127.0.0.1
             request('/v1/auth/logout', {})
 
 
+def failure_hints(report, phase):
+    """Extra stderr lines for a failed deployment that leaves something in a state the operator must act on."""
+    if report.get('services_stopped_before_migrate') and phase in ('migrate', 'bootstrap'):
+        return ['memory-api and memory-worker were stopped before migrate and are still stopped; a failed migration is '
+                'rolled back. Start them again (docker compose ... start memory-api memory-worker) or retry.']
+    return []
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply', action='store_true')
@@ -432,6 +446,8 @@ def main(argv=None):
                         help='Isolated rehearsal: own compose project, volumes, networks, image tags, ports and private directory (never the installed project)')
     parser.add_argument('--api-port', type=int, default=DEFAULT_API_PORT, help='Isolated rehearsal only: host port of the API')
     parser.add_argument('--web-port', type=int, default=DEFAULT_WEB_PORT, help='Isolated rehearsal only: host port of the portal')
+    parser.add_argument('--stop-services-before-migrate', action='store_true',
+                        help='Stop memory-api and memory-worker before the migrate phase (they are started again by the start phase); default: leave them running')
     args = parser.parse_args(argv)
     if not args.apply:
         try:
@@ -459,6 +475,8 @@ def main(argv=None):
               'Inspect the current state before retrying; credentials are not printed.', file=sys.stderr)
         if deployment.report.get('command_failure'):
             print(deployment.report['command_failure']['details'], file=sys.stderr)
+        for hint in failure_hints(deployment.report, deployment.phase):
+            print(hint, file=sys.stderr)
         return 1
     return 0
 

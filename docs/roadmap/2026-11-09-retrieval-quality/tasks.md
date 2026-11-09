@@ -32,12 +32,12 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 1 — Medida (C-01 · P13) | 3 | 3 | 100% | 0 / 16h | 0,62 / 2,21h | 0 / 0,56h | 0 / 660k |
 | Fase 2 — Refactor de `store.py` (C-02 · P11) | 3 | 3 | 100% | 0 / 14h | 0,20 / 3,41h | 0 / 0,85h | 0 / 1020k |
 | Fase 3 — pgvector + HNSW (C-03 · P1) | 6 | 6 | 100% | 0 / 32h | 2,21 / 4,29h | 0 / 1,08h | 0 / 1290k |
-| Fase 4 — FTS por idioma + trigram (C-05 · P4) | 0 | 6 | 0% | 0 / 27h | 0 / 3,61h | 0 / 0,91h | 0 / 1090k |
+| Fase 4 — FTS por idioma + trigram (C-05 · P4) | 6 | 6 | 100% | 0 / 27h | 2,18 / 3,61h | 0 / 0,91h | 0 / 1090k |
 | Fase 5 — Troceado para embeddings (C-06 · P2) | 0 | 7 | 0% | 0 / 28h | 0 / 4h | 0 / 1h | 0 / 1200k |
 | Fase 6 — Híbrida con degradación y CLI (C-04 · P3) | 0 | 4 | 0% | 0 / 12h | 0 / 1,6h | 0 / 0,4h | 0 / 470k |
 | Fase 7 — Observabilidad (C-07 · P12) — en paralelo desde T-06 | 0 | 4 | 0% | 0 / 18h | 0 / 2,6h | 0 / 0,64h | 0 / 770k |
 | Fase 8 — Integración, revisión y activación | 0 | 5 | 0% | 0 / 26h | 0 / 4,31h | 0 / 1,06h | 0 / 1280k |
-| **TOTAL** | **12** | **38** | **31.6%** | **0 / 173h** | **3,03 / 26,03h** | **0 / 6,5h** | **0 / 7780k** |
+| **TOTAL** | **18** | **38** | **47.4%** | **0 / 173h** | **5,21 / 26,03h** | **0 / 6,5h** | **0 / 7780k** |
 
 > Las horas de este ledger son **base** (sin el margen del 20 %); con margen: humanas 207,6 h, IA 31,2 h. Las horas IA y los tokens son estimaciones (ratio 300.000 tok/h no calibrado).
 
@@ -544,47 +544,57 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 
 ## Fase 4 — FTS por idioma + trigram (C-05 · P4)
 
-**Estado**: borrador · **Estimado**: 27h base (32.4h con margen) · **Real**: — · **Coste est.**: 1.620 € · **Tokens est.**: 1000k in / 90k out
+**Estado**: completado · **Estimado**: 27h base (32.4h con margen) · **Real**: 2,18h IA (medido, ventanas únicas) · **Coste est.**: 1.620 € · **Tokens est.**: 1000k in / 90k out
 
 ### T-13 — Migración FTS: `unaccent`, `pg_trgm`, columnas es/en e índices
 
 - **Descripción**: Versión de esquema aditiva: extensiones `unaccent` y `pg_trgm`, envoltorio `IMMUTABLE` de `unaccent`, columnas FTS es y en (generadas en `documents`; calculadas en la inserción y rellenadas en `memory_items` y en las tablas de agente/corpus con `search_vector`), índices GIN y trigram. Las columnas `search_vector` `simple` se conservan.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: La base de memoria incorpora búsqueda por idioma (español e inglés, sin tildes) y trigramas mediante una migración aditiva que conserva todos los datos.
+- **Estado**: completado
 - **Tiempo humano**: est. 5h · real —
-- **Tiempo IA (ejec.)**: est. 0,67h · real —
+- **Tiempo IA (ejec.)**: est. 0,67h · real 2,18 (medido; 1,48 + 0,70 de la corrección intento 1, ventana única de T-13/T-14/T-16/T-17 fix1; ventana única que cubre toda la Fase 4, T-13…T-18 se trabajaron intercaladas)
 - **Supervisión**: est. 0,17h (≈25 % IA) · real —
 - **Previsión IA**: 185k in / 15k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-09
 - **Dependencias**: T-12
 - **Tipo**: db
-- **Archivos**: `memory_platform/schema.sql`, `memory_platform/tests/test_fts_migration.py`
+- **Archivos**: `memory_platform/schema.sql`, `memory_platform/tests/test_fts_migration.py`, `memory_platform/tests/test_pgvector_migration.py`, `docs/operations.md`, `docs/roadmap/2026-11-09-retrieval-quality/testing/fts-migration-cost.json`, `scripts/deploy-memory.py`, `memory_platform/tests/test_deploy_isolation.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:rq .` → la salida contiene `MEMORY_TEST_RESULT` con `"passed": true`, `failures: 0`, `errors: 0`, `skipped: 0` (incluye `test_fts_migration`: test en rojo antes de la migración)
   - `grep -nEi "DROP|TRUNCATE|DELETE|ALTER .* TYPE" memory_platform/schema.sql` → ninguna coincidencia en las versiones nuevas (CA-34)
 
 **Criterios de aceptación**
-- [ ] CA-22: existen las columnas e índices nuevos, `search_vector` `simple` sigue presente y consultable, y tras migrar el recuento de filas con la columna FTS nueva nula es 0 en cada tabla afectada
-- [ ] CA-34: sin `DROP`, `TRUNCATE`, `DELETE` ni `ALTER … TYPE`; `content_manifest().sha256` igual antes y después
-- [ ] El envoltorio de `unaccent` es `IMMUTABLE` y las columnas generadas se crean sin error (riesgo de la evaluación)
+- [x] CA-22: existen las columnas e índices nuevos, `search_vector` `simple` sigue presente y consultable, y tras migrar el recuento de filas con la columna FTS nueva nula es 0 en cada tabla afectada
+- [x] CA-34: sin `DROP`, `TRUNCATE`, `DELETE` ni `ALTER … TYPE`; `content_manifest().sha256` igual antes y después
+- [x] El envoltorio de `unaccent` es `IMMUTABLE` y las columnas generadas se crean sin error (riesgo de la evaluación)
 
 **Subtareas**
-- [ ] Test en rojo sobre fixture con datos previos
-- [ ] Escribir migración (extensiones, envoltorio, columnas, GIN, trigram)
-- [ ] Relleno de filas existentes y comprobación de nulos
-- [ ] Anotar el bloqueo por reescritura de tabla (R-06) y su `lock_timeout`
+- [x] Test en rojo sobre fixture con datos previos
+- [x] Escribir migración (extensiones, envoltorio, columnas, GIN, trigram)
+- [x] Relleno de filas existentes y comprobación de nulos
+- [x] Anotar el bloqueo por reescritura de tabla (R-06) y su `lock_timeout`
 
 **Notas**: Procedencia: spec CA-22, CA-34, decisión P-03. Clase: cambio (test nuevo en rojo). Patrones: FTS actual en `memory_platform/schema.sql:13` y `:27-31`; versiones aditivas en `schema.sql:21`, `:26`. Dependencia técnica real solo de T-06/T-07; se secuencia tras T-12 por el orden recomendado y para no solapar ediciones de `schema.sql`.
+- **Resultado (T-13)**: versión de esquema **9** en `schema.sql` (la 8 es pgvector; 6 y 7 las registran `extended_store` y `corpus_answers`), en un `DO $fts$` con guarda (se omite si la 9 está registrada y existen las cuatro columnas). Crea `unaccent` y `pg_trgm` `WITH SCHEMA public`, el envoltorio `memory.kairos_unaccent` (`IMMUTABLE PARALLEL SAFE STRICT`, diccionario fijado), `memory.item_fts` (A título / B cuerpo), las claves de trigramas `memory.trigram_words/compact/key`, columnas `search_vector_es`/`search_vector_en` **generadas** en `documents` y **calculadas** (columna normal + relleno + disparador `item_fts_sync` para escrituras que solo conocen `search_vector`) en `memory_items`, y seis índices (GIN es/en en ambas tablas y GIN `gin_trgm_ops` sobre el título). Las tablas de agente/corpus no tienen columna propia: usan `memory_items`. Los `search_vector` `simple` y sus índices no se tocan.
+- **Rojo** (antes de la migración, `test_fts_migration`, contenedor aislado): `Ran 7 tests in 5.787s` · `FAILED (failures=3, errors=4)`. **Verde** tras escribir la migración: `Ran 17 tests in 11.929s` · `OK` (`test_fts_migration` + `test_pgvector_migration`).
+- **CA-22 / CA-34**: tras migrar, recuento de filas con `search_vector_es`/`search_vector_en` nulo = 0 en `documents` y `memory_items` (test); `content_manifest().sha256` igual antes y después (test); el envoltorio es `provolatile='i'` y las columnas de `documents` son `attgenerated='s'` (test); `search_vector` `simple` sigue respondiendo a `configuración`. Versiones exactas `{1…9}`.
+- **Desviación declarada**: `tests/test_pgvector_migration.py` exigía el conjunto exacto `range(1, 9)` tras migrar; con la versión 9 pasa a `range(1, 10)` (una sola línea; el resto sin cambios).
+- **Coste y ventana de bloqueo (R-06)** (`testing/fts-migration-cost.json`, PostgreSQL 17.11 aislado, ~2,5 KB por documento, `maintenance_work_mem` 256 MB, serie): 2.000 filas por tabla → 7,3 s; 20.000 filas → **119,3 s** (reescritura de `documents` bajo `ACCESS EXCLUSIVE` 54,6 s; relleno de `memory_items`, bloqueos de fila, 30,7 s; seis índices con `SHARE`, 0,8-1,7 s cada uno); segunda migración 0,08 s y 0,18 s. `SET LOCAL lock_timeout='5s'` solo protege el instante de pedir el bloqueo. Medido con los índices aún parciales; el esquema final los crea sin predicado (la comprobación literal «sin `DELETE`» del plan coincide con la palabra `deleted` de un predicado `NOT deleted`). Repetir `admin migrate` no reescribe ni reconstruye (`relfilenode` y `xmin` iguales) y su sección no toma bloqueo de tabla (test con lector `ACCESS SHARE` y `lock_timeout=1500ms`). Documentado en `docs/operations.md` («Búsqueda léxica por idioma y trigramas»); `docker build --progress=plain --no-cache-filter handbook --target handbook -f memory_platform/Dockerfile.web .` → exit 0, `Kairos handbook generated: 24 verified files.`
+- **Resultado de la verificación (T-13)**: (1) `docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:rq .` (exit 0) → `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 264}`. (2) `grep -nEi "DROP|TRUNCATE|DELETE|ALTER .* TYPE" memory_platform/schema.sql` → coincidencias solo en las líneas 13, 16, 32 y 55 (versiones 1-5, la palabra `deleted` de columnas y predicados antiguos); la sección nueva (desde la línea 91, `-- fts-language (schema version 9)`) no tiene ninguna
+- **Corrección intento 1 (T-13-fix1, gaps #2, #6, #10)**: #2: `Store.migrate()` corre todo `schema.sql` en una transacción, así que los bloqueos se retienen hasta el COMMIT global. Corregidos el comentario de `schema.sql` (cabecera de la versión 9), la sección «Búsqueda léxica por idioma y trigramas» de `docs/operations.md` y el `reading` de `testing/fts-migration-cost.json`: `ACCESS EXCLUSIVE` de los `ALTER TABLE` en `documents` **y** `memory_items`, retenido hasta el COMMIT, bloquea lecturas **y** escrituras de los servicios anteriores durante toda la migración. Mitigación barata y opcional en `scripts/deploy-memory.py`: `--stop-services-before-migrate` detiene `memory-api` y `memory-worker` antes de la fase `migrate` (los vuelve a levantar `start`; registra `services_stopped_before_migrate` en el informe); el comportamiento por defecto no cambia. Tests nuevos en `test_deploy_isolation.py`: `test_services_are_left_running_during_migrate_by_default` y `test_opt_in_stops_api_and_worker_right_before_migrate` (rojo: con el script sin la opción el segundo da `AssertionError: 0 != 1`; verde: `Ran 21 tests in 0.276s` · `OK` con `test_deploy` + `test_deploy_isolation`). #6: medido de nuevo con el esquema final (índices sin predicado) y sin otros contenedores: 2.000 filas, 6,97 s; 20.000 filas, **86,86 s** (por sentencia en una copia: reescritura de `documents` 34,3 s, relleno de `memory_items` 14,8 s, índices 0,2-0,4 s cada uno); segunda migración 0,04 s. La medición anterior (119,3 s, índices parciales y otros contenedores activos) queda sustituida y la doc lo indica. #10: espacio en disco documentado (tamaño total 2,5× en `documents`, 37 → 92 MB, y 3× en `memory_items`, 30 → 91 MB, con 20.000 filas; segunda copia durante la reescritura y WAL de la transacción).
+- **Resultado de la verificación (T-13-fix1)**: `docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:rq .` (exit 0) → `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 279}`. Puerta `docker build --progress=plain --target retrieval-eval -f memory_platform/Dockerfile .` → exit 1 esperado (`fused` sigue bajo el umbral); ningún subconjunto empeora (ver T-18).
 
 ### T-14 — Consultas léxicas de `Store` con configuración es/en
 
 - **Descripción**: Adaptar los puntos de consulta de `store_documents.py`/`store_graph.py` (antes `store.py:342`, `:437`, `:533-535`, `:572-579`, `:734`) y las dos inserciones para calcular las columnas nuevas; consulta = OR de las configuraciones es, en y simple, con rango = máximo. Resultado: «configuracion cancion» encuentra «configuración de las canciones» y «deploying fails» encuentra «deployment failed».
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: La búsqueda de notas, documentos y hechos encuentra resultados sin tildes y con otras formas de la palabra (canciones/canción, fails/failed) en español e inglés.
+- **Estado**: completado
 - **Tiempo humano**: est. 8h · real —
-- **Tiempo IA (ejec.)**: est. 1,07h · real —
+- **Tiempo IA (ejec.)**: est. 1,07h · real — (incluido en la ventana de T-13)
 - **Supervisión**: est. 0,27h (≈25 % IA) · real —
 - **Previsión IA**: 295k in / 25k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-09
 - **Dependencias**: T-13
 - **Tipo**: backend
 - **Archivos**: `memory_platform/store_documents.py`, `memory_platform/store_graph.py`, `memory_platform/store_ingest.py`, `memory_platform/store_common.py`, `memory_platform/tests/test_store.py`, `memory_platform/tests/test_native.py`, `memory_platform/tests/test_fts_language.py`
@@ -594,28 +604,35 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
   - `docker build --target retrieval-eval -f memory_platform/Dockerfile .` → los subconjuntos de idioma mejoran ≥ 15 puntos de recall@5 respecto de `baseline.json` en las capas léxicas
 
 **Criterios de aceptación**
-- [ ] CA-19: «configuracion cancion» devuelve el documento con «configuración de las canciones» en el top-5 de la capa `documental`
-- [ ] CA-20: «deploying fails» devuelve la memoria «deployment failed» en el top-5 de la capa `episodic`
-- [ ] CA-23 (hechos nativos): `search_native_facts` usa la configuración nueva; test con consulta sin tilde que antes no encontraba el elemento
-- [ ] Las consultas existentes con la configuración `simple` siguen devolviendo lo mismo (suite verde)
+- [x] CA-19: «configuracion cancion» devuelve el documento con «configuración de las canciones» en el top-5 de la capa `documental`
+- [x] CA-20: «deploying fails» devuelve la memoria «deployment failed» en el top-5 de la capa `episodic`
+- [x] CA-23 (hechos nativos): `search_native_facts` usa la configuración nueva; test con consulta sin tilde que antes no encontraba el elemento
+- [x] Las consultas existentes con la configuración `simple` siguen devolviendo lo mismo (suite verde)
 
 **Subtareas**
-- [ ] Escribir tests en rojo (CA-19, CA-20, hechos nativos)
-- [ ] Calcular columnas en la inserción de `memory_items` y documentos
-- [ ] Reescribir consultas con OR de las tres configuraciones
-- [ ] Verificar sin regresión en `test_store.py` y `test_native.py`
+- [x] Escribir tests en rojo (CA-19, CA-20, hechos nativos)
+- [x] Calcular columnas en la inserción de `memory_items` y documentos
+- [x] Reescribir consultas con OR de las tres configuraciones
+- [x] Verificar sin regresión en `test_store.py` y `test_native.py`
 
 **Notas**: Procedencia: spec CA-19, CA-20, CA-23, decisión P-03. Clase: cambio (test nuevo en rojo con consulta sin tilde/derivada). Patrones: `store.py:523-536` (`search_items`), `:560-585` (`search_documents`), `:720-737` (`search_native_facts`), `lexical_query` reexportada. Tras T-05 estas funciones viven en los mixins; las rutas de arriba se leen en el mixin correspondiente. Riesgo: el stemming puede bajar la precisión en identificadores (se conserva `simple` y se añade trigram en T-17).
+- **Resultado (T-14)**: `store_common.py` gana `fts_match`/`fts_rank`/`fts_inline` (OR de `simple`, `spanish` y `english` sobre texto pasado por `memory.kairos_unaccent`; rango = máximo con `GREATEST`). `search_items` y `search_documents` los usan (`store_documents.py`), `search_native_facts` usa `fts_inline` sobre el texto del hecho (`store_graph.py`) y las dos inserciones de `memory_items` (evento y derivado de extracción, `store_ingest.py`) escriben `search_vector_es`/`_en` con `memory.item_fts` (también en `DO UPDATE`). Sin métodos nuevos en `Store` (`store_surface.json` sin cambios; `test_store_surface` verde).
+- **Rojo** (`test_fts_language`, antes del cambio de consultas): `Ran 7 tests in 6.514s` · `FAILED (failures=6, errors=1)` (CA-19, CA-20, hechos nativos, tildes, modo `any`, aislamiento de proyecto). La ruta derivada se comprobó roja por separado con `store_ingest.py` de `HEAD` y el disparador desactivado: `AssertionError: False is not true : [{'id': 'dc5272a9-…', 'es': False, 'en': False}, …]`. **Verde**: `Ran 7 tests in 2.843s` · `OK`.
+- **Regresión**: `test_store`, `test_native`, `test_portal_collections` y `test_fts_language` juntos: `Ran 21 tests in 10.787s` · `OK` (las consultas con `simple` siguen devolviendo lo mismo). `test_store.py` y `test_native.py` (declarados en `Archivos`) no necesitaron cambios.
+- **Resultado de la verificación (T-14)**: (1) `docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:rq .` (exit 0) → `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 264}`. (2) `docker build --progress=plain --target retrieval-eval -f memory_platform/Dockerfile .` → ver T-18: recall@5 de capas léxicas frente a `baseline.json`: `documental` `es` 0 → 0,25 (+25 puntos); `episodic` `es` 0 → 0,5 (+50 puntos)
+- **Corrección intento 1 (T-14-fix1, gaps #9 parte hechos nativos, #11)**: #11: `search_items`, `search_documents` y los hechos nativos seleccionan columnas explícitas (`item_columns` de `store_common`, `d.project_id,d.id,d.version,d.canonical_hash,d.body`, columnas de `_native_fact`) en lugar de `*`/`d.*`/`i.*`: los tres `tsvector` no viajan a Python; sin cambiar firmas (`test_store_surface` verde, `store_surface.json` sin diff). Test sobre el SQL emitido: `test_search_statements_do_not_fetch_the_tsvector_columns` (rojo comprobado cambiando `item_columns('i.')` por `i.*` en el respaldo: `FAILED (failures=4)` junto con los otros tres tests nuevos de esta corrección, `Ran 4 tests in 3.476s`). #9: los hechos nativos no tienen columna almacenada (los hechos viven dentro de `payload->'facts'`); siguen calculando `to_tsvector` en línea para las tres configuraciones y el coste queda documentado en `docs/operations.md` (recorrido de los hechos vigentes del proyecto, como antes pero con tres configuraciones; candidato a columna almacenada si un proyecto acumula decenas de miles de hechos).
+- **Resultado de la verificación (T-14-fix1)**: `docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:rq .` (exit 0) → `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 279}`. Puerta `docker build --progress=plain --target retrieval-eval -f memory_platform/Dockerfile .` → exit 1 esperado (`fused` sigue bajo el umbral); ningún subconjunto empeora (ver T-18).
 
 ### T-15 — Búsquedas de corpus de agente y respuestas de corpus en es/en
 
 - **Descripción**: Aplicar la configuración nueva a `agent_store.py` (3 consultas) y `corpus_answers.py` (1) con sus escrituras de columna. Resultado: cada punto de llamada encuentra elementos con consultas sin tilde que antes fallaban.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Las búsquedas de corpus de agente, observaciones y respuestas de corpus también ignoran tildes y reconocen formas derivadas en español e inglés.
+- **Estado**: completado
 - **Tiempo humano**: est. 6h · real —
-- **Tiempo IA (ejec.)**: est. 0,8h · real —
+- **Tiempo IA (ejec.)**: est. 0,8h · real — (incluido en la ventana de T-13)
 - **Supervisión**: est. 0,2h (≈25 % IA) · real —
 - **Previsión IA**: 220k in / 20k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-09
 - **Dependencias**: T-13
 - **Tipo**: backend
 - **Archivos**: `memory_platform/agent_store.py`, `memory_platform/corpus_answers.py`, `memory_platform/tests/test_agent_tools.py`, `memory_platform/tests/test_corpus_answers.py`, `memory_platform/tests/test_fts_language.py`
@@ -624,25 +641,29 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:rq .` → la salida contiene `MEMORY_TEST_RESULT` con `"passed": true`, `failures: 0`, `errors: 0`, `skipped: 0` (incluye un test en rojo por punto de llamada)
 
 **Criterios de aceptación**
-- [ ] CA-23: un test por cada punto de llamada de `agent_store.py` (213, 329-331, 366) y `corpus_answers.py` (180-181) con una consulta sin tilde que antes no encontraba el elemento
-- [ ] Las búsquedas con la configuración `simple` anterior siguen devolviendo los mismos aciertos en los tests existentes
+- [x] CA-23: un test por cada punto de llamada de `agent_store.py` (213, 329-331, 366) y `corpus_answers.py` (180-181) con una consulta sin tilde que antes no encontraba el elemento
+- [x] Las búsquedas con la configuración `simple` anterior siguen devolviendo los mismos aciertos en los tests existentes
 
 **Subtareas**
-- [ ] Un test en rojo por punto de llamada
-- [ ] Adaptar las cuatro consultas y las escrituras asociadas
-- [ ] Comprobar `test_agent_tools.py` y `test_corpus_answers.py` sin cambios en sus aserciones
+- [x] Un test en rojo por punto de llamada
+- [x] Adaptar las cuatro consultas y las escrituras asociadas
+- [x] Comprobar `test_agent_tools.py` y `test_corpus_answers.py` sin cambios en sus aserciones
 
 **Notas**: Procedencia: spec CA-23, decisión P-03. Clase: cambio (test nuevo en rojo con consulta sin tilde). Patrones: `agent_store.py:213`, `:329-331`, `:366`; `corpus_answers.py:180-181`.
+- **Resultado (T-15)**: los cuatro puntos de llamada usan `fts_match`/`fts_rank` con `websearch_to_tsquery`: `agent_store._select` (selección del corpus), `query_corpus`, `observations` y `corpus_answers` (fuentes de la respuesta). Un test por punto de llamada, con consulta sin tilde (`configuracion cancion`): `test_corpus_selection_matches_a_query_without_accent`, `test_corpus_query_matches_a_question_without_accent`, `test_observation_search_matches_a_query_without_accent` (en `test_agent_tools.py`) y `test_sources_are_found_with_a_question_without_accent` (en `test_corpus_answers.py`). Las llaves literales de `'{}'` en `_select` se escapan al pasar a f-string; las aserciones previas de ambos ficheros no cambian.
+- **Rojo**: `test_agent_tools` + `test_corpus_answers`: `Ran 38 tests in 16.246s` · `FAILED (failures=3, errors=1)` (los tres de `agent_store` en fallo; el error era un fallo del propio test de `corpus_answers`: reconstruía un corpus que ya existía, corregido); tras corregirlo, `test_corpus_answers`: `Ran 21 tests in 6.661s` · `FAILED (failures=1)` con `'no_evidence' != 'completed'`. **Verde**: `test_agent_tools` + `test_corpus_answers` + `test_fts_language`: `Ran 45 tests in 16.032s` · `FAILED (failures=1)` solo por el proveedor simulado del test de `corpus_answers` (la cita debe estar en la fuente: `'failed' != 'completed'`); ajustado el proveedor del test, `test_corpus_answers`: `Ran 21 tests in 10.928s` · `OK`.
+- **Resultado de la verificación (T-15)**: (1) `docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:rq .` (exit 0) → `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 264}`.
 
 ### T-16 — Filtros del portal con la configuración nueva (solo backend)
 
 - **Descripción**: Adaptar los cinco filtros de texto de `portal_store.py` (líneas 42-79) a la configuración es/en/simple. No cambia ninguna interfaz de usuario: el cambio es solo de backend y de consulta, sin tocar `web/`.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Los filtros de texto del portal (sesiones, trabajos, historial, actividad y notas) ignoran tildes y reconocen formas derivadas, sin cambios en la interfaz.
+- **Estado**: completado
 - **Tiempo humano**: est. 3h · real —
-- **Tiempo IA (ejec.)**: est. 0,4h · real —
+- **Tiempo IA (ejec.)**: est. 0,4h · real — (incluido en la ventana de T-13)
 - **Supervisión**: est. 0,1h (≈25 % IA) · real —
 - **Previsión IA**: 110k in / 10k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-09
 - **Dependencias**: T-13
 - **Tipo**: backend
 - **Archivos**: `memory_platform/portal_store.py`, `memory_platform/tests/test_portal_collections.py`
@@ -651,54 +672,69 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:rq .` → la salida contiene `MEMORY_TEST_RESULT` con `"passed": true`, `failures: 0`, `errors: 0`, `skipped: 0` (incluye test en rojo con consulta sin tilde en un filtro del portal)
 
 **Criterios de aceptación**
-- [ ] Cada uno de los cinco filtros de `portal_store.py` encuentra el elemento con consulta sin tilde/derivada (decisión P-03: el portal también pasa a la configuración nueva)
-- [ ] `test_portal_collections.py` pasa sin cambiar aserciones previas
-- [ ] Ningún fichero de la interfaz web modificado (`git diff --stat` solo en `memory_platform/`)
+- [x] Cada uno de los cinco filtros de `portal_store.py` encuentra el elemento con consulta sin tilde/derivada (decisión P-03: el portal también pasa a la configuración nueva)
+- [x] `test_portal_collections.py` pasa sin cambiar aserciones previas
+- [x] Ningún fichero de la interfaz web modificado (`git diff --stat` solo en `memory_platform/`)
 
 **Subtareas**
-- [ ] Test en rojo por filtro
-- [ ] Adaptar las consultas de `portal_store.py:42-79`
+- [x] Test en rojo por filtro
+- [x] Adaptar las consultas de `portal_store.py:42-79`
 
 **Notas**: Procedencia: decisión P-03 (alcance del portal incluido; +3 h respecto de la evaluación base). Clase: cambio (test nuevo en rojo). Sin UI: no requiere `test-plan.md`. Patrón: `portal_store.py:42-79`.
+- **Resultado (T-16)**: los cinco filtros de `query` de `portal_store.py` usan `fts_inline` sobre su texto (`SESSION_TEXT`, `JOB_TEXT`, `HISTORY_TEXT`, `ACTIVITY_TEXT`, `NOTE_TEXT`). `test_each_text_filter_matches_a_query_without_accent_or_inflection` (en `test_portal_collections.py`, un subtest por filtro: `configuracion agil`, `upserting`, `configuracion cancion`, `notes`, `configuracion cancion`); las aserciones previas no cambian.
+- **Rojo**: `test_portal_collections`: `Ran 4 tests in 6.374s` · `FAILED (failures=6)` (los cinco subtests + la comprobación de la lista de notas). **Verde**: `test_portal_collections`, `test_native`, `test_store` y `test_fts_language`: `Ran 21 tests in 10.787s` · `OK`.
+- **Alcance de la interfaz**: ningún fichero de `web/` modificado; `git status --short` solo lista rutas de `memory_platform/` y `docs/` (con la iniciativa).
+- **Resultado de la verificación (T-16)**: (1) `docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:rq .` (exit 0) → `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 264}`.
+- **Corrección intento 1 (T-16-fix1, gap #9)**: el filtro de **notas** usa los vectores almacenados e indexados `i.search_vector_es`/`_en` (`fts_inline(..., stored='i.search_vector')`; `simple` sigue en línea sobre título y contenido; los vectores es/en cubren además problema y corrección). `test_notes_filter_reads_the_stored_language_vectors` comprueba el SQL emitido (`i.search_vector_es @@`, sin `to_tsvector('spanish'`, sin `i.*`); rojo con `stored` quitado: `FAILED` (en el mismo `Ran 4 tests in 3.476s`). Los filtros de sesiones, trabajos, historial y actividad no tienen columna almacenada y calculan los `to_tsvector` en línea sobre textos muy cortos (identificadores, estados, tipos de evento): coste documentado en `docs/operations.md`. `test_each_text_filter_matches_a_query_without_accent_or_inflection` sigue verde (los cinco filtros).
+- **Resultado de la verificación (T-16-fix1)**: `docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:rq .` (exit 0) → `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 279}`. Puerta `docker build --progress=plain --target retrieval-eval -f memory_platform/Dockerfile .` → exit 1 esperado (`fused` sigue bajo el umbral); ningún subconjunto empeora (ver T-18).
 
 ### T-17 — Respaldo `pg_trgm` y fusión de rangos
 
 - **Descripción**: Cuando el FTS devuelve menos de `limit`, completar con coincidencias por similitud `pg_trgm` sobre títulos e identificadores (`similarity_threshold` 0,3) y fusionar rangos sin duplicados. Resultado: «pg_advisroy_lock» encuentra una memoria con `pg_advisory_xact_lock`.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Si la búsqueda léxica devuelve pocos resultados, se completa con títulos parecidos (erratas e identificadores como ERR-4471), señalados como coincidencia aproximada.
+- **Estado**: completado
 - **Tiempo humano**: est. 3h · real —
-- **Tiempo IA (ejec.)**: est. 0,4h · real —
+- **Tiempo IA (ejec.)**: est. 0,4h · real — (incluido en la ventana de T-13)
 - **Supervisión**: est. 0,1h (≈25 % IA) · real —
 - **Previsión IA**: 110k in / 10k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-09
 - **Dependencias**: T-14
 - **Tipo**: backend
-- **Archivos**: `memory_platform/store_documents.py`, `memory_platform/store_graph.py`, `memory_platform/store_common.py`, `memory_platform/tests/test_fts_language.py`
+- **Archivos**: `memory_platform/store_documents.py`, `memory_platform/store_graph.py`, `memory_platform/store_common.py`, `memory_platform/tests/test_fts_language.py`, `memory_platform/retrieval.py`, `memory_platform/tests/test_retrieval.py`, `memory_platform/models.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:rq .` → la salida contiene `MEMORY_TEST_RESULT` con `"passed": true`, `failures: 0`, `errors: 0`, `skipped: 0` (incluye CA-21 en rojo antes del cambio)
   - `docker build --target retrieval-eval -f memory_platform/Dockerfile .` → el subconjunto de errores tipográficos/identificadores mejora ≥ 15 puntos de recall@5 frente a `baseline.json`
 
 **Criterios de aceptación**
-- [ ] CA-21: buscar «pg_advisroy_lock» devuelve la memoria con `pg_advisory_xact_lock` en el top-5 por el respaldo trigram
-- [ ] El respaldo solo se ejecuta cuando el FTS devuelve menos de `limit`, sin duplicar aciertos
-- [ ] El umbral de similitud (0,3) se confirma o ajusta con la puerta `retrieval-eval` y queda registrado
+- [x] CA-21: buscar «pg_advisroy_lock» devuelve la memoria con `pg_advisory_xact_lock` en el top-5 por el respaldo trigram
+- [x] El respaldo solo se ejecuta cuando el FTS devuelve menos de `limit`, sin duplicar aciertos
+- [x] El umbral de similitud (0,3) se confirma o ajusta con la puerta `retrieval-eval` y queda registrado
 
 **Subtareas**
-- [ ] Test en rojo (CA-21)
-- [ ] Implementar respaldo y fusión sin duplicados
-- [ ] Ajustar umbral con C-01 y anotar el valor final
+- [x] Test en rojo (CA-21)
+- [x] Implementar respaldo y fusión sin duplicados
+- [x] Ajustar umbral con C-01 y anotar el valor final
 
 **Notas**: Procedencia: spec CA-21, decisión P-03. Clase: cambio (test nuevo en rojo con consulta con errores). Patrón: fusión RRF y estados de capa en `retrieval.py:97-146`.
+- **Resultado (T-17)**: `search_items`/`search_documents` (`store_documents.py`) añaden, solo si la consulta tiene algún carácter de palabra y el FTS devolvió menos de `limit`, los títulos próximos según `word_similarity` de `pg_trgm` (`pg_trgm.word_similarity_threshold` = `TRIGRAM_THRESHOLD` = 0,3 por transacción) sobre la clave del título y su forma sin separadores (`ERR4471` ↔ `Error code ERR-4471`, `PoolMaxConns` ↔ `POOL_MAX_CONNS`). Filtran por proyectos autorizados, categorías, etiquetas y categorías excluidas, solo elementos vigentes, no repiten aciertos y salen **detrás** de los léxicos. Funciones de módulo (sin métodos nuevos en `Store`). **No silencioso**: cada acierto del respaldo lleva `lexical_match: "trigram"` y `Retrieval.search` añade `fuzzy_matches` al estado de la capa solo cuando ocurre (`retrieval.py`; `Hit` y el contrato MCP no cambian).
+- **Desviación declarada**: el plan decía «`similarity_threshold` 0,3»; se usa `word_similarity` (umbral 0,3) porque la similitud de cadena completa de un título largo frente a un identificador corto queda por debajo de 0,3 y no encuentra `pg_advisroy_lock`. `retrieval.py` y `tests/test_retrieval.py` se añaden a `Archivos` por el aviso del respaldo; `store_graph.py` (declarado) no cambia en esta tarea (lo toca T-14).
+- **Rojo**: `test_fts_language.TrigramFallbackTests`: `Ran 9 tests in 4.166s` · `FAILED (failures=6)` (CA-21, identificadores, erratas, solo si el FTS es corto, filtros/proyectos, documentos); en `test_retrieval`, `KeyError: 'fuzzy_matches'` con `retrieval.py` de `HEAD`. **Verde**: `test_fts_language` completo `Ran 16 tests in 5.845s` · `OK`; `test_retrieval` `Ran 19 tests in 3.219s` · `OK`.
+- **Umbral (barrido con la puerta, datos sintéticos, recall@5 de capas léxicas)**: 0,2 → `episodic` `es` 0,70 / `typo_id` 0,92, `documental` `es` 0,75 / `long` 0,58; **0,3** → 0,50 / 0,75 y 0,25 / 0,33; 0,4 → 0,30 / 0,67 y 0,25 / 0,0. Se **confirma 0,3** (el del plan): bajarlo sube el recall, pero la puerta no mide precisión y 0,2 admite coincidencias más ruidosas; el ajuste fino de la fusión queda para T-27.
+- **Resultado de la verificación (T-17)**: (1) `docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:rq .` (exit 0) → `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 264}`. (2) `docker build --progress=plain --target retrieval-eval -f memory_platform/Dockerfile .` → exit 1 (la puerta global sigue en rojo por `fused`, ver T-18); `episodic` `typo_id` recall@5: 0 → **0,75** (+75 puntos ≥ 15)
+- **Corrección intento 1 (T-17-fix1, gaps #3, #4, #5, #7, #8)**: #3: el respaldo no se ejecuta salvo que la consulta tenga alguna palabra de 3 o más caracteres (`trigram_wanted`, `TRIGRAM_MIN_WORD`); corre en un punto de guardado con `statement_timeout` propio de 1 s (`TRIGRAM_FALLBACK_MS`, `bounded_fallback` en `store_documents.py`, que restaura el valor previo y no deja la transacción abortada); si se agota se devuelven solo los léxicos (`LexicalResults.fuzzy_timed_out`) y la capa lo dice con `fuzzy_timeout: true` (`status` sigue `ok`: los léxicos están completos); `trigram_key(...)` se calcula una vez por fila para la puntuación (subconsulta `LATERAL`; el recheck del índice GIN, acotado por el mismo `statement_timeout`, la evalúa aparte). Tests: `test_short_words_do_not_trigger_the_fallback`, `test_bounded_fallback_times_out_cleanly_and_restores_the_setting`, `test_timeout_returns_the_lexical_rows_and_says_so` (con `pg_sleep` y 50 ms) y, en `test_retrieval.py`, `test_trigram_fallback_timeout_is_reported_and_keeps_the_lexical_hits`; rojo del test de palabras cortas con `TRIGRAM_MIN_WORD = 1` (parte de `Ran 4 tests in 3.476s` · `FAILED (failures=4)`). #4: `graph_data` ignora los aciertos con `lexical_match` y lo documenta; `test_graph_nodes_never_come_from_the_fallback` (rojo sin el `continue`). #5: `Hit.lexical_match` (`Literal['trigram'] | None`, ausente en los léxicos) en `models.py` (aditivo: `docs/contracts` sin diff, `test_retrieval` y la suite verdes); el empate RRF entre capas queda documentado. #8: la doc distingue `backends.episodic` y `backends.documental.providers.native`. **#7 (nota)**: la Verificación 2 de T-17 se mide en la capa `episodic` (la que contiene `typo_id`; las consultas de ese subconjunto solo existen en memorias): su recall@5 sube de 0 a 0,75. El check global `subset:typo_id` de `fused` (0,583, ganancia 0 puntos) **sigue en rojo** hasta T-27: la capa semántica simulada ya acierta esas consultas y domina la fusión RRF; no es una ganancia de este respaldo.
+- **Resultado de la verificación (T-17-fix1)**: `docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:rq .` (exit 0) → `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 279}`. Puerta `docker build --progress=plain --target retrieval-eval -f memory_platform/Dockerfile .` → exit 1 esperado (`fused` sigue bajo el umbral); ningún subconjunto empeora (ver T-18).
 
 ### T-18 — Verificación integrada de FTS por idioma
 
 - **Descripción**: Ejecutar la suite y la puerta de evaluación tras toda la fase 4 y registrar el avance frente a la línea base. Resultado: fase 4 cerrada con evidencia de que no hay regresión en ningún subconjunto.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Informe de calidad de la fase de búsqueda léxica: mejoran español y errores tipográficos en las capas léxicas sin empeorar ninguna capa.
+- **Estado**: completado
 - **Tiempo humano**: est. 2h · real —
-- **Tiempo IA (ejec.)**: est. 0,27h · real —
+- **Tiempo IA (ejec.)**: est. 0,27h · real — (incluido en la ventana de T-13)
 - **Supervisión**: est. 0,07h (≈25 % IA) · real —
 - **Previsión IA**: 75k in / 5k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-09
 - **Dependencias**: T-14, T-15, T-16, T-17
 - **Tipo**: test
 - **Archivos**: `docs/roadmap/2026-11-09-retrieval-quality/testing/phase4-eval.json`
@@ -708,14 +744,20 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
   - `docker build --target retrieval-eval -f memory_platform/Dockerfile .` → informe `phase4-eval.json`: ningún subconjunto empeora más de 2 puntos de recall@5 frente a `baseline.json`
 
 **Criterios de aceptación**
-- [ ] CA-22/CA-23 comprobados en la suite completa (0 fallos, 0 omitidos)
-- [ ] La mejora del subconjunto idioma y errores es visible en el informe frente a la línea base
+- [x] CA-22/CA-23 comprobados en la suite completa (0 fallos, 0 omitidos)
+- [x] La mejora del subconjunto idioma y errores es visible en el informe frente a la línea base
 
 **Subtareas**
-- [ ] Ejecutar suite y puerta
-- [ ] Guardar el informe en `testing/`
+- [x] Ejecutar suite y puerta
+- [x] Guardar el informe en `testing/`
 
 **Notas**: Procedencia: spec CA-22, CA-23, CA-35 (parcial). Clase: verificación de fase.
+- **Resultado (T-18)**: suite completa sobre el árbol final: `docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:rq .` (exit 0) → `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 264}`. Puerta: `docker build --progress=plain --target retrieval-eval -f memory_platform/Dockerfile .` → exit 1 **esperado** (la puerta global exige `fused` recall@5 ≥ 0,80 y MRR ≥ 0,60; sigue en rojo hasta las fases 5 y 6). Informe completo en `testing/phase4-eval.json` (mismo `dataset_sha256` que `baseline.json`, `product_database_accessed: false`, 72 consultas con `query_backends` todos `ok` y `partial: false`).
+- **Informe de `retrieval-eval` (salida literal de la puerta sin `query_backends`, que son 72 entradas idénticas salvo el `id`; regenerado en la corrección intento 1 sobre el árbol final: mismas métricas; el fichero `testing/phase4-eval.json` las contiene)**: `RETRIEVAL_EVAL_RESULT {"dataset": "dataset-v1", "dataset_sha256": "1bba8d997c6dcc8e11f2ddceba2a78e8c38c0bd7cafd4aa458dd1547ad4be6f6", "deterministic": true, "embedding_provider": "fake-hashed-words-and-char-ngrams", "gate": {"baseline_compared": true, "failures": [{"check": "fused_recall_at_5", "required": 0.8, "value": 0.513889}, {"check": "fused_mrr", "required": 0.6, "value": 0.360643}, {"check": "subset:es", "gain_points": 0.0, "required_gain_points": 15, "value": 0.333333}, {"check": "subset:typo_id", "gain_points": 0.0, "required_gain_points": 15, "value": 0.583333}, {"check": "subset:long", "gain_points": 8.3333, "required_gain_points": 15, "value": 0.583333}], "passed": false, "thresholds": {"dataset": "dataset-v1", "fused_mrr": 0.6, "fused_recall_at_5": 0.8, "gain_subsets": ["es", "typo_id", "long"], "subset_gain_points": 15}}, "generated_at": "2026-11-09T18:02:10+00:00", "layers": {"documental": {"overall": {"mrr": 0.45, "n": 20, "recall@1": 0.45, "recall@10": 0.45, "recall@5": 0.45}, "subsets": {"en": {"mrr": 1.0, "n": 4, "recall@1": 1.0, "recall@10": 1.0, "recall@5": 1.0}, "es": {"mrr": 0.25, "n": 4, "recall@1": 0.25, "recall@10": 0.25, "recall@5": 0.25}, "long": {"mrr": 0.333333, "n": 12, "recall@1": 0.333333, "recall@10": 0.333333, "recall@5": 0.333333}}}, "episodic": {"overall": {"mrr": 0.75, "n": 52, "recall@1": 0.75, "recall@10": 0.75, "recall@5": 0.75}, "subsets": {"en": {"mrr": 1.0, "n": 20, "recall@1": 1.0, "recall@10": 1.0, "recall@5": 1.0}, "es": {"mrr": 0.5, "n": 20, "recall@1": 0.5, "recall@10": 0.5, "recall@5": 0.5}, "typo_id": {"mrr": 0.75, "n": 12, "recall@1": 0.75, "recall@10": 0.75, "recall@5": 0.75}}}, "fused": {"overall": {"mrr": 0.360643, "n": 72, "recall@1": 0.208333, "recall@10": 0.930556, "recall@5": 0.513889}, "subsets": {"en": {"mrr": 0.356614, "n": 24, "recall@1": 0.166667, "recall@10": 1.0, "recall@5": 0.625}, "es": {"mrr": 0.341022, "n": 24, "recall@1": 0.208333, "recall@10": 1.0, "recall@5": 0.333333}, "long": {"mrr": 0.479167, "n": 12, "recall@1": 0.416667, "recall@10": 0.583333, "recall@5": 0.583333}, "typo_id": {"mrr": 0.289418, "n": 12, "recall@1": 0.083333, "recall@10": 1.0, "recall@5": 0.583333}}}, "semantic": {"overall": {"mrr": 0.869097, "n": 72, "recall@1": 0.847222, "recall@10": 0.916667, "recall@5": 0.902778}, "subsets": {"en": {"mrr": 1.0, "n": 24, "recall@1": 1.0, "recall@10": 1.0, "recall@5": 1.0}, "es": {"mrr": 1.0, "n": 24, "recall@1": 1.0, "recall@10": 1.0, "recall@5": 1.0}, "long": {"mrr": 0.214583, "n": 12, "recall@1": 0.083333, "recall@10": 0.5, "recall@5": 0.416667}, "typo_id": {"mrr": 1.0, "n": 12, "recall@1": 1.0, "recall@10": 1.0, "recall@5": 1.0}}}}, "limit": 10, "model": "nomic-embed-text", "network_interfaces": ["eth0", "lo"], "network_observation": "interfaces other than loopback exist", "product_database_accessed": false}`
+- **Frente a `baseline.json` (recall@5; ninguna capa empeora, el peor cambio es +0,0 puntos)**: `documental` — `en` 1,0 → 1,0; `es` 0 → **0,25**; `long` 0 → **0,333**; global 0,2 → 0,45. `episodic` — `en` 1,0 → 1,0; `es` 0 → **0,5**; `typo_id` 0 → **0,75**; global 0,385 → 0,75. `fused` — `en` 0,625 → 0,625; `es` 0,333 → 0,333; `long` 0,5 → 0,583; `typo_id` 0,583 → 0,583; global 0,5 → 0,514, MRR 0,340 → 0,361. `semantic` sin cambios (0,903 global). Mejora visible en idioma y errores de las capas léxicas (≥ 15 puntos: `es` +25/+50, `typo_id` +75).
+- **Lectura**: la fusión RRF (`fused`) apenas se mueve en `es` y `typo_id` porque la capa semántica simulada ya acierta esas consultas y domina el orden; el umbral de `fused` es objetivo de T-27 y de las fases 5-6 (troceado de documentos largos).
+- **Deuda de la revisión de la Fase 3 (intento 3, gap #1 Minor)**: «el informe completo se pega en T-18»: pegado arriba (salvo `query_backends`, por ser 72 repeticiones).
+- **Corrección intento 1 (T-18)**: la suite y la puerta se repitieron sobre el árbol final (Fase 4 con las correcciones y las deudas de la Fase 3 integradas): `docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:rq .` (exit 0) → `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 279}`; `testing/phase4-eval.json` regenerado (peor cambio de recall@5 frente a `baseline.json`: +0,0 puntos; ninguna capa ni subconjunto empeora).
 
 ---
 
@@ -1476,3 +1518,46 @@ Lentes: A+B+C+D (un revisor), con traspaso de las tablas de los intentos 1 y 2. 
 | 1 | Minor | La salida de `retrieval-eval` pegada en T-10 es una proyección de `layers` (sin `overall`/`subsets` ni `gate.failures`), no la salida literal. Basta para el criterio (ninguna capa empeora). Lente A | T-10 | corregido (tras el cierre, a petición del usuario): informe `RETRIEVAL_EVAL_RESULT` completo (con `layers` `overall`/`subsets` y `gate`/`failures`) guardado en `testing/phase3-eval.json` (sha256 `c06e9b46…3f3b`, exit 1 esperado, `layers` = `baseline.json`) y bloque `gate` pegado en T-10 («Evidencia literal (deuda #1, intento 3)») | `tasks.md:460`; `retrieval_eval/run.py:281` |
 | 2 | Minor | La doc del truncado no reflejaba que el recuento solo incluye vectores vigentes que cumplen los filtros. Lente A/B | T-09 | corregido por el orquestador: `docs/configuration.md` describe el recuento como vigentes + filtros de categorías y etiquetas | `docs/configuration.md:62` |
 | 3 | Minor | El recuento con `CURRENT_RESOURCE` usa SubPlan correlacionado por fila; con 10^6 vectores autorizados y un filtro muy raro pueden ser dos recorridos completos (segundos), y el backend semántico cae a `unavailable` por `statement_timeout`. Con el volumen real (~21 documentos) es despreciable. Lente D | T-09 | corregido (tras el cierre, a petición del usuario): un único recorrido (sin recuento; `rank_exact` informa `truncated`), en savepoint con `statement_timeout = min(resto del plazo, MEMORY_VECTOR_EXACT_FALLBACK_MS)` (1500 ms); tope agotado: filas HNSW con `truncated=True` (`partial`) y transacción usable; plazo global vencido: `semantic_deadline_exceeded`. Rojo 7/240, luego verde `MEMORY_TEST_RESULT … "tests": 241 … "passed": true`; detalle en T-09 (T-09-fix3) | `store_vectors.py:78-81` |
+
+## Revisión de dos lentes — intento 1: Fase 4 (T-13…T-18) (T-13, T-14, T-15, T-16, T-17, T-18)
+
+Lentes: A+B (un revisor) y C+D (otro). C por contenido `sql-fstring` en `store_documents.py:139`; D por ruta `schema.sql` y tests de migración. Base `7f15402` (Fase 3 + deudas). `scope-check.py --base 7f15402` → exit 0 (20 en alcance, 0 fuera); `ledger-lint` exit 0.
+
+**Lo aprobado:** T-13…T-18 cumplen sus criterios (Lente A); migración aditiva con guarda, trigger y escrituras correctos, parámetros SQL cuadrados, sin `to_tsquery` crudo (Lente B: sin defectos); sin inyección, aislamiento por proyecto en trigram y portal, funciones cualificadas sin `SECURITY DEFINER` (Lente C: sin hallazgos). `range(1,9)`→`range(1,10)` justificado por la versión 9; índices no parciales aceptables (no contradicen spec ni plan). `store_surface.json`, `docs/contracts` y `web/` sin diff.
+
+**Suite sobre el árbol final (Fase 4 + deudas de la Fase 3, ejecutada por el orquestador):** `docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:p4 .` → exit 0:
+`MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 270}`
+
+**Resultado: 3 gaps Important y 8 Minor.** T-13, T-14, T-16 y T-17 vuelven a `en-progreso`.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | La línea `"tests": 264` pegada no corresponde al árbol final (270 tests). Lente A | T-13…T-18 | corregido por el orquestador: el 264 es literal del árbol `f82b7c6` + Fase 4 (235 + 29); las 6 restantes son las de las deudas de la Fase 3 integradas después (`7f15402`). Línea literal de 270 pegada arriba, sobre el árbol final | `tasks.md:584,620,651,683,718,747` |
+| 2 | Important | La ventana de bloqueo documentada es falsa: `Store.migrate()` corre en una transacción, así que el `ACCESS EXCLUSIVE` de `documents` y `memory_items` se retiene hasta el COMMIT (~119 s con 20k filas), bloqueando lecturas de los servicios anteriores; la doc dice «relleno con bloqueos de fila; índices con SHARE (las lecturas siguen)». Lente D | T-13 | corregido: `schema.sql`, `docs/operations.md` y el `reading` de `fts-migration-cost.json` describen la retención real (bloqueos hasta el COMMIT de la migración única, en `documents` y `memory_items`, lecturas y escrituras); mitigación opcional `--stop-services-before-migrate` en `deploy-memory.py` (default sin cambios) con 2 tests; coste vuelto a medir (86,9 s con 20.000 filas) | `docs/operations.md:173`; `schema.sql:97-98,124,133`; `store_auth.py:13`; `testing/fts-migration-cost.json` |
+| 3 | Important | El respaldo trigram no es selectivo con consultas cortas (1-2 caracteres: basta un trigrama, ~50 % de títulos candidatos) y se dispara casi siempre (léxico < `limit`), dos veces por búsqueda, sin `statement_timeout`: ~25 s con 10^6 items, amplificable por cualquier lector (CWE-400). Lente D | T-17 | corregido: sin respaldo si ninguna palabra tiene ≥ 3 caracteres; `statement_timeout` propio de 1 s en savepoint (`bounded_fallback`); al agotarse, léxicos + `fuzzy_timeout: true`; `trigram_key` una vez por fila para la puntuación; tests de palabras cortas, tope agotado y estado de capa | `store_documents.py:24-45,142-145,195-198`; `store_common.py:66-71`; `retrieval.py:109` |
+| 4 | Minor | `graph_data` añade aciertos trigram como nodos sin marca. Lente A | T-17 | corregido: `graph_data` ignora los aciertos aproximados (documentado) y lo prueba un test | `store_graph.py:82` |
+| 5 | Minor | En la fusión RRF un acierto trigram de una capa empata o supera a léxicos exactos de otra, y el `Hit` público no lleva `lexical_match`. Lente A | T-17 | corregido: `Hit.lexical_match` opcional y aditivo (contrato sin diff); el empate RRF entre capas queda documentado | `retrieval.py:141-152` |
+| 6 | Minor | El coste documentado se midió con índices parciales y sin filas borradas; la doc no lo matiza. Lente A | T-13 | corregido: medido de nuevo con el esquema final, sin otros contenedores; JSON y doc sustituyen la medición anterior | `docs/operations.md:173`; `fts-migration-cost.json:51` |
+| 7 | Minor | La Verificación 2 de T-17 se da por cumplida con `episodic typo_id` sin explicar que el check `subset:typo_id` (fused) sigue en rojo. Lente A | T-17 | corregido: nota en T-17 (la Verificación 2 mide `episodic`; `subset:typo_id` de `fused` sigue en rojo hasta T-27) | `tasks.md:701,718` |
+| 8 | Minor | La doc sitúa `fuzzy_matches` en el estado de la capa; en `documental` va en `providers.native`. Lente A | T-17 | corregido: la doc sitúa `fuzzy_matches`/`fuzzy_timeout` en `backends.episodic` y en `backends.documental.providers.native` | `retrieval.py:90`; `docs/operations.md:176` |
+| 9 | Minor | Los filtros `query` del portal y los hechos nativos calculan tres `to_tsvector` por fila sin índice (antes uno): ~30-150 s por página con 10^5 notas. Lente D | T-14, T-16 | corregido: las notas del portal usan `search_vector_es`/`_en` almacenados (test sobre el SQL); sesiones/trabajos/historial/actividad y hechos nativos siguen en línea y su coste queda documentado (sin columna almacenada) | `portal_store.py:50-88`; `store_graph.py:46` |
+| 10 | Minor | La doc no indica el espacio en disco de la migración (2,5-3× en `documents` y `memory_items`). Lente D | T-13 | corregido: espacio en disco (2,5× y 3×, segunda copia de la tabla y WAL) en `operations.md` y en el JSON | `docs/operations.md:173` |
+| 11 | Minor | `SELECT *`/`d.*` traen ahora tres `tsvector` por fila a Python. Lente B (fuera de lente) | T-14 | corregido: columnas explícitas (`item_columns`) en `search_items`, `search_documents`, el respaldo, las notas del portal y los hechos nativos; test sobre el SQL emitido | `store_documents.py:120-124` |
+
+## Revisión de dos lentes — intento 2: Fase 4 (T-13…T-18) (T-13, T-14, T-15, T-16, T-17, T-18)
+
+Lentes: A+B+C+D (un revisor), con traspaso de la tabla del intento 1. Base `7f15402`. `scope-check.py --base 7f15402` → exit 0; `ledger-lint` exit 0.
+
+**Gaps #2…#11 del intento 1:** todos ✓. Suite literal del árbol final (279) en T-13/T-18; criterios 35/35 con texto literal de `7f15402`; `store_surface.json`, `docs/contracts` y `web/` sin diff; `Hit.lexical_match` opcional y aditivo (los contratos exportados no cambian: `scripts/export-contracts.py` regenerado sin diff). Respaldo trigram acotado a ≤1 s por capa (antes ~25 s con 10^6 filas).
+
+**Resultado: 0 Critical, 0 Important, 4 Minor. Revisión cerrada.**
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| N1 | Minor | Con `--stop-services-before-migrate`, si `migrate` falla, API y worker quedan parados y stderr no lo dice. Lente B | T-13 | corregido por el orquestador: `failure_hints()` en `scripts/deploy-memory.py` añade la línea «memory-api and memory-worker were stopped before migrate and are still stopped…» en fallos de `migrate`/`bootstrap`; test `test_a_failure_after_stopping_the_services_says_they_are_still_stopped` (`Ran 22 tests … OK` en `test_deploy_isolation` + `test_deploy`) | `scripts/deploy-memory.py`; `tests/test_deploy_isolation.py` |
+| N2 | Minor | `except QueryCanceled` también captura un `pg_cancel_backend` de un admin y lo informa como `fuzzy_timeout`. Lente B | T-17 | deuda aceptada: degradado señalizado, no silencioso; mismo criterio que el respaldo exacto de la Fase 3 | `store_documents.py:33` |
+| N3 | Minor | `CROSS JOIN LATERAL (SELECT key AS tkey)` puede aplanarse y recalcular `trigram_key` por uso. Lente D | T-17 | corregido por el orquestador: `OFFSET 0` en la subconsulta LATERAL de `trigram_items` y `trigram_documents` | `store_documents.py:47,60` |
+| N4 | Minor | Ampliaciones de `Archivos` sin nota explícita (T-13: `deploy-memory.py`, `test_deploy_isolation.py`, `operations.md`, `fts-migration-cost.json`; T-17: `models.py`). Lente A | T-13, T-17 | corregido por el orquestador: esta fila es la nota; motivos en las correcciones #2, #5, #6 y #10 del intento 1 | `tasks.md:561,703,721` |
+
+Suite tras N1/N3 (`docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:p4b .`, exit 0):
+`MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 280}`
