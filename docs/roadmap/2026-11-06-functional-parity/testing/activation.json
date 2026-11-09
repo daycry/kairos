@@ -1,10 +1,48 @@
 {
-  "status": "blocked_before_activation",
-  "phase": "engine",
-  "reason": "Docker API permission denied in agent session",
-  "command": "python kairos/scripts/deploy-memory.py --apply",
-  "later_phases_run": false,
-  "product_database_modified": false,
-  "services_recreated": false,
-  "models_credentials_ports_capture_policy_changed": false
+  "status": "complete",
+  "date": "2026-11-09",
+  "command": "python scripts/deploy-memory.py --apply",
+  "phases": ["engine", "configuration", "build", "database", "inspect", "backup", "migrate", "bootstrap", "start", "verify"],
+  "backup": {
+    "status": "backed_up",
+    "path": "/backups/kairos-before-20261109T103844220448Z.dump",
+    "bytes": 208888
+  },
+  "verification": {
+    "transport": "MCP HTTP",
+    "tools": 34,
+    "projects": 2,
+    "documents_verified": 21
+  },
+  "data_removed": false,
+  "capture_policy_changed": false,
+  "models_credentials_ports_changed": false,
+  "report": ".private/deployment-status.json (not versioned)",
+  "history": [
+    {
+      "date": "2026-11-06",
+      "status": "blocked_before_activation",
+      "phase": "engine",
+      "reason": "Docker API permission denied in agent session",
+      "later_phases_run": false,
+      "product_database_modified": false
+    },
+    {
+      "date": "2026-11-09",
+      "status": "stopped_at_start",
+      "phase": "start",
+      "reason": "Host Ollama upstream (host.docker.internal:11434) not running; proxy health check returned 502",
+      "completed_phases": ["engine", "configuration", "build", "database", "inspect", "backup", "migrate", "bootstrap"],
+      "resolution": "Operator started host Ollama with beam:cloud and nomic-embed-text available; deployment re-run completed"
+    }
+  ],
+  "npm_publication": {
+    "status": "blocked",
+    "reason": "Publisher account daycry appears suspended for publication; registry returns 404 for @daycry/kairos after the operator's publish attempt",
+    "reviewed_artifact": "packages/kairos-cli/artifacts/daycry-kairos-0.2.0.tgz",
+    "sha256": "c7316e0d813edd584edbca7b0c6d19950e2a7eb2d5809cdc0e088e144da84451",
+    "integrity": "sha512-rvCspexr/AvVj7ixJCI1MlzxKEXPtyT/z3lxLBs2Z/4gJrEqNk7CHeKOq0XX0blhWNFjkH+EOUUjPqACBfVmzw==",
+    "release_check": "passed 2026-11-09",
+    "registry_check": "exit 2 (version not found) 2026-11-09"
+  }
 }
