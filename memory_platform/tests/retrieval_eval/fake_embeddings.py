@@ -55,3 +55,10 @@ class FakeEmbeddings:
             raise ProviderError('embedding_empty_input')
         model = self.settings.embedding_model
         return {'embedding': vectorize(text[:TEXT_LIMIT], dimensions_for(model)), 'model': model, 'verified': True}
+
+    async def embed_many(self, texts, query=False):
+        """Same interface as ``Embeddings.embed_many`` (the fragments of one text): one deterministic vector per input."""
+        if not isinstance(texts, (list, tuple)) or not texts or any(not isinstance(t, str) or not t.strip() for t in texts):
+            raise ProviderError('embedding_empty_input')
+        model = self.settings.embedding_model
+        return {'embeddings': [vectorize(text[:TEXT_LIMIT], dimensions_for(model)) for text in texts], 'model': model, 'verified': True}

@@ -1,3 +1,4 @@
+import json
 import unittest
 from unittest.mock import AsyncMock, Mock
 from fastapi.testclient import TestClient
@@ -48,3 +49,27 @@ class NativeMCPTests(unittest.TestCase):
             response = client.post('/mcp/', headers={'Authorization': 'Bearer fixture', 'Accept': 'application/json, text/event-stream'}, json={'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call', 'params': {'name': 'search', 'arguments': {'project_ids': ['foreign'], 'q': 'fixture'}}})
             self.assertEqual(response.status_code, 200, response.text)
             self.assertTrue(response.json()['result']['isError'])
+
+
+class SearchHitFieldsTests(unittest.TestCase):
+    """CA-29 at the tool: `matched_chunk` travels untouched when a hit has it and is absent when it has not."""
+    def test_search_passes_matched_chunk_through_and_omits_it_for_other_hits(self):
+        auth = Mock()
+        auth.authenticate_bearer.return_value = {'id': 'test', 'credential_type': 'bearer'}
+        auth.authenticate_session.side_effect = Unauthorized()
+        plain = {'ref': 'documental:a:one:1', 'layer': 'documental', 'project_id': 'a', 'item_id': 'one', 'title': 'T', 'excerpt': 'x', 'validation_status': 'validated', 'version': 1}
+        chunked = dict(plain, ref='documental:a:two:1', item_id='two', matched_chunk={'ordinal': 4, 'char_start': 5200, 'char_end': 6700})
+        retrieval = Mock(search=AsyncMock(return_value={'items': [chunked, plain], 'backends': {}, 'partial': False}))
+        app = create_app(Settings('unused'), store=Mock(), auth=auth, retrieval=retrieval)
+        with TestClient(app, base_url='http://localhost:8790') as client:
+            headers = {'Authorization': 'Bearer fixture', 'Accept': 'application/json, text/event-stream'}
+            client.post('/mcp/', headers=headers, json={'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {'protocolVersion': '2025-03-26', 'capabilities': {}, 'clientInfo': {'name': 'fixture', 'version': '1'}}})
+            call = client.post('/mcp/', headers=headers, json={'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call', 'params': {'name': 'search', 'arguments': {'project_ids': ['a'], 'q': 'fixture'}}})
+        self.assertEqual(call.status_code, 200, call.text)
+        result = call.json()['result']
+        self.assertFalse(result.get('isError'), result)
+        content = result.get('structuredContent') or json.loads(result['content'][0]['text'])
+        items = content.get('result', content)['items']
+        self.assertEqual(items[0]['matched_chunk'], {'ordinal': 4, 'char_start': 5200, 'char_end': 6700})
+        self.assertNotIn('matched_chunk', items[1])
+        self.assertEqual(items[1]['ref'], 'documental:a:one:1')

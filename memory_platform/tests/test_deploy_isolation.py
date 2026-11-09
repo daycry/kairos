@@ -172,7 +172,7 @@ class IsolatedDeploymentTests(unittest.TestCase):
             self.assertIn('needs its own', str(raised.exception))
             self.assertFalse(any('config' in command for command in commands))
 
-    def migrate_run(self, **changes):
+    def migrate_run(self, backfill_answer=None, fail_stop=False, **changes):
         """Run the isolated apply() with a fake runner; returns (instance, ordered compose/operator commands)."""
         with workspace() as root:
             secrets = self.secrets(root)
@@ -182,29 +182,43 @@ class IsolatedDeploymentTests(unittest.TestCase):
             instance = deploy.Deployment(arguments(secret_dir=str(secrets), project_name='kairos-rehearsal', api_port=18790, web_port=15173, **changes), root)
             commands = []
             answers = {'inspect': '{"tables":{"actors":1}}', 'content-manifest': '{"sha256":"s","documents":[],"projects":[]}',
-                       'backup': '{"status":"backed_up"}', 'migrate': '{"status":"migrated"}'}
+                       'backup': '{"status":"backed_up"}', 'migrate': '{"status":"migrated"}',
+                       'backfill-chunks': backfill_answer or '{"status":"backfilled","enqueued":7,"remaining":0,"batches":1,"embedding_filled":0}'}
 
             def run(command, **kwargs):
                 commands.append(command)
+                if fail_stop and 'stop' in command:
+                    raise RuntimeError('stop failed')
                 if command[-3:] == ['config', '--format', 'json']:
                     return json.dumps({'secrets': {'memory_postgres': {'file': str(secrets / 'postgres_password')}}, 'volumes': {str(i): {'name': n} for i, n in enumerate(instance.volumes)}})
                 if 'memory-admin' in command and command[-1] in answers or 'backup' in command:
                     return answers[next(part for part in command if part in answers)]
                 return ''
             with patch.object(instance, 'run', side_effect=run), patch.object(deploy, 'verify_runtime', return_value={}), contextlib.redirect_stdout(io.StringIO()):
-                instance.apply()
+                if fail_stop:
+                    with self.assertRaises(RuntimeError):
+                        instance.apply()
+                else:
+                    instance.apply()
             return instance, commands
 
     def test_services_are_left_running_during_migrate_by_default(self):
         instance, commands = self.migrate_run()
-        self.assertFalse(any('stop' in command for command in commands))
+        stops = [n for n, command in enumerate(commands) if 'stop' in command]
+        migrate = next(n for n, command in enumerate(commands) if 'memory-admin' in command and command[-1] == 'migrate')
+        backfill = next(n for n, command in enumerate(commands) if 'memory-admin' in command and command[-1] == 'backfill-chunks')
+        # Nothing stops before migrate; only the memory-worker stops, after migrate and right before the backfill (gap 4).
+        self.assertEqual(len(stops), 1)
+        self.assertTrue(migrate < stops[0] < backfill)
+        self.assertEqual(commands[stops[0]][-1:], ['memory-worker'])
         self.assertNotIn('services_stopped_before_migrate', instance.report)
+        self.assertTrue(instance.report['worker_stopped_before_backfill'])
 
     def test_opt_in_stops_api_and_worker_right_before_migrate(self):
         instance, commands = self.migrate_run(stop_services_before_migrate=True)
         stops = [n for n, command in enumerate(commands) if 'stop' in command]
         migrate = next(n for n, command in enumerate(commands) if 'memory-admin' in command and command[-1] == 'migrate')
-        self.assertEqual(len(stops), 1)
+        self.assertEqual(len(stops), 2)  # api + worker before migrate, the worker again right before the backfill
         self.assertLess(stops[0], migrate)
         self.assertEqual(commands[stops[0]][-2:], ['memory-api', 'memory-worker'])
         self.assertTrue(instance.report['services_stopped_before_migrate'])
@@ -212,17 +226,33 @@ class IsolatedDeploymentTests(unittest.TestCase):
     def test_a_failure_after_stopping_the_services_says_they_are_still_stopped(self):
         self.assertEqual(deploy.failure_hints({}, 'migrate'), [])
         self.assertEqual(deploy.failure_hints({'services_stopped_before_migrate': True}, 'start'), [])
+        hints = deploy.failure_hints({'worker_stopped_before_backfill': True}, 'backfill')
+        self.assertEqual(len(hints), 1)
+        self.assertIn('memory-worker was stopped before the backfill', hints[0])
+        self.assertEqual(deploy.failure_hints({'worker_stopped_before_backfill': True}, 'migrate'), [])
         for phase in ('migrate', 'bootstrap'):
             hints = deploy.failure_hints({'services_stopped_before_migrate': True}, phase)
             self.assertEqual(len(hints), 1)
             self.assertIn('still stopped', hints[0])
+
+    def test_a_backfill_failure_with_both_stops_names_the_api_too_and_a_failed_stop_is_still_reported(self):
+        both = {'services_stopped_before_migrate': True, 'worker_stopped_before_backfill': True}
+        hints = deploy.failure_hints(both, 'backfill')
+        self.assertEqual(len(hints), 1)
+        self.assertIn('memory-api', hints[0])
+        self.assertEqual(len(deploy.failure_hints({'services_stopped_before_migrate': True}, 'backfill')), 1)
+        self.assertEqual(len(deploy.failure_hints({'worker_stopped_before_backfill': True}, 'start')), 1)
+        instance, _ = self.migrate_run(fail_stop=True, stop_services_before_migrate=True)  # the stop itself fails: it may have stopped one of them
+        self.assertTrue(instance.report['services_stopped_before_migrate'])
+        self.assertTrue(deploy.failure_hints(instance.report, 'migrate'))
 
     def test_migrate_phase_has_its_own_long_timeout_recorded_in_the_report(self):
         with workspace() as root:
             instance, secrets = self.isolated(root)
             timeouts = {}
             answers = {'inspect': '{"tables":{"actors":1}}', 'content-manifest': '{"sha256":"s","documents":[],"projects":[]}',
-                       'backup': '{"status":"backed_up"}', 'migrate': '{"status":"migrated"}'}
+                       'backup': '{"status":"backed_up"}', 'migrate': '{"status":"migrated"}',
+                       'backfill-chunks': '{"status":"backfilled","enqueued":0,"remaining":0,"batches":0,"embedding_filled":0}'}
 
             def run(command, **kwargs):
                 if command[-3:] == ['config', '--format', 'json']:

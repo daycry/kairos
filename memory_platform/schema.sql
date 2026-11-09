@@ -161,3 +161,52 @@ BEGIN
     INSERT INTO memory.schema_versions(version) VALUES (9) ON CONFLICT DO NOTHING;
 END
 $fts$;
+
+-- embedding-chunks (schema version 10)
+-- Fragments of long documents and notes for semantic search (decision P-07: 1,500 characters, 200 of overlap). Additive: one new
+-- table plus two columns with constant defaults (no table rewrite): `memory.embeddings.chunked` (true when the row was written
+-- together with its fragments; a previous release writes false, which is how search finds what still needs the item vector) and
+-- `memory.jobs.priority` (0 for live writes, 1 for the `admin backfill-chunks` jobs, which must not delay them). `memory.embeddings`
+-- (one row per resource version, the vector of the item) keeps its primary key and its meaning, so a previous release keeps working
+-- and ignores the table and both columns. A fragment is the interval
+-- [char_start, char_end) of `title || E'\n' || content` of its resource version; the text itself is not stored (it is
+-- recomputed from the current resource). `embedding` is `vector` (pgvector, created by version 8); `dims` is generated like in
+-- `memory.embeddings`. The partial HNSW indexes per (model, dimensions) are created by Store.migrate() from MEMORY_VECTOR_INDEXES.
+-- The block is skipped once version 10 is registered and the table exists: a repeated `admin migrate` creates and locks nothing.
+-- The first run only creates an empty table; the foreign key to `memory.projects` takes SHARE ROW EXCLUSIVE on that tiny table until
+-- the COMMIT of the whole migration (writes to projects wait, reads do not). Rows arrive through the worker or `admin backfill-chunks`.
+SET LOCAL lock_timeout = '5s';
+DO $chunks$
+BEGIN
+    IF EXISTS (SELECT 1 FROM memory.schema_versions WHERE version = 10)
+       AND to_regclass('memory.embedding_chunks') IS NOT NULL
+       AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'memory' AND table_name = 'jobs' AND column_name = 'priority') THEN
+        RETURN;
+    END IF;
+    CREATE TABLE IF NOT EXISTS memory.embedding_chunks(
+        project_id text NOT NULL REFERENCES memory.projects(id),
+        item_id text NOT NULL,
+        resource_type text NOT NULL CHECK(resource_type IN ('item','document')),
+        version integer NOT NULL,
+        canonical_hash text NOT NULL,
+        model text NOT NULL,
+        ordinal integer NOT NULL CHECK(ordinal >= 0),
+        char_start integer NOT NULL CHECK(char_start >= 0),
+        char_end integer NOT NULL,
+        embedding vector NOT NULL CHECK(vector_dims(embedding) BETWEEN 1 AND 4096),
+        dims integer GENERATED ALWAYS AS (vector_dims(embedding)) STORED,
+        created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+        CHECK(char_end > char_start),
+        PRIMARY KEY(project_id, item_id, resource_type, version, model, ordinal)
+    );
+    ALTER TABLE memory.jobs ADD COLUMN IF NOT EXISTS priority smallint NOT NULL DEFAULT 0;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'memory' AND table_name = 'embeddings' AND column_name = 'chunked') THEN
+        ALTER TABLE memory.embeddings ADD COLUMN chunked boolean NOT NULL DEFAULT false;
+        UPDATE memory.embeddings e SET chunked = true WHERE EXISTS (SELECT 1 FROM memory.embedding_chunks k
+            WHERE k.project_id = e.project_id AND k.item_id = e.item_id AND k.resource_type = e.resource_type AND k.version = e.version AND k.model = e.model);
+    END IF;
+    -- Empty once every row is chunked: the probe "is any embedding still unchunked in scope" is then an index lookup, not a scan.
+    CREATE INDEX IF NOT EXISTS memory_embeddings_unchunked ON memory.embeddings(project_id, model, dims) WHERE NOT chunked;
+    INSERT INTO memory.schema_versions(version) VALUES (10) ON CONFLICT DO NOTHING;
+END
+$chunks$;

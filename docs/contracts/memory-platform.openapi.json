@@ -570,6 +570,160 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "Hit": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Category"
+          },
+          "excerpt": {
+            "title": "Excerpt",
+            "type": "string"
+          },
+          "index_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pending",
+                  "ready"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Index Status"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
+          "layer": {
+            "enum": [
+              "episodic",
+              "documental",
+              "temporal"
+            ],
+            "title": "Layer",
+            "type": "string"
+          },
+          "lexical_match": {
+            "anyOf": [
+              {
+                "const": "trigram",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Lexical Match"
+          },
+          "matched_chunk": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MatchedChunk"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fragment that answered this semantic hit, present only when it is not the whole text; offsets are Unicode code points of title + newline + content"
+          },
+          "project_id": {
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "ref": {
+            "title": "Ref",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Source"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "superseded": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Superseded"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 64,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tags"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "validation_status": {
+            "enum": [
+              "observed",
+              "unverified",
+              "validated",
+              "unknown"
+            ],
+            "title": "Validation Status",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ref",
+          "layer",
+          "project_id",
+          "item_id",
+          "title",
+          "excerpt",
+          "validation_status",
+          "version"
+        ],
+        "title": "Hit",
+        "type": "object"
+      },
       "KeyInput": {
         "additionalProperties": false,
         "properties": {
@@ -630,6 +784,37 @@
           "password"
         ],
         "title": "Login",
+        "type": "object"
+      },
+      "MatchedChunk": {
+        "additionalProperties": false,
+        "description": "The fragment that answered a semantic hit. Offsets are Unicode code points (not bytes or UTF-16 units) into title + newline + content.",
+        "properties": {
+          "char_end": {
+            "description": "Code point after the last one of the fragment (end-exclusive)",
+            "minimum": 1,
+            "title": "Char End",
+            "type": "integer"
+          },
+          "char_start": {
+            "description": "First code point of the fragment (Unicode code points of title + newline + content)",
+            "minimum": 0,
+            "title": "Char Start",
+            "type": "integer"
+          },
+          "ordinal": {
+            "description": "Position of the fragment among those of the resource, from 0",
+            "minimum": 0,
+            "title": "Ordinal",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ordinal",
+          "char_start",
+          "char_end"
+        ],
+        "title": "MatchedChunk",
         "type": "object"
       },
       "Payload": {
@@ -946,6 +1131,35 @@
           "q"
         ],
         "title": "Search",
+        "type": "object"
+      },
+      "SearchResult": {
+        "additionalProperties": false,
+        "properties": {
+          "backends": {
+            "additionalProperties": true,
+            "title": "Backends",
+            "type": "object"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Hit"
+            },
+            "maxItems": 100,
+            "title": "Items",
+            "type": "array"
+          },
+          "partial": {
+            "title": "Partial",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "items",
+          "backends",
+          "partial"
+        ],
+        "title": "SearchResult",
         "type": "object"
       },
       "Source": {

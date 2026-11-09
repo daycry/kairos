@@ -151,6 +151,12 @@ class Search(Model):
     categories: Annotated[list[Annotated[str, Field(max_length=200)]], Field(max_length=100)] | None = None
     tags: Annotated[list[Annotated[str, Field(max_length=300)]], Field(max_length=64)] | None = None
 
+class MatchedChunk(Model):
+    """The fragment that answered a semantic hit. Offsets are Unicode code points (not bytes or UTF-16 units) into title + newline + content."""
+    ordinal: Annotated[int, Field(ge=0, description='Position of the fragment among those of the resource, from 0')]
+    char_start: Annotated[int, Field(ge=0, description='First code point of the fragment (Unicode code points of title + newline + content)')]
+    char_end: Annotated[int, Field(ge=1, description='Code point after the last one of the fragment (end-exclusive)')]
+
 class Hit(Model):
     index_status: Literal['pending', 'ready'] | None = None
     ref: str
@@ -166,6 +172,7 @@ class Hit(Model):
     tags: Annotated[list[str], Field(max_length=64)] | None = None
     superseded: bool | None = None
     lexical_match: Literal['trigram'] | None = None  # present only on hits added by the trigram fallback (approximate title match)
+    matched_chunk: MatchedChunk | None = Field(None, description='Fragment that answered this semantic hit, present only when it is not the whole text; offsets are Unicode code points of title + newline + content')  # present only on semantic hits answered by a fragment that is not the whole text; offsets in Unicode code points of title+newline+content
 
 class SearchResult(Model):
     items: Annotated[list[Hit], Field(max_length=100)]

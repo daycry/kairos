@@ -33,11 +33,11 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 2 — Refactor de `store.py` (C-02 · P11) | 3 | 3 | 100% | 0 / 14h | 0,20 / 3,41h | 0 / 0,85h | 0 / 1020k |
 | Fase 3 — pgvector + HNSW (C-03 · P1) | 6 | 6 | 100% | 0 / 32h | 2,21 / 4,29h | 0 / 1,08h | 0 / 1290k |
 | Fase 4 — FTS por idioma + trigram (C-05 · P4) | 6 | 6 | 100% | 0 / 27h | 2,18 / 3,61h | 0 / 0,91h | 0 / 1090k |
-| Fase 5 — Troceado para embeddings (C-06 · P2) | 0 | 7 | 0% | 0 / 28h | 0 / 4h | 0 / 1h | 0 / 1200k |
+| Fase 5 — Troceado para embeddings (C-06 · P2) | 7 | 7 | 100.0% | 0 / 28h | 1,43 / 4h | 0 / 1h | 0 / 1200k |
 | Fase 6 — Híbrida con degradación y CLI (C-04 · P3) | 0 | 4 | 0% | 0 / 12h | 0 / 1,6h | 0 / 0,4h | 0 / 470k |
 | Fase 7 — Observabilidad (C-07 · P12) — en paralelo desde T-06 | 0 | 4 | 0% | 0 / 18h | 0 / 2,6h | 0 / 0,64h | 0 / 770k |
 | Fase 8 — Integración, revisión y activación | 0 | 5 | 0% | 0 / 26h | 0 / 4,31h | 0 / 1,06h | 0 / 1280k |
-| **TOTAL** | **18** | **38** | **47.4%** | **0 / 173h** | **5,21 / 26,03h** | **0 / 6,5h** | **0 / 7780k** |
+| **TOTAL** | **25** | **38** | **65.8%** | **0 / 173h** | **6,64 / 26,03h** | **0 / 6,5h** | **0 / 7780k** |
 
 > Las horas de este ledger son **base** (sin el margen del 20 %); con margen: humanas 207,6 h, IA 31,2 h. Las horas IA y los tokens son estimaciones (ratio 300.000 tok/h no calibrado).
 
@@ -763,17 +763,18 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 
 ## Fase 5 — Troceado para embeddings (C-06 · P2)
 
-**Estado**: borrador · **Estimado**: 28h base (33.6h con margen) · **Real**: — · **Coste est.**: 1.680 € · **Tokens est.**: 1100k in / 100k out
+**Estado**: completado · **Estimado**: 28h base (33.6h con margen) · **Real**: 1,43h IA (medido, ventana única) · **Coste est.**: 1.680 € · **Tokens est.**: 1100k in / 100k out
 
 ### T-19 — Troceador por párrafos/encabezados con solape
 
 - **Descripción**: Crear `memory_platform/chunking.py`: función pura que divide `title + content` en fragmentos de ~1.500 caracteres con solape de 200 (`MEMORY_CHUNK_CHARS`, `MEMORY_CHUNK_OVERLAP`, máximo `MEMORY_CHUNK_MAX` = 200) respetando párrafos y encabezados, y devuelve `ordinal`, `char_start`, `char_end`. Resultado: cobertura total sin huecos, comprobada por test.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Los documentos y notas largos se dividen en fragmentos de unos 1.500 caracteres con solape de 200, respetando encabezados y párrafos, para poder indexar todo su texto.
+- **Estado**: completado
 - **Tiempo humano**: est. 4h · real —
-- **Tiempo IA (ejec.)**: est. 0,57h · real —
+- **Tiempo IA (ejec.)**: est. 0,57h · real 1,43 (medido, ventana única de la Fase 5: T-19…T-25 se trabajaron intercaladas)
 - **Supervisión**: est. 0,14h (≈25 % IA) · real —
 - **Previsión IA**: 155k in / 15k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-09
 - **Dependencias**: T-18
 - **Tipo**: backend
 - **Archivos**: `memory_platform/chunking.py`, `memory_platform/config.py`, `memory_platform/tests/test_chunking.py`
@@ -782,83 +783,116 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:rq .` → la salida contiene `MEMORY_TEST_RESULT` con `"passed": true`, `failures: 0`, `errors: 0`, `skipped: 0` (incluye `test_chunking` en rojo antes de crear el módulo)
 
 **Criterios de aceptación**
-- [ ] CA-24 (parte pura): los intervalos `[char_start, char_end)` de un documento de 50.000 caracteres cubren todo el texto sin huecos y con el solape configurado, y los `ordinal` son consecutivos
-- [ ] Un documento de 200.000 caracteres produce ≤ 200 fragmentos
-- [ ] Texto corto (< tamaño de fragmento) produce un único fragmento
+- [x] CA-24 (parte pura): los intervalos `[char_start, char_end)` de un documento de 50.000 caracteres cubren todo el texto sin huecos y con el solape configurado, y los `ordinal` son consecutivos
+- [x] Un documento de 200.000 caracteres produce ≤ 200 fragmentos
+- [x] Texto corto (< tamaño de fragmento) produce un único fragmento
 
 **Subtareas**
-- [ ] Tests en rojo (cobertura, solape, tope, texto corto)
-- [ ] Implementar el troceador
-- [ ] Añadir los tres parámetros a `config.py`
+- [x] Tests en rojo (cobertura, solape, tope, texto corto)
+- [x] Implementar el troceador
+- [x] Añadir los tres parámetros a `config.py`
 
 **Notas**: Procedencia: spec CA-24, decisión P-07 (1.500/200). Clase: cambio (test nuevo en rojo con documento largo). Patrón de configuración: `memory_platform/config.py` (`MEMORY_EMBED_*`). Parámetros ajustables con C-01.
+- **Resultado (T-19)**: `memory_platform/chunking.py` (módulo puro, sin E/S): `chunk_text(text, size, overlap, maximum)` devuelve `Chunks` (lista de `Chunk(ordinal, char_start, char_end)` más `truncated` y `covered_chars`) y `embedding_text(title, content)` fija el texto que se embebe y al que se refieren los intervalos (`título + \n + contenido`, el mismo que usaba el trabajador). Corta en encabezado (`\n#`), párrafo, línea, frase, palabra y, si no hay nada, corte duro, siempre en la segunda mitad de la ventana; el fragmento siguiente empieza al menos `overlap` caracteres antes del final del anterior (retrocede a un inicio de palabra, nunca recorta el solape). `config.chunk_settings()` y `config.embed_batch_size()` validan `MEMORY_CHUNK_CHARS` (1.500; 200-6.000, porque el proveedor corta una entrada a 8.000), `MEMORY_CHUNK_OVERLAP` (200; menos de la mitad), `MEMORY_CHUNK_MAX` (200; hasta 500) y `MEMORY_EMBED_BATCH` (8; hasta 64); `Settings` gana cuatro campos con esos valores por defecto y `from_env` falla al arrancar si alguno es inválido.
+- **Decisión (tope explícito)**: si el tope `MEMORY_CHUNK_MAX` no alcanza para cubrir el texto, el troceador devuelve los fragmentos que caben y `truncated=True` con `covered_chars`; no agranda el fragmento (el proveedor lo cortaría a 8.000 en silencio). Con los valores por defecto un documento (máximo 200.000 caracteres) nunca llega al tope: 151 fragmentos.
+- **Verde (T-19)**: `python -m unittest memory_platform.tests.test_chunking` → `Ran 9 tests in 0.081s` · `OK` (50.000 caracteres sin huecos y con solape ≥ 200; 200.000 → ≤ 200; texto corto → 1 fragmento; sin separadores; tope explícito; preferencia por encabezado/párrafo; parámetros). Suite completa sobre el árbol final: ver T-25.
+
+
+RED: `test_chunking` falló con ModuleNotFoundError: No module named memory_platform.chunking (Ran 1 test, FAILED errors=1) · 2026-11-09.
+
+
+RED: `test_a_run_of_blanks_never_becomes_a_fragment_and_the_coverage_stays_whole (mutante: sin el tramo en blanco)` falló con AssertionError: fragmento en blanco en 'T\nintro\n'+'\n'*4000+'fin' (1 failure) · 2026-11-09.
+
+- **Corrección (intento 1)**: el «Resultado» anterior queda ampliado: ningún fragmento es nunca solo blancos (el tramo se une al anterior), ver la tabla del intento 1 fila 3.
 
 ### T-20 — Tabla `memory.embedding_chunks` e índice HNSW parcial
 
 - **Descripción**: Migración aditiva de la tabla `memory.embedding_chunks` (`ordinal`, `char_start`, `char_end`, `vector`/`embedding`, modelo, hash e identidad del recurso) con HNSW parcial como en T-08, sin tocar la clave primaria de `memory.embeddings`.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: La base de memoria incorpora una tabla de fragmentos con su propio índice vectorial mediante una migración aditiva que conserva todos los datos.
+- **Estado**: completado
 - **Tiempo humano**: est. 3h · real —
-- **Tiempo IA (ejec.)**: est. 0,43h · real —
+- **Tiempo IA (ejec.)**: est. 0,43h · real — (incluido en la ventana de T-19)
 - **Supervisión**: est. 0,11h (≈25 % IA) · real —
 - **Previsión IA**: 120k in / 10k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-09
 - **Dependencias**: T-19, T-08
 - **Tipo**: db
-- **Archivos**: `memory_platform/schema.sql`, `memory_platform/tests/test_chunk_schema.py`
+- **Archivos**: `memory_platform/schema.sql`, `memory_platform/tests/test_chunk_schema.py`, `memory_platform/store_vectors.py`, `memory_platform/tests/test_pgvector_migration.py`, `memory_platform/tests/test_fts_migration.py`, `docs/operations.md`, `docs/roadmap/2026-11-09-retrieval-quality/testing/chunk-cost.json`, `docs/roadmap/2026-11-09-retrieval-quality/testing/chunk-cost-measure.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:rq .` → la salida contiene `MEMORY_TEST_RESULT` con `"passed": true`, `failures: 0`, `errors: 0`, `skipped: 0` (incluye `test_chunk_schema`)
   - `grep -nEi "DROP|TRUNCATE|DELETE|ALTER .* TYPE" memory_platform/schema.sql` → ninguna coincidencia en las versiones nuevas (CA-34)
 
 **Criterios de aceptación**
-- [ ] La tabla existe tras `admin migrate` con claves y borrado coherentes con `memory.embeddings`
-- [ ] CA-34: migración sin operaciones destructivas; `content_manifest().sha256` sin cambios
-- [ ] El índice HNSW parcial solo cubre el modelo y la dimensión configurados
+- [x] La tabla existe tras `admin migrate` con claves y borrado coherentes con `memory.embeddings`
+- [x] CA-34: migración sin operaciones destructivas; `content_manifest().sha256` sin cambios
+- [x] El índice HNSW parcial solo cubre el modelo y la dimensión configurados
 
 **Subtareas**
-- [ ] Test de esquema en rojo
-- [ ] Escribir la migración
-- [ ] Comprobar migración idempotente
+- [x] Test de esquema en rojo
+- [x] Escribir la migración
+- [x] Comprobar migración idempotente
 
 **Notas**: Procedencia: spec CA-24, CA-34, decisión «Troceado». Clase: cambio (test nuevo en rojo). Patrón: `memory.embeddings` en `memory_platform/schema.sql:34-45`.
+- **Resultado (T-20)**: versión de esquema **10** al final de `schema.sql` (la 9 es FTS; sigue la secuencia exacta 1…10), en un `DO $chunks$` con guarda (se omite si la 10 está registrada y la tabla existe): tabla `memory.embedding_chunks` (`project_id`, `item_id`, `resource_type`, `version`, `canonical_hash`, `model`, `ordinal`, `char_start`, `char_end`, `embedding vector`, `dims` generada con `vector_dims`, `created_at`; clave primaria = la de `memory.embeddings` más `ordinal`; clave foránea a `memory.projects`; `CHECK` de ordinal, offsets y dimensiones). `memory.embeddings` no cambia (clave, columnas, índices). `migrate_vector_indexes()` crea ahora el índice HNSW parcial por (modelo, dimensiones) también en la tabla de fragmentos (`memory_chunk_hnsw_<hash>`, `WHERE model=… AND dims=…`), y la omite en una base que aún está en la versión 9.
+- **Desviación declarada**: `test_pgvector_migration` y `test_fts_migration` exigían el conjunto exacto `range(1, 10)` tras migrar; con la versión 10 pasan a `range(1, 11)` (una línea cada uno y el texto del mensaje; el resto sin cambios). `store_vectors.py` y `docs/operations.md` entran en `Archivos` por el índice de la tabla nueva y por la documentación operativa del coste.
+- **Rojo**: `test_chunk_schema` contra el `schema.sql` del commit base: `Ran 6 tests` · `FAILED (failures=4, errors=2)` (sin versión 10, sin tabla, sin índice). **Verde**: `Ran 6 tests in 3.789s` · `OK` (tabla y columnas, claves, `CHECK`, índice parcial por modelo/dimensión con `MEMORY_VECTOR_INDEXES` distinto, migrar dos veces sin reescribir ni crear nada, sección repetida sin más bloqueo que `ACCESS SHARE` sobre `embeddings`, `embedding_chunks` y `projects`, y sección solo aditiva).
+- **CA-34**: `content_manifest().sha256` y los vectores de `memory.embeddings` idénticos antes y después (test). `grep -nEi "DROP|TRUNCATE|DELETE|ALTER .* TYPE" memory_platform/schema.sql` → solo las líneas 13, 16, 32 y 55, de las versiones 1-5 (columna `deleted`); desde el marcador de la versión 10 `grep` sale con 1 (ninguna coincidencia). El test `test_the_new_schema_section_is_additive_only` lo comprueba sobre esa sección.
+- **Coste, ventana de bloqueo y espacio** (`testing/chunk-cost.json`, sha256 `b07027354f8a3aa49b9fc5ea51cb4f448ac9f55ebb14498e11bd9ebb1dc0fc88`; script `testing/chunk-cost-measure.py`; PostgreSQL 17.11 aislado; 20.000 documentos + 20.000 notas con vector de 768 dimensiones): migración 9 → 10 **0,124 s**, repetida 0,067 s; tabla vacía 32 KB. La migración es UNA transacción hasta el COMMIT: el único bloqueo nuevo es `SHARE ROW EXCLUSIVE` sobre `memory.projects` (clave foránea), que solo retiene las escrituras en `projects`; ninguna tabla de contenido se vuelve a bloquear. Espacio: 8,6 KB por fragmento (4,3 KB de tabla con TOAST y 4,2 KB de índices, 4,1 KB el HNSW). Documentado en `docs/operations.md`, «Troceado de documentos y notas largas».
+
+
+RED: `test_chunk_schema` falló con contra el schema.sql del commit base: Ran 6 tests, FAILED failures=4 errors=2 (sin version 10, sin tabla, sin indice) · 2026-11-09.
 
 ### T-21 — Worker y proveedor: embeddings por lotes dentro del plazo del job
 
 - **Descripción**: Cambiar `worker.py:47-52` y `providers.py` para troceo + embebido por lotes (`/api/embed` con varias entradas) acotados al plazo del job (lease 120 s); un fallo en el fragmento k de n falla el job completo. Resultado: documentos de 200.000 caracteres caben en el plazo sin romper el semáforo de 1 petición.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: El trabajador de embeddings procesa los textos largos por fragmentos y en lotes dentro del plazo del trabajo; si falla un fragmento, el trabajo completo falla o se reintenta.
+- **Estado**: completado
 - **Tiempo humano**: est. 6h · real —
-- **Tiempo IA (ejec.)**: est. 0,86h · real —
+- **Tiempo IA (ejec.)**: est. 0,86h · real — (incluido en la ventana de T-19)
 - **Supervisión**: est. 0,21h (≈25 % IA) · real —
 - **Previsión IA**: 235k in / 20k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-09
 - **Dependencias**: T-19
 - **Tipo**: backend
-- **Archivos**: `memory_platform/worker.py`, `memory_platform/providers.py`, `memory_platform/tests/test_worker.py`, `memory_platform/tests/test_providers.py`, `memory_platform/tests/test_jobs.py`
+- **Archivos**: `memory_platform/worker.py`, `memory_platform/providers.py`, `memory_platform/tests/test_worker.py`, `memory_platform/tests/test_providers.py`, `memory_platform/tests/test_jobs.py`, `memory_platform/config.py`, `memory_platform/tests/test_embed_many.py`, `memory_platform/tests/retrieval_eval/fake_embeddings.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:rq .` → la salida contiene `MEMORY_TEST_RESULT` con `"passed": true`, `failures: 0`, `errors: 0`, `skipped: 0` (incluye nuevos casos de lotes, plazo y fallo parcial en rojo antes del cambio)
 
 **Criterios de aceptación**
-- [ ] CA-27 (parte worker): si el proveedor falla en el fragmento k de n, el job falla o reintenta según `max_attempts` y no se entrega ningún resultado parcial al almacén
-- [ ] El proveedor envía lotes acotados (tamaño y plazo por lote configurables) y respeta el semáforo existente
-- [ ] Los tests existentes de `test_worker.py`, `test_providers.py` y `test_jobs.py` pasan sin cambiar aserciones previas
+- [x] CA-27 (parte worker): si el proveedor falla en el fragmento k de n, el job falla o reintenta según `max_attempts` y no se entrega ningún resultado parcial al almacén
+- [x] El proveedor envía lotes acotados (tamaño y plazo por lote configurables) y respeta el semáforo existente
+- [x] Los tests existentes de `test_worker.py`, `test_providers.py` y `test_jobs.py` pasan sin cambiar aserciones previas
 
 **Subtareas**
-- [ ] Tests en rojo (lotes, plazo, fallo parcial)
-- [ ] Implementar `embed_many` en `providers.py`
-- [ ] Adaptar el worker al troceo y a los lotes
+- [x] Tests en rojo (lotes, plazo, fallo parcial)
+- [x] Implementar `embed_many` en `providers.py`
+- [x] Adaptar el worker al troceo y a los lotes
 
 **Notas**: Procedencia: spec CA-27, riesgo R-05. Clase: cambio (test en rojo). Patrones: `memory_platform/worker.py:47-52` (texto `[:8000]`), `providers.py` (`Embeddings.embed`, una entrada por petición, `truncate: True`).
+- **Resultado (T-21)**: `providers.Embeddings.embed_many(texts, query=False)`: lotes de `MEMORY_EMBED_BATCH` entradas a `/api/embed` (prefijo `search_document: ` de nomic, `truncate: true`), **un solo plazo** compartido por todos los lotes (el de `embed`: `embedding_worker_timeout` para documentos), el semáforo de una petición tomado por petición, y cualquier fallo (o respuesta con menos/más vectores, vectores no finitos, nulos o de otra dimensión) falla la llamada entera sin devolver nada parcial; `embed` conserva su contrato y sus códigos de error (`valid_vector` es el mismo control, ahora compartido). `worker.embed_receipt(provider, settings, payload, hash)` (la usan el trabajador y la evaluación, para indexar igual): un fragmento → misma llamada `provider.embed(texto)` y mismo recibo que antes (por eso los tests existentes pasan sin cambiar aserciones); varios → `embed_many` y recibo con `chunks` (`ordinal`, `char_start`, `char_end`, `vector`), `vector` del elemento = el del primer fragmento, y `chunks_truncated`/`chunks_covered_chars` si el tope cortó el texto. El `[:8000]` del trabajador desaparece (`worker.py:50`). El plazo del trabajo sigue siendo `embedding_worker_timeout + JOB_DEADLINE_MARGIN` (constante, 10 s, antes literal).
+- **Desviación declarada**: los casos de lotes del proveedor están en `tests/test_embed_many.py` (fichero nuevo) y no en `test_providers.py`, que no cambia (declarado en `Archivos` por el plan); `test_jobs.py` tampoco cambia. `config.py` entra en `Archivos` por los parámetros de lote; `retrieval_eval/fake_embeddings.py` por `embed_many` (el proveedor simulado debe tener la misma interfaz que el real).
+- **Rojo**: `test_worker` (17 tests, los 8 nuevos de fragmentos incluidos) `FAILED (failures=4, errors=3)` y `test_embed_many` `Ran 6 tests` · `FAILED (errors=6)` (sin `embed_many` ni `embed_receipt`). **Verde**: `test_worker` `Ran 17 tests in 2.512s` · `OK`; `test_embed_many` `Ran 6 tests in 1.084s` · `OK`; `test_providers` y `test_jobs` sin cambios, `OK`. **CA-27 (parte worker)**: fallo en el fragmento k de n → `fail_job` con reintento (`attempts` 1 de 3) o sin él (`attempts` 3) y `complete_job` no se llama (tests `test_failure_at_fragment_k_of_n_retries_and_delivers_nothing`, `…_budget_spent_fails_the_job`, `…_wrong_number_of_vectors…`, `…_job_deadline_still_applies…`).
+
+
+RED: `test_worker+test_embed_many` falló con test_worker 17 tests FAILED failures=4 errors=3; test_embed_many 6 tests FAILED errors=6 (sin embed_many ni embed_receipt) · 2026-11-09.
+
+
+RED: `test_the_job_deadline_grows_with_the_batches_up_to_the_global_ceiling + test_the_deadline_is_proportional_to_the_number_of_batches + test_a_single_fragment_cap_still_reports_the_truncation + test_long_text_..._delivered_whole (mutantes)` falló con AssertionError: plazo fijo de 120 s / aviso de truncado perdido con MEMORY_CHUNK_MAX=1 / vector del elemento = primer fragmento (failures=1, errors=1 por mutante) · 2026-11-09.
+
+- **Corrección (intento 1)**: sustituye al «un solo plazo compartido» de arriba: plazo proporcional a los lotes (`MEMORY_EMBED_BATCH_TIMEOUT` × lotes, tope `MEMORY_EMBED_JOB_MAX_TIMEOUT`); el vector de elemento vuelve a ser el de `text[:8000]` (última entrada del último lote), no el del primer fragmento; `MEMORY_CHUNK_MAX=1` conserva el aviso de truncado (filas 5, 9 y 11).
 
 ### T-22 — `complete_job` transaccional con todos los fragmentos
 
 - **Descripción**: Guardar en `complete_job` el vector del elemento (compatibilidad) y todos los fragmentos con su posición en una única transacción, con los recibos actuales. Resultado: nunca quedan fragmentos parciales de una versión.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Los fragmentos de un recurso se guardan junto con su vector en una sola transacción: nunca queda un conjunto parcial.
+- **Estado**: completado
 - **Tiempo humano**: est. 3h · real —
-- **Tiempo IA (ejec.)**: est. 0,43h · real —
+- **Tiempo IA (ejec.)**: est. 0,43h · real — (incluido en la ventana de T-19)
 - **Supervisión**: est. 0,11h (≈25 % IA) · real —
 - **Previsión IA**: 120k in / 10k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-09
 - **Dependencias**: T-20, T-21
 - **Tipo**: backend
 - **Archivos**: `memory_platform/store_jobs.py`, `memory_platform/store_vectors.py`, `memory_platform/tests/test_jobs.py`, `memory_platform/tests/test_chunk_jobs.py`
@@ -867,105 +901,150 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:rq .` → la salida contiene `MEMORY_TEST_RESULT` con `"passed": true`, `failures: 0`, `errors: 0`, `skipped: 0` (incluye `test_chunk_jobs`: CA-27 en rojo antes del cambio)
 
 **Criterios de aceptación**
-- [ ] CA-27: con fallo en el fragmento k de n no queda ningún fragmento de esa versión guardado y el job queda en reintento o fallido según `max_attempts`
-- [ ] La escritura de elemento y fragmentos es atómica (un único commit)
-- [ ] Los tests de `test_jobs.py` pasan sin cambios en sus aserciones
+- [x] CA-27: con fallo en el fragmento k de n no queda ningún fragmento de esa versión guardado y el job queda en reintento o fallido según `max_attempts`
+- [x] La escritura de elemento y fragmentos es atómica (un único commit)
+- [x] Los tests de `test_jobs.py` pasan sin cambios en sus aserciones
 
 **Subtareas**
-- [ ] Test en rojo de atomicidad
-- [ ] Extender `complete_job` y los recibos
-- [ ] Prueba de reintento con `max_attempts`
+- [x] Test en rojo de atomicidad
+- [x] Extender `complete_job` y los recibos
+- [x] Prueba de reintento con `max_attempts`
 
 **Notas**: Procedencia: spec CA-27, decisión «Fallo de proveedor a mitad del troceado». Clase: cambio (test nuevo en rojo). Patrón: `store.py:855-886` (`complete_job`, embeddings).
+- **Resultado (T-22)**: `complete_job` valida el recibo **antes de la primera escritura** (`store_jobs.chunk_rows`: ordinales consecutivos desde 0, el primero empieza en 0, sin huecos entre vecinos, intervalos dentro del texto vigente del recurso, vectores finitos y no nulos con las dimensiones del vector del elemento, máximo 500, y salvo `chunks_truncated` el último llega al final del texto) y escribe en la misma transacción el vector del elemento (doble escritura como antes), los fragmentos de esa versión (se reemplazan como conjunto) y el recibo; borra los fragmentos de versiones anteriores del elemento y modelo (datos derivados que ya nadie puede leer; el `DELETE` es de datos derivados en tiempo de ejecución, no de una migración). Un recibo sin `chunks` (un trabajador anterior) guarda **un** fragmento sobre los primeros 8.000 caracteres, que es lo que ese trabajador embebió; su recibo guardado conserva exactamente las claves de siempre (`test_embeddings` sin cambios); con `chunks` el recibo añade `chunks` (recuento) y, si procede, `chunks_truncated`/`chunks_covered_chars` (sin vectores).
+- **Rojo**: `test_chunk_jobs` `Ran 10 tests` · `FAILED (failures=7, errors=1)`; los dos que pasan con el código anterior son la sentinela de fence caducado y el fallo en el fragmento k (no se escribe nada ni antes ni después). **Verde**: `Ran 10 tests in 6.733s` · `OK`. **CA-27**: 11 recibos dañados (otra dimensión, norma cero, no finito, ordinales saltados, hueco, fuera del texto, vacío, cola ausente sin declararla, lista vacía, tipo erróneo, más de 500) → `MemoryError invalid_embedding`, ningún fragmento, ninguna fila en `embeddings` y el trabajo sigue `running`; y de extremo a extremo con el trabajador y el proveedor reales sobre un transporte que falla en el tercer lote: intento 1 de 2 → `pending` con `provider_unavailable`; intento 2 de 2 → `failed`; en ambos casos 0 fragmentos y 0 vectores.
+- **Atomicidad**: la validación previa rechaza todo recibo dañado antes de escribir; el test del último fragmento inválido comprueba que no queda ni el vector del elemento ni ningún fragmento (0 filas) y que el trabajo sigue `running`, y todas las escrituras comparten la transacción de `complete_job` (un único commit). `test_jobs.py` no cambia ni sus aserciones.
+
+
+RED: `test_chunk_jobs` falló con Ran 10 tests, FAILED failures=7 errors=1 (complete_job no escribe fragmentos ni valida el recibo) · 2026-11-09.
 
 ### T-23 — Búsqueda agregada por elemento con `matched_chunk` y `excerpt`
 
 - **Descripción**: Hacer que la capa semántica busque sobre fragmentos, agregue por elemento con la puntuación del mejor fragmento y devuelva el campo opcional `matched_chunk` (`ordinal`, `char_start`, `char_end`); `excerpt` usa el texto del fragmento ganador. Los aciertos sin fragmento omiten el campo y `ref` no cambia de formato. Resultado: un dato más allá de 8.000 caracteres se recupera.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: La búsqueda semántica encuentra datos situados más allá de los primeros 8.000 caracteres de un documento y devuelve el campo opcional matched_chunk con el fragmento que coincide.
+- **Estado**: completado
 - **Tiempo humano**: est. 5h · real —
-- **Tiempo IA (ejec.)**: est. 0,71h · real —
+- **Tiempo IA (ejec.)**: est. 0,71h · real — (incluido en la ventana de T-19)
 - **Supervisión**: est. 0,18h (≈25 % IA) · real —
 - **Previsión IA**: 195k in / 20k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-09
 - **Dependencias**: T-22, T-09
 - **Tipo**: backend
-- **Archivos**: `memory_platform/store_vectors.py`, `memory_platform/retrieval.py`, `memory_platform/models.py`, `memory_platform/tests/test_embeddings.py`, `memory_platform/tests/test_retrieval.py`, `memory_platform/tests/test_chunk_search.py`
+- **Archivos**: `memory_platform/store_vectors.py`, `memory_platform/retrieval.py`, `memory_platform/models.py`, `memory_platform/tests/test_embeddings.py`, `memory_platform/tests/test_retrieval.py`, `memory_platform/tests/test_chunk_search.py`, `memory_platform/tests/retrieval_eval/run.py`, `memory_platform/tests/retrieval_eval/README.md`, `docs/operations.md`, `docs/roadmap/2026-11-09-retrieval-quality/testing/phase5-eval.json`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:rq .` → la salida contiene `MEMORY_TEST_RESULT` con `"passed": true`, `failures: 0`, `errors: 0`, `skipped: 0` (incluye `test_chunk_search`: CA-24/25/26 en rojo antes del cambio)
   - `docker build --target retrieval-eval -f memory_platform/Dockerfile .` → el subconjunto documento largo mejora ≥ 15 puntos de recall@5 frente a `baseline.json`
 
 **Criterios de aceptación**
-- [ ] CA-24: documento de 50.000 caracteres con frase única hacia el carácter 40.000 → su búsqueda semántica lo devuelve en el top-3 con el `matched_chunk.ordinal` del fragmento que la contiene
-- [ ] CA-25: un elemento aparece una sola vez aunque coincidan varios fragmentos, con la puntuación del mejor
-- [ ] CA-26: tras publicar una versión nueva no se devuelven fragmentos de la anterior
-- [ ] Los aciertos sin fragmento omiten `matched_chunk`
+- [x] CA-24: documento de 50.000 caracteres con frase única hacia el carácter 40.000 → su búsqueda semántica lo devuelve en el top-3 con el `matched_chunk.ordinal` del fragmento que la contiene
+- [x] CA-25: un elemento aparece una sola vez aunque coincidan varios fragmentos, con la puntuación del mejor
+- [x] CA-26: tras publicar una versión nueva no se devuelven fragmentos de la anterior
+- [x] Los aciertos sin fragmento omiten `matched_chunk`
 
 **Subtareas**
-- [ ] Tests en rojo con documento largo (dato más allá de 8.000 caracteres)
-- [ ] Agregar por elemento en SQL
-- [ ] Añadir `matched_chunk` opcional a `Hit` y al ensamblado
-- [ ] Usar el texto del fragmento en `excerpt`
+- [x] Tests en rojo con documento largo (dato más allá de 8.000 caracteres)
+- [x] Agregar por elemento en SQL
+- [x] Añadir `matched_chunk` opcional a `Hit` y al ensamblado
+- [x] Usar el texto del fragmento en `excerpt`
 
 **Notas**: Procedencia: spec CA-24…CA-26, decisión «Señal del fragmento». Clase: cambio (test nuevo en rojo con documento largo con dato más allá de 8.000 caracteres). Patrones: `retrieval.py:97-146` y `:191-208`; `models.py:143-152`, `:178-189` (`Hit`).
+- **Resultado (T-23)**: `search_vectors` consulta antes si hay fragmentos del modelo y las dimensiones en los proyectos pedidos: si no hay ninguno, ejecuta la ruta anterior **sin cambios** (`test_vector_index` sin tocar; `test_vector_search_paths` cambia solo la regex del INSERT, que ahora lleva `,chunked`). Si los hay, el vector del elemento solo responde a los recursos que aún no tienen fragmentos (`skip_chunked`) y los demás los responden `rank_chunks_ann` (índice HNSW parcial de la tabla de fragmentos, escaneo iterativo, mismas guardas que `rank_ann`) o `rank_chunks_exact` (modelos o dimensiones sin índice, hasta 10.000 **fragmentos**), con el mismo respaldo exacto acotado en savepoint con su `statement_timeout`. Agrega por elemento (`best_per_item`): un resultado por elemento con la puntuación de su mejor fragmento y `matched_chunk` (`ordinal`, `char_start`, `char_end`); `excerpt` pasa a ser el texto del fragmento ganador recalculado desde el recurso vigente (el fragmento entero, hasta `MEMORY_CHUNK_CHARS`, no los 500 de siempre: con 500 la frase coincidente podía quedar fuera). Toma `limit × 5` fragmentos y amplía (×4, hasta 2.000) mientras los fragmentos de pocos elementos llenan la toma; si en el tope sigue llena, `candidates_truncated` (respuesta `partial`). `models.Hit.matched_chunk` es opcional y aditivo (`exclude_none` lo omite en los demás aciertos); `retrieval.py` no cambia (pasa los campos de `Hit`). Autorización y versión vigente: las de siempre (proyectos autorizados en cada SQL, `_require` antes y después, hash y versión en la lectura final).
+- **Estado distinguible**: un acierto de un recurso sin fragmentos (aún sin rellenar) no lleva `matched_chunk`; una toma saturada o cancelada se marca `candidates_truncated` (con `partial` en el estado de la capa) y no se confunde con un resultado completo.
+- **Desviación declarada**: la evaluación indexaba insertando vectores a mano (sin fragmentos) y no podía medir la mejora; `tests/retrieval_eval/run.py` indexa ahora ejecutando los trabajos `embed` encolados por las rutas de escritura a través del `Worker` real (`embed_receipt`: mismos fragmentos, lotes y escritura atómica que en producción) y aborta si algún trabajo no termina; `Store(dsn, embedding_enabled=True)` en `_setup`. `README.md` de la evaluación lo documenta. El dataset (`dataset-v1.jsonl`, sha256 `1bba8d99…`) no se toca. `docs/operations.md` y `testing/phase5-eval.json` entran en `Archivos` por la documentación y el informe.
+- **Rojo**: `test_chunk_search` `Ran 10 tests` · `FAILED (failures=3, errors=6)` (sin `rank_chunks_*`, sin `matched_chunk`). **Verde**: `Ran 11 tests in 7.996s` · `OK`. CA-24: documento de 50.000 caracteres con la frase única en el carácter ~40.000 → top-3 con el `matched_chunk.ordinal` de un fragmento que contiene la frase (recorrido completo: trabajador real con proveedor simulado, fragmentos, HNSW, agregación). CA-25 (una sola vez, puntuación del mejor, también en la ruta exacta), CA-26 (antes de embeber la versión nueva no responde la anterior; después solo la nueva), recurso con y sin fragmentos en la misma consulta, otro proyecto, retirado, inundación de fragmentos de un elemento (`CHUNK_FETCH_CAP` parcheado) y respaldo cancelado.
+- **Resultado de la Verificación 2 (T-23)**: `docker build --progress=plain --target retrieval-eval -f memory_platform/Dockerfile .` → exit 1 (la puerta sigue roja por diseño: `fused` aún no llega a 0,80/0,60); informe completo en `testing/phase5-eval.json` (sha256 `2532a578833585c20dc5ece37d5c27a8a9c8dd7ff23adcfb84094acbb05df237`, `deterministic: true`, mismo `dataset_sha256`). Bloque `gate` literal: `{"baseline_compared": true, "failures": [{"check": "fused_recall_at_5", "required": 0.8, "value": 0.541667}, {"check": "fused_mrr", "required": 0.6, "value": 0.403114}, {"check": "subset:es", "gain_points": 0.0, "required_gain_points": 15, "value": 0.333333}, {"check": "subset:typo_id", "gain_points": -16.6666, "required_gain_points": 15, "value": 0.416667}], "passed": false}`. **El subconjunto documento largo cumple: `long` en `fused` pasa de 0,5 (`baseline.json`) y 0,583 (Fase 4) a 1,0 (+50 puntos, ≥ 15), y no figura entre los fallos.**
+- **Frente a la Fase 4 (recall@5 → MRR)**: `semantic` global 0,903 → **1,0** (MRR 0,869 → 0,965); `semantic` `long` 0,417 → **1,0** (MRR 0,215 → 0,787); `fused` global 0,514 → 0,542 (MRR 0,361 → 0,403); `fused` `long` 0,583 → **1,0** (MRR 0,479 → 0,896). Sin cambio: `episodic` (global 0,75; `en` 1,0, `es` 0,5, `typo_id` 0,75) y `documental` (global 0,45; `en` 1,0, `es` 0,25, `long` 0,333: la capa léxica no usa fragmentos). **Empeoran, solo en `fused`**: `en` 0,625 → 0,583 (MRR 0,357 → 0,333), `es` 0,333 → 0,333 con MRR 0,341 → 0,317 y `typo_id` 0,583 → 0,417 (MRR 0,289 → 0,222; **−16,7 puntos también frente a `baseline.json`**).
+- **Causa verificada**: no es la recuperación (la capa semántica no empeora en ningún subconjunto y da recall@5 = 1,0 en los cuatro) sino la clave de orden de la fusión en `retrieval.search` (`(validado, RRF)`: todo documento validado va por delante de cualquier nota no validada, cualquiera que sea su RRF); ahora los fragmentos de los documentos largos entran con más frecuencia en el top-10 semántico y adelantan a la nota correcta. Experimento (solo en la base efímera de la evaluación, no es código del producto): con los documentos marcados como no validados, `fused` da recall@5 = 1,0 en `en`, `es`, `typo_id` y `long` (global 1,0; MRR 0,972). Ajustar esa clave es el alcance de **T-27** (fusión RRF con la puerta de evaluación); **decisión pendiente del usuario**: si «validado primero» debe seguir siendo un criterio de orden absoluto o pasar a un criterio relativo (bonificación en la puntuación) en T-27.
+
+
+RED: `test_chunk_search` falló con Ran 10 tests, FAILED failures=3 errors=6 (sin rank_chunks_* ni matched_chunk) · 2026-11-09.
+
+
+RED: `test_once_everything_is_chunked_the_item_route_never_runs_and_no_fallback_is_paid + test_the_two_routes_share_one_exact_fallback_allowance + test_an_element_found_by_both_routes_appears_once_with_its_best_score + test_matched_chunk_only_when_the_fragment_is_not_the_whole_text... (mutantes)` falló con AssertionError: item_route.call_count 1 != 0 / fallback de la segunda ruta ejecutado / elemento duplicado / matched_chunk siempre presente (1 failure por mutante) · 2026-11-09.
+
+- **Corrección (intento 1)**: la ruta por elemento solo corre si queda un recurso vigente sin fragmentos (`embeddings.chunked`), las rutas comparten un único cupo de respaldo exacto y se deduplican por elemento; el tope exacto de fragmentos es 10 × `EXACT_CANDIDATE_LIMIT` (sustituye a «10.000 fragmentos»); `matched_chunk` solo si no es todo el texto (filas 1, 7, 8 y 12).
 
 ### T-24 — Relleno idempotente de fragmentos y su integración en `deploy-memory.py`
 
 - **Descripción**: Añadir `admin backfill-chunks`, que encola jobs `embed` solo para recursos vigentes sin fragmentos (segunda ejecución encola 0), y llamarlo desde `scripts/deploy-memory.py` tras `migrate` (decisión P-07), con progreso visible. Además cubre el relleno de vectores `embedding` si T-08 dejó filas pendientes.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: El comando admin backfill-chunks, que el despliegue ejecuta tras migrar, prepara los fragmentos del contenido existente de forma repetible y sin bloquear tablas.
+- **Estado**: completado
 - **Tiempo humano**: est. 3h · real —
-- **Tiempo IA (ejec.)**: est. 0,43h · real —
+- **Tiempo IA (ejec.)**: est. 0,43h · real — (incluido en la ventana de T-19)
 - **Supervisión**: est. 0,11h (≈25 % IA) · real —
 - **Previsión IA**: 120k in / 10k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-09
 - **Dependencias**: T-22
 - **Tipo**: devops
-- **Archivos**: `memory_platform/admin.py`, `scripts/deploy-memory.py`, `memory_platform/tests/test_admin.py`, `memory_platform/tests/test_deploy.py`
+- **Archivos**: `memory_platform/admin.py`, `scripts/deploy-memory.py`, `memory_platform/tests/test_admin.py`, `memory_platform/tests/test_deploy.py`, `memory_platform/tests/test_deploy_isolation.py`, `docs/operations.md`, `memory_platform/tests/retrieval_eval/stale_measure.py`, `memory_platform/tests/retrieval_eval/stale-cost.json`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:rq .` → la salida contiene `MEMORY_TEST_RESULT` con `"passed": true`, `failures: 0`, `errors: 0`, `skipped: 0` (incluye test de idempotencia y un caso de `test_deploy.py` que verifica la llamada en la fase correspondiente)
 
 **Criterios de aceptación**
-- [ ] CA-28: el relleno encola jobs `embed` solo para recursos vigentes sin fragmentos; ejecutarlo dos veces encola 0 la segunda
-- [ ] `deploy-memory.py` ejecuta el relleno tras `migrate` y registra su resultado en el informe de despliegue (sin secretos)
-- [ ] El modo de simulación (`--apply` ausente) solo imprime el plan e incluye el relleno
+- [x] CA-28: el relleno encola jobs `embed` solo para recursos vigentes sin fragmentos; ejecutarlo dos veces encola 0 la segunda
+- [x] `deploy-memory.py` ejecuta el relleno tras `migrate` y registra su resultado en el informe de despliegue (sin secretos)
+- [x] El modo de simulación (`--apply` ausente) solo imprime el plan e incluye el relleno
 
 **Subtareas**
-- [ ] Test en rojo de idempotencia
-- [ ] Implementar el subcomando de `admin`
-- [ ] Integrar en la fase `bootstrap`/`migrate` de `deploy-memory.py` y actualizar `PHASES`/informe si procede
+- [x] Test en rojo de idempotencia
+- [x] Implementar el subcomando de `admin`
+- [x] Integrar en la fase `bootstrap`/`migrate` de `deploy-memory.py` y actualizar `PHASES`/informe si procede
 
 **Notas**: Procedencia: spec CA-28, decisión P-07. Clase: cambio (test nuevo en rojo). Patrones: fases en `scripts/deploy-memory.py:23`, `Deployment.apply` (`:137`) y `operator()` (`:127`), `test_deploy.py`. Evita sobrecarga de Ollama: relleno en lotes del worker (R-05).
+- **Resultado (T-24)**: `admin backfill-chunks [--batch 200] [--max-jobs N] [--project ID]` (`admin.backfill_chunks(store, model, *, batch, max_jobs, project)`, función de módulo; `Store` no cambia): encola un trabajo `embed` por cada recurso **vigente** (documento no retirado; nota no retirada ni sustituida con su padre vigente) que no tiene fragmentos del modelo configurado, no tiene un trabajo en curso (`pending`, `running`, `unknown`) y estaba destinado a embeberse (tiene un trabajo `embed` en esa versión o un vector de elemento: las notas técnicas, que nunca se embeben, quedan fuera). Un trabajo `succeeded`/`failed` de esa versión se devuelve a `pending` (`ON CONFLICT … DO UPDATE … WHERE state IN ('succeeded','failed')`, cupo de intentos a 0); uno en curso no se toca. **Idempotente** (la segunda ejecución encola 0), **reanudable** (repetir basta; `--max-jobs` corta por tandas) y **acotado**: una transacción por tanda de `--batch` trabajos (solo bloquea las filas de `jobs` que inserta, ninguna tabla), cada fuente (documentos, notas) se recorre una vez en orden de clave (paginación por clave: coste lineal). También rellena `embeddings.embedding` donde siga nulo (por lotes; cubre las filas pendientes de T-08). Imprime solo recuentos (`status`, `enqueued`, `remaining`, `batches`, `embedding_filled`); con `MEMORY_EMBED_ENABLED=0` no encola y dice `skipped`/`embeddings_disabled`. `deploy-memory.py` gana la fase `backfill` (en `PHASES`, tras `bootstrap` y antes de `start`; `BACKFILL_TIMEOUT_SECONDS` 1800) y guarda en `report['backfill']` solo las claves de recuento; el plan sin `--apply` la incluye.
+- **Rojo**: `test_admin` sin la función → `ImportError: cannot import name 'backfill_chunks'` (`Ran 1 test` · `FAILED (errors=1)`); `test_deploy` contra el script del commit base → `Ran 11 tests` · `FAILED (failures=1, errors=3)`. **Verde**: `test_admin` `Ran 16 tests in 5.402s` · `OK` (CA-28: solo vigentes sin fragmentos, segunda ejecución 0; tanda y reanudación; trabajo fallido; trabajo en curso; otro proyecto; terminado sale del relleno; vectores pendientes; el comando de extremo a extremo contra la base y su salida sin DSN; embeddings desactivados) y `test_deploy` + `test_deploy_isolation` `Ran 26 tests` · `OK` (fase `backfill` entre `migrate` y `start`, el informe solo guarda recuentos, un fallo detiene el despliegue antes de `start`).
+- **Desviación declarada**: `test_deploy_isolation.py` entra en `Archivos`: los dos ayudantes `migrate_run` y el de plazos responden por orden de comando con un diccionario de respuestas; se añadió `backfill-chunks` a ese diccionario (fixture, no aserciones; `migrate_run` acepta `backfill_answer`). `docs/operations.md` entra por la documentación del relleno.
+- **Coste del relleno** (`testing/chunk-cost.json`): 40.000 trabajos en **79,0 s** (200 transacciones de 200; con la primera versión, que releía la tabla en cada tanda, eran 317,8 s: se pasó a paginación por clave), segunda ejecución 3,1 s (un recorrido de ambas tablas: 0,24 s); `memory.jobs` crece de 16,2 a 26,4 MB (los 40.000 trabajos terminados vuelven a `pending`: tuplas muertas hasta el autovacuum). No toca tablas de contenido (`content_manifest` igual). El embebido posterior lo hace el trabajador y depende de Ollama (no medido: proveedor simulado); con la configuración por defecto un documento de 20.000 caracteres son 15 fragmentos y uno de 200.000, 151 (≈ 19 peticiones de 8).
+
+
+RED: `test_admin+test_deploy` falló con test_admin ImportError cannot import name backfill_chunks (FAILED errors=1); test_deploy contra el script del commit base Ran 11 tests FAILED failures=1 errors=3 · 2026-11-09.
+
+
+RED: `test_live_writes_are_claimed_before_older_backfill_jobs + test_services_are_left_running_during_migrate_by_default + test_a_resource_that_is_one_fragment_with_its_item_vector_needs_no_provider_call + test_a_failed_job_is_queued_again... (mutantes)` falló con AssertionError: el trabajo del relleno se reclama antes que la escritura en vivo / el worker anterior no se detiene antes del relleno / recurso corto encolado / failed reencolado (failures=1-2 por mutante) · 2026-11-09.
+
+- **Corrección (intento 1)**: el relleno va con prioridad 1, no reencola `failed` (`--retry-failed`), completa sin proveedor los recursos de un fragmento (`derived`) y el despliegue detiene `memory-worker` antes de encolarlo (filas 2, 4, 6 y 10).
 
 ### T-25 — Contrato aditivo `matched_chunk` y pruebas de contrato
 
 - **Descripción**: Reflejar `matched_chunk` como campo opcional en `docs/contracts/kairos-mcp.json` y OpenAPI mediante `scripts/export-contracts.py` y comprobar con un diff aditivo que las 34 herramientas MCP siguen intactas.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: El contrato exportado documenta el campo opcional matched_chunk de los resultados de búsqueda; las 34 herramientas MCP no cambian.
+- **Estado**: completado
 - **Tiempo humano**: est. 4h · real —
-- **Tiempo IA (ejec.)**: est. 0,57h · real —
+- **Tiempo IA (ejec.)**: est. 0,57h · real — (incluido en la ventana de T-19)
 - **Supervisión**: est. 0,14h (≈25 % IA) · real —
 - **Previsión IA**: 155k in / 15k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-09
 - **Dependencias**: T-23
 - **Tipo**: backend
-- **Archivos**: `scripts/export-contracts.py`, `docs/contracts/kairos-mcp.json`, `docs/contracts/memory-platform.openapi.json`, `memory_platform/tests/test_mcp.py`, `memory_platform/tests/test_contract_additive.py`
+- **Archivos**: `scripts/export-contracts.py`, `docs/contracts/kairos-mcp.json`, `docs/contracts/memory-platform.openapi.json`, `memory_platform/tests/test_mcp.py`, `memory_platform/tests/test_contract_additive.py`, `memory_platform/Dockerfile`, `memory_platform/tests/contracts_base/kairos-mcp.json`, `memory_platform/tests/contracts_base/memory-platform.openapi.json`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:rq .` → la salida contiene `MEMORY_TEST_RESULT` con `"passed": true`, `failures: 0`, `errors: 0`, `skipped: 0` (incluye `test_contract_additive`)
   - `python scripts/export-contracts.py && git diff --stat docs/contracts` → solo adiciones (el test confirma 0 eliminadas/cambiadas) y `python -c "import json;print(len(json.load(open('docs/contracts/kairos-mcp.json'))['tools']))"` → `34` (clave del contrato a confirmar al implementar)
 
 **Criterios de aceptación**
-- [ ] CA-29: `matched_chunk` aparece como opcional en el contrato exportado y los aciertos sin fragmento lo omiten
-- [ ] CA-33: sigue habiendo 34 herramientas y el diff solo contiene adiciones (0 herramientas, campos o valores por defecto eliminados o cambiados)
+- [x] CA-29: `matched_chunk` aparece como opcional en el contrato exportado y los aciertos sin fragmento lo omiten
+- [x] CA-33: sigue habiendo 34 herramientas y el diff solo contiene adiciones (0 herramientas, campos o valores por defecto eliminados o cambiados)
 
 **Subtareas**
-- [ ] Test aditivo (compara contra el contrato del commit base)
-- [ ] Regenerar contratos
-- [ ] Ajustar `test_mcp.py` si procede sin cambiar aserciones previas
+- [x] Test aditivo (compara contra el contrato del commit base)
+- [x] Regenerar contratos
+- [x] Ajustar `test_mcp.py` si procede sin cambiar aserciones previas
 
 **Notas**: Procedencia: spec CA-29, CA-33, riesgo R-09. Clase: cambio. Patrón: `scripts/export-contracts.py`, contrato existente `"default": true` de `semantic`.
+- **Resultado (T-25)**: el exportador no incluía el resultado de las búsquedas (solo la entrada de las herramientas), así que `matched_chunk` no podía aparecer. `scripts/export-contracts.py` añade, solo con claves nuevas, el esquema de `SearchResult` (con `Hit`, `MatchedChunk`, y de paso `lexical_match` de la Fase 4, que tampoco se exportaba): en `kairos-mcp.json` bajo `result_schemas.search` y en `memory-platform.openapi.json` en `components.schemas` (`setdefault`: ningún esquema existente se reemplaza). `matched_chunk` figura como propiedad **opcional** (fuera de `required`). `python scripts/export-contracts.py && git diff --numstat docs/contracts` → `254 0 docs/contracts/kairos-mcp.json` y `209 0 docs/contracts/memory-platform.openapi.json` (0 líneas eliminadas); `len(json.load(open('docs/contracts/kairos-mcp.json'))['tools'])` → `34` (clave `tools`).
+- **Desviación declarada**: `test_contract_additive` compara contra los contratos del commit base (`6008da0`, antes de `matched_chunk`), copiados a `tests/contracts_base/` porque la imagen de test no contiene `docs/` ni `.git`; `memory_platform/Dockerfile` copia `scripts/export-contracts.py` a la etapa `test` (una línea) para que el test cargue el exportador real. La regla aditiva (`additive_violations`) exige que los mapas solo ganen claves, que las listas conserven longitud y orden (ni herramientas perdidas ni reordenadas), que `required` sea idéntico y que los valores escalares (tipos, defaults, texto) sean iguales; el texto se compara sin diseño de espacios porque las descripciones son docstrings y Python 3.13 (donde se exportó) les quita la sangría mientras 3.12 (la imagen) no. `test_mcp.py`: clase nueva `SearchHitFieldsTests` (la herramienta `search` pasa `matched_chunk` tal cual y lo omite en los demás aciertos); sin tocar aserciones previas.
+- **Rojo**: `test_contract_additive` `Ran 7 tests` · `FAILED (errors=1)` (`KeyError: 'result_schemas'`: el contrato exportado no tenía el resultado; los demás son la regla y la comprobación de las 34 herramientas, que ya pasaban). **Verde**: `Ran 7 tests in 1.497s` · `OK`; `test_mcp` `Ran 4 tests` · `OK`.
+- **Suite sobre el árbol final de la Fase 5** (`docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:p5 .`, exit 0): `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 352}` (280 de antes + 72 nuevos; 0 omitidos).
+- **Puertas mecánicas (árbol final, tras escribir el ledger)**: `python3 "$SHAREDKIT/ledger-lint.py" docs/roadmap/2026-11-09-retrieval-quality/tasks.md` (exit 0) → `ledger-lint: 0 incoherencias · 14 avisos (tasks.md)` (los avisos son el `Changelog` vacío de T-26…T-38 y el tamaño del ledger); `python3 "$SHAREDKIT/scope-check.py" docs/roadmap/2026-11-09-retrieval-quality --base 6008da0` (exit 0) → `37 fichero(s) cambiado(s)`, `❌ fuera de alcance (0): —`. Contratos: `git diff --numstat docs/contracts` → `254 0` y `209 0`; `tests/store_surface.json` y `web/` sin diff.
+- **Aviso de tamaño del ledger**: 232 KB de 256 KiB (`ledger-lint` ya avisa). Las fases 6-8 no caben sin `ledger-archive.py`; no se ejecuta aquí (lo decide el orquestador).
 
 ---
+
+
+RED: `test_contract_additive` falló con Ran 7 tests, FAILED errors=1: KeyError result_schemas (el contrato exportado no incluye el resultado de busqueda) · 2026-11-09.
 
 ## Fase 6 — Híbrida con degradación y CLI (C-04 · P3)
 
@@ -1561,3 +1640,63 @@ Lentes: A+B+C+D (un revisor), con traspaso de la tabla del intento 1. Base `7f15
 
 Suite tras N1/N3 (`docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:p4b .`, exit 0):
 `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 280}`
+
+## Revisión de dos lentes — intento 1: Fase 5 (T-19…T-25) (T-19, T-20, T-21, T-22, T-23, T-24, T-25)
+
+Lentes: A+B+C+D (C por `Dockerfile` y `admin.py:107` sql-concat; D por worker/schema/n-plus-one). A: todos los criterios de T-19..T-25 ✓; C: sin hallazgos. Veredicto: **gaps Important → corrección (intento 2)**.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | Estado estable: con todo troceado la ruta por vector de elemento (`skip_chunked`) filtra el 100 %, recorre hasta 20.000 tuplas HNSW y dispara el respaldo exacto en cada consulta; la medida de coste solo troceó 301 documentos | T-23 | corregido: sonda indexada con `embeddings.chunked` (columna aditiva de v10 + índice parcial, vacío en régimen estable): la ruta por elemento solo corre si queda un recurso vigente sin fragmentos en el alcance; con todo troceado no recorre HNSW ni dispara respaldo (`store_vectors.py` `unchunked`, `chunked`). Estado estable medido con los 40.000 recursos troceados (84.696 fragmentos, 30 consultas): 1.396 ms de media, 0 truncadas, frente a 1.051 ms solo con vectores de elemento en el mismo corpus (989 ms en la medida previa); el +33 % es recorrido HNSW sobre el doble de filas en un corpus sintético agrupado (no aislado) | `store_vectors.py:48-49,84,94,317-318`; `chunk-cost-measure.py:98-139` (Lente D G1) |
+| 2 | Important | Los ~40.000 trabajos del relleno van por delante de las escrituras en vivo (FIFO por `available_at`): contenido nuevo sin búsqueda semántica durante horas | T-24 | corregido: columna aditiva `jobs.priority` (v10): el relleno encola con prioridad 1 (también al reencolar) y `claim_job` ordena por `priority,available_at,created_at,id`; test `test_live_writes_are_claimed_before_older_backfill_jobs` (la escritura en vivo sale antes que un trabajo del relleno de hace una hora) | `admin.py:116-121`; `store_jobs.py:80` (Lente D G2) |
+| 3 | Important | Un fragmento solo de espacios (tramo en blanco ≥ ~1500) hace fallar el trabajo de forma permanente (`embedding_empty_input`, no reintentable) y el recurso pierde también el vector de elemento | T-19/T-21 | corregido: el troceador no emite nunca un fragmento en blanco (el tramo se une al anterior hasta el siguiente carácter visible; sin anterior, el primero empieza en 0) y el embebedor recorta los blancos de cada entrada; el vector de elemento se conserva; tests con `'T\nintro\n'+'\n'*4000+'fin'` en `test_chunking`, `test_worker` y `test_chunk_jobs` | `chunking.py:36-55`; `providers.py:118`; reproducido por la Lente B |
+| 4 | Important | El `memory-worker` antiguo sigue vivo durante la fase `backfill` (por defecto) y completa los trabajos encolados con el `complete_job` antiguo, sin fragmentos; el informe dice `remaining: 0` | T-24 | corregido: `deploy-memory.py` detiene siempre `memory-worker` tras `migrate` y antes del relleno (informe `worker_stopped_before_backfill`; aviso en `failure_hints` si falla en `backfill`/`start`/`verify`), `start` levanta el nuevo; el resultado del relleno añade `pending` y `failed` para que `remaining: 0` no se lea como terminado. `test_deploy_isolation` (los dos tests que afirmaban «sin parada por defecto» afirman ahora la parada solo del worker) y `test_deploy` | `deploy-memory.py:306-310,323-328` (Lente B #2) |
+| 5 | Important | El plazo del trabajo no crece con el número de fragmentos (151 fragmentos en 120 s compartidos); si se agota, fallo total y reintentos que rehacen todo; criterio «plazo por lote configurable» no cumplido literalmente | T-21 | corregido: `MEMORY_EMBED_BATCH_TIMEOUT` (60 s por lote, 1-600) y `MEMORY_EMBED_JOB_MAX_TIMEOUT` (900 s, tope global, 1-3.600) validados al arrancar; plazo = lotes × plazo por lote con tope (`config.embedding_job_timeout`), usado por `embed_many` y por el plazo del job del worker (151 fragmentos: 900 s, no 120); Compose, `docs/configuration.md` y `docs/operations.md` actualizados. Un fallo sigue siendo explícito (`provider_timeout`) y no escribe nada: el recurso conserva su vector de elemento previo | `providers.py:111-136`; `worker.py:70` (Lente B #3, A #1, A #3, D) |
+| 6 | Minor | El relleno vuelve a embeber recursos cortos cuyo vector de elemento ya es su único fragmento | T-24 | corregido: el relleno completa sin proveedor los recursos de un solo fragmento con vector de elemento vigente del modelo (`derived`); test `test_a_resource_that_is_one_fragment_with_its_item_vector_needs_no_provider_call` | `admin.py:92-100`; `worker.py:27-29` (Lente D G3) |
+| 7 | Minor | El mismo elemento puede salir dos veces (rutas por elemento y por fragmento en sentencias separadas, sin deduplicar) | T-23 | corregido: las rutas se fusionan deduplicando por elemento con su mejor puntuación; test `test_an_element_found_by_both_routes_appears_once_with_its_best_score` | `store_vectors.py:318-321` (Lente B #4) |
+| 8 | Minor | Recursos cortos/recibos antiguos: `matched_chunk` siempre presente, `excerpt` de hasta 8.000 caracteres y título duplicado en `context` | T-22/T-23 | corregido: `matched_chunk` solo si el fragmento no es todo el texto; `excerpt` sin el título y ≤ `MEMORY_CHUNK_CHARS` también para recibos antiguos (`chunk_view`); documentado en `operations.md` y en el contrato; test `test_matched_chunk_only_when_the_fragment_is_not_the_whole_text…` | `store_jobs.py:28-29`; `store_vectors.py:342-344`; `retrieval.py:211`; `models.py:174` (Lente A #2, B #5) |
+| 9 | Minor | `MEMORY_CHUNK_MAX=1` pierde en silencio el aviso de truncado | T-21/T-22 | corregido: `embed_receipt` va por la ruta de lotes si el tope truncó (`chunks.truncated`) aunque quepa un fragmento; test `test_a_single_fragment_cap_still_reports_the_truncation` | `worker.py:27-29` (Lente B #6) |
+| 10 | Minor | El relleno reencola cada vez los trabajos `failed` de la misma versión | T-24 | corregido: el relleno no reencola `failed` (los cuenta en `failed`, fuera de `remaining`); `--retry-failed` lo pide; test en `test_admin` | `admin.py:121` (Lente B #7) |
+| 11 | Minor | El vector de elemento de un texto largo pasa a representar solo el primer fragmento: un rollback recupera peor sin aviso | T-21 | corregido: el trabajador pide el texto completo como última entrada del último lote y `embeddings.vector` vuelve a ser el embedding de `text[:8000]` (un retroceso no empeora); coste: una entrada más por trabajo largo; test `test_long_text_is_split_embedded_in_one_call_and_delivered_whole` | `worker.py:34`; `schema.sql:167-168` (Lente B #8) |
+| 12 | Minor | La ruta exacta sobre fragmentos se acota a 10.000 fragmentos (≈50 documentos largos ya dan `partial`) y cada ruta tiene su propio respaldo (hasta 2× el presupuesto) | T-23 | corregido: un solo `FallbackBudget` compartido (test: la segunda ruta no ejecuta respaldo si la primera agotó el cupo); tope exacto = 10 × `EXACT_CANDIDATE_LIMIT` fragmentos (`CHUNK_EXACT_FACTOR`), `candidate_limit` sigue en elementos. Medido: recorrido exacto de 84.696 fragmentos = 2.484 ms (≈ 293 ms/10.000): el cupo de 1,5 s alcanza ~51.000 y el tope de 100.000 solo acota las rutas sin cupo (~3 s) | `store_vectors.py:144-152,191-197` (notas fuera de lente de B y D) |
+| 13 | Minor | `chunk-cost-measure.py` no tiene la guarda de DSN de `run.py`; los offsets de `matched_chunk` no declaran su unidad | T-23/T-25 | corregido: `chunk-cost-measure.py` llama a `check_dsn` de `retrieval_eval/run.py`; el contrato describe `matched_chunk` y sus desplazamientos como puntos de código Unicode (adición pura: `git diff docs/contracts` sin líneas eliminadas, `test_contract_additive` verde) | notas fuera de lente de A y C |
+
+**Corrección (intento 1) — resumen.** Filas 1-13 corregidas; ninguna descartada ni aceptada como deuda. v10 sigue sin desplegar y se amplió de forma aditiva (`embeddings.chunked`, `jobs.priority`, índice parcial vacío); sin cambios en `Store` (`store_surface.json` sin diff) ni en las 34 herramientas MCP; contrato solo aditivo (descripciones de `matched_chunk`, 0 líneas eliminadas). Ficheros tocados fuera de los iniciales y ya cubiertos por `Archivos`: `docker-compose.yml` (2 variables de plazo), `docs/configuration.md`, `testing/chunk-cost-measure.py` (guarda de DSN y estado estable). Pruebas existentes cuyo enunciado cambió por la corrección: `test_services_are_left_running_during_migrate_by_default`/`test_opt_in_stops…` (parada del worker antes del relleno) y las del relleno (`LONG` para que un recurso largo necesite trabajo).
+- **Rojo antes del verde:** 12 mutantes del código final (uno por fila 1-12), cada uno con su test nuevo en rojo (`mut.py` en el contenedor de pruebas, copia de `/app`): gap1 `FAIL test_once_everything_is_chunked_the_item_route_never_runs…`; gap2 `FAIL test_live_writes_are_claimed_before_older_backfill_jobs`; gap3 `FAIL` ×2 (`test_chunking`, `test_worker`); gap4 `FAIL`+`ERROR` (`test_deploy*`); gap5 `FAIL`+`ERROR` (plazo); gap6-gap12 `FAIL`/`ERROR` ×1. Registrado con `ledger-write.py red` en T-19, T-21, T-23 y T-24.
+- **Verde (árbol final):** `docker build --target test --no-cache-filter test …` → `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 369}`.
+- **retrieval-eval:** `--target retrieval-eval` exit 1 (la puerta sigue roja por diseño, igual que en T-23); métricas idénticas a `testing/phase5-eval.json` (`fused` recall@5 0,541667, MRR 0,403114; mismos `failures`); solo cambia `generated_at`, por lo que el informe se regraba: sha256 `2532a578833585c20dc5ece37d5c27a8a9c8dd7ff23adcfb84094acbb05df237` (antes `f9f991de…`).
+- **Medida de estado estable** (`testing/chunk-cost.json`, sha256 `b07027354f8a3aa49b9fc5ea51cb4f448ac9f55ebb14498e11bd9ebb1dc0fc88`; proveedor simulado, 40.000 trabajos del relleno completados por el `Worker` real en 11 procesos, `after_drain`: 80.000 fragmentos, 40.000/40.000 `chunked`, 0 trabajos pendientes): búsqueda `search_steady_state_ms_avg` **1396,1**, 0/30 con `candidates_truncated`; `search_item_vectors_only_ms_avg` **1050,9** (misma base) frente a 989 ms de la medida previa; recorrido exacto de 84.696 fragmentos 2.484 ms. Desviación declarada: para el drenaje se eliminan los dos índices HNSW y se reconstruyen en bloque (68,4 s, `max_parallel_maintenance_workers=0` por el `/dev/shm` de 64 MB del contenedor; un intento previo falló por eso), porque cada inserción HNSW incremental cuesta ~0,1 s de CPU; el coste de escritura incremental sigue medido por `complete_job` (151 fragmentos: 0,74 s). Los `bytes_per_chunk*` del JSON usan 4.696 como denominador (documentado en `fragments.note`; real 8.497 B por fragmento).
+
+
+## Revisión de dos lentes — intento 2: Fase 5 (T-19…T-25) (T-19, T-20, T-21, T-22, T-23, T-24, T-25)
+
+Lentes: A+B+C+D. Las 13 correcciones del intento 1 se verifican ✓ (A, B); C sin hallazgos de grado. Veredicto: **1 Important → corrección (intento 3 de 3)**.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | Reabre fila 1: las filas de `memory.embeddings` de versiones antiguas, sustituidas o borradas anteriores a v10 quedan con `chunked=false` para siempre; la sonda `unchunked` las recorre (con `CURRENT_RESOURCE` correlacionado) en cada consulta; la medida usó una sola versión por recurso | T-23/T-24 | hecho: `backfill-chunks` marca `chunked=true` (por tandas, clave de PK, sin DELETE; `stale_marked`) toda fila no vigente y `complete_job` las de versiones anteriores. Medida (`retrieval_eval/stale-cost.json`, 40.000 recursos × 1 versión antigua): sonda 48,9 ms / 3.078 búferes → 0,06 ms / 1 búfer (índice parcial 40.000 → 0 filas; 80.000 filas antes y después). Rojo (mutantes): `AssertionError: 0 != 3`; sin marcar en `complete_job`, `Items in the first set but not the second` | `store_vectors.py:357-358`; `schema.sql:205,209`; `admin.py:163` (Lente D D1; B fuera de lente) |
+| 2 | Minor | Un solo recurso vigente sin trocear (p. ej. `failed`) reactiva la ruta por elemento para todas las consultas del alcance | T-23/T-24 | hecho: con ≤ 500 recursos sin fragmentos la ruta por elemento puntúa solo esos (`rank_exact(only=…)`); más → ruta previa. Rojo: `AssertionError: 1 != 0` (mutante `few=None`) | `store_vectors.py:361-362` (D D2) |
+| 3 | Minor | El relleno recalcula el vector de elemento (`text[:8000]`) que ya existe y reescribe la fila (tuplas muertas y HNSW de `embeddings`) | T-21/T-24 | hecho: `stored_item_vector` (función de módulo: `store_surface.json` sin diff); el trabajador embebe solo fragmentos y `complete_job` conserva los valores de `vector/embedding/created_at` si son idénticos (la fila se sigue reescribiendo: ver intento 3, #3). Rojo: lista de textos con la entrada del texto entero; `created_at` distinto | `worker.py:39`; `store_jobs.py:152` (D D3) |
+| 4 | Minor | Un trabajo largo del relleno ocupa al único worker hasta `MEMORY_EMBED_JOB_MAX_TIMEOUT`; la prioridad no interrumpe | T-21/T-24 | hecho (documentado): `docs/operations.md`, relleno: un trabajo largo ocupa al trabajador hasta `MEMORY_EMBED_JOB_MAX_TIMEOUT`; la prioridad no interrumpe | `worker.py:70`; `docker-compose.yml:123` (D D4) |
+| 5 | Minor | `failure_hints` ignora la fase `backfill` con `--stop-services-before-migrate` (pista sin `memory-api`; `[]` si falla el propio `stop`) | T-24 | hecho: `backfill` con `--stop-services-before-migrate` da una pista con `memory-api`; los indicadores se fijan ANTES del `stop` (un `stop` fallido también se informa). Rojo: `'memory-api' not found in …`; indicador tras el `stop` → `KeyError` | `deploy-memory.py:445,448` (B #1) |
+| 6 | Minor | `chunk-cost-measure.py` llama a `check_dsn` pero conecta sin `connect_dsn` (sin `hostaddr` fijado) | T-23 | hecho: `chunk-cost-measure.py` conecta con `connect_dsn` (nota: el ajuste se hizo con shell, la ruta `testing/` es de qa y el hook bloquea Write/Edit) | `chunk-cost-measure.py:71-73` (C #1, CWE-350) |
+| 7 | Minor | 7 ficheros pasados de LF a CRLF sin declarar (`.gitattributes`) | T-20…T-24 | hecho: los 28 modificados recuperan el EOL exacto de 6008da0 (CRLF o LF según el blob base); los nuevos, LF (script de comparación con `git show 6008da0`); `--numstat` = `--ignore-cr-at-eol` | `schema.sql`, `store_jobs.py`, `store_vectors.py`, `worker.py`, `deploy-memory.py`, `test_deploy.py`, `test_deploy_isolation.py` (A N1) |
+| 8 | Minor | Ruta troceada: `candidates_truncated=false` con >10.000 elementos puntuados (CA-11 literal) sin desviación declarada | T-23 | hecho: la ruta exacta troceada marca `candidates_truncated` si puntúa más de 10.000 elementos distintos (`EXACT_CANDIDATE_LIMIT`); la ruta ANN conserva su señal propia (`HNSW_MAX_SCAN_TUPLES`). Rojo: `False is not true` | `store_vectors.py:50,163,184`; `spec.md:119` (A N2) |
+| 9 | Minor | `pending`/`failed` del informe de despliegue sin test | T-24 | hecho: `test_the_report_carries_pending_failed_and_stale_counts_and_nothing_else` (y `stale_marked` en `BACKFILL_REPORT_KEYS`) | `deploy-memory.py:28` (A N3) |
+| 10 | Minor | `operations.md` dice «2.484 s» (son 2.484 ms) | T-23 | hecho: «2.484 ms» | `docs/operations.md:190` (A N4) |
+| 11 | Minor | Evidencia vieja en T-20/T-23/T-24 tras regrabar artefactos; cambio de aserción en `test_vector_search_paths` sin declarar | T-20/T-23/T-24 | hecho: cifras de T-20/T-23/T-24 sustituidas por las de `chunk-cost.json` (sha `b07027…`) y `phase5-eval.json` (sha `2532a5…`); aserción de `test_vector_search_paths` declarada en T-23 | `tasks.md:841,952,956,999` (A N5) |
+
+**Corrección (intento 2) — resumen.** Filas 1-11 hechas; ninguna descartada ni aceptada como deuda. Ficheros nuevos (en `Archivos` de T-24): `memory_platform/tests/retrieval_eval/stale_measure.py` y `stale-cost.json` (fuera de `testing/`, que es de qa). Sin cambios de contrato ni de `store_surface.json`.
+
+## Revisión de dos lentes — intento 3: Fase 5 (T-19…T-25) (T-19, T-20, T-21, T-22, T-23, T-24, T-25)
+
+Lentes: A+B+C+D. Las correcciones 1-11 del intento 2 se verifican ✓ (A, B, C, D). Veredicto: **sin gaps Critical/Important pendientes → fase cerrada**.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | Sin suite verde pegada sobre el árbol posterior al intento 2 | T-23/T-24 | corregido (orquestador): `docker build --no-cache-filter test --target test` → `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 376}`; retrieval-eval offline (`--network=none`) exit 1 por diseño, bloque `gate` idéntico a `phase5-eval.json` (`fused` 0,541667 / 0,403114) | Lente A |
+| 2 | Minor | Marcar `chunked` impide HOT: cada fila obsoleta marcada inserta en el HNSW real; `stale-cost.json` midió sin HNSW; con decenas de miles de filas la fase `backfill` podría superar 1800 s | T-24 | deuda aceptada: reanudable e idempotente; corpus desplegado ≈21 documentos; medir con HNSW en T-36 | `admin.py:157-176` (D #1) |
+| 3 | Minor | `ON CONFLICT DO UPDATE` reescribe la fila aunque los valores sean idénticos (tuplas muertas, entradas HNSW) | T-21/T-24 | deuda aceptada: lo limpia autovacuum; descripción del intento 2 #3 corregida | `store_jobs.py:165` (D #2) |
+| 4 | Minor | Vector de elemento reutilizado con dims distintas a los fragmentos (mismo nombre de modelo, otras dims) → fallo permanente | T-21/T-24 | deuda aceptada: exige cambiar las dims bajo el mismo nombre; revisar en Fase 6 | `worker.py:88-90`; `store_jobs.py:61` (B G1) |
+| 5 | Minor | Descripción de EOL del intento 2 #7 inexacta | T-20…T-24 | corregido: texto del intento 2 #7 | Lente B (fuera de lente) |
+

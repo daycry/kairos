@@ -77,6 +77,77 @@ def migration_maintenance_work_mem(environ=None) -> str:
     return value
 
 
+DEFAULT_CHUNK_CHARS, DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_MAX, DEFAULT_EMBED_BATCH = 1500, 200, 200, 8
+CHUNK_CHARS_RANGE = (200, 6000)  # the provider cuts an input at 8,000 characters: a fragment must never reach it
+CHUNK_MAX_LIMIT = 500
+
+
+def chunk_settings(environ=None) -> tuple:
+    """(chunk characters, overlap, maximum fragments); MEMORY_CHUNK_CHARS / MEMORY_CHUNK_OVERLAP / MEMORY_CHUNK_MAX.
+
+    Decision P-07: 1,500 characters with a 200-character overlap. The overlap must stay below half of the fragment.
+    """
+    environ = os.environ if environ is None else environ
+
+    def read(name, default):
+        value = environ.get(name, str(default)).strip()
+        if not value.isascii() or not value.isdigit():
+            raise ValueError(f'{name} must be a non-negative integer')
+        return int(value)
+    chars, overlap, maximum = read('MEMORY_CHUNK_CHARS', DEFAULT_CHUNK_CHARS), read('MEMORY_CHUNK_OVERLAP', DEFAULT_CHUNK_OVERLAP), read('MEMORY_CHUNK_MAX', DEFAULT_CHUNK_MAX)
+    if not CHUNK_CHARS_RANGE[0] <= chars <= CHUNK_CHARS_RANGE[1]:
+        raise ValueError('MEMORY_CHUNK_CHARS must be between %d and %d' % CHUNK_CHARS_RANGE)
+    if overlap * 2 >= chars:
+        raise ValueError('MEMORY_CHUNK_OVERLAP must be below half of MEMORY_CHUNK_CHARS')
+    if not 1 <= maximum <= CHUNK_MAX_LIMIT:
+        raise ValueError(f'MEMORY_CHUNK_MAX must be between 1 and {CHUNK_MAX_LIMIT}')
+    return chars, overlap, maximum
+
+
+def embed_batch_size(environ=None) -> int:
+    """Fragments sent to /api/embed per request (MEMORY_EMBED_BATCH)."""
+    environ = os.environ if environ is None else environ
+    value = environ.get('MEMORY_EMBED_BATCH', str(DEFAULT_EMBED_BATCH)).strip()
+    if not value.isascii() or not value.isdigit() or not 1 <= int(value) <= 64:
+        raise ValueError('MEMORY_EMBED_BATCH must be an integer between 1 and 64')
+    return int(value)
+
+
+DEFAULT_EMBED_BATCH_TIMEOUT, DEFAULT_EMBED_JOB_MAX_TIMEOUT = 60.0, 900.0
+
+
+def embed_timeouts(environ=None) -> tuple:
+    """(deadline per batch, global ceiling of one embed job) in seconds; MEMORY_EMBED_BATCH_TIMEOUT / MEMORY_EMBED_JOB_MAX_TIMEOUT."""
+    environ = os.environ if environ is None else environ
+
+    def read(name, default, low, high):
+        raw = environ.get(name, str(default)).strip()
+        try:
+            value = float(raw)
+        except ValueError:
+            raise ValueError(f'{name} must be a number of seconds between {low} and {high}') from None
+        if not low <= value <= high:  # also rejects NaN
+            raise ValueError(f'{name} must be a number of seconds between {low} and {high}')
+        return value
+    batch = read('MEMORY_EMBED_BATCH_TIMEOUT', DEFAULT_EMBED_BATCH_TIMEOUT, 1, 600)
+    ceiling = read('MEMORY_EMBED_JOB_MAX_TIMEOUT', DEFAULT_EMBED_JOB_MAX_TIMEOUT, 1, 3600)
+    if ceiling < batch:
+        raise ValueError('MEMORY_EMBED_JOB_MAX_TIMEOUT must not be below MEMORY_EMBED_BATCH_TIMEOUT')
+    return batch, ceiling
+
+
+def embedding_job_timeout(settings, inputs: int) -> float:
+    """Deadline of one embed job that sends `inputs` texts: one embedding keeps `embedding_worker_timeout`; several get
+    `embedding_batch_timeout` for every batch of `embedding_batch_size`, never above the global ceiling (and never below the single-text deadline)."""
+    single = getattr(settings, 'embedding_worker_timeout', 120.0)
+    if inputs <= 1:
+        return single
+    size = max(1, int(getattr(settings, 'embedding_batch_size', DEFAULT_EMBED_BATCH)))
+    batches = -(-inputs // size)
+    ceiling = max(getattr(settings, 'embedding_job_timeout_max', DEFAULT_EMBED_JOB_MAX_TIMEOUT), single)
+    return min(ceiling, max(single, batches * getattr(settings, 'embedding_batch_timeout', DEFAULT_EMBED_BATCH_TIMEOUT)))
+
+
 @dataclass(frozen=True)
 class Settings:
     dsn: str
@@ -95,6 +166,12 @@ class Settings:
     embed_enabled: bool = True
     embedding_query_timeout: float = 10.0
     embedding_worker_timeout: float = 120.0
+    chunk_chars: int = DEFAULT_CHUNK_CHARS
+    chunk_overlap: int = DEFAULT_CHUNK_OVERLAP
+    chunk_max: int = DEFAULT_CHUNK_MAX
+    embedding_batch_size: int = DEFAULT_EMBED_BATCH
+    embedding_batch_timeout: float = DEFAULT_EMBED_BATCH_TIMEOUT
+    embedding_job_timeout_max: float = DEFAULT_EMBED_JOB_MAX_TIMEOUT
 
     @classmethod
     def from_env(cls):
@@ -113,6 +190,9 @@ class Settings:
         if any(urlsplit(v).hostname not in ('localhost', '127.0.0.1', '::1', 'testserver') for v in origins) and (not secure or any(urlsplit(v).scheme != 'https' for v in origins)):
             raise ValueError('Remote portal origins require HTTPS and MEMORY_COOKIE_SECURE=1')
         exact_fallback_ms()  # fail at startup, not on the first short semantic answer
+        chunk_chars, chunk_overlap, chunk_max = chunk_settings()
+        batch_size = embed_batch_size()
+        batch_timeout, job_timeout_max = embed_timeouts()
         return cls(
             dsn=secret('MEMORY_DSN', required=True), allowed_origins=origins,
             cookie_secure=secure, session_ttl=int(os.environ.get('MEMORY_SESSION_TTL', '43200')),
@@ -128,4 +208,6 @@ class Settings:
             embed_enabled=os.environ.get('MEMORY_EMBED_ENABLED', '1') == '1',
             embedding_query_timeout=float(os.environ.get('MEMORY_EMBED_QUERY_TIMEOUT', '10')),
             embedding_worker_timeout=float(os.environ.get('MEMORY_EMBED_WORKER_TIMEOUT', '120')),
+            chunk_chars=chunk_chars, chunk_overlap=chunk_overlap, chunk_max=chunk_max, embedding_batch_size=batch_size,
+            embedding_batch_timeout=batch_timeout, embedding_job_timeout_max=job_timeout_max,
         )

@@ -92,7 +92,7 @@ class PgvectorMigrationTests(unittest.TestCase):
             for _, dims, length, filled, embedded in rows:
                 self.assertEqual((dims, filled, embedded), (length, True, length))
             versions = {row[0] for row in c.execute('SELECT version FROM memory.schema_versions').fetchall()}
-            self.assertEqual(versions, set(range(1, 10)), 'versions 1..9 exactly: the new version must not collide with the 6 and 7 of the domain migrations')
+            self.assertEqual(versions, set(range(1, 11)), 'versions 1..10 exactly: the new version must not collide with the 6 and 7 of the domain migrations')
             indexes = [row[0] for row in c.execute("SELECT indexdef FROM pg_indexes WHERE schemaname='memory' AND tablename='embeddings'").fetchall()]
             self.assertTrue(any('USING hnsw' in definition and 'vector_cosine_ops' in definition and MODEL in definition and 'dims = 768' in definition for definition in indexes), indexes)
         self.assertEqual(self.vector_hashes(self.admin_dsn), before_hashes)

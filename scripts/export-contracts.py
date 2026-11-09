@@ -12,10 +12,19 @@ def contracts():
     from memory_platform.app import create_app
     from memory_platform.config import Settings
     app = create_app(Settings('unused'))
+    from memory_platform.models import SearchResult
     tools = asyncio.run(app.state.mcp.list_tools())
-    return {'memory-platform.openapi.json': app.openapi(),
+    # Result shape of the search (the hits, with their optional fields such as `matched_chunk`): additive, new keys only. Tool and
+    # route definitions are untouched; the OpenAPI schemas are added to `components.schemas` without replacing an existing one.
+    result = SearchResult.model_json_schema(ref_template='#/components/schemas/{model}')
+    openapi = app.openapi()
+    schemas = openapi.setdefault('components', {}).setdefault('schemas', {})
+    for name, schema in {**result.pop('$defs', {}), 'SearchResult': result}.items():
+        schemas.setdefault(name, schema)
+    return {'memory-platform.openapi.json': openapi,
             'kairos-mcp.json': {'name': 'Kairos', 'transport': 'streamable-http',
-                                'path': '/mcp/', 'tools': [tool.model_dump(mode='json', exclude_none=True) for tool in tools]}}
+                                'path': '/mcp/', 'tools': [tool.model_dump(mode='json', exclude_none=True) for tool in tools],
+                                'result_schemas': {'search': SearchResult.model_json_schema()}}}
 
 
 def main():

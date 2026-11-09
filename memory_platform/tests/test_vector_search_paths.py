@@ -190,7 +190,7 @@ class VectorSearchPathTests(unittest.TestCase):
             self.assertTrue(self.store.complete_job(job['id'], 5, {'vector': vector, 'model': MODEL, 'canonical_hash': job['canonical_hash'], 'verified': True}))
         inserts = [query for query, _ in statements if 'INSERT INTO memory.embeddings' in query]
         self.assertEqual(len(inserts), 1)
-        self.assertRegex(inserts[0], r'\(project_id,item_id,resource_type,version,canonical_hash,model,vector,embedding\)')
+        self.assertRegex(inserts[0], r'\(project_id,item_id,resource_type,version,canonical_hash,model,vector,embedding,chunked\)')
         with self.store.transaction() as c:
             row = c.execute('SELECT dims,vector_dims(embedding) AS embedded,array_length(vector,1) AS length FROM memory.embeddings WHERE project_id=%s', (self.pid,)).fetchone()
         self.assertEqual((row['dims'], row['embedded'], row['length']), (768, 768, 768))

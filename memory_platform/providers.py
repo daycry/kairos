@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 import httpx
+from .config import DEFAULT_EMBED_BATCH_TIMEOUT, embedding_job_timeout
 from .models import Payload
 
 
@@ -73,28 +74,72 @@ class Ollama:
                 'prompt_version': 'memory-extract-v1', 'input_hash': sha(canonical(payload)), 'status': 'extracted'}
 
 
+def valid_vector(values):
+    """One embedding from the provider: 1..4096 finite numbers, positive norm. Anything else is `embedding_invalid`."""
+    if not isinstance(values, list) or not 1 <= len(values) <= 4096:
+        raise ProviderError('embedding_invalid')
+    if any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) for value in values):
+        raise ProviderError('embedding_invalid')
+    vector = [float(value) for value in values]
+    if not any(vector) or not math.isfinite(sum(value*value for value in vector)):
+        raise ProviderError('embedding_invalid')
+    return vector
+
+
 class Embeddings:
-    """A single input per Ollama request, bounded and serialized within each process."""
+    """Bounded Ollama embeddings, serialized within each process: one request at a time (semaphore)."""
     def __init__(self, settings, transport=None):
         self.settings, self.transport = settings, transport
         self._semaphore = asyncio.Semaphore(1)
 
+    def _prefix(self, query):
+        return ('search_query: ' if query else 'search_document: ') if 'nomic' in self.settings.embedding_model.lower() else ''
+
     async def embed(self, text, query=False):
         if not isinstance(text, str) or not text.strip():
             raise ProviderError('embedding_empty_input')
-        prefix = ('search_query: ' if query else 'search_document: ') if 'nomic' in self.settings.embedding_model.lower() else ''
+        prefix = self._prefix(query)
         timeout = getattr(self.settings, 'embedding_query_timeout', 10.0) if query else getattr(self.settings, 'embedding_worker_timeout', 120.0)
         async with asyncio.timeout(timeout):
             async with self._semaphore:
                 result = await request_json('POST', self.settings.ollama_url+'/api/embed', timeout=timeout,
                                             payload={'model': self.settings.embedding_model, 'input': [prefix+text[:8000]], 'truncate': True}, transport=self.transport)
         values = result.get('embeddings') if isinstance(result, dict) else None
-        if not isinstance(values, list) or len(values) != 1 or not isinstance(values[0], list) or not 1 <= len(values[0]) <= 4096:
+        if not isinstance(values, list) or len(values) != 1:
             raise ProviderError('embedding_invalid')
-        vector = values[0]
-        if any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) for value in vector):
+        return {'embedding': valid_vector(values[0]), 'model': self.settings.embedding_model, 'verified': True}
+
+    async def embed_many(self, texts, query=False):
+        """Several inputs (the fragments of one text) in bounded batches.
+
+        The overall deadline grows with the number of batches (`embedding_job_timeout`: MEMORY_EMBED_BATCH_TIMEOUT per batch of
+        MEMORY_EMBED_BATCH inputs, never above MEMORY_EMBED_JOB_MAX_TIMEOUT); a single request never gets more than the batch
+        timeout nor more than what is left of the overall one. Queries keep their own deadline for everything.
+        Each request still takes the semaphore, so requests never overlap. Any failing batch fails the whole call and nothing
+        partial is returned; the answer must hold exactly one valid vector per input, all of the same dimension.
+        """
+        if not isinstance(texts, (list, tuple)) or not texts or any(not isinstance(text, str) or not text.strip() for text in texts):
+            raise ProviderError('embedding_empty_input')
+        prefix = self._prefix(query)
+        if query:
+            timeout = per_request = getattr(self.settings, 'embedding_query_timeout', 10.0)
+        else:
+            timeout = embedding_job_timeout(self.settings, len(texts))
+            per_request = getattr(self.settings, 'embedding_batch_timeout', DEFAULT_EMBED_BATCH_TIMEOUT)
+        size = max(1, int(getattr(self.settings, 'embedding_batch_size', 8)))
+        loop = asyncio.get_running_loop()
+        vectors = []
+        async with asyncio.timeout(timeout):
+            deadline = loop.time()+timeout
+            for index in range(0, len(texts), size):
+                part = texts[index:index+size]
+                async with self._semaphore:
+                    result = await request_json('POST', self.settings.ollama_url+'/api/embed', timeout=max(0.001, min(per_request, deadline-loop.time())),
+                                                payload={'model': self.settings.embedding_model, 'input': [prefix+text[:8000] for text in part], 'truncate': True}, transport=self.transport)
+                values = result.get('embeddings') if isinstance(result, dict) else None
+                if not isinstance(values, list) or len(values) != len(part):
+                    raise ProviderError('embedding_invalid')
+                vectors.extend(valid_vector(value) for value in values)
+        if len({len(vector) for vector in vectors}) != 1:
             raise ProviderError('embedding_invalid')
-        vector = [float(value) for value in vector]
-        if not any(vector) or not math.isfinite(sum(value*value for value in vector)):
-            raise ProviderError('embedding_invalid')
-        return {'embedding': vector, 'model': self.settings.embedding_model, 'verified': True}
+        return {'embeddings': vectors, 'model': self.settings.embedding_model, 'verified': True}

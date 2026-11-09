@@ -1,0 +1,71 @@
+{
+ "after_backfill": {
+  "embeddings_rows": 80000,
+  "probe_explain": {
+   "execution_ms": 0.06,
+   "plan_top": [
+    "Limit  (cost=0.12..30.55 rows=1 width=18) (actual time=0.010..0.011 rows=0 loops=1)",
+    "Buffers: shared hit=1",
+    "->  Index Scan using memory_embeddings_unchunked on embeddings e  (cost=0.12..30.55 rows=1 width=18) (actual time=0.009..0.010 rows=0 loops=1)",
+    "Index Cond: ((project_id = ANY ('{p1}'::text[])) AND (model = 'stale-model'::text) AND (dims = '8'::smallint))",
+    "Filter: (((resource_type = 'item'::text) AND (ANY ((project_id = (hashed SubPlan 2).col1) AND (item_id = (hashed SubPlan 2).col2) AND (version = (hashed SubPlan",
+    "Buffers: shared hit=1"
+   ],
+   "planning_ms": 0.524,
+   "shared_buffers": "shared hit=1",
+   "uses_partial_index": true
+  },
+  "queries": 30,
+  "queries_truncated": 30,
+  "rows_in_partial_index_unchunked": 0,
+  "search_ms_avg": 1654.1
+ },
+ "backfill": {
+  "batches": 0,
+  "derived": 0,
+  "embedding_filled": 0,
+  "enqueued": 0,
+  "failed": 0,
+  "pending": 0,
+  "remaining": 0,
+  "seconds": 9.17,
+  "stale_marked": 40000
+ },
+ "backfill_repeat": {
+  "batches": 0,
+  "derived": 0,
+  "embedding_filled": 0,
+  "enqueued": 0,
+  "failed": 0,
+  "pending": 0,
+  "remaining": 0,
+  "seconds": 2.652,
+  "stale_marked": 0
+ },
+ "before_backfill": {
+  "embeddings_rows": 80000,
+  "probe_explain": {
+   "execution_ms": 48.891,
+   "plan_top": [
+    "Limit  (cost=0.29..24866.44 rows=501 width=18) (actual time=48.801..48.805 rows=0 loops=1)",
+    "Buffers: shared hit=3078",
+    "->  Index Scan using memory_embeddings_unchunked on embeddings e  (cost=0.29..993901.90 rows=20025 width=18) (actual time=48.798..48.801 rows=0 loops=1)",
+    "Index Cond: ((project_id = ANY ('{p1}'::text[])) AND (model = 'stale-model'::text) AND (dims = '8'::smallint))",
+    "Filter: (((resource_type = 'item'::text) AND (ANY ((project_id = (hashed SubPlan 2).col1) AND (item_id = (hashed SubPlan 2).col2) AND (version = (hashed SubPlan",
+    "Rows Removed by Filter: 40000"
+   ],
+   "planning_ms": 1.014,
+   "shared_buffers": "shared hit=3078",
+   "uses_partial_index": true
+  },
+  "queries": 30,
+  "queries_truncated": 30,
+  "rows_in_partial_index_unchunked": 40000,
+  "search_ms_avg": 1800.1
+ },
+ "dimensions": 8,
+ "measured_with": "python -m memory_platform.tests.retrieval_eval.stale_measure in the kairos-test image (PostgreSQL 17.11, pgvector 0.8.7, --network=none), isolated database created and dropped by the script; 40,000 documents (current version 2, chunked, one fragment each) + 40,000 stale version-1 item vectors flagged chunked=false; model without HNSW index, so the search time is dominated by the exact fragment scan (the probe is the measured delta)",
+ "postgres": "isolated container build",
+ "reading": "Probe of resources without fragments: 48.9 ms / 3,078 buffers with 40,000 stale rows in memory_embeddings_unchunked -> 0.06 ms / 1 buffer after backfill-chunks (stale_marked 40,000 in 9.2 s, batches of 200, nothing deleted: 80,000 rows before and after). Search average 1,800 -> 1,654 ms (noise-level next to the exact fragment scan of this synthetic model)",
+ "stale_versions_one_per_resource": 40000
+}

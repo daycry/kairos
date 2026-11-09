@@ -151,7 +151,7 @@ def load_dataset(path):
 def _setup(dsn):
     from memory_platform.auth import hash_password
     from memory_platform.store import Store
-    store = Store(dsn)
+    store = Store(dsn, embedding_enabled=True)  # the write paths queue the embed jobs that _index runs through the product worker
     store.migrate()
     suffix = uuid.uuid4().hex[:14]
     actor_id = str(uuid.uuid4())
@@ -188,14 +188,19 @@ def _load_corpus(store, actor, project, records):
     return ids, texts
 
 
-async def _index(store, project, texts, provider, model):
-    for item_id, (kind, text) in texts.items():
-        embedded = await provider.embed(text[:8000])  # same cut the worker applies
-        table, resource = ('memory.memory_items', 'item') if kind == 'memory' else ('memory.documents', 'document')
-        with store.transaction() as c:
-            row = c.execute('SELECT version,canonical_hash FROM ' + table + ' WHERE project_id=%s AND id=%s', (project, item_id)).fetchone()
-            c.execute('INSERT INTO memory.embeddings(project_id,item_id,resource_type,version,canonical_hash,model,vector) VALUES(%s,%s,%s,%s,%s,%s,%s)',
-                      (project, item_id, resource, row['version'], row['canonical_hash'], model, embedded['embedding']))
+async def _index(store, project, provider, settings):
+    """Index exactly like production: the queued embed jobs run through the real worker (fragments, batches, atomic completion).
+
+    A job that does not finish is an error of the harness, never a silently missing index.
+    """
+    from memory_platform.worker import Worker
+    worker = Worker(store, settings, {'embed': provider}, worker_id='retrieval-eval')
+    while await worker.run_once():
+        pass
+    with store.transaction() as c:
+        states = {row['state']: row['n'] for row in c.execute("SELECT state,count(*) AS n FROM memory.jobs WHERE project_id=%s AND destination='embed' GROUP BY state", (project,)).fetchall()}
+    if set(states) != {'succeeded'}:
+        raise SystemExit('retrieval-eval could not index the corpus: embed job states ' + json.dumps(states, sort_keys=True))
 
 
 def _backend_detail(result, expected):
@@ -251,7 +256,7 @@ def build_report(dsn, test_dsn, dataset_path):
     ids, texts = _load_corpus(store, actor, project, records)
 
     async def go():
-        await _index(store, project, texts, provider, settings.embedding_model)
+        await _index(store, project, provider, settings)
         return await _measure(store, actor, project, ids, [r for r in records if r['type'] == 'question'], provider, settings)
     layers, query_backends = asyncio.run(go())
     return {'dataset': Path(dataset_path).stem, 'dataset_sha256': digest, 'product_database_accessed': False,

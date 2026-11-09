@@ -24,8 +24,10 @@ MIGRATE_TIMEOUT_SECONDS = 3600  # the first pgvector migration rewrites and inde
 ISOLATED_PRIVATE_FILES = ('memory-platform.env', 'compose.override.yml', 'deployment-status.json', 'deployment-status.tmp')
 VOLUMES = (DEFAULT_PROJECT + '_memory-postgres-data', DEFAULT_PROJECT + '_memory-backups')
 SERVICES = ('memory-api', 'memory-worker', 'memory-web')
+BACKFILL_TIMEOUT_SECONDS = 1800  # queues jobs in short transactions; the worker does the embedding after `start`
+BACKFILL_REPORT_KEYS = ('status', 'reason', 'enqueued', 'derived', 'failed', 'pending', 'remaining', 'batches', 'embedding_filled', 'stale_marked')  # counts only, never anything else
 PHASES = ('engine', 'configuration', 'build', 'database', 'inspect', 'backup',
-          'migrate', 'bootstrap', 'start', 'verify')
+          'migrate', 'bootstrap', 'backfill', 'start', 'verify')
 
 
 class DeploymentError(Exception):
@@ -305,8 +307,8 @@ class Deployment:
             # Opt-in: the migration holds ACCESS EXCLUSIVE locks until its COMMIT (docs/operations.md); the services of the
             # previous release would only queue behind them. `start` brings the services back up; if the deployment stops
             # before `start` they stay stopped.
+            self.report['services_stopped_before_migrate'] = True  # before the command: a stop that fails half way may have stopped one of them
             self.run(self.compose + ['stop', '--timeout', '30', 'memory-api', 'memory-worker'])
-            self.report['services_stopped_before_migrate'] = True
         # The first pgvector migration rewrites embeddings and builds HNSW indexes: no 120 s abort. Recorded in the report.
         self.report['migrate_timeout_seconds'] = MIGRATE_TIMEOUT_SECONDS
         self.operator('migrate', timeout=MIGRATE_TIMEOUT_SECONDS)
@@ -316,6 +318,15 @@ class Deployment:
         after = self.operator('content-manifest')
         if before:
             compare_content(before, after)
+        # Decision P-07: fragments for the existing content are queued at deployment. Only `embed` jobs are inserted (no content table is
+        # touched, so the manifest checks above and below still hold); the worker started next embeds them, bounded by its own deadline.
+        self.step('backfill')
+        # The memory-worker of the previous release would complete these jobs with its own `complete_job` (no fragments) and the report would
+        # say there is nothing left: it stays stopped until `start` brings the new one up. Always, with or without --stop-services-before-migrate.
+        self.report['worker_stopped_before_backfill'] = True  # before the command, for the same reason
+        self.run(self.compose + ['stop', '--timeout', '30', 'memory-worker'])
+        result = self.operator('backfill-chunks', timeout=BACKFILL_TIMEOUT_SECONDS)
+        self.report['backfill'] = {key: result[key] for key in BACKFILL_REPORT_KEYS if key in result}
         self.step('start')
         self.run(self.compose + ['up', '-d', '--no-deps', '--wait', '--wait-timeout', '90',
                                  'ollama', *SERVICES])
@@ -430,10 +441,14 @@ def verify_runtime(manifest, secret_dir, key_file=None, origin='http://127.0.0.1
 
 def failure_hints(report, phase):
     """Extra stderr lines for a failed deployment that leaves something in a state the operator must act on."""
-    if report.get('services_stopped_before_migrate') and phase in ('migrate', 'bootstrap'):
-        return ['memory-api and memory-worker were stopped before migrate and are still stopped; a failed migration is '
-                'rolled back. Start them again (docker compose ... start memory-api memory-worker) or retry.']
-    return []
+    hints = []
+    if report.get('services_stopped_before_migrate') and phase in ('migrate', 'bootstrap', 'backfill'):
+        hints.append('memory-api and memory-worker were stopped before migrate and are still stopped; a failed migration is '
+                     'rolled back. Start them again (docker compose ... start memory-api memory-worker) or retry.')
+    if report.get('worker_stopped_before_backfill') and phase in ('backfill', 'start', 'verify') and not hints:  # the hint above already covers the worker
+        hints.append('memory-worker was stopped before the backfill (the previous release would complete its jobs without fragments) and may still be '
+                     'stopped; start it again (docker compose ... up -d memory-worker) or retry the deployment. Queued jobs stay pending meanwhile.')
+    return hints
 
 
 def main(argv=None):

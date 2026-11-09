@@ -41,6 +41,7 @@ COPY --chown=postgres:postgres memory_platform /app/memory_platform
 COPY --chown=postgres:postgres scripts/memory-client.py /app/scripts/memory-client.py
 COPY --chown=postgres:postgres scripts/memory-admin.py /app/scripts/memory-admin.py
 COPY --chown=postgres:postgres scripts/deploy-memory.py /app/scripts/deploy-memory.py
+COPY --chown=postgres:postgres scripts/export-contracts.py /app/scripts/export-contracts.py
 COPY --chown=postgres:postgres docker-compose.yml /app/docker-compose.yml
 USER postgres
 ENV PYTHONPATH=/app

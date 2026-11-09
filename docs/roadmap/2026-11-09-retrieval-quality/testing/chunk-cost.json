@@ -1,0 +1,124 @@
+{
+  "after": {
+    "documents": 70615040,
+    "embeddings": 604774400,
+    "jobs": 26370048,
+    "memory_items": 55959552
+  },
+  "after_drain": {
+    "chunks": 80000,
+    "embeddings": 40000,
+    "embeddings_chunked": 40000,
+    "jobs_pending": 0
+  },
+  "backfill_after_drain": {
+    "batches": 0,
+    "derived": 0,
+    "embedding_filled": 0,
+    "enqueued": 0,
+    "failed": 0,
+    "pending": 0,
+    "remaining": 0
+  },
+  "backfill_first_run": {
+    "batches": 200,
+    "derived": 0,
+    "embedding_filled": 0,
+    "enqueued": 40000,
+    "failed": 0,
+    "pending": 40000,
+    "remaining": 0
+  },
+  "backfill_second_run": {
+    "batches": 0,
+    "derived": 0,
+    "embedding_filled": 0,
+    "enqueued": 0,
+    "failed": 0,
+    "pending": 40000,
+    "remaining": 0,
+    "seconds": 3.113
+  },
+  "backfill_seconds": 78.97,
+  "before": {
+    "documents": 66527232,
+    "embeddings": 604446720,
+    "jobs": 16195584,
+    "memory_items": 53280768
+  },
+  "chunk_exact_scan": {
+    "candidates_truncated": false,
+    "cap": 100000,
+    "fallback_budget_ms": 1500,
+    "fragments": 84696,
+    "ms": 2484,
+    "ms_per_10k_fragments": 293.3
+  },
+  "chunk_table_empty_bytes": 32768,
+  "fragments": {
+    "bytes_per_chunk_table_with_toast": 78096,
+    "bytes_per_chunk_with_indexes": 153253,
+    "bytes_per_fragment_real": 8497,
+    "chunks": 4696,
+    "complete_job_seconds_total": 39.5,
+    "documents_20k_plus_one_200k": 301,
+    "hnsw_bytes": 346923008,
+    "indexes_bytes": 352935936,
+    "note": "chunks / bytes_per_chunk_* below use the 4,696 fragments of the 301 long documents as denominator; the table holds 84696 fragments (80,000 of the backfill + 4,696), so the real figures are 4330 bytes of table+TOAST and 4167 bytes of indexes per fragment (8497 in total)",
+    "samples": [
+      {
+        "characters": 20000,
+        "chunks": 15,
+        "complete_job_seconds": 0.124
+      },
+      {
+        "characters": 200000,
+        "chunks": 151,
+        "complete_job_seconds": 0.737
+      }
+    ],
+    "table_with_toast_bytes": 366739456
+  },
+  "hnsw_indexes_dropped_for_the_drain": 2,
+  "hnsw_rebuild_seconds": 68.4,
+  "jobs_pending": 40000,
+  "maintenance_work_mem": "256MB (migration default)",
+  "measured_with": "scratch script docs/roadmap/2026-11-09-retrieval-quality/testing/chunk-cost-measure.py run in the kairos-test image (PostgreSQL 17.11, pgvector 0.8.7, --network=none) over an isolated database created and dropped by the script; synthetic rows and a simulated embedding provider only",
+  "method": {
+    "backfill": "admin.backfill_chunks(batch=200) over the seed, then again",
+    "exact_scan": "one chunk_exact_rows over all fragments of the project, without a timeout",
+    "fragments": "300 documents of 20,000 characters and one of 200,000 completed through Store.complete_job with the real chunker (1,500/200) and random 768-dimension vectors; sizes with pg_table_size (heap + TOAST) and pg_indexes_size",
+    "migrate": "Store.migrate() from schema version 9 to 10, then again",
+    "search": "30 random queries (after one warm-up), limit 10, in the steady state (fragment route only); then the fragment table is emptied and every embeddings.chunked set to false: the item route alone, as before fragments existed",
+    "seed": "20,000 documents (about 2.5 KB each), 20,000 items, a succeeded embed job and a 768-dimension item vector for each (as the previous release leaves them), no fragments",
+    "steady_state": "after the backfill the REAL Worker (11 OS processes, SKIP LOCKED claims, simulated provider that returns a distinct 768-dim vector per input) drains all 40,000 jobs: every resource ends with fragments (80,000) and embeddings.chunked=true; the two HNSW indexes are dropped for the drain (an incremental insert costs ~0.1 s CPU, a 40-minute run instead of hours) and rebuilt in bulk afterwards (max_parallel_maintenance_workers=0, maintenance_work_mem=1GB, timed); then the 301 long documents are added through complete_job"
+  },
+  "migrate_repeat_seconds": 0.067,
+  "migrate_v9_to_v10_seconds": 0.124,
+  "one_pass_over_both_tables_when_nothing_is_left_seconds": 0.238,
+  "plan_uses_chunk_hnsw": "covered by tests/test_chunk_schema.py (index exists, partial) and test_chunk_search.py (HNSW route answers)",
+  "postgres": "isolated container build",
+  "previous_measure_phase5_before_the_fix": {
+    "backfill_seconds": 27.9,
+    "fragments_present": "301 long documents only (4,699 fragments); 40,000 resources still without fragments, answered by the item route",
+    "search_item_vectors_only_ms_avg": 989.0,
+    "search_with_fragments_ms_avg": 1067.1
+  },
+  "reading": "Steady state with all 40,000 resources chunked (84,696 fragments): search over the fragments takes 1396 ms on average against 1051 ms for the item vectors alone on the same corpus (989 ms in the previous measure, 1067 ms with 301 documents chunked); none of the 30 queries was truncated and the item route did not run (embeddings.chunked is true for every row, the probe is an empty partial index), so no exact fallback is paid per query any more. The remaining +33 % is the HNSW iterative scan over twice as many fragments with per-tuple current-resource checks on this synthetic, strongly clustered corpus (not isolated here; real embeddings cluster differently). The exact scan over ALL 84696 fragments takes 2484 ms (293 ms per 10,000 fragments): the default 1,500 ms fallback budget covers about 51,000 fragments, so the cap of 100,000 (10 per candidate element) is the bound only for the paths without that budget (models or dimensions without an index, under the request deadline: about 3 s). Backfill: 40,000 jobs queued in 79 s; the drain took 1919 s with 11 processes; HNSW rebuild 68.4 s. Schema v10 migration 0.124 s. Disk: about 8497 bytes per fragment (table with TOAST + indexes).",
+  "rows_per_table": 20000,
+  "search_item_vectors_only": {
+    "queries_with_candidates_truncated": 0
+  },
+  "search_item_vectors_only_ms_avg": 1050.9,
+  "search_steady_state": {
+    "last_hits": 10,
+    "last_with_matched_chunk": 10,
+    "queries": 30,
+    "queries_with_candidates_truncated": 0
+  },
+  "search_steady_state_ms_avg": 1396.1,
+  "seed_seconds": 173.3,
+  "worker_concurrency": 11,
+  "worker_drain_seconds": 1919.1,
+  "worker_jobs_drained": 40000
+}

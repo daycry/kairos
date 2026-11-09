@@ -13,9 +13,9 @@ It is a separate gate (`docker build --target retrieval-eval`), not part of the 
   mandatory; the gain needs a baseline recorded on the same dataset hash. A retrieval backend that is not
   `ok` (or a `partial` result) fails the gate as `backend_unavailable:<layer>` instead of scoring recall 0.
 - `check_dataset.py`: validates schema and minimum counts, prints the SHA-256.
-- `fake_embeddings.py`: deterministic provider hashing words and character trigrams (SHA-256), no network. It measures the
+- `fake_embeddings.py`: deterministic provider (`embed` and `embed_many`) hashing words and character trigrams (SHA-256), no network. It measures the
   retrieval pipeline, not model quality; the real Ollama run is a separate, explicit step.
-- `run.py`: loads the dataset into the harness PostgreSQL, runs each layer and writes the report.
+- `run.py`: loads the dataset into the harness PostgreSQL, indexes it by running the queued embed jobs through the real `Worker` (fragments of 1,500 characters with a 200-character overlap, batches, atomic completion; a job that does not finish aborts the run), runs each layer and writes the report.
   It resolves `MEMORY_DSN` like libpq and refuses to run unless it equals `MEMORY_TEST_DSN` and points to
   `127.0.0.1:55432/memory_test` (no `service`, no redirecting query parameters). It validates the dataset on load.
 - `test_metrics.py`: hand-computed metric cases and gate/DSN/determinism checks, part of the regular suite.
