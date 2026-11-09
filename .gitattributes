@@ -1,0 +1,3 @@
+# Preserve validated source bytes and recorded hashes on Windows and Linux.
+# Line-ending normalization requires an explicit, separately verified change.
+* -text

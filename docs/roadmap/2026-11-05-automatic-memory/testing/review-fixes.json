@@ -1,0 +1,156 @@
+{
+  "date": "2026-11-05",
+  "status": "tested_candidate",
+  "client_version": "0.1.1",
+  "backend": {
+    "database": "PostgreSQL",
+    "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)",
+    "environment": "isolated-container-build",
+    "errors": 0,
+    "failures": 0,
+    "passed": true,
+    "skipped": 0,
+    "tests": 139
+  },
+  "client": {
+    "windows": {
+      "tests": 59,
+      "passed": 59,
+      "skipped": 0
+    },
+    "linux": {
+      "tests": 59,
+      "passed": 59,
+      "skipped": 0
+    }
+  },
+  "npx": {
+    "package": "@daycry/kairos",
+    "offline": true,
+    "clients": 3,
+    "dryRun": true,
+    "stableRuntime": true,
+    "idempotentInstall": true,
+    "optionalHooks": true,
+    "realCredentials": false,
+    "passed": true
+  },
+  "lifecycle": {
+    "authenticated_ipc": true,
+    "control_provider_calls": 1,
+    "database": "PostgreSQL",
+    "embedding_enabled": true,
+    "lost_ack_reconciled": true,
+    "native_hook_process": true,
+    "passed": true,
+    "persisted_events": 1,
+    "provider_calls": 0,
+    "provider_calls_measured": true,
+    "real_client_acceptance": false,
+    "real_mcp": true
+  },
+  "handbook": {
+    "browser": "Chromium",
+    "checks": [
+      {
+        "page": "arquitectura.html",
+        "viewport": 1280,
+        "passed": true
+      },
+      {
+        "page": "custom-agents.html",
+        "viewport": 1280,
+        "passed": true
+      },
+      {
+        "page": "documentacion.html",
+        "viewport": 1280,
+        "passed": true
+      },
+      {
+        "page": "index.html",
+        "viewport": 1280,
+        "passed": true
+      },
+      {
+        "page": "instalar-kairos.html",
+        "viewport": 1280,
+        "passed": true
+      },
+      {
+        "page": "mantenimiento.html",
+        "viewport": 1280,
+        "passed": true
+      },
+      {
+        "page": "manual-kairos.html",
+        "viewport": 1280,
+        "passed": true
+      },
+      {
+        "page": "operaciones.html",
+        "viewport": 1280,
+        "passed": true
+      },
+      {
+        "page": "arquitectura.html",
+        "viewport": 375,
+        "passed": true
+      },
+      {
+        "page": "custom-agents.html",
+        "viewport": 375,
+        "passed": true
+      },
+      {
+        "page": "documentacion.html",
+        "viewport": 375,
+        "passed": true
+      },
+      {
+        "page": "index.html",
+        "viewport": 375,
+        "passed": true
+      },
+      {
+        "page": "instalar-kairos.html",
+        "viewport": 375,
+        "passed": true
+      },
+      {
+        "page": "mantenimiento.html",
+        "viewport": 375,
+        "passed": true
+      },
+      {
+        "page": "manual-kairos.html",
+        "viewport": 375,
+        "passed": true
+      },
+      {
+        "page": "operaciones.html",
+        "viewport": 375,
+        "passed": true
+      }
+    ],
+    "external_requests": [],
+    "browser_errors": []
+  },
+  "semantic_memory": {
+    "candidates": 1500,
+    "dimensions": 768,
+    "payload_chars": 10000,
+    "python_peak_below_bytes": 20971520,
+    "passed": true,
+    "not_rss_measurement": true
+  },
+  "pending": [
+    "second_claude_review",
+    "host_rollout_and_readback",
+    "interactive_native_client_acceptance",
+    "npm_publication"
+  ],
+  "data_changed": false,
+  "models_changed": false,
+  "credentials_changed": false
+}

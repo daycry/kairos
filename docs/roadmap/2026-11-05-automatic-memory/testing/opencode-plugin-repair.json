@@ -1,0 +1,19 @@
+{
+  "status": "verified",
+  "verified_at_utc": "2026-11-06T09:53:17.985696+00:00",
+  "opencode_version": "2.0.12",
+  "plugin_id": "custom-agents",
+  "operator_applied": true,
+  "before_sha256": "5f2c19efc9d363aba0b538360805f3919ed31673473ee4b7b418b3e5497068ae",
+  "after_sha256": "3a1689520689222b217d5107e8e7becc3fbbd2aae41dc086435cd6a941b650c1",
+  "backup_hash_verified": true,
+  "repair_plan_status": "already_clean",
+  "redundant_entries": 0,
+  "native_api_get_plugin": {
+    "entries": 1,
+    "active": 1,
+    "failed": 0
+  },
+  "service_restart_required": false,
+  "kairos_native_acceptance": "pending"
+}

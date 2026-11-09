@@ -1,0 +1,52 @@
+{
+  "status": "implementation_tested_native_execution_pending",
+  "verified_at_utc": "2026-11-06T12:32:17.664058+00:00",
+  "test_command": "python -m unittest discover -s kairos/scripts/tests -q",
+  "tests": {
+    "total": 51,
+    "passed": 51,
+    "failed": 0,
+    "synthetic_transport": true
+  },
+  "source_sha256": {
+    "scripts/accept-native-clients.py": "b9d7b47dff8812ce2f98c4129a0eee702a812b0ef197a7db18e2958d1c06c950",
+    "scripts/native_context_probe.py": "0e18af282b7939b7c8e5137aee253bbbe1d00ceb7d3e5d2c228336c322061a26",
+    "scripts/tests/test_accept_native_clients.py": "bcc39cb430cf273abae501166cf2bf179a2df63180456d5ee164e9448367911c",
+    "scripts/tests/test_repair_opencode_plugins.py": "ba2684d20665bc37f8103818a1cd8cb352b6e5aa01495ce81e4f986dcdea7ac1"
+  },
+  "features": [
+    "per-client summary keys",
+    "shared policy restoration",
+    "bounded model-free marker setup",
+    "native automatic-context echo without tools",
+    "idempotent canary retirement",
+    "per-runtime persisted lifecycle receipts"
+  ],
+  "native_activation_attempt": {
+    "client": "codex",
+    "result": "PermissionError",
+    "phase": "private capture-operation lock preflight",
+    "api_mutation_attempted": false
+  },
+  "live_readback": {
+    "active_owned_capture_keys": {
+      "claude": 1,
+      "codex": 0,
+      "opencode": 0
+    },
+    "project_policies": {
+      "custom-agents": {
+        "capture_mode": "summary",
+        "temporal_projection": false
+      },
+      "euipo": {
+        "capture_mode": "off",
+        "temporal_projection": false
+      }
+    }
+  },
+  "runtime_package_changed": false,
+  "container_rebuild_required": false,
+  "native_acceptance_complete": false,
+  "operator_guide": "native-automation-matrix.md"
+}

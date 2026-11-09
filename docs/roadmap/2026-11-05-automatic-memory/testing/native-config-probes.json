@@ -1,0 +1,20 @@
+{
+  "run_id": "fd288af212a04055850bf418b7c6c6f3",
+  "native_configuration_probes": [
+    {
+      "client": "claude",
+      "exit_code": 0,
+      "kairos_listed": true,
+      "connected_marker": false,
+      "approval_pending_marker": true,
+      "raw_output_not_exported": true
+    },
+    {
+      "client": "codex",
+      "exit_code": 0,
+      "kairos_listed": false,
+      "kairos_enabled": false,
+      "raw_output_not_exported": true
+    }
+  ]
+}

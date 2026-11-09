@@ -1,0 +1,27 @@
+# Proxy HTTP hacia el Ollama instalado en WSL.
+#
+# Ollama escucha en loopback dentro de WSL y, en ese modo, rechaza con 403
+# cualquier peticion cuyo Host sea un nombre como `ollama`. Por eso se reescribe
+# Host a localhost: los consumidores siguen usando http://ollama:11434.
+#
+# La imagen oficial de nginx sustituye ${OLLAMA_UPSTREAM} al arrancar.
+
+server {
+    listen 11434;
+
+    access_log off;
+    client_max_body_size 0;
+
+    location / {
+        proxy_pass http://${OLLAMA_UPSTREAM};
+        proxy_http_version 1.1;
+        proxy_set_header Host localhost;
+        proxy_set_header Connection "";
+
+        # Respuestas en streaming y generaciones largas con modelos grandes.
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+    }
+}

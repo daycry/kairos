@@ -1,0 +1,73 @@
+{
+  "status": "native_acceptance_complete",
+  "scope": "successful_native_read_context_and_technical_summary_capture",
+  "verified_at_utc": "2026-11-06T19:40:35.048564+00:00",
+  "run_id": "fd288af212a04055850bf418b7c6c6f3",
+  "installed_runtimes": {
+    "claude": "0.1.6",
+    "codex": "0.1.5",
+    "opencode": "0.1.5"
+  },
+  "native_results": [
+    {
+      "client": "claude",
+      "started_at_utc": "2026-11-06T19:35:27.849010+00:00",
+      "native_mcp_read_observed": true,
+      "automatic_context_injection_accepted": true,
+      "automatic_capture_accepted": true,
+      "native_errors": [],
+      "native_hook_failures": []
+    },
+    {
+      "client": "codex",
+      "started_at_utc": "2026-11-06T19:32:28.926644+00:00",
+      "native_mcp_read_observed": true,
+      "automatic_context_injection_accepted": true,
+      "automatic_capture_accepted": true,
+      "native_errors": [],
+      "native_hook_failures": []
+    },
+    {
+      "client": "opencode",
+      "started_at_utc": "2026-11-06T17:24:52.230079+00:00",
+      "native_mcp_read_observed": true,
+      "automatic_context_injection_accepted": true,
+      "automatic_capture_accepted": true,
+      "native_errors": [],
+      "native_hook_failures": []
+    }
+  ],
+  "tests": {
+    "python_scripts": {
+      "passed": 63,
+      "total": 63,
+      "latest_run": true
+    },
+    "client_windows": {
+      "passed": 74,
+      "total": 74,
+      "latest_full_suite": "validated isolated 0.1.6 candidate; adopted source/tests matched byte for byte",
+      "adopted_root_targeted_checks": 2
+    }
+  },
+  "context_proof_versions": {
+    "claude": "0.1.6",
+    "codex": "0.1.5",
+    "opencode": "0.1.4"
+  },
+  "opencode_capture_proof_version": "0.1.5",
+  "package_published": false,
+  "working_project_configs_changed": false,
+  "raw_content_exported": false,
+  "test_keys_retained": true,
+  "project_capture_mode": "summary",
+  "remaining_parity_tasks": [
+    "A-02",
+    "A-03",
+    "A-04",
+    "A-05",
+    "A-06",
+    "A-08"
+  ],
+  "collector_sha256": "ba5893f969912e157efa762c836ccccc1f3fd3f9334f4d41de7ed6119eeb0a10"
+}

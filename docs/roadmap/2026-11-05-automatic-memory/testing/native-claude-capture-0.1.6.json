@@ -1,0 +1,102 @@
+{
+  "status": "native_read_context_capture_and_clean_terminal_accepted",
+  "runtime_version": "0.1.6",
+  "verified_at_utc": "2026-11-06T19:40:34.967975+00:00",
+  "client_result": {
+    "client": "claude",
+    "exit_code": 0,
+    "timed_out": false,
+    "started_at_utc": "2026-11-06T19:35:27.849010+00:00",
+    "phase": "native_run",
+    "successful_read_tools": [
+      "context",
+      "projects"
+    ],
+    "native_mcp_read_observed": true,
+    "native_hook_events_observed": 9,
+    "native_hook_packets": 18,
+    "accepted_context_hooks": [
+      {
+        "event": "SessionStart",
+        "context_chars": 3682,
+        "references": 5,
+        "sha256": "684f171c1c694e60b2e372b7154afb39ee5a220488c5e76c5f1686945a2a52c7"
+      },
+      {
+        "event": "UserPromptSubmit",
+        "context_chars": 3609,
+        "references": 5,
+        "sha256": "04cdfdacb7ba64fc34b44367a6947c60fb615ef6e39a3018b2f82e0532e5f222"
+      }
+    ],
+    "custom_agents_plugin_loaded": true,
+    "hook_execution_status": "responses_observed",
+    "native_errors": [],
+    "native_diagnostics": [],
+    "evidence_limitations": [],
+    "automatic_context_injection_accepted": true,
+    "automatic_capture_accepted": true,
+    "native_hook_failures": [],
+    "capture_verification": {
+      "status": "accepted",
+      "client": "claude",
+      "runtime": "claude",
+      "project_id": "custom-agents",
+      "session_id": "e6a920a9-6f12-4fc7-b674-d3755cd4ec1c",
+      "started_at_utc": "2026-11-06T19:35:27.849010+00:00",
+      "verified_at_utc": "2026-11-06T19:39:02.333299+00:00",
+      "events": [
+        {
+          "event_id": "710887e8-ee2b-523b-9cbe-81dfacc5ccab",
+          "item_id": "2a9de703-a289-55dd-9f3a-29fa9cbd99d7",
+          "hook_event": "SessionEnd",
+          "version": 1,
+          "canonical_hash": "28d0374168a950731f06fc9824a5e3cf2b457e88d79508dcbda0ccf886f0ddee",
+          "source_sha256": "324ff2ad22bda394a27d3817206a50fdf8dfa01d1d68504f792dc5a630b07342",
+          "capture_hash": "4c86a01377a3ec52d01e71d779376c58706847dea9261e13bda90572b1b778ea",
+          "receipt_status": "accepted",
+          "jobs": []
+        },
+        {
+          "event_id": "739f6451-ccad-526c-8f54-57fdf3b53c0c",
+          "item_id": "1bd63f9b-7a07-5cc1-ac9b-ab094c39d825",
+          "hook_event": "SessionStart",
+          "version": 1,
+          "canonical_hash": "47052c734b7bff433070c441d5da845391ce1c56497695ae613b8b6a079dbee0",
+          "source_sha256": "dcbc3f8a32947c9694d82462c76ad5c2f18100440b517925ebe20b0619696fcc",
+          "capture_hash": "d843d66c0f518e2e554c46ab22e8a5c283292fa70fc639b4cf376718fe9cb4ac",
+          "receipt_status": "accepted",
+          "jobs": []
+        },
+        {
+          "event_id": "104bb246-789f-55ae-911b-1bba8377d689",
+          "item_id": "11d347a7-2430-5151-b2aa-1d91823ed302",
+          "hook_event": "Stop",
+          "version": 1,
+          "canonical_hash": "a5f9ddad7a169f75fc3e343c22ea93211f301cd6b02d068a8485a338e3483f6f",
+          "source_sha256": "07a1f623f02eba44225ff21aca7d90f651f8cb2aab9d8270ad24eed1b6d747e8",
+          "capture_hash": "4f77aec3e7651af63980cbbd89fa2baf6eee1debde0039150192e1b797e5175d",
+          "receipt_status": "accepted",
+          "jobs": []
+        },
+        {
+          "event_id": "f53a606e-e5cf-5bd4-bf42-1db88af8b7cf",
+          "item_id": "ff9ec466-68b8-534c-83eb-2df9acd5f745",
+          "hook_event": "UserPromptSubmit",
+          "version": 1,
+          "canonical_hash": "0f47f9936793111e868ee7f319a0b80646cfa034be082b16a20ff5446ce07e32",
+          "source_sha256": "bdc5fdc5e4f3ed91a5ca0fe2d6b17af7075cd27a3bf0f38e50c65c14d88e1895",
+          "capture_hash": "12d9550b9b9be482c870790de0cebdabab322e6a36c6510cc52d1a4056b3c2c4",
+          "receipt_status": "accepted",
+          "jobs": []
+        }
+      ],
+      "raw_content_exported": false,
+      "acceptance_kind": "read"
+    },
+    "status": "read_observed"
+  },
+  "raw_content_exported": false,
+  "scope": "successful technical-summary lifecycle; not all product parity",
+  "historical_cancellation": "not reproduced in this new native run"
+}

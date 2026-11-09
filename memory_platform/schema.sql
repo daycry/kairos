@@ -1,0 +1,56 @@
+CREATE SCHEMA IF NOT EXISTS memory;
+CREATE TABLE IF NOT EXISTS memory.schema_versions(version integer PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT clock_timestamp());
+CREATE TABLE IF NOT EXISTS memory.actors(id text PRIMARY KEY, username text UNIQUE NOT NULL, password_hash text NOT NULL, is_admin boolean NOT NULL DEFAULT false, disabled boolean NOT NULL DEFAULT false);
+CREATE TABLE IF NOT EXISTS memory.projects(id text PRIMARY KEY, title text NOT NULL, policy jsonb NOT NULL DEFAULT '{"capture_mode":"off","temporal_projection":false}', mapping jsonb NOT NULL DEFAULT '{}');
+CREATE TABLE IF NOT EXISTS memory.project_grants(actor_id text NOT NULL REFERENCES memory.actors(id), project_id text NOT NULL REFERENCES memory.projects(id), permission text NOT NULL CHECK(permission IN ('read','write','publish','validate','admin')), PRIMARY KEY(actor_id,project_id,permission));
+CREATE TABLE IF NOT EXISTS memory.api_keys(id text PRIMARY KEY, actor_id text NOT NULL REFERENCES memory.actors(id), name text NOT NULL, token_hash text UNIQUE NOT NULL, prefix text NOT NULL, project_ids jsonb NOT NULL, scopes jsonb NOT NULL, expires_at timestamptz, revoked_at timestamptz, created_at timestamptz NOT NULL DEFAULT clock_timestamp());
+CREATE TABLE IF NOT EXISTS memory.web_sessions(id text PRIMARY KEY, actor_id text NOT NULL REFERENCES memory.actors(id), token_hash text UNIQUE NOT NULL, csrf_hash text NOT NULL, expires_at timestamptz NOT NULL, revoked_at timestamptz);
+CREATE TABLE IF NOT EXISTS memory.login_attempts(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, username text NOT NULL, client_ip text NOT NULL, happened_at timestamptz NOT NULL DEFAULT clock_timestamp());
+CREATE INDEX IF NOT EXISTS login_attempt_time ON memory.login_attempts(happened_at);
+CREATE TABLE IF NOT EXISTS memory.audit_events(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, actor_id text, action text NOT NULL, project_id text, resource_id text, happened_at timestamptz NOT NULL DEFAULT clock_timestamp());
+CREATE TABLE IF NOT EXISTS memory.events(id text PRIMARY KEY, project_id text NOT NULL REFERENCES memory.projects(id), canonical_hash text NOT NULL, body jsonb NOT NULL, receipt jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT clock_timestamp());
+CREATE TABLE IF NOT EXISTS memory.sessions(project_id text NOT NULL REFERENCES memory.projects(id), id text NOT NULL, agent_id text NOT NULL, started_at timestamptz NOT NULL, ended_at timestamptz, PRIMARY KEY(project_id,id));
+CREATE TABLE IF NOT EXISTS memory.memory_items(project_id text NOT NULL REFERENCES memory.projects(id), id text NOT NULL, version integer NOT NULL, canonical_hash text NOT NULL, event_type text NOT NULL, payload jsonb NOT NULL, session_id text NOT NULL, agent_id text NOT NULL, occurred_at timestamptz NOT NULL, deleted boolean NOT NULL DEFAULT false, superseded_by text, search_vector tsvector NOT NULL, PRIMARY KEY(project_id,id));
+CREATE INDEX IF NOT EXISTS memory_item_search ON memory.memory_items USING gin(search_vector);
+CREATE TABLE IF NOT EXISTS memory.item_versions(project_id text NOT NULL, item_id text NOT NULL, version integer NOT NULL, canonical_hash text NOT NULL, body jsonb NOT NULL, PRIMARY KEY(project_id,item_id,version));
+CREATE TABLE IF NOT EXISTS memory.documents(project_id text NOT NULL REFERENCES memory.projects(id), id text NOT NULL, version integer NOT NULL, canonical_hash text NOT NULL, body jsonb NOT NULL, deleted boolean NOT NULL DEFAULT false, PRIMARY KEY(project_id,id));
+CREATE TABLE IF NOT EXISTS memory.document_versions(project_id text NOT NULL, document_id text NOT NULL, version integer NOT NULL, canonical_hash text NOT NULL, body jsonb NOT NULL, PRIMARY KEY(project_id,document_id,version));
+CREATE TABLE IF NOT EXISTS memory.jobs(id text PRIMARY KEY, project_id text NOT NULL REFERENCES memory.projects(id), item_id text NOT NULL, version integer NOT NULL, canonical_hash text NOT NULL, resource_type text NOT NULL, destination text NOT NULL, operation text NOT NULL, state text NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','running','succeeded','failed','unknown')), attempts integer NOT NULL DEFAULT 0, available_at timestamptz NOT NULL DEFAULT clock_timestamp(), lease_until timestamptz, worker_id text, fence bigint NOT NULL DEFAULT 0, error_code text, created_at timestamptz NOT NULL DEFAULT clock_timestamp(), UNIQUE(project_id,item_id,version,resource_type,destination,operation));
+CREATE INDEX IF NOT EXISTS memory_job_queue ON memory.jobs(state,available_at);
+CREATE TABLE IF NOT EXISTS memory.projection_receipts(job_id text PRIMARY KEY REFERENCES memory.jobs(id), project_id text NOT NULL, item_id text NOT NULL, version integer NOT NULL, canonical_hash text NOT NULL, destination text NOT NULL, receipt jsonb NOT NULL, recorded_at timestamptz NOT NULL DEFAULT clock_timestamp());
+INSERT INTO memory.schema_versions(version) VALUES (1) ON CONFLICT DO NOTHING;
+ALTER TABLE memory.memory_items ADD COLUMN IF NOT EXISTS parent_item_id text;
+ALTER TABLE memory.memory_items ADD COLUMN IF NOT EXISTS parent_version integer;
+ALTER TABLE memory.memory_items ADD COLUMN IF NOT EXISTS parent_hash text;
+CREATE INDEX IF NOT EXISTS memory_item_parent ON memory.memory_items(project_id,parent_item_id);
+INSERT INTO memory.schema_versions(version) VALUES (2) ON CONFLICT DO NOTHING;
+ALTER TABLE memory.documents ADD COLUMN IF NOT EXISTS search_vector tsvector GENERATED ALWAYS AS (
+    setweight(to_tsvector('simple'::regconfig,COALESCE(body->>'title','')),'A') ||
+    setweight(to_tsvector('simple'::regconfig,COALESCE(body->>'tags','')),'B') ||
+    setweight(to_tsvector('simple'::regconfig,COALESCE(body->>'content','')),'C')
+) STORED;
+CREATE INDEX IF NOT EXISTS memory_document_search ON memory.documents USING gin(search_vector) WHERE NOT deleted;
+INSERT INTO memory.schema_versions(version) VALUES (3) ON CONFLICT DO NOTHING;
+CREATE TABLE IF NOT EXISTS memory.embeddings(
+    project_id text NOT NULL REFERENCES memory.projects(id),
+    item_id text NOT NULL,
+    resource_type text NOT NULL CHECK(resource_type IN ('item','document')),
+    version integer NOT NULL,
+    canonical_hash text NOT NULL,
+    model text NOT NULL,
+    vector double precision[] NOT NULL CHECK(array_ndims(vector)=1 AND array_length(vector,1) BETWEEN 1 AND 4096),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY(project_id,item_id,resource_type,version,model)
+);
+CREATE INDEX IF NOT EXISTS memory_embedding_scope ON memory.embeddings(project_id,model,resource_type,item_id,version);
+INSERT INTO memory.schema_versions(version) VALUES (4) ON CONFLICT DO NOTHING;
+
+-- Project-scoped cursor feeds and current projection lookup. Additive only.
+SET LOCAL lock_timeout = '5s';
+CREATE INDEX IF NOT EXISTS memory_events_activity ON memory.events(project_id,created_at,id);
+CREATE INDEX IF NOT EXISTS memory_events_history ON memory.events(project_id,id);
+CREATE INDEX IF NOT EXISTS memory_receipts_current ON memory.projection_receipts(project_id,item_id,version,canonical_hash,destination);
+CREATE INDEX IF NOT EXISTS memory_items_recent ON memory.memory_items(project_id,
+    (event_type='correction' AND payload->>'validation_status'='validated') DESC,occurred_at DESC,id)
+    WHERE NOT deleted AND superseded_by IS NULL;
+INSERT INTO memory.schema_versions(version) VALUES (5) ON CONFLICT DO NOTHING;

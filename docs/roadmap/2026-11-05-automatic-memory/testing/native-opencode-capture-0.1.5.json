@@ -1,0 +1,93 @@
+{
+  "status": "successful_read_capture_cycle_accepted",
+  "verified_at_utc": "2026-11-06T17:26:29.483316+00:00",
+  "native_client": "opencode",
+  "runtime_version": "0.1.5",
+  "model": "opencode/big-pickle",
+  "read_and_capture": {
+    "client": "opencode",
+    "exit_code": 0,
+    "timed_out": false,
+    "started_at_utc": "2026-11-06T17:24:52.230079+00:00",
+    "phase": "native_run",
+    "explicit_test_model": "opencode/big-pickle",
+    "successful_read_tools": [
+      "context",
+      "projects"
+    ],
+    "native_mcp_read_observed": true,
+    "native_hook_events_observed": 0,
+    "native_hook_packets": 0,
+    "accepted_context_hooks": [],
+    "custom_agents_plugin_loaded": null,
+    "hook_execution_status": "not_observed_in_native_output",
+    "native_errors": [],
+    "native_diagnostics": [],
+    "evidence_limitations": [
+      "This native output has no supported hook/context or plugin inventory evidence; unaccepted does not mean disabled."
+    ],
+    "automatic_context_injection_accepted": true,
+    "automatic_capture_accepted": true,
+    "native_hook_failures": [],
+    "context_verification": {
+      "status": "accepted",
+      "client": "opencode",
+      "project_id": "custom-agents",
+      "session_id": "ses_e4e5df368ffee9G2AjZlNOhgg5",
+      "started_at_utc": "2026-11-06T16:12:26.569908+00:00",
+      "attempt_id": "ff9ddc0f08a74a9d911c48d16298e222",
+      "marker_sha256": "5a05cfb86d4d78aef9512680d6971a0ca41d1a8c28f99a06af5b6640e6a4bb74",
+      "tool_calls": 0,
+      "probe_item_id": "864c2987-ae2b-4f02-a1cf-a1e25d54c557",
+      "probe_create_event_id": "9801539a-eae6-4d3f-b884-6c7e40909bdf",
+      "probe_delete_event_id": "0847b5eb-75d1-45f5-bdb0-ec95e300101c",
+      "probe_retired": true,
+      "raw_content_exported": false
+    },
+    "capture_verification": {
+      "status": "accepted",
+      "client": "opencode",
+      "runtime": "opencode-v2",
+      "project_id": "custom-agents",
+      "session_id": "ses_e4e1ba4eaffebx2NY8b1YNHbZe",
+      "started_at_utc": "2026-11-06T17:24:52.230079+00:00",
+      "verified_at_utc": "2026-11-06T17:25:49.787585+00:00",
+      "events": [
+        {
+          "event_id": "e9cade24-4e16-5f0a-a033-8db0e6cf0e14",
+          "item_id": "7e305062-af9b-53c2-a506-33978f463355",
+          "hook_event": "SessionStart",
+          "version": 1,
+          "canonical_hash": "73bf3ad4f7bc3865fe448abd2a61b3386f9ac1bf0b33b09008ba96de46ebd7b5",
+          "source_sha256": "dcbc3f8a32947c9694d82462c76ad5c2f18100440b517925ebe20b0619696fcc",
+          "capture_hash": "f68ff90d6311eed260fc64f8be3a8a516ea7bb3b9bb2fa3503961ec00fdf119d",
+          "receipt_status": "accepted",
+          "jobs": []
+        },
+        {
+          "event_id": "762b436f-1bd3-5b39-a307-6486417b30f2",
+          "item_id": "b75eead9-0c55-5cf9-bab1-c24c3240bf1d",
+          "hook_event": "Stop",
+          "version": 1,
+          "canonical_hash": "45c45ac445696ae6416626d113ced414669d169bb1cd7c570d367124d973eb7e",
+          "source_sha256": "07a1f623f02eba44225ff21aca7d90f651f8cb2aab9d8270ad24eed1b6d747e8",
+          "capture_hash": "5151bfcee8538d4fb05fef88c0dde8e7bda35cba0ae6c11cc5d0f4983494c945",
+          "receipt_status": "accepted",
+          "jobs": []
+        }
+      ],
+      "raw_content_exported": false,
+      "acceptance_kind": "read"
+    },
+    "status": "read_observed"
+  },
+  "context_proof_runtime": "0.1.4",
+  "context_proof_retained_with_original_timestamp": true,
+  "limitations": [
+    "Successful native read/capture cycle only; not proof of all product parity or every native event type.",
+    "The independent no-tools context proof was obtained on runtime 0.1.4, not rerun on 0.1.5.",
+    "Codex automatic context/capture remains unaccepted; Claude cancelled-Stop diagnostic remains open."
+  ],
+  "raw_content_exported": false,
+  "server_or_project_configuration_changed": false
+}

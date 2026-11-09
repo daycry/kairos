@@ -1,0 +1,94 @@
+{
+  "schema": 1,
+  "status": "failed",
+  "model": "beam:cloud",
+  "endpoint": "http://host.docker.internal:11434",
+  "synthetic_only": true,
+  "product_database_accessed": false,
+  "network": "default-bridge-for-fixed-provider-and-isolated-loopback-db",
+  "max_model_calls": 2,
+  "actual_model_calls": 2,
+  "provider_retries": 0,
+  "provider_timeout_seconds": 90,
+  "max_output_tokens_per_call": 1024,
+  "max_input_tokens_per_call": 4096,
+  "steps": [
+    {
+      "step": "unsupported_without_evidence",
+      "status": "passed",
+      "model_calls": 0
+    },
+    {
+      "step": "primary",
+      "status": "completed",
+      "literal_quotes_checked": true,
+      "key_fact_checked": true,
+      "answer_sha256": "0bea89cf69e82693cad479241d0448078886b9fad04682de8fcd338ef0d27daf",
+      "input_tokens": 286,
+      "output_tokens": 276
+    },
+    {
+      "step": "exact_retry_and_reload",
+      "status": "passed",
+      "model_calls": 1,
+      "generation_hash": "b744e0de9c4b1c70636dab8633132b4e01d556533bfd5c0acc20264032bc860f",
+      "generation": 1
+    }
+  ],
+  "source_sha256": "e521df3ce7bf1aa868810c450e3a72ee32e0299a609c8649909f43e4418eacf4",
+  "packets": [
+    {
+      "roles": [
+        "system",
+        "user"
+      ],
+      "sources": [
+        "episodic:test-91275bdc8b6f47:8f54a4b0-5c3e-41ab-b3e6-e86f3c27ba12:1"
+      ],
+      "http_status": 200,
+      "native": {
+        "done": true,
+        "done_reason": "stop",
+        "prompt_eval_count": 286,
+        "eval_count": 276
+      },
+      "content_bytes": 295,
+      "elapsed_seconds": 4.523
+    },
+    {
+      "roles": [
+        "system",
+        "user",
+        "assistant",
+        "user"
+      ],
+      "sources": [
+        "episodic:test-91275bdc8b6f47:8f54a4b0-5c3e-41ab-b3e6-e86f3c27ba12:1"
+      ],
+      "http_status": 200,
+      "native": {
+        "done": true,
+        "done_reason": "stop",
+        "prompt_eval_count": 440,
+        "eval_count": 251
+      },
+      "content_bytes": 442,
+      "error_code": "corpus_answer_invalid",
+      "elapsed_seconds": 2.7
+    }
+  ],
+  "source": {
+    "item_id": "8f54a4b0-5c3e-41ab-b3e6-e86f3c27ba12",
+    "version": 1,
+    "canonical_hash": "c99f2a0a3fd0b171769bb14ee2d3b567838f4ac7f9d81a2c218ea9265407f761",
+    "text_sha256": "2277351539c1c88b9a54f0b03ab51f48b82722dd04a430f012c11072a6f7e514",
+    "ref": "episodic:test-91275bdc8b6f47:8f54a4b0-5c3e-41ab-b3e6-e86f3c27ba12:1"
+  },
+  "tests": 1,
+  "failures": 1,
+  "errors": 0,
+  "skipped": 0,
+  "elapsed_seconds": 9.592,
+  "database": "PostgreSQL",
+  "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)"
+}

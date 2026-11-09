@@ -1,0 +1,83 @@
+{
+  "date": "2026-11-05",
+  "reviewer": "Claude CLI 2.1.311",
+  "review_seconds": 457.6,
+  "tool_calls": 52,
+  "review_is_partial": true,
+  "tools": [
+    "Read",
+    "Grep",
+    "Glob"
+  ],
+  "reviewer_executed_tests": false,
+  "reviewer_had_secrets_or_live_data": false,
+  "snapshot_files": 128,
+  "snapshot_manifest_sha256": "96cd076a017ab06f5500ee36fcc73765425efff4ead8bc19f53a21e9eb707bf5",
+  "review_sha256": "efa5297f0709d805b76cd95937cf39d48f8be53e42a8af87633de8a14174555c",
+  "snapshot_omissions": [
+    "memory_platform/schema.sql (filter omitted .sql; fixed for future snapshots)"
+  ],
+  "reproductions": [
+    {
+      "id": "I-1",
+      "confirmed": true,
+      "evidence": "Changing the host runtime executable prevents loadInstallation before any daemon launch. Native OpenCode execution remains a separate acceptance test."
+    },
+    {
+      "id": "I-5",
+      "confirmed": true,
+      "evidence": "Appending an unrelated hook after the managed group makes loadInstallation reject the complete installation."
+    },
+    {
+      "id": "I-8",
+      "confirmed": true,
+      "evidence": "A simulated prior manifest version is rejected before --replace can perform an upgrade. No future package was assumed to exist."
+    },
+    {
+      "id": "I-3",
+      "confirmed": true,
+      "evidence": "Two completed records exhaust maxRecords=2; checkpoint/restart does not permit a third admission."
+    },
+    {
+      "id": "I-9-client",
+      "confirmed": true,
+      "evidence": "Synthetic prefixed .env assignments survive sanitizeText; no real credentials were used."
+    },
+    {
+      "id": "I-4",
+      "confirmed": true,
+      "evidence": "The same failed job is polled in all three eligible ticks and stays in the active queue. Large-scale latency was not benchmarked."
+    },
+    {
+      "id": "I-9-server",
+      "confirmed": true,
+      "evidence": "Synthetic prefixed .env assignments survive server sanitization."
+    },
+    {
+      "id": "I-2",
+      "confirmed": true,
+      "evidence": "With the production embedding flag, _jobs adds embed for an item even with no extraction destinations. SQL execution was replaced by an owned recorder; no database/provider called."
+    },
+    {
+      "id": "I-7",
+      "confirmed": true,
+      "evidence": "A 100ms synchronous authentication stand-in delays an independent event-loop timer for at least 90ms. This proves the scheduling issue, not production throughput.",
+      "observed_delay_seconds": 0.101
+    }
+  ],
+  "live_services_modified": false,
+  "runtime_sources_modified": false,
+  "reviewer_classification": {
+    "critical": 0,
+    "important": 9,
+    "minor": 6,
+    "hypotheses": 3
+  },
+  "remaining_validation": [
+    "I-6 context relevance and recall on a representative corpus",
+    "Native clients and S-1 hook schema",
+    "S-2 semantic load",
+    "S-3 stale-lock concurrency",
+    "UI, deployment scripts and SQL schema review"
+  ]
+}

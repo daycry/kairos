@@ -1,0 +1,46 @@
+{
+  "inspected_at_utc": "2026-11-06T17:43:20.476176+00:00",
+  "status": "native_trust_review_required",
+  "fixture_runtime": "0.1.3",
+  "working_installer_version": "0.1.5",
+  "features_hooks_enabled": true,
+  "parent_workspace_trusted": true,
+  "stored_fixture_approval_selectors": [
+    "session_start:0:0",
+    "user_prompt_submit:0:0"
+  ],
+  "stored_records_prove_current_trust": false,
+  "native_hooks_list_status": "access_denied_before_initialization",
+  "native_control_socket_proxy_status": "access_denied",
+  "native_threads_created": false,
+  "models_requested": false,
+  "trust_modified": false,
+  "operator_confirmation": "pending",
+  "guide": "codex-trust-and-claude-terminal-candidate.md",
+  "follow_up": {
+    "at_utc": "2026-11-06T18:43:30.189162+00:00",
+    "fixture_runtime": "0.1.5",
+    "operator_reported_review_complete": true,
+    "stored_fixture_approval_selectors": [
+      "session_start:0:0",
+      "user_prompt_submit:0:0",
+      "post_tool_use:0:0",
+      "pre_compact:0:0",
+      "session_end:0:0",
+      "subagent_stop:0:0",
+      "stop:0:0"
+    ],
+    "next": "bounded native context/read capture tests",
+    "native_trust_api_still_unobserved": true
+  },
+  "resolution": {
+    "verified_at_utc": "2026-11-06T19:35:11.975878+00:00",
+    "runtime": "0.1.5",
+    "operator_refreshed_and_approved_native_hooks": true,
+    "new_native_context_accepted": true,
+    "new_native_read_accepted": true,
+    "four_lifecycle_events_verified_in_each_of_two_sessions": true,
+    "direct_trust_rpc_status": "still_not_observed",
+    "guide": "native-codex-capture-0.1.5.json"
+  }
+}

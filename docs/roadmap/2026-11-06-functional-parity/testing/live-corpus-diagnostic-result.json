@@ -1,0 +1,146 @@
+{
+  "schema": 1,
+  "kind": "synthetic-shape-diagnostic",
+  "max_model_calls": 2,
+  "actual_model_calls": 2,
+  "model": "beam:cloud",
+  "endpoint": "http://host.docker.internal:11434",
+  "provider_timeout_seconds": 90,
+  "output_tokens_per_call": 1024,
+  "provider_retries": 0,
+  "product_database_accessed": false,
+  "source_sha256": "b048be94fa912efe4880d30e5da1343da05e08bf43dccca907e37143415c3a21",
+  "packets": [
+    {
+      "case": "current-envelope",
+      "assistant_keys": [
+        [
+          "answer",
+          "citations",
+          "input_tokens",
+          "mode",
+          "output_tokens",
+          "prompt_version"
+        ]
+      ],
+      "http_status": 200,
+      "native": {
+        "done": true,
+        "done_reason": "stop",
+        "prompt_eval_count": 410,
+        "eval_count": 227
+      },
+      "content_bytes": 379,
+      "json_type": "dict",
+      "top_level_keys": [
+        "answer",
+        "citations",
+        "input_tokens",
+        "mode",
+        "output_tokens",
+        "prompt_version"
+      ],
+      "answer": {
+        "type": "str",
+        "bytes": 91
+      },
+      "citations": {
+        "type": "list",
+        "count": 1
+      },
+      "citation_shapes": [
+        {
+          "keys": [
+            "quote",
+            "ref"
+          ],
+          "ref": {
+            "type": "str",
+            "bytes": 67
+          },
+          "quote": {
+            "type": "str",
+            "bytes": 68
+          }
+        }
+      ],
+      "error_code": "corpus_answer_invalid",
+      "elapsed_seconds": 2.261
+    },
+    {
+      "case": "projected",
+      "assistant_keys": [
+        [
+          "answer",
+          "citations"
+        ]
+      ],
+      "http_status": 200,
+      "native": {
+        "done": true,
+        "done_reason": "stop",
+        "prompt_eval_count": 382,
+        "eval_count": 177
+      },
+      "content_bytes": 275,
+      "json_type": "dict",
+      "top_level_keys": [
+        "answer",
+        "citations"
+      ],
+      "answer": {
+        "type": "str",
+        "bytes": 91
+      },
+      "citations": {
+        "type": "list",
+        "count": 1
+      },
+      "citation_shapes": [
+        {
+          "keys": [
+            "quote",
+            "ref"
+          ],
+          "ref": {
+            "type": "str",
+            "bytes": 67
+          },
+          "quote": {
+            "type": "str",
+            "bytes": 68
+          }
+        }
+      ],
+      "elapsed_seconds": 1.265
+    }
+  ],
+  "cases": [
+    {
+      "name": "envelope",
+      "status": "failed",
+      "generation": 1,
+      "generation_hash": "09e3ce4315652b3312b568095532279012d0f486258211cf2cc7dd512059a87c",
+      "error_code": "corpus_answer_invalid",
+      "reload_matches": true
+    },
+    {
+      "name": "projected",
+      "status": "completed",
+      "generation": 1,
+      "generation_hash": "09e3ce4315652b3312b568095532279012d0f486258211cf2cc7dd512059a87c",
+      "error_code": null,
+      "reload_matches": true,
+      "rationale_checked": true,
+      "literal_quotes_checked": true
+    }
+  ],
+  "difference_observed": true,
+  "status": "positive_control_passed",
+  "tests": 1,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "database": "PostgreSQL",
+  "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)"
+}

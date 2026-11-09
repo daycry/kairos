@@ -1,0 +1,15 @@
+.git
+.env
+.env.*
+.private
+.cache
+secrets
+backups
+**/__pycache__
+**/node_modules
+**/artifacts
+**/dist
+**/.venv
+**/.pytest_cache
+docs/roadmap/**/testing/browser/*trace*.zip
+

@@ -1,0 +1,10 @@
+{
+  "status": "blocked_before_activation",
+  "phase": "engine",
+  "reason": "Docker API permission denied in agent session",
+  "command": "python kairos/scripts/deploy-memory.py --apply",
+  "later_phases_run": false,
+  "product_database_modified": false,
+  "services_recreated": false,
+  "models_credentials_ports_capture_policy_changed": false
+}

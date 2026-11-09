@@ -1,0 +1,50 @@
+{
+  "status": "prepared_not_published",
+  "version": "0.1.6",
+  "artifact": "packages/kairos-cli/artifacts/daycry-kairos-0.1.6.tgz",
+  "sha256": "41bbf76ed6ee7252ee3656fb6b04003ed611edaa0ced97ee1256dd42d9471882",
+  "bytes": 39637,
+  "files": 18,
+  "source_bytes_match": true,
+  "source_and_tests_match_validated_candidate": true,
+  "adopted_at_utc": "2026-11-06T18:43:30.126349+00:00",
+  "client_windows_tests": {
+    "passed": 74,
+    "total": 74,
+    "skipped": 0,
+    "context": "isolated candidate; all sources/tests byte-identical after adoption"
+  },
+  "adopted_root_checks": {
+    "passed": 2,
+    "total": 2,
+    "scope": [
+      "Claude terminal admission",
+      "upgrade/recovery from 0.1.5"
+    ]
+  },
+  "offline_npm_install": {
+    "clients": [
+      "claude",
+      "codex",
+      "opencode"
+    ],
+    "doctor": "configured",
+    "network_checked": false,
+    "real_credentials": false
+  },
+  "native_claude_acceptance": "accepted_read_context_capture_clean_terminal",
+  "native_codex_fixture_version": "0.1.5",
+  "operator_guide": "native-runtime-0.1.6.md",
+  "source_sha256": {
+    "package.json": "0e1e87422e5d8a914b867d3c4218e2a96aeeb9f2489c4a34aaf5ab3896b0a9a1",
+    "lib/config.mjs": "9125a0b4ce4fad301dfc2a7b032dc721365309f99ba24cebdd76ffdb294732a9",
+    "lib/hooks.mjs": "43479828f82e2257a8e47bd2c4fa42c243439dc2a5b3a1a250c696bcb46f8ee5",
+    "tests/lifecycle.test.mjs": "3fc746a0d0a323dfc2236646e996c1201c55deebbfd8eb7bbc1173f747f13ce4"
+  },
+  "native_claude_run_started_at_utc": "2026-11-06T19:35:27.849010+00:00",
+  "collector_regression_tests": {
+    "passed": 63,
+    "total": 63,
+    "runtime_archive_changed": false
+  }
+}

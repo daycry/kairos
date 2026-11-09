@@ -1,0 +1,60 @@
+{
+  "runtime": {
+    "name": "web-tree-sitter",
+    "version": "0.25.10",
+    "license": "MIT",
+    "dist": {
+      "shasum": "b21f1df7aaa87ad235b4c3d07005168349496706",
+      "tarball": "https://registry.npmjs.org/web-tree-sitter/-/web-tree-sitter-0.25.10.tgz",
+      "fileCount": 66,
+      "integrity": "sha512-Y09sF44/13XvgVKgO2cNDw5rGk6s26MgoZPXLESvMXeefBf7i6/73eFurre0IsTW6E14Y0ArIzhUMmjoc7xyzA==",
+      "signatures": [
+        {
+          "sig": "MEUCIQCvP8bBuhHCLS/zhn7IKHbLnuHGnKX/Ce0X0QGoDk+FcgIgdqntUG61ElWZ3pu0/rvcE3YxLL8ZAZNXdd76aToGFCo=",
+          "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+        }
+      ],
+      "unpackedSize": 5772850
+    }
+  },
+  "grammar_distribution": {
+    "name": "@vscode/tree-sitter-wasm",
+    "version": "0.3.1",
+    "license": "MIT",
+    "repository": {
+      "url": "git+https://github.com/Microsoft/vscode-tree-sitter-wasm.git",
+      "type": "git"
+    },
+    "dist": {
+      "shasum": "81d046fb37c09a1e950a20a1f233e8d868d76c77",
+      "tarball": "https://registry.npmjs.org/@vscode/tree-sitter-wasm/-/tree-sitter-wasm-0.3.1.tgz",
+      "fileCount": 24,
+      "integrity": "sha512-RJFoomET6FajjG511fmQxeBQfU6M24a0aFZPqpid+ttIxanWf1VGytBG0UmsGjt07qmIPJS8U31D+aecuCucsQ==",
+      "signatures": [
+        {
+          "sig": "MEYCIQDH5ot92g96y8FVFo/AJoCzbD0y8VIvhEiJKT09YbsNCAIhAO8Q3+zAJX4UXoB3xkk2JHihiuzrmztzS6LVbnP7OZ0l",
+          "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+        }
+      ],
+      "unpackedSize": 22082102
+    }
+  },
+  "notes": [
+    "Runtime files are unchanged bytes from web-tree-sitter 0.25.10. Selected grammar binaries are unchanged bytes from Microsoft package 0.3.1; its grammar build manifests use version ranges, so precise grammar source revisions are not claimed. Applicable upstream MIT notices accompany the binaries."
+  ],
+  "files": {
+    "LICENSE": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383",
+    "LICENSE-tree-sitter": "5f9cf9fb6acb1972b35ae29119ce563bb60ec097656bc4b69b9bac2d04c7a147",
+    "LICENSE-tree-sitter-javascript": "2e0110e07abef7c2548b26ec9d6969775617ca539a0dc8dbeeb14d6452c711d1",
+    "LICENSE-tree-sitter-php": "664764fabf40c0b318e06324a5a12379092a2df25b8cbf2415f71bc0bb352346",
+    "LICENSE-tree-sitter-python": "d724405ce238a22c0d35769c5a36b386ad5958192efe8bbb304fb2896254575f",
+    "LICENSE-tree-sitter-typescript": "49bf33cf78ef5897e4e161ce1517df7de1ae5042a65b6bcfd44401e0fc606559",
+    "tree-sitter-javascript.wasm": "5fb488d0cabb4775a594bab85682de5ad6ce83c0d6ac997a9f82dd084d571240",
+    "tree-sitter-php.wasm": "d4df6a6ff08c87c3ec4f9cbb785fe09998a0cb570e03f57d7b19b3acfb146aa7",
+    "tree-sitter-python.wasm": "16108b50df4ee9a30168794252ab55e7c93bfc5765d7fa0aa3e335752c515f47",
+    "tree-sitter-tsx.wasm": "79e5da75ea62855a0cd67177685f0164eac87d5f630b3cbe1e0a099751ad30f8",
+    "tree-sitter-typescript.wasm": "778025db5a8be0e70f8ccc3671e486dfeddd048c25d9e8a70c26de2e1bf6f97d",
+    "tree-sitter.js": "d4fc466df6358055253bc4cdaab23cdf84fe00741fa5a4ff56506c06c533da42",
+    "tree-sitter.wasm": "f38dcc4b43b818f9a0785bc1c6d5611a75ac4cdd428ff3f02757c34ca4e46d7f"
+  }
+}

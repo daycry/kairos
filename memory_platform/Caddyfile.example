@@ -1,0 +1,6 @@
+# Host reverse-proxy example. Replace the domain with one you control.
+# Before exposing it, configure MEMORY_COOKIE_SECURE=1 and the exact HTTPS
+# MEMORY_ALLOWED_ORIGINS, then recreate the API. Keep 5173 bound to loopback.
+memory.example.com {
+    reverse_proxy 127.0.0.1:5173
+}

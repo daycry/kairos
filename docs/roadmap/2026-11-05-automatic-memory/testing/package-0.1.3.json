@@ -1,0 +1,45 @@
+{
+  "status": "prepared_not_published",
+  "version": "0.1.3",
+  "artifact": "packages/kairos-cli/artifacts/daycry-kairos-0.1.3.tgz",
+  "sha256": "9ba6aa77e282b725eebdc79058872d310a83a381a7488fcda51f241ede0d7dad",
+  "bytes": 39097,
+  "files": 18,
+  "source_bytes_match": true,
+  "verified_at_utc": "2026-11-06T13:07:52.491791+00:00",
+  "tests": {
+    "python_scripts": {
+      "passed": 56,
+      "total": 56
+    },
+    "client_windows": {
+      "passed": 67,
+      "total": 67,
+      "skipped": 0,
+      "process_isolation": false
+    },
+    "upgrade_recovery_from": [
+      "0.1.0",
+      "0.1.2"
+    ],
+    "offline_npm_exec": {
+      "installed_clients": [
+        "claude",
+        "codex",
+        "opencode"
+      ],
+      "synthetic_key_only": true,
+      "doctor_status": "configured",
+      "network_checked": false
+    }
+  },
+  "source_sha256": {
+    "scripts/accept-native-clients.py": "d90ecd6b66b7cfcd2e864fcb2deb575214a55a685b453771376fbe589b9281fb",
+    "scripts/native_context_probe.py": "690e674ec0ace926c95f793f39cbde25183a66ea9a32364e4351d05d922195c9",
+    "packages/kairos-cli/lib/config.mjs": "620e2204d3ed3c698ec586b8037e93b81b131e0b569c5fa63d57e2ef51c460b8",
+    "packages/kairos-cli/lib/hooks.mjs": "567cadbf072f185a349da23830e1c2ff184169d5d633a60056fffc206d805177",
+    "packages/kairos-cli/lib/opencode.mjs": "7af1a7db8fe34663dcbed8562fcbdbbe1af560f19698287461bc5b519c722e31"
+  },
+  "native_upgrade_status": "pending_operator_private_write",
+  "operator_guide": "native-runtime-0.1.3.md"
+}

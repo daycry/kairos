@@ -1,0 +1,24 @@
+{
+  "status": "passed",
+  "server_mcp_tools": 34,
+  "optional_local_tools": 3,
+  "handbook_verified_files": 14,
+  "handoff_archive_files": 14,
+  "handoff_private_material_included": false,
+  "handbook_files": {
+    "index.html": "06dee364d114d406ebe0875ab130248affdb807a86fc8bbcdefc10c5c8084ddc",
+    "documentacion.html": "35fd16c97969f581344f04d77753c70369c9a58ed7e48b44522a2c740960810d",
+    "mantenimiento.html": "f0cb4854c63481209d6539c55231f2ecc1df354d137fc9df5be38f9bb6d0d0d5",
+    "manual-kairos.html": "d246948ce80981a11fd66bc24ead1237e0acfe4b548bd2970373b51dd929865a",
+    "instalar-kairos.html": "bdb3bb6935ca994c537e6d4331e59953217bb3225cf78090b6fd48bb10f6699a",
+    "custom-agents.html": "af7e632c378f94ca63ab5ca320ca1b956967fde5cf2fcf5bf30d14d9cfdbccee",
+    "operaciones.html": "470e789ae06dbcd2e7c59ad39499215d70ce206ac091063ac45b986204ce7d65",
+    "arquitectura.html": "5769fd4817ddadc3b5d009f389d8001e40bd377bd71b2d87dad619f77b0ff4d4",
+    "observaciones-equipo.html": "3ad718bdebc58cf3d89dfba9f3ae1e67d3b7e98a74ceefac7c758d69ba205705",
+    "consultas-corpus.html": "6a66b8e1b9fc92dc7c905ddc06dff956d535c2ed01e092ef7db87d4459b73018",
+    "analisis-codigo.html": "f7fbffe2a78dd61189f38ac93bde570bcf7b79ed49c7803af64b8f57c526feb4",
+    "entrega-cli.html": "fd29a6b01b16e8248343ac0edfd7908263125bd026c17f620ca443eadea238ee",
+    "kairos-mcp.json": "641f6e8616e1b88ace24e299ec3691b759c41cba02214cf859fec4e89c056df5",
+    "memory-platform.openapi.json": "25dc9824d8e4b6ace6b66d45394e10766d0846a8c3f4d36d1d10fe13b638d491"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "selected_at_utc": "2026-11-06T10:07:48.065627+00:00",
+  "model": "opencode/big-pickle",
+  "selection_basis": "User authorized choosing a bundled free model",
+  "native_catalog": {
+    "enabled": true,
+    "status": "active",
+    "tools": true,
+    "input_price": 0,
+    "output_price": 0
+  },
+  "official_pricing_source": "https://opencode.ai/v2/docs/console/models",
+  "native_run_attempt": {
+    "status": "permission_denied",
+    "error_type": "PermissionError",
+    "successful_generation_not_claimed": true
+  },
+  "next_command": "python kairos/scripts/accept-native-clients.py --run opencode --model opencode/big-pickle",
+  "global_configuration_changed": false
+}

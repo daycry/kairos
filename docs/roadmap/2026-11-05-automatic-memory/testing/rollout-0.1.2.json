@@ -1,0 +1,66 @@
+{
+  "checked_at_utc": "2026-11-05T20:26:56.389620+00:00",
+  "status": "verified",
+  "origin": "http://127.0.0.1:5173",
+  "readiness": {
+    "status": "ready"
+  },
+  "deployment_status": "complete",
+  "deployment_content_sha256": "56491e196bba590df19b31f5a47a96e26076cf628cb1e146611e565f0d272b84",
+  "same_content_as_previous": true,
+  "tools": 24,
+  "automatic_capture_contract": true,
+  "context_filter_contract": true,
+  "projects": 2,
+  "manifest_pages": 3,
+  "documents": 21,
+  "exact_utf8_hashes_titles_and_tag_lists_verified": 21,
+  "policies": [
+    {
+      "project_id": "custom-agents",
+      "capture_mode": "off"
+    },
+    {
+      "project_id": "euipo",
+      "capture_mode": "off"
+    }
+  ],
+  "contexts": [
+    {
+      "project_id": "custom-agents",
+      "sources": 3,
+      "partial": false,
+      "semantic": "off"
+    },
+    {
+      "project_id": "euipo",
+      "sources": 3,
+      "partial": false,
+      "semantic": "off"
+    }
+  ],
+  "public_pages": [
+    "/",
+    "/login",
+    "/app",
+    "/docs",
+    "/handbook/instalar-kairos.html",
+    "/handbook/custom-agents.html"
+  ],
+  "handbook_files_matching_local_sha256": [
+    "index.html",
+    "documentacion.html",
+    "mantenimiento.html",
+    "manual-kairos.html",
+    "instalar-kairos.html",
+    "custom-agents.html",
+    "operaciones.html",
+    "arquitectura.html",
+    "kairos-mcp.json",
+    "memory-platform.openapi.json"
+  ],
+  "knowledge_writes": 0,
+  "provider_calls_requested": 0,
+  "native_client_acceptance": false,
+  "http_requests_before_logout": 52
+}

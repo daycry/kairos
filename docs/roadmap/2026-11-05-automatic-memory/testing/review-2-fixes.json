@@ -1,0 +1,152 @@
+{
+  "date": "2026-11-05",
+  "status": "deployed_and_read_back_native_acceptance_pending",
+  "client_version": "0.1.2",
+  "review": {
+    "cli": "Claude CLI 2.1.311",
+    "seconds": 483.5,
+    "tool_calls": 41,
+    "snapshot_files": 138,
+    "snapshot_unchanged": true,
+    "reviewed_candidate": "0.1.1",
+    "corrected_candidate": "0.1.2",
+    "critical_reported": 0,
+    "new_important": 1,
+    "new_minor": 6,
+    "not_full_audit": true
+  },
+  "backend": {
+    "database": "PostgreSQL",
+    "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)",
+    "environment": "isolated-container-build",
+    "errors": 0,
+    "failures": 0,
+    "passed": true,
+    "skipped": 0,
+    "tests": 141
+  },
+  "client": {
+    "windows": {
+      "tests": 64,
+      "passed": 64,
+      "skipped": 0
+    },
+    "linux": {
+      "tests": 64,
+      "passed": 64,
+      "skipped": 0
+    }
+  },
+  "npx": {
+    "package": "@daycry/kairos",
+    "offline": true,
+    "clients": 3,
+    "dryRun": true,
+    "stableRuntime": true,
+    "idempotentInstall": true,
+    "optionalHooks": true,
+    "realCredentials": false,
+    "passed": true
+  },
+  "lifecycle": {
+    "authenticated_ipc": true,
+    "control_provider_calls": 1,
+    "database": "PostgreSQL",
+    "embedding_enabled": true,
+    "lost_ack_reconciled": true,
+    "native_hook_process": true,
+    "passed": true,
+    "persisted_events": 1,
+    "provider_calls": 0,
+    "provider_calls_measured": true,
+    "real_client_acceptance": false,
+    "real_mcp": true
+  },
+  "legacy_upgrade": {
+    "original_artifact_version": "0.1.0",
+    "original_artifact_sha256": "0493bf2cf035ef7bd32ae03fa28102ed39eff4a3f5d684e421e1bd920cd2973f",
+    "active_dispatcher_blocks_install": true,
+    "legacy_endpoint_rejected_without_contact": true,
+    "manifest_unchanged_on_rejection": true,
+    "pending_event_exact_after_migration": true,
+    "provider_calls": 0,
+    "passed": true
+  },
+  "handbook": {
+    "browser": "Chromium",
+    "checks": 16,
+    "passed": true,
+    "external_requests": 0,
+    "browser_errors": 0
+  },
+  "sql": {
+    "events": 100000,
+    "queries": [
+      {
+        "query": "activity",
+        "execution_ms": 0.097,
+        "index": "memory_events_activity"
+      },
+      {
+        "query": "history",
+        "execution_ms": 0.068,
+        "index": "memory_events_history"
+      }
+    ],
+    "synthetic": true
+  },
+  "semantic_memory": {
+    "candidates": 1500,
+    "dimensions": 768,
+    "payload_chars": 10000,
+    "peak_bytes": 6769702,
+    "not_rss_measurement": true
+  },
+  "vector_concurrency": {
+    "workers": 2,
+    "admission_slots_per_retrieval": 2,
+    "slot_retained_until_thread_completes": true,
+    "default_authentication_executor_isolated": true,
+    "deterministic_regression_passed": true,
+    "production_p95_measured": false
+  },
+  "security": {
+    "independent_investigator": true,
+    "independent_candidate_reviewer": true,
+    "candidate_findings_reproduced_and_corrected": [
+      "empty_username_uri_credentials",
+      "oversized_corrupt_source"
+    ],
+    "ipc_forgery_trigger_rejected": true,
+    "all_six_routes_tested": true,
+    "plaintext_and_endpoint_key_not_exposed_to_fake_listener": true,
+    "legitimate_ipc_and_privacy_controls_passed": true
+  },
+  "deployment": {
+    "status": "complete",
+    "independent_http_mcp_readback": "verified",
+    "evidence": "rollout-0.1.2.json",
+    "services_changed": true,
+    "data_changed": false,
+    "models_changed": false,
+    "credentials_changed": false,
+    "capture_policy_changed": false
+  },
+  "pending": [
+    "interactive_native_client_acceptance",
+    "npm_publication",
+    "production_workload_measurements",
+    "independent_portal_and_delivery_review"
+  ],
+  "deployment_attempt_history": [
+    {
+      "status": "engine_access_denied",
+      "later_phases_run": false,
+      "services_changed": false,
+      "data_changed": false,
+      "models_changed": false,
+      "credentials_changed": false,
+      "capture_policy_changed": false
+    }
+  ]
+}

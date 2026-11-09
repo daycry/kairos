@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "scope": "pure-file-evidence-reporting",
+  "passed": true,
+  "tests": 4,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "elapsed_seconds": 0.392,
+  "product_code_changed": false,
+  "database_used": false,
+  "model_calls": 0,
+  "files": {
+    "frozen_evidence.py": "6d68d7aa2708e33c07571b4660386bdfb3b618b610593e44452771668a0438a8",
+    "frozen-source-gate.py": "d3ec687061a46fd6d868aba96dbd55162a7b911e4b0b02fd95474a80928e0465",
+    "test_frozen_evidence.py": "5d2f6ee132b7b9c784936fbc3680bc3d82f11b4c8d14b11a1deb51e10728a44b"
+  }
+}

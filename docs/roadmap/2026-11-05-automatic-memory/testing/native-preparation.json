@@ -1,0 +1,243 @@
+{
+  "status": "native_acceptance_complete",
+  "versions": {
+    "claude": {
+      "version": "2.1.311",
+      "source": "native --version"
+    },
+    "codex": {
+      "version": "0.166.0",
+      "source": "native --version"
+    },
+    "opencode": {
+      "version": "2.0.12",
+      "source": "installed package manifest",
+      "launch_status": "native_read_verified"
+    },
+    "claude_custom_agents": {
+      "version": "3.2.1",
+      "source": "native installed-plugin metadata"
+    }
+  },
+  "helper_tests": {
+    "tests": 63,
+    "passed": 63,
+    "synthetic_only": true
+  },
+  "real_client_tests_run": true,
+  "real_key_created": true,
+  "server_policies_changed": true,
+  "working_project_configs_changed": false,
+  "native_trust_bypassed": false,
+  "host_preparation_failure": {
+    "phase": "private_directory_preflight",
+    "type": "PermissionError",
+    "api_contacted": false,
+    "resolved_by_operator": true
+  },
+  "guide": "native-acceptance.md",
+  "next_command": null,
+  "run_id": "fd288af212a04055850bf418b7c6c6f3",
+  "key_scopes": [
+    "read"
+  ],
+  "key_project_ids": [
+    "custom-agents"
+  ],
+  "capture_mode": "summary",
+  "context_mode": "auto",
+  "doctor_checks": [
+    {
+      "client": "claude",
+      "status": "ready",
+      "network_checked": true,
+      "project_authorized": true,
+      "tools": 24,
+      "missing_tools": [],
+      "dispatcher": "not_running"
+    },
+    {
+      "client": "codex",
+      "status": "ready",
+      "network_checked": true,
+      "project_authorized": true,
+      "tools": 24,
+      "missing_tools": [],
+      "dispatcher": "not_running"
+    },
+    {
+      "client": "opencode",
+      "status": "ready",
+      "network_checked": true,
+      "project_authorized": true,
+      "tools": 24,
+      "missing_tools": [],
+      "dispatcher": "not_running"
+    }
+  ],
+  "native_execution_attempt": {
+    "client": "claude",
+    "status": "blocked",
+    "phase": "private_log_creation",
+    "error_type": "PermissionError",
+    "native_process_started": false
+  },
+  "native_configuration_probes": [
+    {
+      "client": "claude",
+      "exit_code": 0,
+      "kairos_listed": true,
+      "connected_marker": false,
+      "approval_pending_marker": true,
+      "raw_output_not_exported": true
+    },
+    {
+      "client": "codex",
+      "exit_code": 0,
+      "kairos_listed": false,
+      "kairos_enabled": false,
+      "raw_output_not_exported": true
+    }
+  ],
+  "claude_read_mcp_accepted": true,
+  "claude_automatic_context_accepted": true,
+  "claude_capture_accepted": true,
+  "capture_activation": {
+    "authorized_by_user": true,
+    "project_id": "custom-agents",
+    "client": "claude",
+    "requested_mode": "summary",
+    "other_project_policies_changed": false,
+    "attempt_status": "enabled_verified",
+    "reason": "previous_activation_completed; repeat rejected without creating a new key"
+  },
+  "server_policy_change_scope": {
+    "project_id": "custom-agents",
+    "capture_mode": "summary",
+    "authorized_by_user": true
+  },
+  "capture_acceptance": {
+    "session_id": "16c586bf-6f58-4e33-9ead-aa2ea27b5103",
+    "events": 4,
+    "evidence": "native-client-acceptance.json",
+    "native_stop_cancelled_incident_open": true
+  },
+  "historical_snapshot_fields": [
+    "doctor_checks",
+    "native_execution_attempt",
+    "native_configuration_probes"
+  ],
+  "codex_automatic_context_accepted": false,
+  "codex_capture_accepted": false,
+  "codex_evidence": "native-codex-read.md",
+  "capture_modes_by_client": {
+    "claude": "summary",
+    "codex": "off",
+    "opencode": "off"
+  },
+  "opencode_open_issue": {
+    "plugin_id": "custom-agents",
+    "api_confirmed_states": [
+      "active"
+    ],
+    "error": null,
+    "repair_status": "applied_and_verified",
+    "evidence": "opencode-duplicate-plugin.md",
+    "verification": "opencode-plugin-repair.json"
+  },
+  "opencode_run_issue": {
+    "status": "provider_model_unavailable",
+    "client": "opencode",
+    "started_at_utc": "2026-11-06T09:58:18.070491+00:00",
+    "exit_code": 1,
+    "timed_out": false,
+    "session_id": "ses_e4fb48837ffeMen5g1ePO7GhJA",
+    "native_error": {
+      "code": "provider.auth",
+      "http_status": 403
+    },
+    "selected_model": {
+      "providerID": "opencode",
+      "id": "crouton-alpha-free",
+      "source": "native_session_message_api"
+    },
+    "mcp_calls_observed": 0,
+    "model_or_credentials_changed": false,
+    "next": "Operator chooses an available provider/model for this bounded test",
+    "evidence": "native-opencode-provider.md",
+    "resolution": "Explicit free model opencode/big-pickle completed projects/context; see native-opencode-read.json"
+  },
+  "opencode_selected_test_model": "opencode/big-pickle",
+  "opencode_free_model_selection": "opencode-free-model-selection.json",
+  "opencode_read_mcp_accepted": true,
+  "opencode_read_evidence": "native-opencode-read.json",
+  "codex_previous_read_mcp_accepted": true,
+  "codex_latest_run": {
+    "started_at_utc": "2026-11-06T10:05:31.398803+00:00",
+    "exit_code": 130,
+    "status": "cancelled"
+  },
+  "automation_extension": {
+    "status": "implementation_tested_native_execution_pending",
+    "evidence": "native-automation-extension.json",
+    "guide": "native-automation-matrix.md"
+  },
+  "runtime_candidate": {
+    "version": "0.1.3",
+    "status": "pending_operator_private_write",
+    "package": "package-0.1.3.json",
+    "guide": "native-runtime-0.1.3.md"
+  },
+  "candidate_runtime": "0.1.5",
+  "operator_guide": "native-runtime-0.1.5.md",
+  "installed_runtime_versions": {
+    "claude": "0.1.6",
+    "codex": "0.1.5",
+    "opencode": "0.1.5"
+  },
+  "temporary_host_diagnostic_retired": true,
+  "latest_opencode_accepted": {
+    "runtime": "0.1.5",
+    "mcp_read": true,
+    "automatic_context": true,
+    "context_proof_runtime": "0.1.4",
+    "capture": true,
+    "context_probe_retired": true
+  },
+  "working_installer_version": "0.1.6",
+  "isolated_claude_candidate": {
+    "version": "0.1.6",
+    "status": "adopted_byte_identical",
+    "client_tests_passed": 74,
+    "native_retest": "pending"
+  },
+  "codex_fixture_trust_record_selectors": [
+    "session_start",
+    "user_prompt_submit",
+    "post_tool_use",
+    "pre_compact",
+    "session_end",
+    "subagent_stop",
+    "stop"
+  ],
+  "codex_operator_review_reported_complete": true,
+  "latest_codex_accepted": {
+    "runtime": "0.1.5",
+    "mcp_read": true,
+    "automatic_context": true,
+    "capture": true,
+    "capture_verified_for": [
+      "read",
+      "context"
+    ],
+    "context_probe_retired": true
+  },
+  "latest_claude_accepted": {
+    "runtime": "0.1.6",
+    "mcp_read": true,
+    "automatic_context": true,
+    "capture": true,
+    "terminal_hook_failures": 0
+  },
+  "closure": "native-acceptance-closure.json"
+}

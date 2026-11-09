@@ -1,0 +1,54 @@
+{
+  "status": "implementation_verified_activation_pending",
+  "backend": {
+    "tests": 177,
+    "failures": 0,
+    "skipped": 0,
+    "source_sha256": "b84d852ac6207af2ff57ec594518669e103e17ecc71c30c4c36763c7f2cf2728"
+  },
+  "web": {
+    "tests": 65,
+    "typescript": "passed",
+    "production_build": "passed"
+  },
+  "client": {
+    "windows_tests": 88,
+    "linux_release_gate": "passed",
+    "fresh_cache_offline_npx": "passed",
+    "package_version": "0.2.0",
+    "package_sha256": "c7316e0d813edd584edbca7b0c6d19950e2a7eb2d5809cdc0e088e144da84451"
+  },
+  "browser": {
+    "maintained_ui_flows": 20,
+    "failed": 0,
+    "real_http_and_postgresql": true,
+    "provider": "synthetic_fixture"
+  },
+  "manuals": {
+    "viewport_checks": 24,
+    "html_pages": 12,
+    "external_requests": 0
+  },
+  "live_provider": {
+    "model": "beam:cloud",
+    "status": "passed",
+    "synthetic_sources_only": true,
+    "final_workflow_calls": 2,
+    "automatic_provider_retries": 0,
+    "diagnostic_calls_and_final_workflow_total": 8
+  },
+  "server_mcp_tools": 34,
+  "optional_local_mcp_tools": 3,
+  "activation": {
+    "status": "blocked_before_activation",
+    "phase": "engine",
+    "reason": "Docker API permission denied in agent session",
+    "command": "python kairos/scripts/deploy-memory.py --apply",
+    "later_phases_run": false,
+    "product_database_modified": false,
+    "services_recreated": false,
+    "models_credentials_ports_capture_policy_changed": false
+  },
+  "npm_publication": "pending",
+  "scope": "Implemented functional workflows; not a claim of universal equivalence or production answer quality."
+}

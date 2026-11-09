@@ -1,0 +1,194 @@
+{
+  "product": "Kairos",
+  "date": "2026-11-04",
+  "scope": "Native product consolidation; isolated verification is separate from host activation.",
+  "backend": {
+    "database": "PostgreSQL",
+    "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)",
+    "environment": "isolated-container-build",
+    "errors": 0,
+    "failures": 0,
+    "passed": true,
+    "skipped": 0,
+    "tests": 128
+  },
+  "live_provider": {
+    "derived_unverified": true,
+    "environment": "isolated-postgres-synthetic-live-provider",
+    "graph_links": 2,
+    "graph_nodes": 5,
+    "jobs": 4,
+    "models": [
+      "beam:cloud",
+      "nomic-embed-text"
+    ],
+    "passed": true,
+    "seconds": 11.413,
+    "semantic_hits": 3,
+    "source_hash_verified": true,
+    "unicode_tags_reloaded": true,
+    "vectors": 3
+  },
+  "browser": {
+    "browser": "Chromium 156.0.8078.79 built on Debian GNU/Linux 12 (bookworm)",
+    "environment": "isolated real Chromium + PostgreSQL + FastAPI, synthetic data",
+    "passed": 17,
+    "failed": 0
+  },
+  "handbook": {
+    "browser": "Chromium",
+    "checks": [
+      {
+        "page": "arquitectura.html",
+        "viewport": 1280,
+        "passed": true
+      },
+      {
+        "page": "custom-agents.html",
+        "viewport": 1280,
+        "passed": true
+      },
+      {
+        "page": "documentacion.html",
+        "viewport": 1280,
+        "passed": true
+      },
+      {
+        "page": "index.html",
+        "viewport": 1280,
+        "passed": true
+      },
+      {
+        "page": "instalar-kairos.html",
+        "viewport": 1280,
+        "passed": true
+      },
+      {
+        "page": "mantenimiento.html",
+        "viewport": 1280,
+        "passed": true
+      },
+      {
+        "page": "manual-kairos.html",
+        "viewport": 1280,
+        "passed": true
+      },
+      {
+        "page": "operaciones.html",
+        "viewport": 1280,
+        "passed": true
+      },
+      {
+        "page": "arquitectura.html",
+        "viewport": 375,
+        "passed": true
+      },
+      {
+        "page": "custom-agents.html",
+        "viewport": 375,
+        "passed": true
+      },
+      {
+        "page": "documentacion.html",
+        "viewport": 375,
+        "passed": true
+      },
+      {
+        "page": "index.html",
+        "viewport": 375,
+        "passed": true
+      },
+      {
+        "page": "instalar-kairos.html",
+        "viewport": 375,
+        "passed": true
+      },
+      {
+        "page": "mantenimiento.html",
+        "viewport": 375,
+        "passed": true
+      },
+      {
+        "page": "manual-kairos.html",
+        "viewport": 375,
+        "passed": true
+      },
+      {
+        "page": "operaciones.html",
+        "viewport": 375,
+        "passed": true
+      }
+    ],
+    "external_requests": [],
+    "browser_errors": []
+  },
+  "web": {
+    "tests": 45,
+    "passed": 45,
+    "failed": 0,
+    "skipped": 0,
+    "typescript": "passed",
+    "production_bundle": "passed",
+    "command": "docker build -f web/Dockerfile.test -t kairos-web-test:native ."
+  },
+  "installer": {
+    "tests": 25,
+    "passed": 25,
+    "failed": 0,
+    "skipped": 0,
+    "npx": {
+      "package": "@daycry/kairos",
+      "offline": true,
+      "clients": 3,
+      "dryRun": true,
+      "stableRuntime": true,
+      "idempotentInstall": true,
+      "realCredentials": false,
+      "passed": true
+    },
+    "command": "docker build -f packages/kairos-cli/Dockerfile.test -t kairos-cli-test:native .",
+    "published": false,
+    "real_client_connections_verified": false
+  },
+  "deployment_regressions": {
+    "tests": 7,
+    "passed": 7,
+    "failed": 0,
+    "command": "python -m unittest memory_platform.tests.test_deploy -v"
+  },
+  "contracts": {
+    "mcp_tools": 23,
+    "http_operations": 35
+  },
+  "host_activation": {
+    "status": "complete",
+    "phase": "verify",
+    "backup_created": true,
+    "backup_bytes": 167178,
+    "migration_executed": true,
+    "final_runtime_verification_executed": true,
+    "projects": 2,
+    "documents_verified": 21,
+    "mcp_tools": 23,
+    "data_removed": false,
+    "capture_policy_changed": false,
+    "content_sha256": "56491e196bba590df19b31f5a47a96e26076cf628cb1e146611e565f0d272b84",
+    "diagnosis": "Recovered after restoring shared network definitions. Actual MCP manifests and public endpoints verified."
+  },
+  "full_functional_equivalence": false,
+  "pending": [
+    "Automatic lifecycle capture and context injection",
+    "Local code exploration tools",
+    "Remaining observation and tool-use operations",
+    "Shared team workflows",
+    "Generative corpus queries",
+    "Full UI completion and native-client acceptance",
+    "Registry publication"
+  ],
+  "evidence_export": {
+    "screenshots": "Captured inside isolated QA image; host export denied by environment.",
+    "backend_image": "kairos-live-probe:native",
+    "browser_image": "kairos-e2e:native",
+    "installer_image": "kairos-cli-test:native"
+  }
+}

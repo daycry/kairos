@@ -1,0 +1,21 @@
+{
+  "status": "provider_model_unavailable",
+  "client": "opencode",
+  "started_at_utc": "2026-11-06T09:58:18.070491+00:00",
+  "exit_code": 1,
+  "timed_out": false,
+  "session_id": "ses_e4fb48837ffeMen5g1ePO7GhJA",
+  "native_error": {
+    "code": "provider.auth",
+    "http_status": 403
+  },
+  "selected_model": {
+    "providerID": "opencode",
+    "id": "crouton-alpha-free",
+    "source": "native_session_message_api"
+  },
+  "mcp_calls_observed": 0,
+  "model_or_credentials_changed": false,
+  "next": "Operator chooses an available provider/model for this bounded test",
+  "evidence": "native-opencode-provider.md"
+}

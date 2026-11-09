@@ -1,0 +1,14 @@
+{
+  "derived_from": "A06-feature-trace.zip",
+  "trace_frame": {
+    "type": "screencast-frame",
+    "pageId": "page@d63003fe7cca869c88cebd1a5ad5bafe",
+    "sha1": "page@d63003fe7cca869c88cebd1a5ad5bafe-1793998827477.jpeg",
+    "width": 1280,
+    "height": 900,
+    "timestamp": 18295.843,
+    "frameSwapWallTime": 1793998827446.426
+  },
+  "sha256": "d5a1fdee84056877a243cad08a32f73283b1b520253f747fb86ea80ed84b3df5",
+  "image_edited": false
+}

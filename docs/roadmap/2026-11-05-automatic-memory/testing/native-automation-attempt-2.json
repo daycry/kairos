@@ -1,0 +1,84 @@
+{
+  "status": "incomplete",
+  "readback_uses_scoped_key": true,
+  "clients": [
+    {
+      "client": "claude",
+      "exit_code": 0,
+      "started_at_utc": "2026-11-06T09:10:51.829587+00:00",
+      "explicit_test_model": null,
+      "successful_read_tools": [
+        "context",
+        "projects"
+      ],
+      "automatic_context_injection_accepted": true,
+      "automatic_capture_accepted": true,
+      "native_diagnostics": [],
+      "context_verification": null,
+      "native_hook_failures": [
+        {
+          "event": "Stop",
+          "exit_code": 1,
+          "outcome": "cancelled"
+        }
+      ]
+    },
+    {
+      "client": "codex",
+      "exit_code": 0,
+      "started_at_utc": "2026-11-06T12:34:43.878172+00:00",
+      "explicit_test_model": null,
+      "successful_read_tools": [
+        "context",
+        "projects"
+      ],
+      "automatic_context_injection_accepted": false,
+      "automatic_capture_accepted": false,
+      "native_diagnostics": [
+        {
+          "code": "async_session_end_forced_sync"
+        }
+      ],
+      "context_verification": {
+        "status": "needs_review",
+        "reason": "automatic_marker_not_observed"
+      },
+      "native_hook_failures": []
+    },
+    {
+      "client": "opencode",
+      "exit_code": 0,
+      "started_at_utc": "2026-11-06T12:35:39.056576+00:00",
+      "explicit_test_model": "opencode/big-pickle",
+      "successful_read_tools": [
+        "context",
+        "projects"
+      ],
+      "automatic_context_injection_accepted": false,
+      "automatic_capture_accepted": false,
+      "native_diagnostics": [],
+      "context_verification": {
+        "status": "needs_review",
+        "reason": "automatic_marker_not_observed"
+      },
+      "native_hook_failures": []
+    }
+  ],
+  "probes": {
+    "codex": {
+      "phase": "retired",
+      "create_event_id": "74ce5c8f-c907-4767-8f94-39772b96386c",
+      "retire_event_id": "e8ca834c-3cc0-4b0d-a082-7baae76317c7",
+      "creation_receipt": "accepted",
+      "retirement_receipt": "accepted"
+    },
+    "opencode": {
+      "phase": "retired",
+      "create_event_id": "d80685a0-5390-4d6e-ba7f-fb3b181f5030",
+      "retire_event_id": "6ecda0ed-735c-40df-9ab3-2e0e6932b5d5",
+      "creation_receipt": "accepted",
+      "retirement_receipt": "accepted"
+    }
+  },
+  "candidate_package": "package-0.1.3.json"
+}

@@ -1,0 +1,402 @@
+{
+  "environment": "isolated real Chromium + PostgreSQL + FastAPI, synthetic data",
+  "generation_provider": "synthetic_fixture_no_external_calls",
+  "browser": "Chromium 156.0.8078.79 built on Debian GNU/Linux 12 (bookworm)",
+  "results": [
+    {
+      "title": "E2E-08-public-home-docs-private-boundary",
+      "status": "passed",
+      "screenshot": "E2E-08-public-home-docs-private-boundary.jpg"
+    },
+    {
+      "title": "E2E-09-public-mobile-menu-keyboard",
+      "status": "passed",
+      "screenshot": "E2E-09-public-mobile-menu-keyboard.jpg"
+    },
+    {
+      "title": "E2E-10-home-login-memory-default",
+      "status": "passed",
+      "screenshot": "E2E-10-home-login-memory-default.jpg"
+    },
+    {
+      "title": "E2E-01-auth-acl-reload",
+      "status": "passed",
+      "screenshot": "E2E-01-auth-acl-reload.jpg"
+    },
+    {
+      "title": "E2E-11-work-mcp-domain-ui-persistence",
+      "status": "passed",
+      "screenshot": "E2E-11-work-mcp-domain-ui-persistence.jpg"
+    },
+    {
+      "title": "E2E-02-note-persistence-unicode",
+      "status": "passed",
+      "screenshot": "E2E-02-note-persistence-unicode.jpg"
+    },
+    {
+      "title": "E2E-02-capture-off-no-transmission",
+      "status": "passed",
+      "screenshot": "E2E-02-capture-off-no-transmission.jpg"
+    },
+    {
+      "title": "E2E-03-correction-authority-tombstone",
+      "status": "passed",
+      "screenshot": "E2E-03-correction-authority-tombstone.jpg"
+    },
+    {
+      "title": "E2E-04-real-search-context-source",
+      "status": "passed",
+      "screenshot": "E2E-04-real-search-context-source.jpg"
+    },
+    {
+      "title": "E2E-04-injected-network-error-real-retry",
+      "status": "passed",
+      "screenshot": "E2E-04-injected-network-error-real-retry.jpg"
+    },
+    {
+      "title": "E2E-03-sessions-history-provenance",
+      "status": "passed",
+      "screenshot": "E2E-03-sessions-history-provenance.jpg"
+    },
+    {
+      "title": "E2E-04-native-map-webgl-details",
+      "status": "passed",
+      "screenshot": "E2E-04-native-map-webgl-details.jpg"
+    },
+    {
+      "title": "M-01-mobile-bounds-menu-filter",
+      "status": "passed",
+      "screenshot": "M-01-mobile-bounds-menu-filter.jpg"
+    },
+    {
+      "title": "E2E-05-real-pg-failed-job",
+      "status": "passed",
+      "screenshot": "E2E-05-real-pg-failed-job.jpg"
+    },
+    {
+      "title": "E2E-06-real-pg-pagination",
+      "status": "passed",
+      "screenshot": "E2E-06-real-pg-pagination.jpg"
+    },
+    {
+      "title": "E2E-07-real-sse-memory-refresh",
+      "status": "passed",
+      "screenshot": "E2E-07-real-sse-memory-refresh.jpg"
+    },
+    {
+      "title": "E2E-01-logout-readonly-ui",
+      "status": "passed",
+      "screenshot": "E2E-01-logout-readonly-ui.jpg"
+    },
+    {
+      "title": "A06-corpus-grounded-followup-refresh",
+      "status": "passed",
+      "screenshot": "A06-corpus-grounded-followup-refresh.jpg"
+    },
+    {
+      "title": "A06-rules-observations-category-activity",
+      "status": "passed",
+      "screenshot": "A06-rules-observations-category-activity.jpg"
+    },
+    {
+      "title": "A06-manual-team-work-persistence",
+      "status": "passed",
+      "screenshot": "A06-manual-team-work-persistence.jpg"
+    }
+  ],
+  "passed": 20,
+  "failed": 0,
+  "stats": {
+    "expected": 20,
+    "unexpected": 0,
+    "flaky": 0,
+    "skipped": 0
+  },
+  "suites": [
+    {
+      "title": "Real Chromium portal",
+      "specs": [
+        {
+          "title": "E2E-08-public-home-docs-private-boundary",
+          "file": "memory_platform/tests/e2e_portal.py",
+          "tests": [
+            {
+              "expectedStatus": "passed",
+              "results": [
+                {
+                  "status": "passed"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "E2E-09-public-mobile-menu-keyboard",
+          "file": "memory_platform/tests/e2e_portal.py",
+          "tests": [
+            {
+              "expectedStatus": "passed",
+              "results": [
+                {
+                  "status": "passed"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "E2E-10-home-login-memory-default",
+          "file": "memory_platform/tests/e2e_portal.py",
+          "tests": [
+            {
+              "expectedStatus": "passed",
+              "results": [
+                {
+                  "status": "passed"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "E2E-01-auth-acl-reload",
+          "file": "memory_platform/tests/e2e_portal.py",
+          "tests": [
+            {
+              "expectedStatus": "passed",
+              "results": [
+                {
+                  "status": "passed"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "E2E-11-work-mcp-domain-ui-persistence",
+          "file": "memory_platform/tests/e2e_portal.py",
+          "tests": [
+            {
+              "expectedStatus": "passed",
+              "results": [
+                {
+                  "status": "passed"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "E2E-02-note-persistence-unicode",
+          "file": "memory_platform/tests/e2e_portal.py",
+          "tests": [
+            {
+              "expectedStatus": "passed",
+              "results": [
+                {
+                  "status": "passed"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "E2E-02-capture-off-no-transmission",
+          "file": "memory_platform/tests/e2e_portal.py",
+          "tests": [
+            {
+              "expectedStatus": "passed",
+              "results": [
+                {
+                  "status": "passed"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "E2E-03-correction-authority-tombstone",
+          "file": "memory_platform/tests/e2e_portal.py",
+          "tests": [
+            {
+              "expectedStatus": "passed",
+              "results": [
+                {
+                  "status": "passed"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "E2E-04-real-search-context-source",
+          "file": "memory_platform/tests/e2e_portal.py",
+          "tests": [
+            {
+              "expectedStatus": "passed",
+              "results": [
+                {
+                  "status": "passed"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "E2E-04-injected-network-error-real-retry",
+          "file": "memory_platform/tests/e2e_portal.py",
+          "tests": [
+            {
+              "expectedStatus": "passed",
+              "results": [
+                {
+                  "status": "passed"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "E2E-03-sessions-history-provenance",
+          "file": "memory_platform/tests/e2e_portal.py",
+          "tests": [
+            {
+              "expectedStatus": "passed",
+              "results": [
+                {
+                  "status": "passed"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "E2E-04-native-map-webgl-details",
+          "file": "memory_platform/tests/e2e_portal.py",
+          "tests": [
+            {
+              "expectedStatus": "passed",
+              "results": [
+                {
+                  "status": "passed"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "M-01-mobile-bounds-menu-filter",
+          "file": "memory_platform/tests/e2e_portal.py",
+          "tests": [
+            {
+              "expectedStatus": "passed",
+              "results": [
+                {
+                  "status": "passed"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "E2E-05-real-pg-failed-job",
+          "file": "memory_platform/tests/e2e_portal.py",
+          "tests": [
+            {
+              "expectedStatus": "passed",
+              "results": [
+                {
+                  "status": "passed"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "E2E-06-real-pg-pagination",
+          "file": "memory_platform/tests/e2e_portal.py",
+          "tests": [
+            {
+              "expectedStatus": "passed",
+              "results": [
+                {
+                  "status": "passed"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "E2E-07-real-sse-memory-refresh",
+          "file": "memory_platform/tests/e2e_portal.py",
+          "tests": [
+            {
+              "expectedStatus": "passed",
+              "results": [
+                {
+                  "status": "passed"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "E2E-01-logout-readonly-ui",
+          "file": "memory_platform/tests/e2e_portal.py",
+          "tests": [
+            {
+              "expectedStatus": "passed",
+              "results": [
+                {
+                  "status": "passed"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "A06-corpus-grounded-followup-refresh",
+          "file": "memory_platform/tests/e2e_portal.py",
+          "tests": [
+            {
+              "expectedStatus": "passed",
+              "results": [
+                {
+                  "status": "passed"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "A06-rules-observations-category-activity",
+          "file": "memory_platform/tests/e2e_portal.py",
+          "tests": [
+            {
+              "expectedStatus": "passed",
+              "results": [
+                {
+                  "status": "passed"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "A06-manual-team-work-persistence",
+          "file": "memory_platform/tests/e2e_portal.py",
+          "tests": [
+            {
+              "expectedStatus": "passed",
+              "results": [
+                {
+                  "status": "passed"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,126 @@
+{
+  "checks": [
+    {
+      "page": "analisis-codigo.html",
+      "viewport": 1280,
+      "passed": true
+    },
+    {
+      "page": "arquitectura.html",
+      "viewport": 1280,
+      "passed": true
+    },
+    {
+      "page": "consultas-corpus.html",
+      "viewport": 1280,
+      "passed": true
+    },
+    {
+      "page": "custom-agents.html",
+      "viewport": 1280,
+      "passed": true
+    },
+    {
+      "page": "documentacion.html",
+      "viewport": 1280,
+      "passed": true
+    },
+    {
+      "page": "entrega-cli.html",
+      "viewport": 1280,
+      "passed": true
+    },
+    {
+      "page": "index.html",
+      "viewport": 1280,
+      "passed": true
+    },
+    {
+      "page": "instalar-kairos.html",
+      "viewport": 1280,
+      "passed": true
+    },
+    {
+      "page": "mantenimiento.html",
+      "viewport": 1280,
+      "passed": true
+    },
+    {
+      "page": "manual-kairos.html",
+      "viewport": 1280,
+      "passed": true
+    },
+    {
+      "page": "observaciones-equipo.html",
+      "viewport": 1280,
+      "passed": true
+    },
+    {
+      "page": "operaciones.html",
+      "viewport": 1280,
+      "passed": true
+    },
+    {
+      "page": "analisis-codigo.html",
+      "viewport": 375,
+      "passed": true
+    },
+    {
+      "page": "arquitectura.html",
+      "viewport": 375,
+      "passed": true
+    },
+    {
+      "page": "consultas-corpus.html",
+      "viewport": 375,
+      "passed": true
+    },
+    {
+      "page": "custom-agents.html",
+      "viewport": 375,
+      "passed": true
+    },
+    {
+      "page": "documentacion.html",
+      "viewport": 375,
+      "passed": true
+    },
+    {
+      "page": "entrega-cli.html",
+      "viewport": 375,
+      "passed": true
+    },
+    {
+      "page": "index.html",
+      "viewport": 375,
+      "passed": true
+    },
+    {
+      "page": "instalar-kairos.html",
+      "viewport": 375,
+      "passed": true
+    },
+    {
+      "page": "mantenimiento.html",
+      "viewport": 375,
+      "passed": true
+    },
+    {
+      "page": "manual-kairos.html",
+      "viewport": 375,
+      "passed": true
+    },
+    {
+      "page": "observaciones-equipo.html",
+      "viewport": 375,
+      "passed": true
+    },
+    {
+      "page": "operaciones.html",
+      "viewport": 375,
+      "passed": true
+    }
+  ],
+  "external_requests": [],
+  "browser_errors": []
+}

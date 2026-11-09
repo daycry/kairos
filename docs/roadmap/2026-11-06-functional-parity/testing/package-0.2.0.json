@@ -1,0 +1,203 @@
+{
+  "product": "Kairos",
+  "package": "@daycry/kairos",
+  "version": "0.2.0",
+  "published": false,
+  "verification_scope": "local-artifact-source-equivalence",
+  "bytes": 668353,
+  "sha256": "c7316e0d813edd584edbca7b0c6d19950e2a7eb2d5809cdc0e088e144da84451",
+  "integrity": "sha512-rvCspexr/AvVj7ixJCI1MlzxKEXPtyT/z3lxLBs2Z/4gJrEqNk7CHeKOq0XX0blhWNFjkH+EOUUjPqACBfVmzw==",
+  "files": [
+    {
+      "path": "bin/kairos.mjs",
+      "bytes": 112,
+      "sha256": "32e871759c23f13266463f37973e40ee17f6a68d6c85858c673bd61aaf0f5f87"
+    },
+    {
+      "path": "lib/capture.mjs",
+      "bytes": 6602,
+      "sha256": "16683f3e6feb8f51049a4ab70dab5a038fb76eccf7474e3f2f3b2c9f9fff48b8"
+    },
+    {
+      "path": "lib/cli.mjs",
+      "bytes": 9083,
+      "sha256": "53f59fb33587733a6d9f74fa3a58144219eaab5b4a0c2566287e3af00a0b7f13"
+    },
+    {
+      "path": "lib/code-analysis.mjs",
+      "bytes": 11092,
+      "sha256": "583f1350aacd31191cb704b54cb5d56ed11ffec9e47f98f1efa281dbc921da87"
+    },
+    {
+      "path": "lib/code-worker.mjs",
+      "bytes": 355,
+      "sha256": "f4a0db9d9736ab2499899f5309fa109432efd9394d17d7984029585b4e1bbb5c"
+    },
+    {
+      "path": "lib/config.mjs",
+      "bytes": 15966,
+      "sha256": "96b2c2ff4f83d3206063949e13c02a9fa4ec48488d2c72d2d130f5b1903fe5e0"
+    },
+    {
+      "path": "lib/dispatcher.mjs",
+      "bytes": 10211,
+      "sha256": "6a281abc79b76b41bb9f52d5da32e9d0c4ca06e6f82b2cd6b5d6dc7e194d2e0d"
+    },
+    {
+      "path": "lib/errors.mjs",
+      "bytes": 373,
+      "sha256": "b16f59d513849dafb4dfe115bb66dca47faf270b20383e229f6c1cb68686dc0b"
+    },
+    {
+      "path": "lib/files.mjs",
+      "bytes": 5159,
+      "sha256": "6fad10636253c4d31a9a9807910d945afb1f1574cceb911b8dce825a5058e61a"
+    },
+    {
+      "path": "lib/hooks.mjs",
+      "bytes": 6034,
+      "sha256": "43479828f82e2257a8e47bd2c4fa42c243439dc2a5b3a1a250c696bcb46f8ee5"
+    },
+    {
+      "path": "lib/install.mjs",
+      "bytes": 12070,
+      "sha256": "241fa54b01eaf01846542841bb2eea78682148e03a8865972c97ad7ca56bbed1"
+    },
+    {
+      "path": "lib/lifecycle-config.mjs",
+      "bytes": 2104,
+      "sha256": "3d28c9d2cd95853149920d1d94557b229a41247ae1a5e8605ce9f173555f6883"
+    },
+    {
+      "path": "lib/lifecycle.mjs",
+      "bytes": 11698,
+      "sha256": "dacb3c97a9053913fe9bf030001b38a5943533b5a2d885fdcf8ac8152ad63836"
+    },
+    {
+      "path": "lib/mcp.mjs",
+      "bytes": 11859,
+      "sha256": "97c4e647deea12e4c3487575e0b189ec957a681ff0d6b1326335810e8f393f81"
+    },
+    {
+      "path": "lib/opencode.mjs",
+      "bytes": 5829,
+      "sha256": "6e8b92a45d362423315e9eb40631c3f9e0baae54d93b0cc25639d634f94ac53c"
+    },
+    {
+      "path": "lib/outbox.mjs",
+      "bytes": 12628,
+      "sha256": "6933c3c2afae3a6dc77edc9f027ed5a3e61e11bb2832db939bdb2f90aabeb59c"
+    },
+    {
+      "path": "lib/privacy.mjs",
+      "bytes": 5702,
+      "sha256": "bc0a3f2026bb375b71764868914c7161c1b439e39b986ae14a9a87454c641a1b"
+    },
+    {
+      "path": "lib/vendor/tree-sitter/LICENSE",
+      "bytes": 1141,
+      "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+    },
+    {
+      "path": "lib/vendor/tree-sitter/LICENSE-tree-sitter",
+      "bytes": 1085,
+      "sha256": "5f9cf9fb6acb1972b35ae29119ce563bb60ec097656bc4b69b9bac2d04c7a147"
+    },
+    {
+      "path": "lib/vendor/tree-sitter/LICENSE-tree-sitter-javascript",
+      "bytes": 1080,
+      "sha256": "2e0110e07abef7c2548b26ec9d6969775617ca539a0dc8dbeeb14d6452c711d1"
+    },
+    {
+      "path": "lib/vendor/tree-sitter/LICENSE-tree-sitter-php",
+      "bytes": 1166,
+      "sha256": "664764fabf40c0b318e06324a5a12379092a2df25b8cbf2415f71bc0bb352346"
+    },
+    {
+      "path": "lib/vendor/tree-sitter/LICENSE-tree-sitter-python",
+      "bytes": 1080,
+      "sha256": "d724405ce238a22c0d35769c5a36b386ad5958192efe8bbb304fb2896254575f"
+    },
+    {
+      "path": "lib/vendor/tree-sitter/LICENSE-tree-sitter-typescript",
+      "bytes": 1080,
+      "sha256": "49bf33cf78ef5897e4e161ce1517df7de1ae5042a65b6bcfd44401e0fc606559"
+    },
+    {
+      "path": "lib/vendor/tree-sitter/provenance.json",
+      "bytes": 3190,
+      "sha256": "1c987849c2c39f6f9e09af37fec9856247ae85c10d0da40b138073f97f22d62b"
+    },
+    {
+      "path": "lib/vendor/tree-sitter/tree-sitter-javascript.wasm",
+      "bytes": 411770,
+      "sha256": "5fb488d0cabb4775a594bab85682de5ad6ce83c0d6ac997a9f82dd084d571240"
+    },
+    {
+      "path": "lib/vendor/tree-sitter/tree-sitter-php.wasm",
+      "bytes": 1058041,
+      "sha256": "d4df6a6ff08c87c3ec4f9cbb785fe09998a0cb570e03f57d7b19b3acfb146aa7"
+    },
+    {
+      "path": "lib/vendor/tree-sitter/tree-sitter-python.wasm",
+      "bytes": 457883,
+      "sha256": "16108b50df4ee9a30168794252ab55e7c93bfc5765d7fa0aa3e335752c515f47"
+    },
+    {
+      "path": "lib/vendor/tree-sitter/tree-sitter-tsx.wasm",
+      "bytes": 1445638,
+      "sha256": "79e5da75ea62855a0cd67177685f0164eac87d5f630b3cbe1e0a099751ad30f8"
+    },
+    {
+      "path": "lib/vendor/tree-sitter/tree-sitter-typescript.wasm",
+      "bytes": 1413849,
+      "sha256": "778025db5a8be0e70f8ccc3671e486dfeddd048c25d9e8a70c26de2e1bf6f97d"
+    },
+    {
+      "path": "lib/vendor/tree-sitter/tree-sitter.js",
+      "bytes": 150999,
+      "sha256": "d4fc466df6358055253bc4cdaab23cdf84fe00741fa5a4ff56506c06c533da42"
+    },
+    {
+      "path": "lib/vendor/tree-sitter/tree-sitter.wasm",
+      "bytes": 205488,
+      "sha256": "f38dcc4b43b818f9a0785bc1c6d5611a75ac4cdd428ff3f02757c34ca4e46d7f"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 1076,
+      "sha256": "d528e942bbe3fb60591f33e0c02844a3c96a7ff8882c11970a89fd7e5f52d34e"
+    },
+    {
+      "path": "package.json",
+      "bytes": 710,
+      "sha256": "95790a4628341f00f4f99e45e693b1aa10af770e9c6220c07c294192e87f1478"
+    },
+    {
+      "path": "README.md",
+      "bytes": 14494,
+      "sha256": "831fbc1ea6809a1ce203b6e074733b612327676db942b711024c384067cab3e4"
+    }
+  ],
+  "tests": "not-run-by-this-verifier",
+  "registry": "not-checked",
+  "credentials_inspected": false,
+  "registry_verification": {
+    "exact_version_status": 404,
+    "scope_ownership": "not_verified",
+    "authenticated_publish": "not_attempted"
+  },
+  "checks": {
+    "windows_client_tests": {
+      "passed": 88,
+      "failed": 0
+    },
+    "linux_release_gate": {
+      "passed": true,
+      "network": "none",
+      "node": "22.23.4",
+      "fresh_cache_offline_npx": true,
+      "source_equivalence": true
+    }
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "status": "read_accepted",
+  "verified_at_utc": "2026-11-06T10:23:41.947966+00:00",
+  "client": "opencode",
+  "run": {
+    "client": "opencode",
+    "exit_code": 0,
+    "timed_out": false,
+    "started_at_utc": "2026-11-06T10:19:00.560672+00:00",
+    "explicit_test_model": "opencode/big-pickle"
+  },
+  "session_id": "ses_e4fa19200ffeOC9RN9zCEdmRas",
+  "tools": [
+    {
+      "tool": "projects",
+      "status": "completed",
+      "native_transport": "codemode.execute",
+      "output_sha256": "4147e193a59568e657a3d5b4dd865d1b318c2a765725b31a8b423aa3ef45749b"
+    },
+    {
+      "tool": "context",
+      "status": "completed",
+      "native_transport": "codemode.execute",
+      "output_sha256": "5847f8bcf1607e40cbbca82963c4cc2e41d0049d2fe942c1a882df010f18c52a",
+      "item_count": 2,
+      "project_ids": [
+        "custom-agents"
+      ],
+      "requested_project_ids": [
+        "custom-agents"
+      ],
+      "semantic_requested": false,
+      "partial": false,
+      "context_chars": 1000
+    }
+  ],
+  "native_errors": [],
+  "automatic_context_injection_accepted": false,
+  "capture_mode": "off",
+  "automatic_capture_accepted": false,
+  "raw_content_exported": false,
+  "helper_tests": {
+    "passed": 32,
+    "total": 32
+  }
+}

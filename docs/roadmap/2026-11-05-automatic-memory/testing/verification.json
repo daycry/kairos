@@ -1,0 +1,103 @@
+{
+  "product": "Kairos",
+  "date": "2026-11-05",
+  "scope": "Automatic lifecycle implementation; isolated verification is distinct from native client and host acceptance.",
+  "backend": {
+    "database": "PostgreSQL 17",
+    "tests": 130,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "passed": true,
+    "image": "kairos-memory-tests:latest"
+  },
+  "node_client": {
+    "tests": 51,
+    "passed": true,
+    "failures": 0,
+    "skipped": 0,
+    "environment": "Node 22 isolated Docker; Windows in-process base suite plus final lifecycle regression",
+    "image": "kairos-cli-test:native",
+    "offline_npx_install": true,
+    "stable_runtime": true,
+    "idempotent_install": true,
+    "optional_hooks": true,
+    "foreign_configuration_preserved": true,
+    "real_credentials": false
+  },
+  "native_hook_process": {
+    "passed": true,
+    "database": "isolated PostgreSQL",
+    "authenticated_loopback_ipc": true,
+    "real_mcp_http": true,
+    "lost_acceptance_reconciled": true,
+    "persisted_events": 1,
+    "source_hash_verified": true,
+    "unicode_reloaded": true,
+    "tags_list_preserved": true,
+    "reported_provider_calls": 0,
+    "provider_calls_measured": false,
+    "embedding_enabled_in_probe": false,
+    "production_embedding_configuration_verified": false,
+    "review_gap": "I-2: the probe does not represent production embedding scheduling",
+    "real_client_acceptance": false,
+    "image": "kairos-lifecycle-tests:latest"
+  },
+  "client_contract_fixtures": ["Claude Code", "Codex", "OpenCode V1", "OpenCode V2"],
+  "contracts": {"mcp_tools": 24, "event_status_project_argument": "optional, additive"},
+  "documentation": {
+    "generated_files_verified": 10,
+    "handoff_zip_files": 10,
+    "roadmap_and_private_files_in_handoff": 0,
+    "chromium_layout_checks": 16,
+    "viewports": [1280, 375],
+    "browser_errors": 0,
+    "external_requests": 0,
+    "image": "kairos-handbook-test:native"
+  },
+  "package": {
+    "path": "packages/kairos-cli/artifacts/daycry-kairos-0.1.0.tgz",
+    "files": 18,
+    "bytes": 33586,
+    "sha256": "0493bf2cf035ef7bd32ae03fa28102ed39eff4a3f5d684e421e1bd920cd2973f",
+    "matches_current_sources": true,
+    "registry_published": false
+  },
+  "host_activation": {
+    "status": "complete",
+    "date": "2026-11-05",
+    "deployment_report_modified_local": "2026-11-05T16:45:25.351756",
+    "deployment_phases_completed": 10,
+    "mcp_tools": 24,
+    "projects": 2,
+    "documents_verified": 21,
+    "content_sha256": "56491e196bba590df19b31f5a47a96e26076cf628cb1e146611e565f0d272b84",
+    "independent_live_mcp_verification": true,
+    "manifest_pages": 2,
+    "capture_policy_checks": 2,
+    "authorized_absence_checks": 2,
+    "capture_modes": {"off": 2},
+    "public_handbook_current": true,
+    "public_contract_current": true,
+    "verification_events_written": 0,
+    "verification_provider_calls": 0,
+    "data_removed": false,
+    "capture_policies_changed": false
+  },
+  "full_functional_equivalence": false,
+  "independent_review": {
+    "reviewer": "Claude CLI 2.1.311",
+    "status": "changes_required",
+    "partial_coverage": true,
+    "important_findings": 9,
+    "important_mechanisms_reproduced": 8,
+    "report": "claude-review.md",
+    "triage": "review-triage.md"
+  },
+  "pending": [
+    "Corrections and regressions for independent review findings",
+    "Trust and lifecycle acceptance inside each supported native client",
+    "Registry publication",
+    "Remaining native product roadmap A-02 through A-06"
+  ]
+}

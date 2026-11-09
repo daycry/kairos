@@ -1,0 +1,284 @@
+{
+  "run_id": "fd288af212a04055850bf418b7c6c6f3",
+  "clients": [
+    {
+      "client": "claude",
+      "exit_code": 0,
+      "timed_out": false,
+      "started_at_utc": "2026-11-06T19:35:27.849010+00:00",
+      "phase": "native_run",
+      "successful_read_tools": [
+        "context",
+        "projects"
+      ],
+      "native_mcp_read_observed": true,
+      "native_hook_events_observed": 9,
+      "native_hook_packets": 18,
+      "accepted_context_hooks": [
+        {
+          "event": "SessionStart",
+          "context_chars": 3682,
+          "references": 5,
+          "sha256": "684f171c1c694e60b2e372b7154afb39ee5a220488c5e76c5f1686945a2a52c7"
+        },
+        {
+          "event": "UserPromptSubmit",
+          "context_chars": 3609,
+          "references": 5,
+          "sha256": "04cdfdacb7ba64fc34b44367a6947c60fb615ef6e39a3018b2f82e0532e5f222"
+        }
+      ],
+      "custom_agents_plugin_loaded": true,
+      "hook_execution_status": "responses_observed",
+      "native_errors": [],
+      "native_diagnostics": [],
+      "evidence_limitations": [],
+      "automatic_context_injection_accepted": true,
+      "automatic_capture_accepted": true,
+      "native_hook_failures": [],
+      "capture_verification": {
+        "status": "accepted",
+        "client": "claude",
+        "runtime": "claude",
+        "project_id": "custom-agents",
+        "session_id": "e6a920a9-6f12-4fc7-b674-d3755cd4ec1c",
+        "started_at_utc": "2026-11-06T19:35:27.849010+00:00",
+        "verified_at_utc": "2026-11-06T19:39:02.333299+00:00",
+        "events": [
+          {
+            "event_id": "710887e8-ee2b-523b-9cbe-81dfacc5ccab",
+            "item_id": "2a9de703-a289-55dd-9f3a-29fa9cbd99d7",
+            "hook_event": "SessionEnd",
+            "version": 1,
+            "canonical_hash": "28d0374168a950731f06fc9824a5e3cf2b457e88d79508dcbda0ccf886f0ddee",
+            "source_sha256": "324ff2ad22bda394a27d3817206a50fdf8dfa01d1d68504f792dc5a630b07342",
+            "capture_hash": "4c86a01377a3ec52d01e71d779376c58706847dea9261e13bda90572b1b778ea",
+            "receipt_status": "accepted",
+            "jobs": []
+          },
+          {
+            "event_id": "739f6451-ccad-526c-8f54-57fdf3b53c0c",
+            "item_id": "1bd63f9b-7a07-5cc1-ac9b-ab094c39d825",
+            "hook_event": "SessionStart",
+            "version": 1,
+            "canonical_hash": "47052c734b7bff433070c441d5da845391ce1c56497695ae613b8b6a079dbee0",
+            "source_sha256": "dcbc3f8a32947c9694d82462c76ad5c2f18100440b517925ebe20b0619696fcc",
+            "capture_hash": "d843d66c0f518e2e554c46ab22e8a5c283292fa70fc639b4cf376718fe9cb4ac",
+            "receipt_status": "accepted",
+            "jobs": []
+          },
+          {
+            "event_id": "104bb246-789f-55ae-911b-1bba8377d689",
+            "item_id": "11d347a7-2430-5151-b2aa-1d91823ed302",
+            "hook_event": "Stop",
+            "version": 1,
+            "canonical_hash": "a5f9ddad7a169f75fc3e343c22ea93211f301cd6b02d068a8485a338e3483f6f",
+            "source_sha256": "07a1f623f02eba44225ff21aca7d90f651f8cb2aab9d8270ad24eed1b6d747e8",
+            "capture_hash": "4f77aec3e7651af63980cbbd89fa2baf6eee1debde0039150192e1b797e5175d",
+            "receipt_status": "accepted",
+            "jobs": []
+          },
+          {
+            "event_id": "f53a606e-e5cf-5bd4-bf42-1db88af8b7cf",
+            "item_id": "ff9ec466-68b8-534c-83eb-2df9acd5f745",
+            "hook_event": "UserPromptSubmit",
+            "version": 1,
+            "canonical_hash": "0f47f9936793111e868ee7f319a0b80646cfa034be082b16a20ff5446ce07e32",
+            "source_sha256": "bdc5fdc5e4f3ed91a5ca0fe2d6b17af7075cd27a3bf0f38e50c65c14d88e1895",
+            "capture_hash": "12d9550b9b9be482c870790de0cebdabab322e6a36c6510cc52d1a4056b3c2c4",
+            "receipt_status": "accepted",
+            "jobs": []
+          }
+        ],
+        "raw_content_exported": false,
+        "acceptance_kind": "read"
+      },
+      "status": "read_observed"
+    },
+    {
+      "client": "codex",
+      "exit_code": 0,
+      "timed_out": false,
+      "started_at_utc": "2026-11-06T19:32:28.926644+00:00",
+      "phase": "native_run",
+      "successful_read_tools": [
+        "context",
+        "projects"
+      ],
+      "native_mcp_read_observed": true,
+      "native_hook_events_observed": 0,
+      "native_hook_packets": 0,
+      "accepted_context_hooks": [],
+      "custom_agents_plugin_loaded": null,
+      "hook_execution_status": "not_observed_in_native_output",
+      "native_errors": [],
+      "native_diagnostics": [],
+      "evidence_limitations": [
+        "This native output has no supported hook/context or plugin inventory evidence; unaccepted does not mean disabled."
+      ],
+      "automatic_context_injection_accepted": true,
+      "automatic_capture_accepted": true,
+      "native_hook_failures": [],
+      "context_verification": {
+        "status": "accepted",
+        "client": "codex",
+        "project_id": "custom-agents",
+        "session_id": "01a1b258-de3f-7180-80e4-30e10337a9c2",
+        "started_at_utc": "2026-11-06T19:32:04.853891+00:00",
+        "attempt_id": "324b4f62f0c747af8564e6a1481965ae",
+        "marker_sha256": "9408c074438b9ac46c0c7a987c07daee8ca7adbd27d2d87cfb506a63d29eb240",
+        "tool_calls": 0,
+        "probe_item_id": "909fca94-53a2-4b60-8d61-76f2a890feef",
+        "probe_create_event_id": "5809506c-7669-4c31-9396-97ecc30ce095",
+        "probe_delete_event_id": "064a43e3-d5c8-4254-bab4-8cf6e463957d",
+        "probe_retired": true,
+        "raw_content_exported": false
+      },
+      "capture_verification": {
+        "status": "accepted",
+        "client": "codex",
+        "runtime": "codex",
+        "project_id": "custom-agents",
+        "session_id": "01a1b258-de3f-7180-80e4-30e10337a9c2",
+        "started_at_utc": "2026-11-06T19:32:04.853891+00:00",
+        "verified_at_utc": "2026-11-06T19:39:02.745340+00:00",
+        "events": [
+          {
+            "event_id": "97a8ca95-510e-5e07-9bad-1dfeb62579b6",
+            "item_id": "f2dd7a63-2c98-5ee9-b024-ece0678d3084",
+            "hook_event": "SessionEnd",
+            "version": 1,
+            "canonical_hash": "5d1b9f13a8d2f67142b9ea5870c903bdb26965e03f527dfe81547a9849223876",
+            "source_sha256": "324ff2ad22bda394a27d3817206a50fdf8dfa01d1d68504f792dc5a630b07342",
+            "capture_hash": "3716b208478aa34ef084b27b363ce7e76da60f4e542722d04943b9b03e9f587e",
+            "receipt_status": "accepted",
+            "jobs": []
+          },
+          {
+            "event_id": "6317504b-5298-5582-87ff-b9df794136dc",
+            "item_id": "cb696000-6692-5e2d-988e-537b8046c3a6",
+            "hook_event": "SessionStart",
+            "version": 1,
+            "canonical_hash": "ecb062c0622d3084ff5c70f58c4be9f5ab408098345c359c70b74cb412a0ba92",
+            "source_sha256": "dcbc3f8a32947c9694d82462c76ad5c2f18100440b517925ebe20b0619696fcc",
+            "capture_hash": "d5f993ae560f113e56df74331b182f2a96bc43605b3c2505b78ddb505e4e8e4c",
+            "receipt_status": "accepted",
+            "jobs": []
+          },
+          {
+            "event_id": "6ca01167-d014-582e-8de1-a74fb13ace83",
+            "item_id": "0599aaea-7259-5ee8-a0bb-a79d8a9e72f7",
+            "hook_event": "Stop",
+            "version": 1,
+            "canonical_hash": "54dad88f82f23ef11199543622da265998a72fd18b4f173ea711494f3e5ad0cb",
+            "source_sha256": "07a1f623f02eba44225ff21aca7d90f651f8cb2aab9d8270ad24eed1b6d747e8",
+            "capture_hash": "d77ec9f09ba54cdac5b907eefba1ba3fc2c3a7fcac53839f988ff7ed069b9ccb",
+            "receipt_status": "accepted",
+            "jobs": []
+          },
+          {
+            "event_id": "e14ed543-3c12-50a1-98a3-09645f0b4340",
+            "item_id": "261d5c22-5749-58bf-916a-9745eb135cbe",
+            "hook_event": "UserPromptSubmit",
+            "version": 1,
+            "canonical_hash": "ef756209969604a1ae422aa5146b0fc7f50fb4a8bd588ec77a901460586bb23a",
+            "source_sha256": "bdc5fdc5e4f3ed91a5ca0fe2d6b17af7075cd27a3bf0f38e50c65c14d88e1895",
+            "capture_hash": "058146d24c856171cca1fd07d8cc2bf9d2022682252acd5f75a94f37fc4f290e",
+            "receipt_status": "accepted",
+            "jobs": []
+          }
+        ],
+        "raw_content_exported": false,
+        "acceptance_kind": "context"
+      },
+      "status": "read_observed"
+    },
+    {
+      "client": "opencode",
+      "exit_code": 0,
+      "timed_out": false,
+      "started_at_utc": "2026-11-06T17:24:52.230079+00:00",
+      "phase": "native_run",
+      "explicit_test_model": "opencode/big-pickle",
+      "successful_read_tools": [
+        "context",
+        "projects"
+      ],
+      "native_mcp_read_observed": true,
+      "native_hook_events_observed": 0,
+      "native_hook_packets": 0,
+      "accepted_context_hooks": [],
+      "custom_agents_plugin_loaded": null,
+      "hook_execution_status": "not_observed_in_native_output",
+      "native_errors": [],
+      "native_diagnostics": [],
+      "evidence_limitations": [
+        "This native output has no supported hook/context or plugin inventory evidence; unaccepted does not mean disabled."
+      ],
+      "automatic_context_injection_accepted": true,
+      "automatic_capture_accepted": true,
+      "native_hook_failures": [],
+      "context_verification": {
+        "status": "accepted",
+        "client": "opencode",
+        "project_id": "custom-agents",
+        "session_id": "ses_e4e5df368ffee9G2AjZlNOhgg5",
+        "started_at_utc": "2026-11-06T16:12:26.569908+00:00",
+        "attempt_id": "ff9ddc0f08a74a9d911c48d16298e222",
+        "marker_sha256": "5a05cfb86d4d78aef9512680d6971a0ca41d1a8c28f99a06af5b6640e6a4bb74",
+        "tool_calls": 0,
+        "probe_item_id": "864c2987-ae2b-4f02-a1cf-a1e25d54c557",
+        "probe_create_event_id": "9801539a-eae6-4d3f-b884-6c7e40909bdf",
+        "probe_delete_event_id": "0847b5eb-75d1-45f5-bdb0-ec95e300101c",
+        "probe_retired": true,
+        "raw_content_exported": false
+      },
+      "capture_verification": {
+        "status": "accepted",
+        "client": "opencode",
+        "runtime": "opencode-v2",
+        "project_id": "custom-agents",
+        "session_id": "ses_e4e1ba4eaffebx2NY8b1YNHbZe",
+        "started_at_utc": "2026-11-06T17:24:52.230079+00:00",
+        "verified_at_utc": "2026-11-06T19:39:03.324864+00:00",
+        "events": [
+          {
+            "event_id": "e9cade24-4e16-5f0a-a033-8db0e6cf0e14",
+            "item_id": "7e305062-af9b-53c2-a506-33978f463355",
+            "hook_event": "SessionStart",
+            "version": 1,
+            "canonical_hash": "73bf3ad4f7bc3865fe448abd2a61b3386f9ac1bf0b33b09008ba96de46ebd7b5",
+            "source_sha256": "dcbc3f8a32947c9694d82462c76ad5c2f18100440b517925ebe20b0619696fcc",
+            "capture_hash": "f68ff90d6311eed260fc64f8be3a8a516ea7bb3b9bb2fa3503961ec00fdf119d",
+            "receipt_status": "accepted",
+            "jobs": []
+          },
+          {
+            "event_id": "762b436f-1bd3-5b39-a307-6486417b30f2",
+            "item_id": "b75eead9-0c55-5cf9-bab1-c24c3240bf1d",
+            "hook_event": "Stop",
+            "version": 1,
+            "canonical_hash": "45c45ac445696ae6416626d113ced414669d169bb1cd7c570d367124d973eb7e",
+            "source_sha256": "07a1f623f02eba44225ff21aca7d90f651f8cb2aab9d8270ad24eed1b6d747e8",
+            "capture_hash": "5151bfcee8538d4fb05fef88c0dde8e7bda35cba0ae6c11cc5d0f4983494c945",
+            "receipt_status": "accepted",
+            "jobs": []
+          }
+        ],
+        "raw_content_exported": false,
+        "acceptance_kind": "read"
+      },
+      "status": "read_observed"
+    }
+  ],
+  "capture_mode": "summary",
+  "capture_modes_by_client": {
+    "claude": "summary",
+    "codex": "summary",
+    "opencode": "summary"
+  },
+  "working_project_configs_changed": false,
+  "status": "native_acceptance_complete",
+  "acceptance_scope": "successful_native_read_context_and_technical_summary_capture",
+  "notes": "Read calls, hook firing, context injection and memory writing are separate acceptance criteria. No raw native output is exported."
+}

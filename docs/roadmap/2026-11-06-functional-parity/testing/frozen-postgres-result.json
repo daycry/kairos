@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "source_sha256": "b84d852ac6207af2ff57ec594518669e103e17ecc71c30c4c36763c7f2cf2728",
+  "mode": "frozen-container-source",
+  "network": "none",
+  "product_database_accessed": false,
+  "database": "PostgreSQL",
+  "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)",
+  "selected_modules": [],
+  "full_backend_suite": true,
+  "tests": 177,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "passed": true,
+  "elapsed_seconds": 204.588,
+  "failed_tests": []
+}
