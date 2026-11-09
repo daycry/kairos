@@ -130,7 +130,7 @@ Todos se comprueban en PostgreSQL aislado (`memory_platform/tests/run_postgres.p
 
 - [ ] [GWT] CA-01 — Dado `memory_platform/tests/retrieval_eval/dataset-v1.jsonl` con ≥ 60 preguntas (≥ 20 en español, ≥ 20 en inglés, ≥ 10 con errores tipográficos o identificadores, ≥ 10 cuya respuesta está más allá del carácter 8.000 de un documento) y sus referencias esperadas, Cuando se ejecuta el script de evaluación sobre PostgreSQL aislado, Entonces escribe un JSON con recall@1, recall@5, recall@10 y MRR para cada capa (`episodic`, `documental`, `semantic`, `fused`) y cada subconjunto, más el SHA-256 del dataset.
 - [ ] [GWT] CA-02 — Dado el código previo a C-03…C-06, Cuando se ejecuta la puerta `retrieval-eval` con los umbrales de `thresholds.json`, Entonces falla (rojo) al menos en los subconjuntos de idioma, errores tipográficos y documento largo, y la línea base queda registrada en `docs/roadmap/2026-11-09-retrieval-quality/testing/`.
-- [ ] CA-03 — Dos ejecuciones consecutivas con el proveedor simulado producen informes idénticos salvo la marca de tiempo; el recibo registra `network: none` y `product_database_accessed: false`.
+- [ ] CA-03 — Dos ejecuciones consecutivas con el proveedor simulado producen informes idénticos salvo la marca de tiempo; el recibo registra `product_database_accessed: false` y la observación local de interfaces de red, sin afirmar «sin red» si no lo observa: ejecutada con `docker run --network=none`, `network_interfaces == ["lo"]`. *(Enmendado por el usuario el 2026-11-09, revisión de la Fase 1, intento 3; texto original: «el recibo registra `network: none`».)*
 
 **C-02 · Refactor de `Store` (P11)**
 
@@ -217,6 +217,7 @@ Puerta go aprobada por el usuario el 2026-11-09. Decisiones:
 6. **P-06 Calidad**: umbrales recall@5 `fused` ≥ 0,80 y MRR ≥ 0,60, y +15 puntos de recall@5 en los subconjuntos de idioma/errores/documento largo. Se autoriza una ejecución real contra el Ollama local (`nomic-embed-text`) con datos sintéticos en base aislada; nunca contra la base desplegada.
 7. **P-07 Troceado**: 1.500 caracteres con solape de 200; el relleno de fragmentos del contenido existente se lanza en el despliegue.
 8. **P-08 Oráculo rojo**: el test de calidad en rojo vive en la puerta separada `retrieval-eval`; la suite de 177 pruebas debe seguir verde antes y después del refactor.
+9. **Enmienda CA-03 (2026-11-09)**: el recibo de la evaluación no afirma `network: none` como constante; registra la observación local de interfaces (`/sys/class/net`) y la Verificación usa `docker run --network=none`, donde debe ser `["lo"]`. Motivo: la revisión adversarial detectó que la constante no se comprobaba y que la sonda alternativa contactaba con un tercero.
 
 ## Supuestos
 

@@ -40,6 +40,12 @@ def main():
             from memory_platform.tests.live_probe import run
             run(os.environ['MEMORY_TEST_DSN'])
             return
+        if os.environ.get('MEMORY_RETRIEVAL_EVAL') == '1':
+            # Quality gate, deliberately outside the regression suite: exit 1 below the thresholds.
+            from memory_platform.tests.retrieval_eval.run import run
+            if not run()['gate']['passed']:
+                raise SystemExit(1)
+            return
         suite = unittest.defaultTestLoader.discover(str(Path(__file__).parent), pattern='test_*.py', top_level_dir=str(Path(__file__).parents[2]))
         result = unittest.TextTestRunner(verbosity=2).run(suite)
         if result.testsRun == 0:

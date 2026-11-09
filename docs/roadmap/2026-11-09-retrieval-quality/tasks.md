@@ -29,7 +29,7 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 
 | Fase | Completadas | Total | Progreso | H. humanas (real/est) | H. IA ejec. (real/est) | Supervisión (real/est) | Tokens (real/est) |
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
-| Fase 1 — Medida (C-01 · P13) | 0 | 3 | 0% | 0 / 16h | 0 / 2,21h | 0 / 0,56h | 0 / 660k |
+| Fase 1 — Medida (C-01 · P13) | 3 | 3 | 100% | 0 / 16h | 0,62 / 2,21h | 0 / 0,56h | 0 / 660k |
 | Fase 2 — Refactor de `store.py` (C-02 · P11) | 0 | 3 | 0% | 0 / 14h | 0 / 3,41h | 0 / 0,85h | 0 / 1020k |
 | Fase 3 — pgvector + HNSW (C-03 · P1) | 0 | 6 | 0% | 0 / 32h | 0 / 4,29h | 0 / 1,08h | 0 / 1290k |
 | Fase 4 — FTS por idioma + trigram (C-05 · P4) | 0 | 6 | 0% | 0 / 27h | 0 / 3,61h | 0 / 0,91h | 0 / 1090k |
@@ -37,7 +37,7 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 6 — Híbrida con degradación y CLI (C-04 · P3) | 0 | 4 | 0% | 0 / 12h | 0 / 1,6h | 0 / 0,4h | 0 / 470k |
 | Fase 7 — Observabilidad (C-07 · P12) — en paralelo desde T-06 | 0 | 4 | 0% | 0 / 18h | 0 / 2,6h | 0 / 0,64h | 0 / 770k |
 | Fase 8 — Integración, revisión y activación | 0 | 5 | 0% | 0 / 26h | 0 / 4,31h | 0 / 1,06h | 0 / 1280k |
-| **TOTAL** | **0** | **38** | **0%** | **0 / 173h** | **0 / 26,03h** | **0 / 6,5h** | **0 / 7780k** |
+| **TOTAL** | **3** | **38** | **7.9%** | **0 / 173h** | **0 / 26,03h** | **0 / 6,5h** | **0 / 7780k** |
 
 > Las horas de este ledger son **base** (sin el margen del 20 %); con margen: humanas 207,6 h, IA 31,2 h. Las horas IA y los tokens son estimaciones (ratio 300.000 tok/h no calibrado).
 
@@ -47,15 +47,16 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 
 ## Fase 1 — Medida (C-01 · P13)
 
-**Estado**: en-progreso · **Estimado**: 16h base (19.2h con margen) · **Real**: — · **Coste est.**: 960 € · **Tokens est.**: 600k in / 60k out
+**Estado**: completado · **Estimado**: 16h base (19.2h con margen) · **Real**: — · **Coste est.**: 960 € · **Tokens est.**: 600k in / 60k out
 
 ### T-01 — Dataset sintético `dataset-v1` y umbrales
 
 - **Descripción**: Crear `memory_platform/tests/retrieval_eval/dataset-v1.jsonl` con ≥ 60 preguntas sintéticas (≥ 20 es, ≥ 20 en, ≥ 10 con errores tipográficos o identificadores, ≥ 10 con la respuesta más allá del carácter 8.000 de un documento largo) y sus referencias esperadas, más `thresholds.json` con los umbrales acordados. Resultado: un dataset determinista, sin datos reales, listo para congelar.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Se añade un conjunto de evaluación sintético (72 preguntas en español, inglés, errores tipográficos y documentos largos) con umbrales de calidad para medir la recuperación.
+- **Cerrada**: 2026-11-09
+- **Estado**: completado
 - **Tiempo humano**: est. 6h · real —
-- **Tiempo IA (ejec.)**: est. 0,83h · real —
+- **Tiempo IA (ejec.)**: est. 0,83h · real 0,20 (medido)
 - **Supervisión**: est. 0,21h (≈25 % IA) · real —
 - **Previsión IA**: 225k in / 20k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
@@ -67,24 +68,30 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
   - `python -c "import json;t=json.load(open('memory_platform/tests/retrieval_eval/thresholds.json'));print(t)"` → incluye `fused_recall_at_5: 0.80`, `fused_mrr: 0.60`, `subset_gain_points: 15`
 
 **Criterios de aceptación**
-- [ ] CA-01: el dataset cumple los recuentos mínimos por subconjunto y cada pregunta tiene al menos una referencia esperada válida
-- [ ] Todos los datos son sintéticos; ningún texto procede de la base desplegada
-- [ ] `thresholds.json` recoge exactamente los umbrales de la decisión P-06 (recall@5 fused ≥ 0,80; MRR ≥ 0,60; +15 pts en idioma/errores/documento largo)
+- [x] CA-01: el dataset cumple los recuentos mínimos por subconjunto y cada pregunta tiene al menos una referencia esperada válida
+- [x] Todos los datos son sintéticos; ningún texto procede de la base desplegada
+- [x] `thresholds.json` recoge exactamente los umbrales de la decisión P-06 (recall@5 fused ≥ 0,80; MRR ≥ 0,60; +15 pts en idioma/errores/documento largo)
 
 **Subtareas**
-- [ ] Redactar memorias y documentos sintéticos es/en (incluidos documentos > 8.000 caracteres con el dato tras el carácter 8.000)
-- [ ] Redactar preguntas con referencias esperadas y etiquetas de subconjunto
-- [ ] Escribir `check_dataset.py` (validación de recuentos y esquema, calcula SHA-256)
+- [x] Redactar memorias y documentos sintéticos es/en (incluidos documentos > 8.000 caracteres con el dato tras el carácter 8.000)
+- [x] Redactar preguntas con referencias esperadas y etiquetas de subconjunto
+- [x] Escribir `check_dataset.py` (validación de recuentos y esquema, calcula SHA-256)
 
 **Notas**: Procedencia: spec CA-01, decisión P-06. Clase de cambio: capacidad nueva (test nuevo en rojo, en la puerta `retrieval-eval`). Patrones: ningún equivalente de dataset en el repo (`grep` de `retrieval` en `memory_platform/tests` solo halla `test_retrieval.py`, que prueba mecánica, no calidad); estructura de módulo de test según `memory_platform/tests/test_embeddings.py`. Riesgo R-07: el dataset lo escribe quien implementa; se congela en T-03.
 
+**Evidencia de verificación (2026-11-09)**
+- `python -m memory_platform.tests.retrieval_eval.check_dataset memory_platform/tests/retrieval_eval/dataset-v1.jsonl` → `OK es=24 en=24 typo_id=12 long=12 total=72` · `sha256 1bba8d997c6dcc8e11f2ddceba2a78e8c38c0bd7cafd4aa458dd1547ad4be6f6`
+- `thresholds.json` → `{'dataset': 'dataset-v1', 'fused_recall_at_5': 0.8, 'fused_mrr': 0.6, 'subset_gain_points': 15, 'gain_subsets': ['es', 'typo_id', 'long']}`
+- Nota: 144 registros sintéticos; las preguntas es/typo_id no comparten ninguna palabra exacta con su objetivo (comprobado por script al generarlo) y las long llevan una palabra ausente del documento. Dataset ya congelado (hash en T-03).
+
 ### T-02 — Proveedor de embeddings simulado, cargador y métricas
 
-- **Descripción**: Crear `fake_embeddings.py` (proveedor determinista sin red, misma interfaz que `Embeddings` de `providers.py`) y `run.py`: carga el dataset en PostgreSQL aislado, ejecuta `Retrieval.search` por capa (`episodic`, `documental`, `semantic`, `fused`) y calcula recall@1/5/10 y MRR por capa y subconjunto. Escribe un JSON con SHA-256 del dataset, `network: none` y `product_database_accessed: false`.
-- **Changelog**:
-- **Estado**: borrador
+- **Descripción**: Crear `fake_embeddings.py` (proveedor determinista sin red, misma interfaz que `Embeddings` de `providers.py`) y `run.py`: carga el dataset en PostgreSQL aislado, ejecuta `Retrieval.search` por capa (`episodic`, `documental`, `semantic`, `fused`) y calcula recall@1/5/10 y MRR por capa y subconjunto. Escribe un JSON con SHA-256 del dataset, la observación local de interfaces de red (`network_interfaces`) y `product_database_accessed: false`.
+- **Changelog**: Nuevo arnés de evaluación de recuperación que mide recall y MRR por capa y subconjunto con embeddings simulados, sin red ni base de datos real.
+- **Cerrada**: 2026-11-09
+- **Estado**: completado
 - **Tiempo humano**: est. 6h · real —
-- **Tiempo IA (ejec.)**: est. 0,83h · real —
+- **Tiempo IA (ejec.)**: est. 0,83h · real 0,42 (medido: 0,16 + 0,17 + 0,09 de la correccion del intento 2)
 - **Supervisión**: est. 0,21h (≈25 % IA) · real —
 - **Previsión IA**: 225k in / 20k out tok · ⚠️ verificar €
 - **Dependencias**: T-01
@@ -96,47 +103,93 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
   - `python -m memory_platform.tests.retrieval_eval.run --report out.json` dos veces en el harness aislado → los dos JSON difieren solo en la marca de tiempo (CA-03)
 
 **Criterios de aceptación**
-- [ ] CA-01: el informe contiene recall@1/5/10 y MRR para las cuatro capas y cada subconjunto, más el SHA-256 del dataset
-- [ ] CA-03: dos ejecuciones con el proveedor simulado producen informes idénticos salvo la marca de tiempo; el recibo registra `network: none` y `product_database_accessed: false`
-- [ ] El cargador solo se conecta al DSN del harness aislado y se niega a ejecutarse si `MEMORY_DSN` no apunta a una base temporal
+- [x] CA-01: el informe contiene recall@1/5/10 y MRR para las cuatro capas y cada subconjunto, más el SHA-256 del dataset
+- [x] CA-03: dos ejecuciones con el proveedor simulado producen informes idénticos salvo la marca de tiempo; el recibo registra la observación local de interfaces de red (no afirma «sin red») y `product_database_accessed: false` *(CA-03 enmendado por el usuario el 2026-11-09; original: «el recibo registra `network: none`»)*
+- [x] El cargador solo se conecta al DSN del harness aislado y se niega a ejecutarse si `MEMORY_DSN` no apunta a una base temporal
 
 **Subtareas**
-- [ ] Implementar el proveedor simulado (vector estable por hash de n-gramas, 2 y 768 dims según el modelo)
-- [ ] Implementar cargador y ejecución por capa sobre `Retrieval`
-- [ ] Implementar métricas e informe JSON; test con casos calculados a mano
-- [ ] Salvaguarda de DSN: abortar si el host no es local/temporal
+- [x] Implementar el proveedor simulado (vector estable por hash de n-gramas, 2 y 768 dims según el modelo) — implementado con hash SHA-256 de palabras más trigramas de caracteres
+- [x] Implementar cargador y ejecución por capa sobre `Retrieval`
+- [x] Implementar métricas e informe JSON; test con casos calculados a mano
+- [x] Salvaguarda de DSN: abortar si el host no es local/temporal
 
 **Notas**: Procedencia: spec CA-01, CA-03, decisión «Embeddings en CI». Clase: capacidad nueva (test nuevo en rojo). Patrones: arranque de PostgreSQL aislado en `memory_platform/tests/run_postgres.py:15-40`; capas y fusión en `memory_platform/retrieval.py:97-146`; interfaz de proveedor en `memory_platform/providers.py` (`Embeddings.embed`).
 
+**Evidencia de verificación (2026-11-09)**
+- `docker build --target test -f memory_platform/Dockerfile -t kairos-test:rq .` → exit 0; `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 186}` (177 previos + 9 de `test_metrics`; antes de la revision eran 183 = 177 + 6).
+- CA-03: la puerta ejecuta la evaluación dos veces en el mismo harness (`deterministic: true`) (ver la comparación de hashes entre dos ejecuciones independientes en la corrección del intento 2); recibo: `network_interfaces`, `product_database_accessed: false`.
+- Salvaguarda de DSN: `check_dsn` aborta salvo `MEMORY_DSN == MEMORY_TEST_DSN` en host local y base `memory_test` (probado en `test_metrics`).
+- Nota de alcance: la verificación pedía `run --report out.json` dos veces; se cubre con el modo de la puerta (que ya lo hace dos veces y compara) más dos builds. El proveedor simulado es un bag-of-words hasheado: mide la tubería, no la calidad de un modelo real (T-36 lo hará contra Ollama).
+
+**Correccion tras la revision (intento 1, 2026-11-09)**
+- Guarda de DSN (gap 1): `check_dsn` resuelve el DSN con `psycopg.conninfo.conninfo_to_dict` y exige `host` loopback, `hostaddr` loopback si existe, puerto 55432, `dbname=memory_test`, solo claves host/hostaddr/port/dbname/user (rechaza `service`, `passfile`, `options`...). Test con `?host=`, `?hostaddr=`, `?dbname=`, `?service=`, `?port=`, `?passfile=`, host multiple y puerto distinto.
+- Backends (gap 2): el informe lleva `query_backends` (estado y `partial` por consulta y capa, tambien clave estructural del determinismo); `_measure` convierte una excepcion de la capa semantica en `unavailable`; `evaluate_gate` falla con `backend_unavailable:<capa>`. Test `test_measure_records_a_layer_that_raises...`.
+- N-gramas (gap 3): `fake_embeddings.py` hashea palabras mas trigramas de caracteres con SHA-256 (sin PYTHONHASHSEED). Linea base regenerada (dataset intacto, `sha256sum -c` OK): fused recall@5 0,50, MRR 0,340; subconjuntos fused recall@5 es 0,333, typo_id 0,583, long 0,50, en 0,625; capas recall@5 episodic 0,385, documental 0,20, semantic 0,903. Dos copias de `baseline.json` identicas (`cmp`).
+- Minor 5/9: `load_dataset` reutiliza `check_dataset.validate`; test de `deterministic`/`STRUCTURAL_KEYS` (dos informes que difieren en una clave estructural -> `deterministic: false` y fallo `determinism`).
+- Minor 7: el recibo ya no afirma `network: none` (en el intento 2 la sonda TCP se sustituyo por una observacion local de interfaces). `docker build --network=none` no es viable (falla en `apt-get` de capas previas), asi que se ejecuto la imagen `kairos-test:rq` con `docker run --rm --network=none -e MEMORY_RETRIEVAL_EVAL=1 ... python -m memory_platform.tests.run_postgres` -> `network: unreachable`. Documentado en `testing/README.md` y en el Dockerfile.
+- Verificacion: `docker build --target test` (con `--no-cache-filter test`) -> exit 0, `"tests": 186, "failures": 0, "errors": 0, "skipped": 0, "passed": true`. Puerta con red desactivada -> exit 1; `deterministic: true`, sin `backend_unavailable`.
+- Horas IA medidas del fix: 0,17 h (ventana compartida con T-03-fix1; se imputan a T-02).
+
+**Correccion tras la revision (intento 2, 2026-11-09)**
+- Gap 1: `check_dsn` rechaza la ejecucion si hay en el entorno `PGHOSTADDR`, `PGHOST`, `PGPORT`, `PGDATABASE`, `PGSERVICE`, `PGSERVICEFILE` o `PGSYSCONFDIR`; ya no supone `hostaddr`; `connect_dsn` fija `hostaddr=127.0.0.1` en el DSN con el que se conecta (`build_report`). Docstring con lo que garantiza y lo que no (no inspecciona `PGOPTIONS`/`PGPASSFILE`, que no eligen destino). Tests con cada variable (incluidas `PGHOSTADDR` y `PGSERVICE`) y con `os.environ` real parcheado.
+- Gap 2: eliminada la segunda `load_dataset`; la que queda valida con `check_dataset.validate`. Test: `expected: []` e id inexistente -> `SystemExit` con "expected".
+- Gap 3: `network_state()` (TCP a 1.1.1.1) sustituida por `network_observation()`: lista `/sys/class/net`, una sola vez en `run()`, fuera de `STRUCTURAL_KEYS`; el informe trae `network_interfaces` y `network_observation` (describe solo lo observado). Test con tres casos.
+- Gap 6: test que exige que una errata (`authentiction`) quede mas cerca de `authentication` (coseno > 0,5) que una palabra distinta (`authorization`).
+- Gap 7: textos de `network: none` actualizados arriba. Comparacion de dos ejecuciones independientes (build `retrieval-eval` y `docker run --network=none`), informe sin `generated_at` ni campos de red: sha256 `4cb8fbfd...f053b3e` en ambas (identicas).
+- Verificacion: `docker build --target test` (con `--no-cache-filter test`) -> exit 0, `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 191}` (177 + 14 de `test_metrics`). Puerta con `docker run --rm --network=none -e MEMORY_RETRIEVAL_EVAL=1 kairos-test:rq ...` -> exit 1 solo por `fused_recall_at_5`, `fused_mrr`, `subset:es|typo_id|long`; `deterministic: true`, sin `backend_unavailable`, `network_interfaces: ["lo"]` (only the loopback interface exists). `sha256sum -c dataset-v1.sha256` -> OK; `cmp` de las dos `baseline.json` -> identicas (cifras sin cambio).
+- Horas IA medidas del fix: 0,09 h (`T-02-fix2`).
+
+---
+
 ### T-03 — Puerta `retrieval-eval`, línea base en rojo y congelación del dataset
 
-- **Descripción**: Añadir el modo `MEMORY_RETRIEVAL_EVAL=1` a `run_postgres.py`, el target `retrieval-eval` al Dockerfile y el contrato de la puerta (compara con `thresholds.json`, sale 1 si falla). Ejecutarla sobre el código actual, registrar la línea base en `testing/` y congelar el hash de `dataset-v1` antes de tocar la recuperación. Resultado: puerta separada que falla (rojo) en idioma, errores tipográficos y documento largo, y suite de 177 intacta.
-- **Changelog**:
-- **Estado**: borrador
+- **Descripción**: Añadir el modo `MEMORY_RETRIEVAL_EVAL=1` a `run_postgres.py`, el target `retrieval-eval` al Dockerfile y el contrato de la puerta (compara con `thresholds.json`, sale 1 si falla). Ejecutarla sobre el código actual, registrar la línea base en `testing/` y congelar el hash de `dataset-v1` antes de tocar la recuperación. Resultado: puerta separada que falla (rojo) en idioma, errores tipográficos y documento largo, y suite de 177 intacta (191 en total con los 14 tests de `test_metrics`).
+- **Changelog**: Nueva puerta de calidad de recuperación separada de la suite, con línea base registrada y conjunto de evaluación congelado por hash.
+- **Cerrada**: 2026-11-09
+- **Estado**: completado
 - **Tiempo humano**: est. 4h · real —
-- **Tiempo IA (ejec.)**: est. 0,55h · real —
+- **Tiempo IA (ejec.)**: est. 0,55h · real 0,00 (medido)
 - **Supervisión**: est. 0,14h (≈25 % IA) · real —
 - **Previsión IA**: 150k in / 15k out tok · ⚠️ verificar €
 - **Dependencias**: T-02
 - **Tipo**: test
-- **Archivos**: `memory_platform/tests/run_postgres.py`, `memory_platform/Dockerfile`, `memory_platform/tests/retrieval_eval/run.py`, `docs/roadmap/2026-11-09-retrieval-quality/testing/baseline.json`, `docs/roadmap/2026-11-09-retrieval-quality/testing/dataset-v1.sha256`
+- **Archivos**: `memory_platform/tests/run_postgres.py`, `memory_platform/Dockerfile`, `memory_platform/tests/retrieval_eval/run.py`, `docs/roadmap/2026-11-09-retrieval-quality/testing/baseline.json`, `docs/roadmap/2026-11-09-retrieval-quality/testing/dataset-v1.sha256`, `docs/roadmap/2026-11-09-retrieval-quality/testing/README.md`, `memory_platform/tests/retrieval_eval/baseline.json`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target retrieval-eval -f memory_platform/Dockerfile .` → falla (exit ≠ 0) y el informe lista como fallidos al menos los subconjuntos idioma, errores tipográficos y documento largo (CA-02)
-  - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:rq .` → la salida contiene `MEMORY_TEST_RESULT` con `"passed": true`, `failures: 0`, `errors: 0`, `skipped: 0` (los 177 tests siguen verdes: la puerta nueva no forma parte de la suite)
+  - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:rq .` → la salida contiene `MEMORY_TEST_RESULT` con `"passed": true`, `failures: 0`, `errors: 0`, `skipped: 0` (los 177 tests previos + 14 de `test_metrics` = 191 siguen verdes: la puerta nueva no forma parte de la suite)
   - `sha256sum memory_platform/tests/retrieval_eval/dataset-v1.jsonl` → coincide con `testing/dataset-v1.sha256`
 
 **Criterios de aceptación**
-- [ ] CA-02: sobre el código previo a C-03…C-06 la puerta falla y la línea base queda en `docs/roadmap/2026-11-09-retrieval-quality/testing/baseline.json`
-- [ ] La suite backend sigue en 177/177 con 0 omitidos (decisión P-08)
-- [ ] El hash de `dataset-v1` queda congelado y registrado (mitigación R-07)
+- [x] CA-02: sobre el código previo a C-03…C-06 la puerta falla y la línea base queda en `docs/roadmap/2026-11-09-retrieval-quality/testing/baseline.json`
+- [x] La suite backend sigue en 177/177 con 0 omitidos (decisión P-08): 191 con los 14 de `test_metrics`, 0 fallos, 0 omitidos
+- [x] El hash de `dataset-v1` queda congelado y registrado (mitigación R-07)
 
 **Subtareas**
-- [ ] Modo nuevo en `run_postgres.py` y target `retrieval-eval` (derivado de `test`, como `live-probe`)
-- [ ] Ejecutar la puerta, guardar `baseline.json` y el hash
-- [ ] Documentar en `testing/README.md` cómo se ejecuta la puerta y cómo se regenera la línea base
+- [x] Modo nuevo en `run_postgres.py` y target `retrieval-eval` (derivado de `test`, como `live-probe`)
+- [x] Ejecutar la puerta, guardar `baseline.json` y el hash
+- [x] Documentar en `testing/README.md` cómo se ejecuta la puerta y cómo se regenera la línea base
 
 **Notas**: Procedencia: spec CA-02, CA-35, decisión P-08. Clase: capacidad nueva (test nuevo en rojo). Patrones: modos alternativos de `run_postgres.py:27-34` (`MEMORY_LIVE_PROBE`, `MEMORY_CLIENT_PROBE`) y target `live-probe` en `memory_platform/Dockerfile:34-37`; puerta congelada en `docs/roadmap/2026-11-06-functional-parity/testing/frozen-source-gate.py`. Los evidencias de pruebas se escriben solo en `testing/`.
+
+**Evidencia de verificación (2026-11-09)**
+- `docker build --target retrieval-eval -f memory_platform/Dockerfile .` → exit 1 (rojo esperado). Fused global: recall@5 0,153 (umbral 0,80), MRR 0,156 (umbral 0,60). Subconjuntos fallidos (CA-02): `es` recall@5 0,00; `typo_id` 0,00; `long` 0,50 (todos < 0,80 y sin ganancia sobre línea base). Control `en` recall@10 1,0. Capas: episodic 0,385, documental 0,20 (n=20), semantic 0,417 (recall@5).
+- `docker build --target test ... -t kairos-test:rq .` (con `--no-cache-filter test`) → `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 183}`: 177 previos intactos + 6 nuevos de `test_metrics`; la puerta no forma parte de la suite.
+- `sha256sum -c testing/dataset-v1.sha256` → `OK` (hash `1bba8d99...ad4be6f6`).
+- Hallazgos de la línea base: (1) en `fused` los documentos (siempre `validated`) tienen prioridad sobre las memorias, por eso `en` tiene recall@1 0,17 pero recall@10 1,0; (2) en `semantic` los candidatos de score 0 se ordenan por clave, lo que da a `long` un 0,42 de recall@5 por desempate y no por señal. Para C-03/C-06.
+- Notas de alcance: añadidos a `Archivos` `testing/README.md` y una copia `memory_platform/tests/retrieval_eval/baseline.json` (la imagen Docker no contiene `docs/`; la puerta la usa para medir la ganancia por subconjunto). Horas IA medidas de T-03: 0,00 porque el trabajo se hizo dentro de la ventana de T-02.
+
+**Correccion tras la revision (intento 1, 2026-11-09)**
+- Gap 4 (P-06): `evaluate_gate` exige recall@5 fused >= 0,80, MRR >= 0,60 y ganancia >= 15 puntos en es/typo_id/long (ya no «o»); sin linea base falla con `baseline_missing`. README de `retrieval_eval` y tests actualizados (un recall@5 de 0,85 sin ganancia falla).
+- Minor 6: si `baseline.dataset_sha256` no coincide con el del informe falla con `baseline_dataset_mismatch`. Minor 8: «177» -> «186 (177 + 9 de test_metrics)» en comentario del Dockerfile y criterios.
+- Linea base regenerada con el proveedor de n-gramas (ver T-02). Puerta sobre el codigo previo: exit 1 con `fused_recall_at_5` (0,50 < 0,80), `fused_mrr` (0,340 < 0,60), `subset:es`, `subset:typo_id`, `subset:long` (ganancia 0,0 < 15), `deterministic: true`, `network: unreachable`.
+- `sha256sum -c testing/dataset-v1.sha256` -> OK (`1bba8d99...ad4be6f6`); `baseline.json` identicas en `testing/` y en `retrieval_eval/`.
+- Horas IA medidas: 0,17 h en ventana compartida con T-02-fix1 (imputadas a T-02; T-03 sigue en 0,00).
+
+**Correccion tras la revision (intento 2, 2026-11-09)**
+- Gap 4: `testing/README.md` y el comentario del target `retrieval-eval` documentan el comando que funciona (`docker build --target test` + `docker run --rm --network=none -e MEMORY_RETRIEVAL_EVAL=1 <imagen> python -m memory_platform.tests.run_postgres`) y advierten que `docker build --network=none` falla en `apt-get`. Comentario del Dockerfile: 191 = 177 + 14 de `test_metrics`.
+- Gap 5: Verificacion 1 ejecutada tal cual tras las correcciones: `docker build --progress=plain --target retrieval-eval -f memory_platform/Dockerfile .` -> exit 1 (rojo esperado). Informe: `deterministic: true`, `dataset_sha256: 1bba8d99...ad4be6f6`, `product_database_accessed: false`, `network_interfaces: ["eth0","lo"]` (el build tiene red; solo se observa), fallos `fused_recall_at_5` (0,50), `fused_mrr` (0,340), `subset:es` (0,333), `subset:typo_id` (0,583), `subset:long` (0,50); sin `backend_unavailable`. Cifras identicas a la linea base.
+- `sha256sum -c testing/dataset-v1.sha256` -> OK; `cmp` de las dos `baseline.json` -> identicas. Horas IA: 0,00 (imputadas a T-02-fix2).
 
 ---
 
@@ -1202,3 +1255,61 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 **Notas**: Procedencia: spec CA-14, decisión P-07. Clase: operación. Restricción: nunca tocar la base desplegada sin esta autorización; el ensayo (T-11) es obligatorio antes. Patrón: `testing/activation.json` del plan 2026-11-06. Reserva tiempo humano propio para la ventana (supervisión probablemente superior al 25 %).
 
 ---
+
+## Revisión de dos lentes — intento 1: Fase 1 (T-01…T-03) (T-01, T-02, T-03)
+
+Lentes: A+B+C (C por ruta `memory_platform/Dockerfile`). Base `1d43523` + cambios sin commitear. `scope-check.py --base 1d43523` → exit 0 (15/15 en alcance).
+
+**Veredicto por criterio (Lente A):** T-01 ✓ (CA-01, datos sintéticos, umbrales, verificación reproducida) · T-02 ✓ con salvedades (CA-01, CA-03; desviación de la Verificación 2 aceptada) · T-03 ✓ (CA-02, hash congelado, puerta fuera de la suite).
+
+**Resultado: 4 gaps Important (corrección obligatoria) y 6 Minor.** T-02 y T-03 vuelven a `en-progreso`.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | La guarda de DSN se salta con parámetros de consulta de libpq (`?host=`, `?hostaddr=`, `?dbname=`, `?service=`, puerto sin comprobar); por CLI, `_setup` migraría e insertaría un actor admin con contraseña fija en esa base (CWE-20 → CWE-798). Lentes B y C | T-02 | corregido: `check_dsn` resuelve con `conninfo_to_dict`, exige host/hostaddr loopback, puerto 55432, `memory_test` y solo claves permitidas (`run.py` `check_dsn`); tests con `?host=`, `?hostaddr=`, `?dbname=`, `?service=`, puerto distinto | `run.py:80-82`; reproducido por B con `conninfo_to_dict` → `{'host':'db.example.com','dbname':'kairos'}` y `guard passed` |
+| 2 | Important | La evaluación descarta `backends`/`partial`: una capa caída se mide como recall 0 sin rastro y la puerta solo falla por umbral (o pasaría si las demás capas alcanzan el umbral). Lente B | T-02, T-03 | corregido: `query_backends` por consulta/capa en el informe y clave estructural; `backend_unavailable:<capa>` en `evaluate_gate`; test con capa que lanza excepcion | `run.py:149-154,177-179`; sonda de B con `search_items` lanzando excepción → episodic 0, fused idéntico a la línea base, sin aviso |
+| 3 | Important | El proveedor simulado hashea palabras completas, pero la subtarea de T-02 pide «vector estable por hash de n-gramas»; la capa semántica simulada no puede ayudar a `typo_id`. Lente B (fuera de lente, requisito) | T-02 | corregido: `fake_embeddings.py` hashea palabras y trigramas de caracteres (SHA-256); linea base regenerada, dataset intacto | `fake_embeddings.py:30-37` frente a la subtarea de T-02 |
+| 4 | Important | La puerta acepta un subconjunto con recall@5 ≥ 0,80 **o** ganancia ≥ 15; P-06 (spec, decisiones confirmadas) exige +15 puntos de recall@5 en es/typo_id/long. Lente A | T-03 | corregido: ganancia obligatoria junto a los umbrales absolutos; README y tests | `run.py:72`; spec «Decisiones confirmadas» punto 6 |
+| 5 | Minor | `run.py` carga el dataset sin validarlo (`expected: []` → `ZeroDivisionError`; id mal escrito → fallo silencioso). Lente B | T-02 | corregido: `load_dataset` valida con `check_dataset.validate` | `run.py:85-87,158,160`; `recall_at_k(['a'],[],5)` → `ZeroDivisionError` |
+| 6 | Minor | La ganancia se calcula contra una línea base sin comprobar que su `dataset_sha256` coincida con el del informe. Lente B | T-03 | corregido: `baseline_dataset_mismatch` si los hashes difieren | `run.py:186-192` |
+| 7 | Minor | El recibo declara `network: none` como constante; el `docker build` tiene red por defecto. Lente A | T-02 | corregido: `network` se observa (`reachable`/`unreachable`); verificado con `docker run --network=none`; `docker build --network=none` no viable (falla `apt-get` de capas previas); documentado | `run.py:177`; `Dockerfile:47-50` |
+| 8 | Minor | Textos del ledger y comentario del Dockerfile siguen diciendo «177»; la suite tiene 183 (177 + 6 de `test_metrics`). Lentes A y B | T-03 | corregido: 186 (177 + 9 de `test_metrics`) en Dockerfile y ledger | `Dockerfile:48`; criterio de T-03 |
+| 9 | Minor | No hay test de `STRUCTURAL_KEYS`/`deterministic`; los «dos builds idénticos» no tienen salida pegada. Lente A | T-02 | corregido: `test_determinism_flag_compares_the_structural_keys` | `run.py:191,198-199`; `tasks.md` evidencia de T-02 |
+| 10 | Minor | Faltan las combinaciones `episodic×long` y `documental×typo_id` (inherente al diseño de dataset-v1, congelado). Lente A | T-01 | deuda aceptada (no se toca) | `run.py:158-159`; `dataset-v1.jsonl` q-049…q-060 |
+
+
+## Revisión de dos lentes — intento 2: Fase 1 (T-01…T-03) (T-01, T-02, T-03)
+
+Lentes: A+B+C (C por ruta `memory_platform/Dockerfile`). Traspaso de la tabla del intento 1; solo se re-evaluó lo corregido.
+
+**Corregidos y verificados:** gaps 1 (parámetros de consulta), 2, 3, 4, 6 y 8 del intento 1. Gap 10: deuda aceptada.
+
+**Resultado: 2 gaps Important y 5 Minor.** T-02 y T-03 vuelven a `en-progreso`. Siguiente: intento 3 de 3.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | La guarda de DSN supone `hostaddr=127.0.0.1` si el DSN no lo trae, pero libpq aplica `PGHOSTADDR` del entorno y redirige la conexión con la guarda superada (mismo impacto que el gap 1 del intento 1). Lentes B (Important) y C (Minor); arbitraje: Important, porque reabre el gap 1 | T-02 | corregido: la guarda rechaza `PGHOSTADDR`, `PGHOST`, `PGPORT`, `PGDATABASE`, `PGSERVICE`, `PGSERVICEFILE`, `PGSYSCONFDIR` en el entorno y la conexion fija `hostaddr=127.0.0.1` (`connect_dsn`); docstring exacto; tests por variable | `run.py:118`; sonda B/C en `kairos-test:rq`: `PGHOSTADDR=10.9.9.9` → conecta a `10.9.9.9:55432` |
+| 2 | Important | La validación del dataset al cargar (gap 5 del intento 1) no se ejecuta: `load_dataset` está definida dos veces y la segunda, sin validar, anula la primera; el ledger y el README afirman lo contrario. Lentes A, B y C | T-02 | corregido: eliminada la `load_dataset` duplicada; valida con `check_dataset.validate`; tests con `expected: []` e id inexistente -> `SystemExit` | `run.py:122-134`; dataset con `expected: []` aceptado sin `SystemExit` |
+| 3 | Minor | `network_state()` abre TCP a un tercero (1.1.1.1:53) en cada build con red, dos veces por ejecución; además da falsos `unreachable` tras un cortafuegos y puede romper el determinismo. Arbitraje: se sustituye por una observación local sin contacto externo. Lentes B y C | T-02 | corregido: `network_observation()` lista `/sys/class/net` (sin conexion), una vez por ejecucion, fuera de `STRUCTURAL_KEYS`; el recibo dice lo observado | `run.py:34-40,242` |
+| 4 | Minor | La documentación ordena `docker build --network=none`, que no es viable (falla `apt-get`). Lente A | T-02, T-03 | corregido: README y Dockerfile documentan `docker build --target test` + `docker run --network=none ...` y la advertencia sobre `docker build --network=none` | `testing/README.md:9-13`; `Dockerfile:49`; `tasks.md:129` |
+| 5 | Minor | La evidencia posterior a la corrección de T-03 no sale de su Verificación 1 (`docker build --target retrieval-eval`). Lente A | T-03 | corregido: Verificacion 1 (`docker build --target retrieval-eval`) ejecutada tras las correcciones; salida en el ledger de T-03 | `tasks.md:167` frente a `:176` |
+| 6 | Minor | Ningún test distingue el proveedor de n-gramas de uno de palabras completas. Lente A | T-02 | corregido: test de errata frente a palabra distinta (coseno) | `test_metrics.py:92-97` |
+| 7 | Minor | El ledger conserva `network: none` y la afirmación de «dos builds idénticos» sin salida pegada. Lente A | T-02 | corregido: textos `network: none` actualizados; dos ejecuciones independientes comparadas por hash (identicas) | `tasks.md:89,107,120` |
+
+
+## Revisión de dos lentes — intento 3: Fase 1 (T-01…T-03) (T-01, T-02, T-03)
+
+Lentes: A+B+C. Traspaso de las tablas de los intentos 1 y 2; solo se re-evaluó lo corregido.
+
+**Gaps 1-7 del intento 2: corregidos y verificados.** Lente B: sin defectos (sondas en contenedor efímero con PostgreSQL temporal; 14 tests de `test_metrics` OK). Lente C: sin hallazgos (redirección por `PGHOSTADDR` rechazada de punta a punta; audit hook de red → `PY_NETWORK_EVENTS []`).
+
+**Resultado: sin gaps pendientes.** Fase 1 cerrada en revisión.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| N1 | Important | El criterio aprobado CA-03 de T-02 se reescribió (de «el recibo registra `network: none`» a la observación local de interfaces) sin aprobación; `scope-check.py` marca «criterios aprobados alterados». Lente A | T-02 | descartado (rebatido): el usuario aprobó el 2026-11-09 enmendar CA-03 en la spec y en el ledger; queda registrado como decisión 9 de `spec.md` y como nota en el criterio | Decisión del usuario en la conversación (puerta del intento 3); `spec.md` CA-03 y «Decisiones confirmadas», punto 9 |
+| N2 | Minor | Subtarea aprobada «vector estable por hash de n-gramas» reescrita. Lente A | T-02 | corregido: texto original restaurado, con la implementación anotada detrás | `tasks.md`, subtareas de T-02 |
+| N3 | Minor | Recuento obsoleto «186 / 9» en T-03 tras el intento 2 (la suite tiene 191 = 177 + 14). Lente A | T-03 | corregido: 191 / 14 en descripción, Verificación y criterio de T-03 | `Dockerfile:48`; evidencia de T-02 |
+
+Nota de alcance: `scope-check.py --base 1d43523` sigue informando «criterio aprobado alterado» en CA-03 de T-02 porque compara con el ledger de la base; la alteración está autorizada por el usuario (N1).
+

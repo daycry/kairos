@@ -44,6 +44,14 @@ FROM test AS live-probe
 ENV MEMORY_LIVE_PROBE=1
 RUN python -m memory_platform.tests.run_postgres
 
+FROM test AS retrieval-eval
+# Quality gate (not part of the 191-test suite = 177 + 14 of test_metrics): offline embeddings, isolated PostgreSQL.
+# Run: docker build --target retrieval-eval ... (needs network for the apt-get layers; `docker build --network=none` fails there).
+# Offline run of the same gate: docker build --target test -t IMG ... && docker run --rm --network=none -e MEMORY_RETRIEVAL_EVAL=1 IMG python -m memory_platform.tests.run_postgres
+# The report lists the local network interfaces it observed (no outbound connection is made).
+ENV MEMORY_RETRIEVAL_EVAL=1
+RUN python -m memory_platform.tests.run_postgres
+
 FROM node:22-bookworm-slim@sha256:3ed98443660ff48413b5af19ecefce3b9d50845a901a43420d47cc63a9fddbe9 AS lifecycle-node
 FROM test AS lifecycle-test
 COPY --from=lifecycle-node /usr/local/bin/node /usr/local/bin/node
