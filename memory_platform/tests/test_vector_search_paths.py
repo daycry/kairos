@@ -215,8 +215,8 @@ class VectorSearchPathTests(unittest.TestCase):
         self.assertFalse(found.candidates_truncated)
         self.assertTrue(all(hit['project_id'] == self.pid for hit in found))
 
-    def stub_connection(self, ranking_rows, population):
-        """Connection whose index scan answered `ranking_rows` and whose authorized population is `population`."""
+    def stub_connection(self, ranking_rows):
+        """Connection whose index scan answered `ranking_rows`; a separate population count would fail the test."""
         class Result:
             def __init__(self, rows):
                 self.rows = rows
@@ -227,32 +227,99 @@ class VectorSearchPathTests(unittest.TestCase):
             def fetchone(self):
                 return self.rows[0]
 
+        class Savepoint:
+            def __enter__(_):
+                return _
+
+            def __exit__(_, *exc):
+                return False
+
         class Stub:
             def execute(_, query, params=None, **kwargs):
                 text = str(query)
                 if 'set_config' in text:
                     return Result([])
-                if 'SELECT count(*)' in text:
-                    return Result([{'n': population}])
+                assert 'SELECT count(*)' not in text, 'the separate population count must not exist'
                 return Result(ranking_rows)
+
+            def transaction(_):
+                return Savepoint()
         return Stub()
 
     def test_short_or_empty_scan_over_a_large_authorized_population_is_truncated(self):
-        """pgvector may stop at max_scan_tuples inside rows the caller cannot read: empty, yet truncated."""
+        """pgvector may stop at max_scan_tuples inside rows the caller cannot read: empty, yet truncated.
+
+        The exact fallback reports `truncated` itself (more than EXACT_CANDIDATE_LIMIT current candidates): the
+        index rows are returned flagged instead of the partial exact ranking.
+        """
         unit = [1.0] + [0.0] * 767
-        with patch.object(store_vectors, 'EXACT_CANDIDATE_LIMIT', 100), patch.object(store_vectors, 'rank_exact') as exact:
-            rows, limit, truncated = store_vectors.rank_ann(self.stub_connection([], 101), [self.pid], MODEL, 768, unit, None, None, 10)
+        some = [{'project_id': self.pid, 'item_id': 'x', 'resource_type': 'document', 'version': 1, 'canonical_hash': 'h', 'score': 0.5}]
+        with patch.object(store_vectors, 'EXACT_CANDIDATE_LIMIT', 100), patch.object(store_vectors, 'rank_exact', return_value=(['partial'], 100, True)) as exact:
+            rows, limit, truncated = store_vectors.rank_ann(self.stub_connection([]), [self.pid], MODEL, 768, unit, None, None, 10)
             self.assertEqual((rows, limit, truncated), ([], store_vectors.HNSW_MAX_SCAN_TUPLES, True))
-            some = [{'project_id': self.pid, 'item_id': 'x', 'resource_type': 'document', 'version': 1, 'canonical_hash': 'h', 'score': 0.5}]
-            rows, limit, truncated = store_vectors.rank_ann(self.stub_connection(some, 5000), [self.pid], MODEL, 768, unit, None, None, 10)
-            self.assertEqual((rows, truncated), (some, True))
-            exact.assert_not_called()
+            rows, limit, truncated = store_vectors.rank_ann(self.stub_connection(some), [self.pid], MODEL, 768, unit, None, None, 10)
+            self.assertEqual((rows, limit, truncated), (some, store_vectors.HNSW_MAX_SCAN_TUPLES, True))
+            self.assertEqual(exact.call_count, 2)  # one traversal per search: the exact route is the only count
 
     def test_short_scan_over_a_population_within_the_exact_limit_is_recomputed(self):
         unit = [1.0] + [0.0] * 767
         with patch.object(store_vectors, 'EXACT_CANDIDATE_LIMIT', 100), patch.object(store_vectors, 'rank_exact', return_value=(['exact'], 100, False)) as exact:
-            self.assertEqual(store_vectors.rank_ann(self.stub_connection([], 100), [self.pid], MODEL, 768, unit, None, None, 10), (['exact'], 100, False))
+            self.assertEqual(store_vectors.rank_ann(self.stub_connection([]), [self.pid], MODEL, 768, unit, None, None, 10), (['exact'], 100, False))
             exact.assert_called_once()
+
+    def test_a_full_scan_never_runs_the_exact_fallback(self):
+        unit = [1.0] + [0.0] * 767
+        full = [{'project_id': self.pid, 'item_id': f'x{n}', 'resource_type': 'document', 'version': 1, 'canonical_hash': 'h', 'score': 0.5} for n in range(3)]
+        with patch.object(store_vectors, 'rank_exact') as exact:
+            self.assertEqual(store_vectors.rank_ann(self.stub_connection(full), [self.pid], MODEL, 768, unit, None, None, 3), (full, store_vectors.HNSW_MAX_SCAN_TUPLES, False))
+            exact.assert_not_called()
+
+    def test_short_answer_over_more_current_candidates_than_the_exact_limit_is_flagged_with_the_index_rows(self):
+        """Real rows: 8 current candidates, exact limit patched to 5 -> the 8 index rows come back, truncated."""
+        self.add(vectors(8, 768, 40))
+        exact, ann = self.routes()
+        with patch.object(store_vectors, 'EXACT_CANDIDATE_LIMIT', 5), exact as exact_spy, ann:
+            found = self.store.search_vectors(self.actor, [self.pid], vectors(1, 768, 41)[0], MODEL, limit=10)
+        self.assertEqual(exact_spy.call_count, 1)
+        self.assertEqual(len(found), 8)
+        self.assertTrue(found.candidates_truncated and all(hit['candidates_truncated'] and hit['candidate_limit'] == 20000 for hit in found))
+
+    def slow_fallback(self):
+        """rank_exact stand-in that arms the fallback budget and then overruns it."""
+        def slow(c, projects, model, dims, unit, categories, tags, size, arm=lambda: None):
+            arm()
+            c.execute('SELECT pg_sleep(10)')
+        return patch.object(store_vectors, 'rank_exact', side_effect=slow)
+
+    def test_exhausted_fallback_budget_returns_the_index_rows_as_partial_and_keeps_the_transaction_usable(self):
+        self.add(vectors(5, 768, 42))
+        self.add(vectors(1, 768, 43), prefix='lone')
+        statements = []
+        started = time.monotonic()
+        with patch.object(store_vectors, 'exact_fallback_ms', return_value=300), self.slow_fallback() as slow, self.spied_transaction(statements):
+            found = self.store.search_vectors(self.actor, [self.pid], vectors(1, 768, 44)[0], MODEL, limit=10, deadline=time.monotonic() + 60)
+        self.assertLess(time.monotonic() - started, 8)
+        self.assertEqual(slow.call_count, 1)
+        # the same transaction served the final payload read after the savepoint was rolled back
+        self.assertEqual(len(found), 6)
+        self.assertTrue(found.candidates_truncated and all(hit['candidates_truncated'] and hit['candidate_limit'] == 20000 for hit in found))
+        timeouts = [int(params[0]) for query, params in statements if 'statement_timeout' in query]
+        self.assertIn(300, timeouts)  # min(what is left of the deadline, the fallback budget)
+        self.assertTrue(all(1 <= value <= 60000 for value in timeouts))
+
+    def test_exhausted_fallback_budget_without_a_deadline_still_degrades_to_partial(self):
+        self.add(vectors(4, 768, 45))
+        with patch.object(store_vectors, 'exact_fallback_ms', return_value=300), self.slow_fallback():
+            found = self.store.search_vectors(self.actor, [self.pid], vectors(1, 768, 46)[0], MODEL, limit=10)
+        self.assertEqual(len(found), 4)
+        self.assertTrue(found.candidates_truncated)
+
+    def test_the_global_deadline_expiring_during_the_fallback_keeps_semantic_deadline_exceeded(self):
+        self.add(vectors(4, 768, 47))
+        with patch.object(store_vectors, 'exact_fallback_ms', return_value=30000), self.slow_fallback():
+            with self.assertRaises(MemoryError) as raised:
+                self.store.search_vectors(self.actor, [self.pid], vectors(1, 768, 48)[0], MODEL, limit=10, deadline=time.monotonic() + 1.0)
+        self.assertEqual((raised.exception.code, raised.exception.status), ('semantic_deadline_exceeded', 503))
 
     def test_a_truncated_route_marks_the_results_object_and_every_hit(self):
         self.add(vectors(5, 768, 25))
@@ -267,17 +334,19 @@ class VectorSearchPathTests(unittest.TestCase):
         self.assertTrue(found.candidates_truncated and all(hit['candidates_truncated'] for hit in found))
 
     def test_population_count_uses_only_the_authorized_projects(self):
+        """The fallback is the only traversal and it is scoped to the authorized projects."""
         other = self.other_project()
         self.add(vectors(30, 768, 27), prefix='big', project=other)
         self.add(vectors(2, 768, 28))
         statements = []
         with self.spied_transaction(statements):
             self.store.search_vectors(self.actor, [self.pid], vectors(1, 768, 29)[0], MODEL, limit=10)
-        counts = [(query, params) for query, params in statements if 'SELECT 1 FROM memory.embeddings' in query]
-        self.assertEqual(len(counts), 1)
-        self.assertIn('e.project_id=ANY(%s)', counts[0][0])
-        self.assertEqual(counts[0][1][0], [self.pid])
-        self.assertIn('NOT d.deleted', counts[0][0])
+        self.assertFalse([1 for query, _ in statements if 'SELECT count(*) AS n' in query])
+        scans = [(query, params) for query, params in statements if 'WITH cand AS' in query]
+        self.assertEqual(len(scans), 1)
+        self.assertIn('e.project_id=ANY(%s)', scans[0][0])
+        self.assertEqual(scans[0][1][2], [self.pid])
+        self.assertIn('NOT d.deleted', scans[0][0])
 
     def test_withdrawn_and_old_rows_do_not_count_towards_the_exact_route_limit(self):
         self.add(vectors(150, 768, 30))
@@ -291,3 +360,12 @@ class VectorSearchPathTests(unittest.TestCase):
         self.assertEqual(exact_spy.call_count, 1)
         self.assertFalse(found.candidates_truncated)
         self.assertEqual(len(found), 29)
+
+class ExactFallbackSettingTests(unittest.TestCase):
+    def test_default_and_validation(self):
+        from memory_platform.config import exact_fallback_ms
+        self.assertEqual(exact_fallback_ms({}), 1500)
+        self.assertEqual(exact_fallback_ms({'MEMORY_VECTOR_EXACT_FALLBACK_MS': ' 250 '}), 250)
+        for bad in ('0', '-5', '1.5', 'abc', '', '600001', '\u0661\u0662\u0663'):
+            with self.assertRaises(ValueError, msg=bad):
+                exact_fallback_ms({'MEMORY_VECTOR_EXACT_FALLBACK_MS': bad})

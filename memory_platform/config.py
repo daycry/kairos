@@ -53,6 +53,18 @@ def vector_indexes(environ=None) -> tuple:
     return tuple(result)
 
 
+DEFAULT_EXACT_FALLBACK_MS = 1500
+
+
+def exact_fallback_ms(environ=None) -> int:
+    """Own statement_timeout (ms) of the exact fallback after a short HNSW answer; MEMORY_VECTOR_EXACT_FALLBACK_MS."""
+    environ = os.environ if environ is None else environ
+    value = environ.get('MEMORY_VECTOR_EXACT_FALLBACK_MS', str(DEFAULT_EXACT_FALLBACK_MS)).strip()
+    if not value.isascii() or not value.isdigit() or not 1 <= int(value) <= 600000:
+        raise ValueError('MEMORY_VECTOR_EXACT_FALLBACK_MS must be a positive integer of milliseconds (1 to 600000)')
+    return int(value)
+
+
 DEFAULT_MIGRATION_MAINTENANCE_WORK_MEM = '256MB'
 
 
@@ -100,6 +112,7 @@ class Settings:
         secure = os.environ.get('MEMORY_COOKIE_SECURE', '0') == '1'
         if any(urlsplit(v).hostname not in ('localhost', '127.0.0.1', '::1', 'testserver') for v in origins) and (not secure or any(urlsplit(v).scheme != 'https' for v in origins)):
             raise ValueError('Remote portal origins require HTTPS and MEMORY_COOKIE_SECURE=1')
+        exact_fallback_ms()  # fail at startup, not on the first short semantic answer
         return cls(
             dsn=secret('MEMORY_DSN', required=True), allowed_origins=origins,
             cookie_secure=secure, session_ttl=int(os.environ.get('MEMORY_SESSION_TTL', '43200')),

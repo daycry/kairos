@@ -11,6 +11,7 @@ x-memory-environment: &memory-environment
   MEMORY_BOOTSTRAP_PASSWORD_FILE: /run/secrets/memory_bootstrap
   MEMORY_EMBED_ENABLED: '1'
   MEMORY_MIGRATION_MAINTENANCE_WORK_MEM: ${MEMORY_MIGRATION_MAINTENANCE_WORK_MEM:-256MB}
+  MEMORY_VECTOR_EXACT_FALLBACK_MS: ${MEMORY_VECTOR_EXACT_FALLBACK_MS:-1500}
 
 x-process: &process
   read_only: true

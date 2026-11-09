@@ -186,6 +186,8 @@ Observa latencia, tamaño de cola, intentos y errores del trabajador, salud de b
 
 En la web, reduce proyectos, capas y categorías para acotar recuperación y mapa. Utiliza vista de lista si el renderizado 3D limita el equipo. No aumentes indiscriminadamente concurrencia y tiempos de espera: pueden ocultar saturación y multiplicar solicitudes al servidor de modelos.
 
+Si el recuento de la búsqueda semántica aparece como `partial` con muchos vectores autorizados y un filtro poco frecuente, es el respaldo exacto tras una respuesta HNSW corta agotando `MEMORY_VECTOR_EXACT_FALLBACK_MS` (1500 ms por defecto): el resultado es parcial y distinguible (`candidates_truncated`), no un fallo. Subirlo recupera resultados exactos a costa de latencia; nunca supera el plazo global de la consulta.
+
 Los límites de petición, proveedor, lease e intentos están centralizados en `Settings`. Consulta el código y el entorno activo antes de modificarlos. Un timeout de consulta y el timeout de un trabajo de embeddings son límites diferentes.
 
 ## Qué incluir en una incidencia

@@ -3,7 +3,7 @@ import hashlib
 import math
 import time
 
-from .config import EXACT_CANDIDATE_LIMIT, HNSW_EF_SEARCH, HNSW_MAX_SCAN_TUPLES, vector_indexes
+from .config import EXACT_CANDIDATE_LIMIT, HNSW_EF_SEARCH, HNSW_MAX_SCAN_TUPLES, exact_fallback_ms, vector_indexes
 from .errors import MemoryError
 from .store_common import canonical
 
@@ -52,15 +52,18 @@ def vector_results(hits,candidate_limit,truncated):
     return results
 
 
-def rank_ann(c,projects,model,dims,unit,categories,tags,size,arm=lambda:None):
+def rank_ann(c,projects,model,dims,unit,categories,tags,size,arm=lambda cap=None:None):
     """Top `size` by cosine through the partial HNSW index (iterative scan), same filters as the exact route.
 
-    Returns (rows, candidate_limit, truncated). A short answer is judged against the AUTHORIZED population only
-    (never the volume of other projects): up to EXACT_CANDIDATE_LIMIT embeddings it is recomputed exactly (an
-    approximate index can leave heavily duplicated vectors unreachable); above it the answer is returned as
-    truncated, because the scan may have stopped at hnsw.max_scan_tuples before filling `size`.
+    Returns (rows, candidate_limit, truncated). A short answer is checked with ONE bounded traversal of the
+    authorized rows, the exact route (`truncated` there = more than EXACT_CANDIDATE_LIMIT current candidates):
+    within the limit its result replaces the index rows (an approximate index can leave heavily duplicated vectors
+    unreachable); above it, or when the fallback exhausts its own budget (MEMORY_VECTOR_EXACT_FALLBACK_MS, capped by
+    what is left of the deadline), the index rows are returned flagged `truncated` and the caller reports `partial`.
+    The fallback runs in a savepoint, so its cancellation leaves the transaction usable. If the GLOBAL deadline is
+    what ran out, `semantic_deadline_exceeded` propagates as before.
     """
-    from psycopg import sql
+    from psycopg import errors, sql
     for name,value in (('hnsw.iterative_scan','relaxed_order'),('hnsw.max_scan_tuples',str(HNSW_MAX_SCAN_TUPLES)),('hnsw.ef_search',str(HNSW_EF_SEARCH))):
         c.execute('SELECT set_config(%s,%s,true)',(name,value))
     width=sql.SQL(str(int(dims)))
@@ -70,20 +73,22 @@ def rank_ann(c,projects,model,dims,unit,categories,tags,size,arm=lambda:None):
     text=vector_text(unit)
     arm()
     rows=c.execute(query,[text,projects,categories,categories,tags,tags,categories,categories,tags,tags,text,size]).fetchall()
-    truncated=False
-    if len(rows)<size:
-        arm()
-        # Current rows only (same filters as the ranking): old versions and withdrawn items must not push a small
-        # corpus over the exact route's limit. project_id leads the index, so the scan stays inside the authorized rows.
-        authorized=c.execute('SELECT count(*) AS n FROM (SELECT 1 FROM memory.embeddings e WHERE e.project_id=ANY(%s) AND e.model=%s AND e.dims=%s AND '+CURRENT_RESOURCE+' LIMIT %s) s',
-                             [projects,model,dims,categories,categories,tags,tags,categories,categories,tags,tags,EXACT_CANDIDATE_LIMIT+1]).fetchone()['n']
-        if authorized<=EXACT_CANDIDATE_LIMIT:
-            return rank_exact(c,projects,model,dims,unit,categories,tags,size,arm)
-        truncated=True
-    return rows,HNSW_MAX_SCAN_TUPLES,truncated
+    if len(rows)>=size:
+        return rows,HNSW_MAX_SCAN_TUPLES,False
+    budget=exact_fallback_ms()
+    try:
+        with c.transaction():  # savepoint: a cancelled fallback is rolled back, the transaction stays usable
+            exact=rank_exact(c,projects,model,dims,unit,categories,tags,size,lambda:arm(budget))
+    except errors.QueryCanceled:
+        arm()  # the global deadline expired -> semantic_deadline_exceeded; otherwise only the fallback budget did
+        return rows,HNSW_MAX_SCAN_TUPLES,True
+    arm()  # drop the fallback's own timeout for the statements that follow
+    if exact[2]:
+        return rows,HNSW_MAX_SCAN_TUPLES,True
+    return exact
 
 
-def rank_exact(c,projects,model,dims,unit,categories,tags,size,arm=lambda:None):
+def rank_exact(c,projects,model,dims,unit,categories,tags,size,arm=lambda cap=None:None):
     """Exact cosine in SQL over the first EXACT_CANDIDATE_LIMIT current candidates (stable identity order).
 
     Returns (rows, candidate_limit, truncated); `truncated` means more candidates existed than were scored.
@@ -185,10 +190,20 @@ class VectorsMixin:
                 raise MemoryError('semantic_deadline_exceeded','Semantic query exceeded its time budget',503)
             return max(1,math.ceil(seconds*1000))
         remaining()
-        def arm():
-            # Re-armed before every statement: what is left of the deadline, never the whole budget again.
-            if deadline is not None:
-                c.execute("SELECT set_config('statement_timeout',%s,true)",(str(remaining()),))
+        baseline=[]
+        def arm(cap=None):
+            # Re-armed before every statement: what is left of the deadline (never the whole budget again), further
+            # capped by `cap` (the exact fallback's own budget) when one is given.
+            milliseconds=remaining()
+            if cap is not None:
+                milliseconds=cap if milliseconds is None else min(milliseconds,cap)
+                if deadline is None and not baseline:
+                    baseline.append(c.execute("SELECT current_setting('statement_timeout') AS value").fetchone()['value'])
+            elif milliseconds is None and baseline:
+                c.execute("SELECT set_config('statement_timeout',%s,true)",(baseline[0],))  # back to what the session had
+                return
+            if milliseconds is not None:
+                c.execute("SELECT set_config('statement_timeout',%s,true)",(str(milliseconds),))
         with self.transaction() as c:
             arm()
             for pid in project_ids:
