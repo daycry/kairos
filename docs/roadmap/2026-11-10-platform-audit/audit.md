@@ -109,7 +109,7 @@ Deudas aceptadas en `retrieval-quality`, que este plan recoge: marcar filas anti
 
 ## 4. Plan de mejora
 
-Olas 0 a 6, con una 2-bis y una 3-bis. Cada una es desplegable por separado. **El orden vigente es el de la sección 6.3**, que tiene en cuenta el despliegue en VPS. El orden busca que nada nuevo llegue a producción sin copias probadas ni visibilidad.
+Olas 0 a 6, con una 2-bis y una 3-bis. Cada una es desplegable por separado. **El orden vigente es el de la sección 6.4**, que tiene en cuenta el despliegue en VPS. El orden busca que nada nuevo llegue a producción sin copias probadas ni visibilidad.
 
 ### Ola 0 — Protección inmediata (horas, sin tocar código de producto)
 
@@ -258,7 +258,8 @@ Orden de retirada: adaptador `kairos` en modo `shadow` junto a los actuales, com
 | S-02 Bloqueo global del login | Media | **Alta** | Con el servicio en internet, diez peticiones anónimas dejan a todos sin iniciar sesión |
 | S-03 Ciclo de vida de credenciales | Media | **Alta** | Varias máquinas y personas: hace falta cambiar contraseñas, revocar sesiones, caducar y rotar claves |
 | S-08 Sin límite de tasa por clave | Baja | **Media** | Una clave filtrada o un agente en bucle agota la base o Ollama de todos |
-| S-04 Modelo `beam:cloud` | Media | **Media, bloqueante** | En un VPS hay que decidir dónde corre la extracción: modelo local en CPU, modelo en la nube con consentimiento, o extracción desactivada |
+| S-04 Modelo `beam:cloud` | Media | **Resuelto como diseño** | Los modelos de lenguaje serán de nube (sección 6.3); se sustituye por consentimiento por proyecto y capa de proveedores |
+| S-01 Huecos en la redacción de secretos | Media | **Alta** | El contenido capturado se envía a proveedores externos |
 | S-06 / O-01 Copias sin cifrar en el mismo host | Baja / Alta | **Alta** | Un VPS se pierde o se compromete entero: la copia debe salir cifrada a otro sitio |
 | S-09 Proxy de Ollama expone toda la API | Baja | **Media** | Más superficie si cualquier contenedor del VPS alcanza la red de inferencia |
 | O-06 `host.docker.internal` en Linux | Media | **Alta** | El VPS es Linux: sin `extra_hosts` el proxy no alcanza a Ollama |
@@ -277,7 +278,28 @@ Orden de retirada: adaptador `kairos` en modo `shadow` junto a los actuales, com
 | Servidor | Endurecimiento del host (SSH por clave, actualizaciones automáticas), límites de recursos, rotación de logs, alertas, copia externa cifrada programada |
 | Prueba | Ensayo completo en un VPS de pruebas o proyecto Compose aislado antes del corte; prueba de restauración desde la copia externa |
 
-### 6.3 Orden revisado
+### 6.3 Proveedores de modelos
+
+**Decidido por el usuario (2026-11-10):** Ollama está instalado en el VPS, y los modelos de lenguaje serán de nube: los modelos cloud de Ollama, los de OpenAI (Codex) y los de Claude. Enviar contenido a un proveedor externo deja de ser un riesgo por confirmar (S-04) y pasa a ser el diseño; lo que hay que construir es el control sobre ese envío.
+
+Hoy solo existe un proveedor: la clase `Ollama` de `memory_platform/providers.py:52`, que llama a `/api/chat` y `/api/embed` del proxy, con un único modelo (`MEMORY_LLM_MODEL`, por defecto `beam:cloud`). Los modelos cloud de Ollama ya funcionan por ese camino. OpenAI y Claude necesitan adaptadores nuevos.
+
+| Bloque | Contenido |
+|---|---|
+| Embeddings locales | Mantener `nomic-embed-text` en el Ollama del VPS. Cambiar de modelo de embeddings obliga a recalcular todos los vectores, y así el texto completo de la memoria no sale del servidor para indexarse |
+| Capa de proveedores | Interfaz única para extracción y respuestas de corpus, con adaptadores Ollama, OpenAI y Claude (SDK oficial de cada uno); modelo y proveedor configurables por uso |
+| Cadena de respaldo | Orden de proveedores con cambio automático ante error, límite de tasa o plazo; cortacircuitos; el resultado indica qué proveedor respondió |
+| Consentimiento por proyecto | La política del proyecto declara qué proveedores externos puede usar; sin consentimiento, extracción desactivada. Documentado en el alta |
+| Redacción antes de enviar | S-01 sube a **alta**: el filtro de secretos es la última barrera antes de un tercero |
+| Coste y límites | Presupuesto diario por proyecto, métricas de tokens y coste por proveedor, lotes asíncronos para el reprocesado masivo |
+| Procedencia | Cada extracción guarda proveedor, modelo y versión del prompt, para poder rehacerla y comparar calidad entre modelos (M-05) |
+| Secretos y salida | Claves de API como secretos de Docker; salida de red limitada a los hosts de los proveedores configurados |
+
+**Por decidir:** autenticación de OpenAI y Claude. Un servicio en un servidor debe usar claves de API de cada proveedor; las suscripciones de Codex o Claude Code están ligadas a un usuario y a su cliente, no a un servicio.
+
+Este bloque entra en la Ola 3, antes de exponer el servicio.
+
+### 6.4 Orden revisado
 
 1. Ola 0 (protección inmediata).
 2. Ola 1 (cerrar `retrieval-quality`), **sin** el despliegue T-38 en la instalación local si el destino va a ser el VPS: T-38 se convierte en el despliegue al VPS.
@@ -288,8 +310,8 @@ Orden de retirada: adaptador `kairos` en modo `shadow` junto a los actuales, com
 
 ## 7. Decisiones que necesita el plan
 
-1. ~~Orden de Ola 1 y Ola 2~~: **resuelto por la sección 6.3**; las olas 2 y 3 van antes de exponer el servicio. Queda decidir si T-38 se ejecuta también en la instalación local o solo en el VPS.
-2. **Modelo por defecto**: mantener `beam:cloud` con aviso explícito o pasar a un modelo local.
+1. ~~Orden de Ola 1 y Ola 2~~: **resuelto por la sección 6.4**; las olas 2 y 3 van antes de exponer el servicio. Queda decidir si T-38 se ejecuta también en la instalación local o solo en el VPS.
+2. ~~Modelo por defecto~~: **resuelto**, modelos de nube con embeddings locales (sección 6.3). Queda decidir la autenticación de OpenAI y Claude (claves de API) y el orden de la cadena de respaldo.
 3. **Canal de distribución del CLI** mientras npm siga bloqueado.
 4. ~~Alcance de la Ola 3~~: **resuelto**, completa, por la exposición a internet.
 5. ~~Uso del plugin~~: **resuelto**, desde varias máquinas con Kairos en un VPS (sección 6). Quedan por decidir el modelo de extracción en el VPS, cuántas personas lo usarán y si la instalación local se migra o se empieza de cero.
