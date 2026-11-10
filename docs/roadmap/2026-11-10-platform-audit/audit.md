@@ -3,6 +3,7 @@
 - **Fecha**: 2026-11-10 · **Base**: rama `feat/retrieval-quality`, commit `dbe6aa6`
 - **Método**: tres auditorías de solo lectura (backend, seguridad estática, operación/producto/roadmap). No se ejecutó nada contra la instalación desplegada. Los costes de rendimiento son por inspección de código, sin `EXPLAIN`.
 - **Estado**: propuesta. No es un plan aprobado ni un ledger; cada ola se convierte en iniciativa con `/dev-cycle` cuando se decida.
+- **Plan vigente**: las secciones 4 a 7 de este documento recogen cómo evolucionó el plan durante la conversación. El plan que manda es el [plan director](plan.md), con la [integración en custom-agents](custom-agents-integration.md). Los hallazgos de las secciones 1 a 3 siguen vigentes.
 
 ## 1. Veredicto
 
