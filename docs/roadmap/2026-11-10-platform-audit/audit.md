@@ -109,7 +109,7 @@ Deudas aceptadas en `retrieval-quality`, que este plan recoge: marcar filas anti
 
 ## 4. Plan de mejora
 
-Ocho olas (0 a 6, con una 3-bis). Cada una es desplegable por separado. El orden busca que nada nuevo llegue a producción sin copias probadas ni visibilidad.
+Olas 0 a 6, con una 2-bis y una 3-bis. Cada una es desplegable por separado. **El orden vigente es el de la sección 6.3**, que tiene en cuenta el despliegue en VPS. El orden busca que nada nuevo llegue a producción sin copias probadas ni visibilidad.
 
 ### Ola 0 — Protección inmediata (horas, sin tocar código de producto)
 
@@ -247,16 +247,55 @@ Orden de retirada: adaptador `kairos` en modo `shadow` junto a los actuales, com
 - **En Kairos**: los requisitos de la tabla anterior. Activar lectura real (`read`) solo tras las olas 1 y 2 y con M-01 y S-05 hechos.
 - **Orden**: publicación primero (bajo riesgo, reconstruible), lectura después, episodios y estado de tareas al final.
 
-## 6. Decisiones que necesita el plan
+## 6. Despliegue en un VPS con acceso desde varias máquinas
 
-1. **Orden de Ola 1 y Ola 2**: se recomienda intercalar la Ola 2 antes de T-38. La alternativa es desplegar antes con una copia manual verificada (Ola 0) y asumir el resto.
+**Decidido por el usuario (2026-11-10):** Kairos correrá en un VPS con Docker y se usará desde otras máquinas. Hoy está pensado para una sola máquina: los puertos solo escuchan en `127.0.0.1` (`docker-compose.yml:113,143`) y Ollama corre en el host. `docs/server-install.md` tiene una sección de servidor remoto y hay un `Caddyfile.example`, pero el cambio de exposición reordena el plan.
+
+### 6.1 Hallazgos que suben de severidad
+
+| ID | Antes | Ahora | Motivo |
+|---|---|---|---|
+| S-02 Bloqueo global del login | Media | **Alta** | Con el servicio en internet, diez peticiones anónimas dejan a todos sin iniciar sesión |
+| S-03 Ciclo de vida de credenciales | Media | **Alta** | Varias máquinas y personas: hace falta cambiar contraseñas, revocar sesiones, caducar y rotar claves |
+| S-08 Sin límite de tasa por clave | Baja | **Media** | Una clave filtrada o un agente en bucle agota la base o Ollama de todos |
+| S-04 Modelo `beam:cloud` | Media | **Media, bloqueante** | En un VPS hay que decidir dónde corre la extracción: modelo local en CPU, modelo en la nube con consentimiento, o extracción desactivada |
+| S-06 / O-01 Copias sin cifrar en el mismo host | Baja / Alta | **Alta** | Un VPS se pierde o se compromete entero: la copia debe salir cifrada a otro sitio |
+| S-09 Proxy de Ollama expone toda la API | Baja | **Media** | Más superficie si cualquier contenedor del VPS alcanza la red de inferencia |
+| O-06 `host.docker.internal` en Linux | Media | **Alta** | El VPS es Linux: sin `extra_hosts` el proxy no alcanza a Ollama |
+| B-02 / B-07 Sin pool ni plazos | Alta / Media | **Alta** | Varios clientes concurrentes por red |
+| B-01 / O-07 Sin logs ni métricas | Alta | **Alta, bloqueante** | No se puede operar un servicio expuesto sin registro de accesos y errores |
+
+### 6.2 Trabajo nuevo que aparece
+
+| Bloque | Contenido |
+|---|---|
+| Exposición | TLS con renovación automática (Caddy), solo 443 abierto, cortafuegos, cabeceras, IP real del cliente propagada desde el proxy de confianza |
+| Inferencia | Ollama como servicio de Compose o del host con `extra_hosts`; dimensionar CPU y memoria para `nomic-embed-text`; decisión sobre el modelo de extracción |
+| Identidad | Un usuario por persona y una clave por máquina, con alcance por proyecto; guía de alta y de baja; clave propia para el plugin con `publish` y `validate` |
+| Clientes | CLI y adaptador del plugin apuntando a la URL HTTPS; comportamiento sin conexión (la cola de envío ya existe) y latencia de red en el contexto de inicio |
+| Migración | Trasladar la instalación local al VPS: copia verificada, restauración, comparación de manifiestos, corte |
+| Servidor | Endurecimiento del host (SSH por clave, actualizaciones automáticas), límites de recursos, rotación de logs, alertas, copia externa cifrada programada |
+| Prueba | Ensayo completo en un VPS de pruebas o proyecto Compose aislado antes del corte; prueba de restauración desde la copia externa |
+
+### 6.3 Orden revisado
+
+1. Ola 0 (protección inmediata).
+2. Ola 1 (cerrar `retrieval-quality`), **sin** el despliegue T-38 en la instalación local si el destino va a ser el VPS: T-38 se convierte en el despliegue al VPS.
+3. Ola 2 (operación fiable) y Ola 3 (privacidad y control de acceso) **completas**: ambas pasan a ser requisito previo a exponer el servicio.
+4. **Ola 2-bis nueva: despliegue en VPS** (tabla 6.2), que termina con la migración y el corte.
+5. Ola 6 (plugin) en modo `shadow` contra el VPS; después lectura real y retirada de Kwipu y Graphiti.
+6. Ola 3-bis (recuerdos fiables), Ola 4 (funcionalidades) y Ola 5 (mantenibilidad).
+
+## 7. Decisiones que necesita el plan
+
+1. ~~Orden de Ola 1 y Ola 2~~: **resuelto por la sección 6.3**; las olas 2 y 3 van antes de exponer el servicio. Queda decidir si T-38 se ejecuta también en la instalación local o solo en el VPS.
 2. **Modelo por defecto**: mantener `beam:cloud` con aviso explícito o pasar a un modelo local.
 3. **Canal de distribución del CLI** mientras npm siga bloqueado.
-4. **Alcance de la Ola 3**: completa, o solo S-01 y S-04 antes de las funcionalidades nuevas.
-5. **Uso del plugin**: solo en esta máquina o también desde otras. Lo segundo exige publicar Kairos con HTTPS y adelanta la Ola 3.
+4. ~~Alcance de la Ola 3~~: **resuelto**, completa, por la exposición a internet.
+5. ~~Uso del plugin~~: **resuelto**, desde varias máquinas con Kairos en un VPS (sección 6). Quedan por decidir el modelo de extracción en el VPS, cuántas personas lo usarán y si la instalación local se migra o se empieza de cero.
 6. **Captura de sesiones** en proyectos con plugin y CLI de Kairos: quién captura.
 7. **Retirada de Kwipu y Graphiti**: versión mayor inmediata o periodo con aviso.
 
-## 7. No comprobado
+## 8. No comprobado
 
 Estado real de contenedores, volúmenes y copias; contenido de `.env` y `.private/`; CVE de las versiones fijadas; si `beam:cloud` ejecuta en remoto; comportamiento de los hooks en macOS y Windows reales; planes de ejecución (`EXPLAIN`) de las consultas señaladas; en el plugin, si `capabilities.py` admite una capacidad nueva sin tocar ese fichero y el contenido de `phase4-knowledge-gate.md`.
