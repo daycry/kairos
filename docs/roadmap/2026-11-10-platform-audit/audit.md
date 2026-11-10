@@ -192,6 +192,8 @@ Antes de empezar: ampliar el conjunto de evaluación con las combinaciones que f
 
 **Veredicto: viable, con esfuerzo medio.** El plugin (versión 3.2.3) ya tiene el hueco hecho: un puerto de conocimiento (`purpose: "knowledge"` con `knowledge.check/publish/read/rebuild`) y un contrato de adaptador en `skills/knowledge-services/backends/`. Añadir Kairos es un adaptador nuevo, sin tocar el núcleo. Hoy el plugin no menciona Kairos ni declara ningún servidor MCP.
 
+**Alcance decidido por el usuario (2026-11-10):** Kairos sustituye a Kwipu y a Graphiti y pasa a ser el único sistema de memoria externo del plugin. La memoria local (`docs/knowledge/` en git) sigue siendo la de serie y la fuente de verdad.
+
 ### 5.1 Encaje
 
 | Uso | En el plugin | En Kairos | Encaje |
@@ -223,7 +225,23 @@ Antes de empezar: ampliar el conjunto de evaluación con las combinaciones que f
 | Caducidad y rotación de claves | Pendiente | S-03 |
 | Acceso desde otras máquinas (hoy solo `127.0.0.1`; HTTPS obligatorio fuera de loopback) | Depende del uso | Decisión 5 |
 
-### 5.4 Encaje en el plan: Ola 6
+### 5.4 Sustitución de Kwipu y Graphiti
+
+Ser el único backend externo simplifica el plugin y sube la exigencia sobre Kairos.
+
+| Aspecto | Consecuencia |
+|---|---|
+| Migración de datos | No hace falta: los backends son proyecciones reconstruibles del Markdown. Basta `rebuild` contra Kairos |
+| Código del plugin | Se retiran `backends/markdown_export.py` y `backends/graphiti*.py`, sus funciones en `capabilities.py` y sus pasos de `/setup`. El cliente MCP se extrae de `graphiti.py` antes de borrarlo. El contrato de adaptador se conserva |
+| Decisiones registradas | ADR nuevo que sustituye a ADR-020 (Graphiti) y ADR-021 (Kwipu); ADR-018 (Markdown como fuente) se mantiene |
+| Compatibilidad | Es un cambio rompedor para quien use Kwipu o Graphiti: versión mayor del plugin o un periodo con aviso de retirada |
+| Paridad funcional | Antes de retirar, comprobar qué intenciones de lectura sirve hoy Graphiti (grafo de entidades y relaciones, consulta temporal, `group_id`) y cubrirlas con `search`, `context`, `timeline` y el grafo de Kairos. **Pendiente de verificar**: no se ha comparado función por función |
+| Fiabilidad | Sin backend alternativo, una caída de Kairos deja al plugin solo con la memoria local. La degradación a búsqueda local ya existe en el plugin; las olas 1 y 2 pasan a ser requisito previo al cambio, no recomendación |
+| Acceso | Si el plugin se usa en varias máquinas o por varias personas, Kairos necesita HTTPS, gestión de usuarios y rotación de claves (S-02, S-03) antes de activarse |
+
+Orden de retirada: adaptador `kairos` en modo `shadow` junto a los actuales, comparación de resultados, cambio de lectura a Kairos, y retirada de Kwipu y Graphiti en la versión siguiente.
+
+### 5.5 Encaje en el plan: Ola 6
 
 - **En el repositorio del plugin**: adaptador `kairos`, cliente MCP genérico con bearer, capacidad en `/setup` y `/doctor`, tests y evals según sus convenciones. Puede empezar en paralelo en modo `shadow` contra el contrato actual, como hizo Graphiti. El repositorio tiene trabajo sin comitear en la rama `fix/plugin-audit-remediation`: la integración parte de ahí cuando se cierre.
 - **En Kairos**: los requisitos de la tabla anterior. Activar lectura real (`read`) solo tras las olas 1 y 2 y con M-01 y S-05 hechos.
@@ -237,6 +255,7 @@ Antes de empezar: ampliar el conjunto de evaluación con las combinaciones que f
 4. **Alcance de la Ola 3**: completa, o solo S-01 y S-04 antes de las funcionalidades nuevas.
 5. **Uso del plugin**: solo en esta máquina o también desde otras. Lo segundo exige publicar Kairos con HTTPS y adelanta la Ola 3.
 6. **Captura de sesiones** en proyectos con plugin y CLI de Kairos: quién captura.
+7. **Retirada de Kwipu y Graphiti**: versión mayor inmediata o periodo con aviso.
 
 ## 7. No comprobado
 
