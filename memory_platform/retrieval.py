@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from . import models as m
 from .errors import MemoryError, NotFound
+from .observability import count_provider_error, log_failure, record_layer
 from .providers import Embeddings, canonical, sha
 
 _VECTOR_EXECUTOR=ThreadPoolExecutor(max_workers=2,thread_name_prefix='kairos-vectors')
@@ -107,6 +108,7 @@ class Retrieval:
         await self._scope(actor, request.project_ids)
         layers = request.layers if request.layers is not None else ['episodic', 'documental']
         async def run(layer):
+            started, outcome = time.monotonic(), 'unavailable'
             try:
                 async with asyncio.timeout(self.settings.request_timeout):
                     if layer == 'episodic':
@@ -119,9 +121,13 @@ class Retrieval:
                         values, branches = await getattr(self, '_'+layer)(actor, request)
                         failed = sum(v['status'] != 'ok' for v in branches.values())
                         status = {'status': ('partial' if values else 'unavailable') if failed else ('ok' if branches else 'off'), 'count': len(values), 'providers': branches}
+                    outcome = status['status']
                     return layer, values, status
-            except Exception:
+            except Exception as exc:
+                log_failure('layer_failed', exc, 'warning', layer=layer)
                 return layer, [], {'status': 'unavailable', 'count': 0}
+            finally:
+                record_layer(layer, time.monotonic()-started, outcome)
         async def vectors():
             if not request.semantic or not request.q.strip() or not set(layers).intersection({'episodic', 'documental'}):
                 return 'semantic', [], {'status': 'off', 'count': 0}
@@ -131,6 +137,7 @@ class Retrieval:
             # Who failed decides the reason: the embeddings provider -> provider_error; the plazo (configured or the caller's budget) -> timeout;
             # anything else (database, scan) -> store_error.
             phase = 'store'
+            started = time.monotonic()
             try:
                 budget = getattr(self.settings, 'embedding_query_timeout', 10.0)
                 if request.semantic_budget_ms is not None:
@@ -139,6 +146,7 @@ class Retrieval:
                 async with asyncio.timeout(budget):
                     deadline=time.monotonic()+budget
                     if not await asyncio.to_thread(self.store.has_vectors, actor, request.project_ids, self.settings.embedding_model):
+                        record_layer('semantic', time.monotonic()-started, 'off')
                         return 'semantic', [], {'status': 'off', 'count': 0, 'reason': 'no_vectors'}
                     phase = 'provider'
                     embedded = await self.embeddings.embed(request.q, query=True)
@@ -148,10 +156,18 @@ class Retrieval:
                 truncated = bool(getattr(values, 'candidates_truncated', False)) or any(value.get('candidates_truncated', False) for value in values)
                 candidate_limit = max((value.get('candidate_limit', 0) for value in values), default=0) or getattr(values, 'candidate_limit', 10000)
                 values = [hit(value) for value in values if value['layer'] in layers and value['project_id'] in request.project_ids and value.get('category') not in request.exclude_categories]
-                return 'semantic', values, {'status': 'partial' if truncated else 'ok', 'count': len(values), 'candidate_limit': candidate_limit, 'candidates_truncated': truncated}
+                status = 'partial' if truncated else 'ok'
+                record_layer('semantic', time.monotonic()-started, status)
+                return 'semantic', values, {'status': status, 'count': len(values), 'candidate_limit': candidate_limit, 'candidates_truncated': truncated}
             except Exception as exc:
                 timed_out = isinstance(exc, TimeoutError) or getattr(exc, 'code', None) == 'semantic_deadline_exceeded'
-                return 'semantic', [], {'status': 'unavailable', 'count': 0, 'reason': 'timeout' if timed_out else 'provider_error' if phase == 'provider' else 'store_error'}
+                if phase == 'provider' and isinstance(exc, TimeoutError) and not getattr(exc, 'kairos_counted', False):
+                    # The layer's own plazo expired while the embedding was in flight: `counted` only saw the cancellation, so it is counted here.
+                    count_provider_error('embed', 'provider_timeout')
+                reason = 'timeout' if timed_out else 'provider_error' if phase == 'provider' else 'store_error'
+                log_failure('layer_failed', exc, 'warning', layer='semantic', reason=reason)
+                record_layer('semantic', time.monotonic()-started, 'unavailable')
+                return 'semantic', [], {'status': 'unavailable', 'count': 0, 'reason': reason}
         results = await asyncio.gather(*(run(layer) for layer in dict.fromkeys(layers)), vectors())
         ranked, backends = {}, {}
         for layer, values, status in results:

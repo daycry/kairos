@@ -35,9 +35,9 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 4 — FTS por idioma + trigram (C-05 · P4) | 6 | 6 | 100% | 0 / 27h | 2,18 / 3,61h | 0 / 0,91h | 0 / 1090k |
 | Fase 5 — Troceado para embeddings (C-06 · P2) | 7 | 7 | 100.0% | 0 / 28h | 1,43 / 4h | 0 / 1h | 0 / 1200k |
 | Fase 6 — Híbrida con degradación y CLI (C-04 · P3) | 4 | 4 | 100.0% | 0 / 12h | 0 / 1,6h | 0 / 0,4h | 0 / 470k |
-| Fase 7 — Observabilidad (C-07 · P12) — en paralelo desde T-06 | 0 | 4 | 0% | 0 / 18h | 0 / 2,6h | 0 / 0,64h | 0 / 770k |
+| Fase 7 — Observabilidad (C-07 · P12) — en paralelo desde T-06 | 4 | 4 | 100.0% | 0 / 18h | 0,49 / 2,6h | 0 / 0,64h | 0 / 770k |
 | Fase 8 — Integración, revisión y activación | 0 | 5 | 0% | 0 / 26h | 0 / 4,31h | 0 / 1,06h | 0 / 1280k |
-| **TOTAL** | **29** | **38** | **76.3%** | **0 / 173h** | **6,64 / 26,03h** | **0 / 6,5h** | **0 / 7780k** |
+| **TOTAL** | **33** | **38** | **86.8%** | **0 / 173h** | **7,13 / 26,03h** | **0 / 6,5h** | **0 / 7780k** |
 
 > Las horas de este ledger son **base** (sin el margen del 20 %); con margen: humanas 207,6 h, IA 31,2 h. Las horas IA y los tokens son estimaciones (ratio 300.000 tok/h no calibrado).
 
@@ -1097,127 +1097,152 @@ RED: `packages/kairos-cli/tests/dispatcher.test.mjs (3 casos de contexto automat
 
 ## Fase 7 — Observabilidad (C-07 · P12) — en paralelo desde T-06
 
-**Estado**: borrador · **Estimado**: 18h base (21.6h con margen) · **Real**: — · **Coste est.**: 1.080 € · **Tokens est.**: 700k in / 70k out
+**Estado**: completado · **Estimado**: 18h base (21.6h con margen) · **Real**: — · **Coste est.**: 1.080 € · **Tokens est.**: 700k in / 70k out
 
 ### T-30 — Logging JSON con redacción y `request_id`
 
 - **Descripción**: Crear `memory_platform/observability.py` con un formateador JSON de una línea (`ts`, `level`, `event`, y en búsquedas `request_id`, `layer`, `duration_ms`) que reutiliza `privacy.py` para redactar secretos, e instalarlo en `memory-api` y `memory-worker`.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Los logs de la API y del worker son JSON de una línea con nivel, evento, duración e identificador de petición, con los secretos redactados, y todo fallo antes silencioso deja traza con el tipo de excepción.
+- **Estado**: completado
 - **Tiempo humano**: est. 5h · real —
-- **Tiempo IA (ejec.)**: est. 0,72h · real —
+- **Tiempo IA (ejec.)**: est. 0,72h · real 0,49h (medido: ventana única de usage-meter compartida por T-30…T-33, 20 min de reloj, imputada aquí una sola vez)
 - **Supervisión**: est. 0,18h (≈25 % IA) · real —
 - **Previsión IA**: 195k in / 20k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-11
 - **Dependencias**: T-06
 - **Tipo**: backend
-- **Archivos**: `memory_platform/observability.py`, `memory_platform/app.py`, `memory_platform/worker.py`, `memory_platform/privacy.py`, `memory_platform/tests/test_observability.py`
+- **Archivos**: `memory_platform/observability.py`, `memory_platform/app.py`, `memory_platform/worker.py`, `memory_platform/privacy.py`, `memory_platform/tests/test_observability.py`, `memory_platform/activity.py`, `memory_platform/mcp.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:rq .` → la salida contiene `MEMORY_TEST_RESULT` con `"passed": true`, `failures: 0`, `errors: 0`, `skipped: 0` (incluye `test_observability` con CA-32 en rojo antes de crear el módulo)
+  - Evidencia (2026-11-11): `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 467}` (`docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:rq7 .`, exit 0; 412 de la fase 6 + 55 nuevas: 21 en `test_observability`, 34 en `test_metrics`; reparto corregido tras la revisión, intento 2); incluye `test_observability` con CA-32, request_id propagado de la respuesta a las líneas de capa y fallos, y la regla estática sin `except Exception` mudo.
+  - Cobertura B-01 (`grep -n "except Exception" memory_platform/*.py`, 12 manejadores): 11 registran con `log_event`/`log_failure` o relanzan (`activity.py` sondeo, `app.py` readiness y línea de acceso, `mcp.py` `safe`, `retrieval.py` liberación del hueco vectorial (relanza), capa y capa semántica, `worker.py` latido y fallo inesperado, `observability.py` cola de métricas); el handler global `@app.exception_handler(Exception)` registra `unhandled_exception`. 0 sin traza; 1 justificado: `admin.py` (final del módulo) es el CLI, que termina diciendo el tipo de excepción sin credenciales y no vuelve a un servicio.
 
 **Criterios de aceptación**
-- [ ] CA-32: los logs de `memory-api` y `memory-worker` son JSON de una línea con `ts`, `level`, `event` y, en búsquedas, `request_id`, `layer`, `duration_ms`; los secretos sintéticos aparecen redactados
-- [ ] Un `request_id` se propaga de la petición a los logs de sus capas
-- [ ] No se registra la consulta ni el contenido, solo duraciones y códigos
+- [x] CA-32: los logs de `memory-api` y `memory-worker` son JSON de una línea con `ts`, `level`, `event` y, en búsquedas, `request_id`, `layer`, `duration_ms`; los secretos sintéticos aparecen redactados
+- [x] Un `request_id` se propaga de la petición a los logs de sus capas
+- [x] No se registra la consulta ni el contenido, solo duraciones y códigos
 
 **Subtareas**
-- [ ] Test en rojo (formato, redacción, request_id)
-- [ ] Implementar formateador y contexto de petición
-- [ ] Instalar en API y worker
+- [x] Test en rojo (formato, redacción, request_id)
+- [x] Implementar formateador y contexto de petición
+- [x] Instalar en API y worker
 
-**Notas**: Procedencia: spec CA-32, decisión P-05, riesgo R-08. Clase: capacidad nueva (test nuevo en rojo). Patrones: redacción en `memory_platform/privacy.py` y `scripts/deploy-memory.py:31` (`redact_output`); `grep` de `logging` en `memory_platform/*.py` vacío (sin patrón previo).
+**Notas**: Procedencia: spec CA-32, decisión P-05, riesgo R-08. Clase: capacidad nueva (test nuevo en rojo). Patrones: redacción en `memory_platform/privacy.py` y `scripts/deploy-memory.py:31` (`redact_output`); `grep` de `logging` en `memory_platform/*.py` vacío (sin patrón previo). **Implementación (2026-11-11)**: `memory_platform/observability.py` (formateador `JsonFormatter`, `configure_logging`, `log_event`, `log_failure`, `REQUEST_ID` como `ContextVar`); `app.main()` y `worker.serve()` lo instalan (`uvicorn.run(..., log_config=None, access_log=False)`: línea de acceso JSON propia `http_request` con `method`, `route` (plantilla, sin ids), `status`, `duration_ms`; las comprobaciones de salud solo a nivel info si fallan). Campos cerrados (`FIELDS`): cualquier otro nombre se descarta, así que una consulta o un contenido no pueden entrar por descuido; los textos pasan por `privacy.redact_log` (nueva, no lanza nunca). Un fallo registra `exc_type`, jamás el mensaje. El `X-Request-ID` ahora también viaja en las respuestas de error (`error()`), incluidas las 503 del handler global. Ajuste del plan director (B-01): `activity.py` y `mcp.py` se añaden a `Archivos` (los demás manejadores están en ficheros ya declarados). Decisión: las rutas de salud se registran a nivel debug salvo que fallen, para no inundar el log con el healthcheck de 15 s. **Revisión de dos lentes, intento 2 (2026-11-11, medido `retrieval-quality/T-30-fix1`: 0,02 h-IA)**: (gap 1) `configure_logging` deja el logger raíz con un único manejador JSON (quita los previos, también el Rich de FastMCP, que se guardan y se restauran en `remove_logging`), todos los loggers propagan a él y `httpx`/`httpcore` bajan a WARNING; `create_mcp` llama a `enforce_logging()` justo tras `FastMCP(...)`, que lo reinstala si FastMCP volvió a tocar la raíz (FastMCP no ofrece un parámetro para no instalarlo). En registros de terceros `event` es el nombre del logger, `msg` va redactado y truncado a 300 y de `exc_info` solo sale `exc_type`. Tests: `test_every_logger_of_the_process_ends_in_one_json_line_with_no_secret` (una línea JSON por logger, DSN con secreto sintético y traceback ausentes, httpx INFO suprimido) y `test_the_root_logger_keeps_only_the_json_handler_even_after_fastmcp_is_created`. (gap 6) la línea de acceso usa el valor cerrado `mcp` para el Mount `/mcp` (`MOUNT_ROUTES`, `mount_label`; otro Mount sería `mount`; se calcula antes de enrutar porque el Mount reescribe la ruta y la ruta interior sería `/`); test `test_mcp_requests_are_logged_with_the_closed_route_mcp`. (gap 8) `_clean` redacta primero y trunca después; test con un token sintético que cruza el corte de 200 y el de 300 (`test_a_token_that_crosses_the_field_limit_is_still_redacted`). (gap 9) reparto corregido: 21 tests en `test_observability` y 34 en `test_metrics` (467 en total). El manejador de `getMessage()` del formateador captura solo `TypeError/ValueError/KeyError/IndexError` para no violar la regla estática B-01. Evidencia: `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 467}` (`docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:rq7 .`, exit 0, 2026-11-11); puerta offline `docker run --rm --network=none -e MEMORY_RETRIEVAL_EVAL=1 kairos-test:rq7 python -m memory_platform.tests.run_postgres` exit 0 (`RETRIEVAL_EVAL_RESULT` con `gate.passed: true`, 2026-11-11).
+
+
+RED: `memory_platform/tests/test_observability.py (formato JSON, redaccion, request_id, except sin traza)` falló con unittest: ImportError cannot import name 'observability' from 'memory_platform' (modulo inexistente) · 2026-11-11.
 
 ### T-31 — Registro de métricas Prometheus con `prometheus_client` fijado
 
 - **Descripción**: Añadir `prometheus_client` fijado en `requirements.txt` y el registro de métricas: histograma `kairos_retrieval_layer_seconds{layer}`, contador `kairos_provider_errors_total{provider,code}` y gauge `kairos_jobs_queue_depth{state,destination}` calculado desde `memory.jobs` al servir `/metrics`, con etiquetas de valores cerrados.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: El servicio expone métricas Prometheus con latencia por capa de búsqueda, errores de proveedor por código y profundidad de la cola de trabajos, con etiquetas de valores cerrados.
+- **Estado**: completado
 - **Tiempo humano**: est. 5h · real —
-- **Tiempo IA (ejec.)**: est. 0,72h · real —
+- **Tiempo IA (ejec.)**: est. 0,72h · real — (incluido en la ventana medida de T-30)
 - **Supervisión**: est. 0,18h (≈25 % IA) · real —
 - **Previsión IA**: 195k in / 20k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-11
 - **Dependencias**: T-30
 - **Tipo**: backend
-- **Archivos**: `memory_platform/observability.py`, `memory_platform/requirements.txt`, `memory_platform/tests/test_metrics.py`
+- **Archivos**: `memory_platform/observability.py`, `memory_platform/requirements.txt`, `memory_platform/tests/test_metrics.py`, `memory_platform/privacy.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:rq .` → la salida contiene `MEMORY_TEST_RESULT` con `"passed": true`, `failures: 0`, `errors: 0`, `skipped: 0` (incluye `test_metrics`: formato y etiquetas en rojo antes del cambio)
   - `grep -n "prometheus_client==" memory_platform/requirements.txt` → versión exacta fijada
+  - Evidencia (2026-11-11): `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 467}` (`docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:rq7 .`, exit 0; 412 de la fase 6 + 55 nuevas: 21 en `test_observability`, 34 en `test_metrics`; reparto corregido tras la revisión, intento 2); incluye `test_metrics` (nombres y etiquetas, valores cerrados, cola desde `memory.jobs` con PostgreSQL real).
+  - `grep -n "prometheus_client==" memory_platform/requirements.txt` → `8:prometheus_client==0.23.1` (versión exacta; el Dockerfile la instala en `api`, `worker` y `test` con `pip install -r requirements.txt`, y el build de `test` la importó).
 
 **Criterios de aceptación**
-- [ ] Las tres métricas se registran con los nombres y etiquetas del spec CA-30
-- [ ] Las etiquetas solo toman valores cerrados (capas, proveedores, códigos, estados); ninguna lleva ids de proyecto, consultas o credenciales
-- [ ] La profundidad de cola refleja `memory.jobs` en el momento de la lectura
+- [x] Las tres métricas se registran con los nombres y etiquetas del spec CA-30
+- [x] Las etiquetas solo toman valores cerrados (capas, proveedores, códigos, estados); ninguna lleva ids de proyecto, consultas o credenciales
+- [x] La profundidad de cola refleja `memory.jobs` en el momento de la lectura
 
 **Subtareas**
-- [ ] Tests en rojo del registro
-- [ ] Implementar métricas y consulta de cola
-- [ ] Fijar versión de `prometheus_client`
+- [x] Tests en rojo del registro
+- [x] Implementar métricas y consulta de cola
+- [x] Fijar versión de `prometheus_client`
 
-**Notas**: Procedencia: spec CA-30, CA-31, decisión P-05, riesgo R-08. Clase: capacidad nueva (test nuevo en rojo). Varios procesos uvicorn exigirían modo multiproceso: hoy es uno solo (se comprueba en `memory_platform/app.py`).
+**Notas**: Procedencia: spec CA-30, CA-31, decisión P-05, riesgo R-08. Clase: capacidad nueva (test nuevo en rojo). Varios procesos uvicorn exigirían modo multiproceso: hoy es uno solo (se comprueba en `memory_platform/app.py`). **Implementación (2026-11-11)**: registro propio `CollectorRegistry` en `observability.py` (no el global: `/metrics` solo muestra métricas `kairos_*`). `kairos_retrieval_layer_seconds{layer}` (histograma), `kairos_provider_errors_total{provider,code}`, `kairos_jobs_queue_depth{state,destination}` (se recalcula con `refresh_queue_depth(store)` al servir `/metrics`: un `GROUP BY state, destination` sobre `memory.jobs`, con todos los pares cerrados a 0 para no dejar valores viejos; sin método nuevo en `Store`, así que `store_surface.json` no cambia; un fallo de base se registra y no tumba `/metrics`). Etiquetas cerradas por `closed()`: capas `episodic/documental/temporal/semantic`, proveedores `extract/embed`, códigos de error conocidos, estados y destinos de `memory.jobs`; todo lo demás es `other`. Un único proceso uvicorn (`app.main`, sin `workers`): no hace falta modo multiproceso; un test lo fija. Límite documentado en `docs/operations.md`: las métricas que ocurren en el proceso del worker (contadores de proveedor, `kairos_worker_*`) no salen por `/metrics` porque el worker no sirve HTTP; de él se leen logs y la cola. Archivos extra: `memory_platform/privacy.py` (`redact_log`, compartido con T-30). **Revisión de dos lentes, intento 2 (2026-11-11)**: (gap 2b) nueva serie `kairos_jobs_failed{destination,code}` derivada de `memory.jobs` (`state='failed'` agrupado por destino y `error_code`) al servir `/metrics`; `code` cerrado sobre `JOB_CODES` (los códigos de proveedor/worker más `destination_retired` y `superseded`), `other` para el resto y NULL; todos los pares a 0 para no dejar valores viejos. Diferencia documentada en `docs/operations.md`: `kairos_provider_errors_total` es un contador en memoria del proceso de la API (consultas) y no ve el worker; `kairos_jobs_failed` cuenta trabajos fallados, no intentos, y sí lo recoge. Tests: `test_failed_jobs_are_derived_from_the_table_by_closed_code` y la comprobación contra PostgreSQL real en `test_the_queue_depth_follows_real_jobs`. (gap 4) la lectura de la cola va con `SET LOCAL statement_timeout = 2000`, cuenta solo estados no terminales (`pending`, `running`, `failed`, `unknown`; `succeeded` deja de ser una serie de `kairos_jobs_queue_depth`) para usar el índice `memory_job_queue(state, available_at)`, y se cachea 10 s (`QUEUE_CACHE_SECONDS`, también el fallo); sin migraciones. Tests `test_the_scrape_query_is_bounded_and_skips_the_terminal_bulk` y `test_a_loop_of_scrapes_reads_the_database_once_per_window`. (gap 5) gauge `kairos_jobs_queue_scrape_success` (1/0); si falla la base valen los últimos buenos y el gauge a 0; test `test_a_failing_read_is_visible_in_the_scrape_success_gauge` y la ruta `/metrics`. Evidencia: `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 467}` (`docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:rq7 .`, exit 0, 2026-11-11); puerta offline `docker run --rm --network=none -e MEMORY_RETRIEVAL_EVAL=1 kairos-test:rq7 python -m memory_platform.tests.run_postgres` exit 0 (`RETRIEVAL_EVAL_RESULT` con `gate.passed: true`, 2026-11-11).
+
+
+RED: `memory_platform/tests/test_metrics.py RegistryTests (nombres, etiquetas cerradas, profundidad de cola)` falló con unittest: ImportError cannot import name 'observability' from 'memory_platform' (registro inexistente) · 2026-11-11.
 
 ### T-32 — Instrumentación de capas, proveedores y worker
 
 - **Descripción**: Instrumentar `Retrieval.search` (latencia por capa), `providers.py` (errores por código) y el worker (duración y errores de jobs). Resultado: cada búsqueda emite latencia por capa a logs y métricas.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Cada búsqueda registra la latencia de sus capas en logs y métricas, los fallos del proveedor de embeddings y extracción se cuentan por código y la espera por el semáforo de embeddings queda medida.
+- **Estado**: completado
 - **Tiempo humano**: est. 4h · real —
-- **Tiempo IA (ejec.)**: est. 0,58h · real —
+- **Tiempo IA (ejec.)**: est. 0,58h · real — (incluido en la ventana medida de T-30)
 - **Supervisión**: est. 0,14h (≈25 % IA) · real —
 - **Previsión IA**: 155k in / 15k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-11
 - **Dependencias**: T-31
 - **Tipo**: backend
-- **Archivos**: `memory_platform/retrieval.py`, `memory_platform/providers.py`, `memory_platform/worker.py`, `memory_platform/tests/test_metrics.py`, `memory_platform/tests/test_retrieval.py`
+- **Archivos**: `memory_platform/retrieval.py`, `memory_platform/providers.py`, `memory_platform/worker.py`, `memory_platform/tests/test_metrics.py`, `memory_platform/tests/test_retrieval.py`, `memory_platform/observability.py`, `docs/operations.md`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:rq .` → la salida contiene `MEMORY_TEST_RESULT` con `"passed": true`, `failures: 0`, `errors: 0`, `skipped: 0` (incluye casos de instrumentación en rojo antes del cambio)
+  - Evidencia (2026-11-11): `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 467}` (`docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:rq7 .`, exit 0; 412 de la fase 6 + 55 nuevas: 21 en `test_observability`, 34 en `test_metrics`; reparto corregido tras la revisión, intento 2); incluye `InstrumentationTests` (capas, fallo de capa medido, respuestas sin cambio, errores por código, saturación) y `WorkerDeadlineTests` (deuda R1).
+  - Puerta de calidad offline (`docker run --rm --network=none -e MEMORY_RETRIEVAL_EVAL=1 kairos-test:rq7 python -m memory_platform.tests.run_postgres`) → exit 0, `gate.passed: true`, `failures: []`, `fused` MRR 0,971528 (idéntico al de la fase 6): la instrumentación no cambia resultados.
 
 **Criterios de aceptación**
-- [ ] CA-30 (contenido): tras una búsqueda, `kairos_retrieval_layer_seconds` tiene muestras para las capas ejecutadas
-- [ ] Un fallo del proveedor incrementa `kairos_provider_errors_total` con su `code`
-- [ ] La instrumentación no cambia respuestas ni orden de resultados (suite verde)
+- [x] CA-30 (contenido): tras una búsqueda, `kairos_retrieval_layer_seconds` tiene muestras para las capas ejecutadas
+- [x] Un fallo del proveedor incrementa `kairos_provider_errors_total` con su `code`
+- [x] La instrumentación no cambia respuestas ni orden de resultados (suite verde)
 
 **Subtareas**
-- [ ] Tests en rojo
-- [ ] Envolver las capas en `Retrieval.search`
-- [ ] Contar errores en `providers.py`
-- [ ] Instrumentar el worker
+- [x] Tests en rojo
+- [x] Envolver las capas en `Retrieval.search`
+- [x] Contar errores en `providers.py`
+- [x] Instrumentar el worker
 
-**Notas**: Procedencia: spec CA-30, CA-32. Clase: capacidad nueva (test nuevo en rojo). Patrón: capas en `memory_platform/retrieval.py:97-146`.
+**Notas**: Procedencia: spec CA-30, CA-32. Clase: capacidad nueva (test nuevo en rojo). Patrón: capas en `memory_platform/retrieval.py:97-146`. **Implementación (2026-11-11)**: `Retrieval.search` mide cada capa (`record_layer`: histograma + línea `retrieval_layer` con `request_id`, `layer`, `duration_ms`, `status`; la semántica solo si llegó a ejecutarse: `semantic: false`/embeddings desactivados no miden); un fallo mide igual y registra `layer_failed` (con `reason` en la semántica). `providers.py`: `counted()` envuelve `Ollama.extract`, `Embeddings.embed` y `embed_many` y cuenta `ProviderError.code` (un plazo vencido es `provider_timeout`); el error se relanza sin cambios. **Hallazgo B-14 (saturación del semáforo)**: `embedding_slot` mide la espera por el hueco único con `kairos_embedding_wait_seconds{caller}` (histograma; también cuando el llamante se cancela esperando) y `kairos_embedding_slots_in_use{caller}` (gauge), `caller` ∈ `query`/`worker`; el semáforo es de cada proceso (la API y el worker no lo comparten), así que `/metrics` ve el de las consultas. Worker: `kairos_worker_jobs_total{destination,outcome}` y `kairos_worker_job_seconds{destination}` más los eventos `job_completed`/`job_failed`/`heartbeat_failed`/`lease_lost`. **Deuda de la fase 6 (Minor R1)**: `worker_deadline(settings, inputs, stored_vector=True)` solo suma la llamada extra de re-embebido (120 s) cuando hay vector guardado; `Worker.run_once` empieza con `stored_vector=False` y, en cuanto `stored_item_vector` devuelve un vector, amplía el plazo en curso con `limit.reschedule(limit.when()+embedding_job_timeout(settings, 1))`, de modo que el caso de dimensiones distintas conserva su plazo completo y un proveedor colgado sin vector guardado retiene al worker 910 s como máximo en vez de 1030 s (con los valores por defecto). Tests: sin vector guardado el trabajo vence con `provider_timeout` en cuanto agota los lotes; con vector de otras dimensiones la llamada extra cabe. Los tests de plazo viven en `test_metrics.py`. Archivos extra: `observability.py` y `docs/operations.md`. **Revisión de dos lentes, intento 2 (2026-11-11)**: (gap 2a) cuando el plazo de la capa semántica (`asyncio.timeout(budget)` exterior) vence durante la fase de embed, `counted` solo ve la cancelación; ahora `retrieval.py` cuenta `provider_timeout` en ese caso, sin doble cómputo si el timeout propio del proveedor ya lo contó (`counted` marca la excepción con `kairos_counted`). Tests `test_a_query_whose_budget_runs_out_during_the_embedding_counts_provider_timeout` y `test_the_providers_own_timeout_is_counted_once`. (gap 7) `test_with_a_stored_vector_of_other_dimensions_the_extra_call_still_fits` ahora usa llamada por lotes 0,35 s + llamada extra 0,35 s = 0,7 s, por encima del plazo base (0,5 s) y dentro del ampliado (1,0 s): comprobado que FALLA (`fail_job` con `provider_timeout`) al quitar temporalmente el `reschedule` del worker, y pasa al restaurarlo. Evidencia: `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 467}` (`docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:rq7 .`, exit 0, 2026-11-11); puerta offline `docker run --rm --network=none -e MEMORY_RETRIEVAL_EVAL=1 kairos-test:rq7 python -m memory_platform.tests.run_postgres` exit 0 (`RETRIEVAL_EVAL_RESULT` con `gate.passed: true`, 2026-11-11).
+
+
+RED: `memory_platform/tests/test_metrics.py InstrumentationTests y WorkerDeadlineTests (capas, errores de proveedor, saturacion, plazo del worker)` falló con unittest: ImportError cannot import name 'observability' from 'memory_platform'; worker_deadline() got an unexpected keyword argument 'stored_vector' · 2026-11-11.
 
 ### T-33 — Endpoint `/metrics` solo en red interna y ajuste de despliegue
 
 - **Descripción**: Servir `GET /metrics` (`text/plain; version=0.0.4`) en `memory-api` con `MEMORY_METRICS=internal` (valores `off`/`internal`/`admin`), sin publicarlo por nginx en 5173 y sin exponer puerto nuevo en `docker-compose.yml`; rechazar peticiones que lleguen por el proxy público. Resultado: métricas accesibles solo desde `memory-data`.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: `GET /metrics` solo responde en la red interna (o con credencial de administrador, o queda desactivado con `MEMORY_METRICS`) y nunca se publica por nginx ni por el proxy HTTPS.
+- **Estado**: completado
 - **Tiempo humano**: est. 4h · real —
-- **Tiempo IA (ejec.)**: est. 0,58h · real —
+- **Tiempo IA (ejec.)**: est. 0,58h · real — (incluido en la ventana medida de T-30)
 - **Supervisión**: est. 0,14h (≈25 % IA) · real —
 - **Previsión IA**: 155k in / 15k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-11
 - **Dependencias**: T-31, T-32
 - **Tipo**: devops
-- **Archivos**: `memory_platform/app.py`, `memory_platform/config.py`, `memory_platform/nginx.conf`, `memory_platform/Caddyfile.example`, `docker-compose.yml`, `memory_platform/tests/test_metrics.py`
+- **Archivos**: `memory_platform/app.py`, `memory_platform/config.py`, `memory_platform/nginx.conf`, `memory_platform/Caddyfile.example`, `docker-compose.yml`, `memory_platform/tests/test_metrics.py`, `docs/configuration.md`, `docs/operations.md`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:rq .` → la salida contiene `MEMORY_TEST_RESULT` con `"passed": true`, `failures: 0`, `errors: 0`, `skipped: 0` (incluye CA-30/CA-31 en rojo antes del cambio, con `TestClient`)
   - `grep -n "metrics" memory_platform/nginx.conf memory_platform/Caddyfile.example` → el proxy bloquea `/metrics` (`return 404` o equivalente)
   - `docker compose --profile memory config | grep -c "8790:"` → sin puerto nuevo publicado para la API
+  - Evidencia (2026-11-11): `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 467}` (`docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:rq7 .`, exit 0; 412 de la fase 6 + 55 nuevas: 21 en `test_observability`, 34 en `test_metrics`; reparto corregido tras la revisión, intento 2); incluye `MetricsRouteTests` (CA-30 interno/proxy/off/admin, CA-31 consulta y token sintéticos ausentes de `/metrics` y de los logs) y `DeploymentTests`.
+  - `grep -n "metrics" memory_platform/nginx.conf memory_platform/Caddyfile.example` → `nginx.conf:41` (comentario) y `:42: location ~* ^(/memory-api)?/+metrics { return 404; }`; `Caddyfile.example:5-7`: `@metrics path /metrics /metrics/* /memory-api/metrics /memory-api/metrics/*` + `respond @metrics 404` antes de `reverse_proxy`.
+  - `docker compose --profile memory config | grep -c "8790:"` → `0` (igual que en el commit base: sin puerto nuevo; `memory-api` conserva `127.0.0.1:8790:8790`, que la configuración renderiza como `published: "8790"`); `MEMORY_METRICS: internal` aparece en el entorno compartido.
 
 **Criterios de aceptación**
-- [ ] CA-30: desde fuera de la red interna (cabecera de proxy público) se rechaza; con acceso interno responde 200 `text/plain; version=0.0.4` con las tres métricas
-- [ ] CA-31: con una consulta y un token sintéticos en búsquedas, ninguno aparece en `/metrics` ni en los logs
-- [ ] `MEMORY_METRICS=off` desactiva la ruta (404)
-- [ ] `/metrics` no se publica en nginx 5173
+- [x] CA-30: desde fuera de la red interna (cabecera de proxy público) se rechaza; con acceso interno responde 200 `text/plain; version=0.0.4` con las tres métricas
+- [x] CA-31: con una consulta y un token sintéticos en búsquedas, ninguno aparece en `/metrics` ni en los logs
+- [x] `MEMORY_METRICS=off` desactiva la ruta (404)
+- [x] `/metrics` no se publica en nginx 5173
 
 **Subtareas**
-- [ ] Tests en rojo (acceso y fuga de datos)
-- [ ] Implementar la ruta y los tres modos
-- [ ] Bloquear `/metrics` en `nginx.conf` y `Caddyfile.example`
-- [ ] Documentar `MEMORY_METRICS` en `docs/configuration.md`
+- [x] Tests en rojo (acceso y fuga de datos)
+- [x] Implementar la ruta y los tres modos
+- [x] Bloquear `/metrics` en `nginx.conf` y `Caddyfile.example`
+- [x] Documentar `MEMORY_METRICS` en `docs/configuration.md`
 
-**Notas**: Procedencia: spec CA-30, CA-31, decisión P-05 (solo red interna, `MEMORY_METRICS=internal`). Clase: capacidad nueva (test nuevo en rojo). Patrones: ajustes de entorno en `memory_platform/config.py`, redes `memory-data` y publicación de `memory-web` en `docker-compose.yml`, `memory_platform/nginx.conf`.
+**Notas**: Procedencia: spec CA-30, CA-31, decisión P-05 (solo red interna, `MEMORY_METRICS=internal`). Clase: capacidad nueva (test nuevo en rojo). Patrones: ajustes de entorno en `memory_platform/config.py`, redes `memory-data` y publicación de `memory-web` en `docker-compose.yml`, `memory_platform/nginx.conf`. **Implementación (2026-11-11)**: `Settings.metrics_mode` (`off`/`internal`/`admin`, defecto `internal`; `MEMORY_METRICS` inválido impide arrancar, igual que `Settings(metrics_mode=...)`). `internal`: la ruta responde 200 `text/plain; version=0.0.4; charset=utf-8` salvo que la petición lleve cabeceras de proxy (`X-Forwarded-For/Host/Proto/Port`, `X-Real-IP`, `Forwarded`), en cuyo caso 404; `admin`: exige credencial (401 sin ella) de administrador (`is_admin`, 403 si no) y admite proxy; `off`: no se registra la ruta (404). `include_in_schema=False`: no aparece en OpenAPI ni en `docs/contracts` (el diff de contrato queda intacto; `test_contract_additive` en verde, 34 herramientas MCP). nginx bloquea `/metrics` y `/memory-api/metrics` con regex (gana a los prefijos), el ejemplo de Caddy para el VPS con HTTPS lo bloquea en el nombre público y el puerto 8790 sigue enlazado solo a `127.0.0.1`; el raspado se hace desde un contenedor de `memory-data` o desde el propio servidor sin cabeceras de proxy. Un proxy mal configurado que reenvíe `/metrics` con `X-Forwarded-*` sigue recibiendo 404 de la API (doble barrera). Documentado en `docs/configuration.md` (`MEMORY_METRICS`, `MEMORY_LOG_LEVEL`) y `docs/operations.md` (sección «Observabilidad: logs y métricas»). Un solo proceso uvicorn comprobado (`app.main` sin `workers`, Dockerfile sin `--workers`). **Revisión de dos lentes, intento 2 (2026-11-11)**: (gap 3) **Desviación consciente de CA-30**: el modo `internal` decide por ausencia de cabeceras de proxy y no por origen (en Docker la IP de origen no distingue redes de forma fiable). `docs/operations.md` dice ahora exactamente quién la lee (cualquier cliente que llegue directo a `memory-api:8790` sin cabeceras de proxy: contenedores de sus redes y el host por `127.0.0.1:8790`) y recomienda `MEMORY_METRICS=admin` u `off` en un VPS compartido. Evidencia: `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 467}` (`docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:rq7 .`, exit 0, 2026-11-11); puerta offline `docker run --rm --network=none -e MEMORY_RETRIEVAL_EVAL=1 kairos-test:rq7 python -m memory_platform.tests.run_postgres` exit 0 (`RETRIEVAL_EVAL_RESULT` con `gate.passed: true`, 2026-11-11).
 
 ---
+
+
+RED: `memory_platform/tests/test_metrics.py MetricsRouteTests y DeploymentTests (acceso interno, proxy, off/admin, fuga CA-31)` falló con unittest: ImportError cannot import name 'observability' from 'memory_platform'; /metrics sin ruta (404) y Settings sin metrics_mode · 2026-11-11.
 
 ## Fase 8 — Integración, revisión y activación
 
@@ -1491,3 +1516,28 @@ Lentes: A+B+D en un solo revisor de contexto fresco (C sin motivos). N1-N6 del i
 | R1 | Minor | `worker_deadline` (`worker.py:31,105`) suma siempre la posible llamada extra (120 s), también sin vector guardado: un proveedor colgado retiene al trabajador hasta 1030 s en vez de 910 s | T-28 | deuda aceptada → Fase 7 | Lente D |
 | R2 | Minor | `docs/operations.md:186,189` y `docs/configuration.md:51` siguen diciendo que el job no pasa de 900 s + 10 s | T-28 | deuda aceptada → T-34 | Lente A |
 | R3 | Minor | `strict=True` rechaza `500.0` aunque el esquema publicado es `integer`; la documentación solo menciona `1.5` | T-26 | deuda aceptada → T-34 (documentar) | Lente B |
+
+## Revisión de dos lentes — intento 1: Fase 7 (T-30…T-33) — observabilidad (T-30, T-31, T-32, T-33)
+
+Lentes: A, B, C+D (C por ruta `docker-compose.yml` y `nginx.conf`; D por ruta `worker.py`). `scope-check.py --base a3b4a55` exit 0 (20 en alcance). Contratos sin cambios; 34 herramientas. Lente A: resto de criterios ✓.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | CA-32 solo se cumple en `kairos` y `uvicorn.error`: FastMCP instala un handler de texto en root (`mcp.py:31`) y httpx, mcp, asyncio y psycopg salen en texto de varias líneas, con tracebacks y mensajes sin redactar (reproducido: DSN con secreto en claro) | T-30 | corregido (intento 2) | Lentes A (#1) y B (#2) |
+| 2 | Important | Errores de proveedor invisibles en `/metrics`: los timeouts de embed en consulta nunca cuentan (el `asyncio.timeout(budget)` exterior vence antes, `retrieval.py:146,152`), y los errores del worker (extract y embed de documentos) son un contador de otro proceso; el spec (`spec.md:62`) pide derivarlos de la base al leer | T-31/T-32 | corregido (intento 2) | Lentes A (#2) y B (#1) |
+| 3 | Minor | El modo `internal` decide por ausencia de cabeceras de proxy, no por origen; no hay decisión registrada frente a CA-30 y `operations.md:224` promete «desde `memory-data`» | T-33 | corregido (intento 2) | Lentes A (#4) y C (#1) |
+| 4 | Minor | `/metrics` abre una conexión y hace `GROUP BY` sobre todo `memory.jobs` (sin purga ni índice con `destination`) en cada lectura, sin `statement_timeout` | T-31 | corregido (intento 2) | Lentes C (#2) y D (#3) |
+| 5 | Minor | Si falla la base, `/metrics` sirve la última profundidad de cola sin estado que lo distinga | T-31 | corregido (intento 2) | Lente B (#4) |
+| 6 | Minor | Las peticiones MCP se registran con `route='unmatched'`, como un 404 | T-30 | corregido (intento 2) | Lente B (#3) |
+| 7 | Minor | El test de la ampliación del plazo (`test_metrics.py:223-235`) pasa sin el `reschedule` | T-32 | corregido (intento 2) | Lentes A (#3) y B (#5) |
+| 8 | Minor | `_clean` corta a 200 caracteres antes de redactar: un token partido puede escapar a la redacción | T-30 | corregido (intento 2) | Lente B (fuera de lente, verificado en código) |
+| 9 | Minor | El ledger reparte 18/27 tests entre `test_observability` y `test_metrics`; el código tiene 17/28 | T-30…T-33 | corregido (intento 2) | Lente A (#5) |
+
+## Revisión de dos lentes — intento 2: Fase 7 (T-30…T-33) — correcciones del intento 1 (T-30, T-31, T-32, T-33)
+
+Lentes: A+B+C+D en un solo revisor de contexto fresco. Gaps 1-9 del intento 1: ✓ cerrados (root con un único handler JSON; secretos en `%s`, dict y `password=` redactados; `provider_timeout` contado sin doble conteo; `kairos_jobs_failed` con cardinalidad acotada; contratos sin cambios, 34 herramientas; `pytest` 54 passed, `test_contract_additive` 8/8). Sin gaps Critical ni Important: la fase queda cerrada. Los Minor pasan como deuda a la Fase 8.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| N1 | Minor | Con `MEMORY_LOG_LEVEL=DEBUG` los loggers de terceros (mcp) vuelcan argumentos de herramientas, consultas incluidas; `operations.md` no lo advierte (CWE-532) | T-30 | deuda aceptada → Fase 8 | Lente C, sonda |
+| N2 | Minor | Las consultas del scrape leen todas las filas `failed` históricas (terminal, sin purga, `superseded` frecuente) sin índice con `destination`/`error_code`; si pasan de 2 s se pierde también la profundidad de cola; el texto dice «solo no terminales» | T-31 | deuda aceptada → Fase 8 | Lente D, estimación sin medir |

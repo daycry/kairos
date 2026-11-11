@@ -196,6 +196,18 @@ def fusion_from_env(environ=None) -> tuple:
     return int(raw_k), bonus, weights
 
 
+METRICS_MODES = ('off', 'internal', 'admin')
+
+
+def metrics_mode_from_env(environ=None) -> str:
+    """Exposure of `GET /metrics` (MEMORY_METRICS, decision P-05): `off` (no route), `internal` (default: only requests that did not come through a proxy) or `admin` (administrator credential)."""
+    environ = os.environ if environ is None else environ
+    value = environ.get('MEMORY_METRICS', 'internal').strip().lower()
+    if value not in METRICS_MODES:
+        raise ValueError('MEMORY_METRICS must be one of: ' + ', '.join(METRICS_MODES))
+    return value
+
+
 @dataclass(frozen=True)
 class Settings:
     dsn: str
@@ -223,8 +235,11 @@ class Settings:
     fusion_k: int = DEFAULT_FUSION_K
     fusion_validated_bonus: float = DEFAULT_FUSION_VALIDATED_BONUS
     fusion_weights: dict = field(default_factory=dict)
+    metrics_mode: str = 'internal'
 
     def __post_init__(self):
+        if self.metrics_mode not in METRICS_MODES:
+            raise ValueError('metrics_mode must be one of: ' + ', '.join(METRICS_MODES))
         check_fusion(self.fusion_k, self.fusion_validated_bonus, self.fusion_weights)
 
     @classmethod
@@ -248,6 +263,7 @@ class Settings:
         batch_size = embed_batch_size()
         batch_timeout, job_timeout_max = embed_timeouts()
         fusion_k, fusion_bonus, fusion_weights = fusion_from_env()
+        metrics_mode = metrics_mode_from_env()
         return cls(
             dsn=secret('MEMORY_DSN', required=True), allowed_origins=origins,
             cookie_secure=secure, session_ttl=int(os.environ.get('MEMORY_SESSION_TTL', '43200')),
@@ -266,4 +282,5 @@ class Settings:
             chunk_chars=chunk_chars, chunk_overlap=chunk_overlap, chunk_max=chunk_max, embedding_batch_size=batch_size,
             embedding_batch_timeout=batch_timeout, embedding_job_timeout_max=job_timeout_max,
             fusion_k=fusion_k, fusion_validated_bonus=fusion_bonus, fusion_weights=fusion_weights,
+            metrics_mode=metrics_mode,
         )

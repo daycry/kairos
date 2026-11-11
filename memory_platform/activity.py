@@ -4,6 +4,7 @@ import base64
 import json
 import time
 from .errors import MemoryError
+from .observability import log_failure
 
 
 def page_cursor(kind, project_id, last_id):
@@ -63,6 +64,7 @@ async def stream_activity(request, store, actor, project_id, first_page, *, dura
         except MemoryError as exc:
             yield frame('error', {'error': {'code': exc.code, 'message': exc.message}})
             return
-        except Exception:
+        except Exception as exc:
+            log_failure('activity_stream_failed', exc, 'warning')
             yield frame('error', {'error': {'code': 'activity_unavailable', 'message': 'Activity is temporarily unavailable'}})
             return

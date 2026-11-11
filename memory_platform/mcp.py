@@ -8,6 +8,7 @@ from pydantic import Field
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from .errors import MemoryError, Unauthorized
+from .observability import enforce_logging, log_failure
 from . import models as m
 
 _actor = ContextVar('memory_mcp_actor', default=None)
@@ -36,6 +37,7 @@ def create_mcp(retrieval, allowed_origins=(), store=None, settings=None):
                         'poll event_status after acceptance or timeout. Never capture secrets or '
                         'transcripts without consent. publish_document is only for locally approved '
                         'sources; verify document_status. Acceptance is not completed indexing.'))
+    enforce_logging()  # FastMCP installs its own text handler on the root logger: only the JSON one may stay (CA-32)
 
     def actor():
         value = _actor.get()
@@ -48,7 +50,8 @@ def create_mcp(retrieval, allowed_origins=(), store=None, settings=None):
             return await operation
         except MemoryError as exc:
             raise ValueError(exc.message) from None
-        except Exception:
+        except Exception as exc:
+            log_failure('mcp_tool_failed', exc, 'error')
             raise ValueError('Memory service temporarily unavailable') from None
 
     async def stored(method, *args, **kwargs):

@@ -4,7 +4,9 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 import signal
 import socket
+import time
 import uuid
+from . import observability
 from .config import Settings, embedding_job_timeout
 from .store import Store
 from .store_jobs import stored_item_vector
@@ -25,10 +27,11 @@ def embed_plan(settings, payload):
     return text, chunks, (1 if len(chunks) <= 1 and not chunks.truncated else len(chunks)+1)
 
 
-def worker_deadline(settings, inputs):
-    """Seconds an embed job of `inputs` planned inputs may take: the batches of the n+1 inputs plus, when there are several, the single-text call
-    that a stored item vector of other dimensions needs after the fragments."""
-    return embedding_job_timeout(settings, inputs)+(embedding_job_timeout(settings, 1) if inputs > 1 else 0)+JOB_DEADLINE_MARGIN
+def worker_deadline(settings, inputs, stored_vector=True):
+    """Seconds an embed job of `inputs` planned inputs may take: the batches of the n+1 inputs plus, when there are several AND an item vector is
+    stored (`stored_vector`), the single-text call that a stored vector of other dimensions needs after the fragments. Without a stored vector
+    that call can never happen, so it is not added (`Worker.run_once` starts without it and extends the deadline once a stored vector is found)."""
+    return embedding_job_timeout(settings, inputs)+(embedding_job_timeout(settings, 1) if inputs > 1 and stored_vector else 0)+JOB_DEADLINE_MARGIN
 
 
 async def embed_receipt(provider, settings, payload, canonical_hash, item_vector=None):
@@ -84,15 +87,19 @@ class Worker:
         if not job:
             return False
         lost = asyncio.Event()
+        destination = observability.closed(job['destination'], observability.DESTINATIONS)
+        started, outcome = time.monotonic(), 'failed'
         async def heartbeat():
             while True:
                 await asyncio.sleep(max(0.1, self.settings.lease_seconds/3))
                 try:
                     renewed = await asyncio.to_thread(self.store.renew_lease, job['id'], job['fence'], self.settings.lease_seconds)
                     if not renewed:
+                        observability.log_event('lease_lost', 'warning', destination=destination)
                         lost.set()
                         return
-                except Exception:
+                except Exception as exc:
+                    observability.log_failure('heartbeat_failed', exc, 'warning', destination=destination)
                     lost.set()
                     return
         pulse = asyncio.create_task(heartbeat())
@@ -102,14 +109,18 @@ class Worker:
                 raise ProviderError('unsupported_destination')
             if job['destination'] == 'embed':
                 # Proportional to the number of batches the text needs (MEMORY_EMBED_BATCH_TIMEOUT each), up to MEMORY_EMBED_JOB_MAX_TIMEOUT.
-                deadline = worker_deadline(self.settings, embed_plan(self.settings, job['payload'])[2])
+                # The extra single-text call exists only when an item vector is stored: the deadline grows by it once that is known.
+                planned = embed_plan(self.settings, job['payload'])[2]
+                deadline = worker_deadline(self.settings, planned, stored_vector=False)
             else:
                 deadline = self.settings.provider_timeout+10
-            async with asyncio.timeout(deadline):
+            async with asyncio.timeout(deadline) as limit:
                 if job['destination'] == 'embed':
                     stored = None
-                    if embed_plan(self.settings, job['payload'])[2] > 1:
+                    if planned > 1:
                         stored = await asyncio.to_thread(stored_item_vector, self.store, job['project_id'], job['item_id'], job['resource_type'], job['version'], job['canonical_hash'], self.settings.embedding_model)
+                        if stored:
+                            limit.reschedule(limit.when()+embedding_job_timeout(self.settings, 1))
                     receipt = await embed_receipt(provider, self.settings, job['payload'], job['canonical_hash'], stored)
                 elif job['destination'] == 'extract':
                     # Extraction is explicitly scheduled, never inferred from a capture event.
@@ -124,24 +135,31 @@ class Worker:
             if job['destination'] == 'embed' and not receipt.get('verified'):
                 raise ProviderError('embedding_unverified')
             await asyncio.to_thread(self.store.complete_job, job['id'], job['fence'], receipt)
+            outcome = 'completed'
+            observability.log_event('job_completed', destination=destination, duration_ms=observability.elapsed_ms(started))
         except ProviderError as exc:
+            observability.log_failure('job_failed', exc, 'warning', destination=destination, code=exc.code, duration_ms=observability.elapsed_ms(started))
             if not lost.is_set():
                 retry_at = None
                 if exc.retryable and job['attempts'] < self.settings.max_attempts:
                     retry_at = datetime.now(timezone.utc)+timedelta(seconds=min(60, 2**job['attempts']))
                 await asyncio.to_thread(self.store.fail_job, job['id'], job['fence'], exc.code, retry_at, False)
-        except TimeoutError:
+        except TimeoutError as exc:
+            observability.log_failure('job_failed', exc, 'warning', destination=destination, code='provider_timeout', duration_ms=observability.elapsed_ms(started))
             if not lost.is_set():
                 retry_at = datetime.now(timezone.utc)+timedelta(seconds=30) if job['attempts'] < self.settings.max_attempts else None
                 await asyncio.to_thread(self.store.fail_job, job['id'], job['fence'], 'provider_timeout',
                                         retry_at, False)
         except MemoryError as exc:
+            observability.log_failure('job_failed', exc, 'warning', destination=destination, code=exc.code, duration_ms=observability.elapsed_ms(started))
             if not lost.is_set():
                 await asyncio.to_thread(self.store.fail_job, job['id'], job['fence'], exc.code)
-        except Exception:
+        except Exception as exc:
+            observability.log_failure('job_failed', exc, 'error', destination=destination, code='provider_error', duration_ms=observability.elapsed_ms(started))
             if not lost.is_set():
                 await asyncio.to_thread(self.store.fail_job, job['id'], job['fence'], 'provider_error')
         finally:
+            observability.record_job(destination, time.monotonic()-started, 'lost' if lost.is_set() else outcome)
             pulse.cancel()
             try:
                 await pulse
@@ -159,6 +177,7 @@ class Worker:
 
 
 async def serve():
+    observability.configure_logging()
     settings = Settings.from_env()
     worker = Worker(Store(settings.dsn, settings.project_maps, embedding_enabled=getattr(settings, 'embed_enabled', True)), settings)
     loop = asyncio.get_running_loop()
