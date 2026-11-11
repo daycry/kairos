@@ -133,6 +133,20 @@
             "title": "Semantic",
             "type": "boolean"
           },
+          "semantic_budget_ms": {
+            "anyOf": [
+              {
+                "description": "Optional: milliseconds the semantic layer may take, never more than the configured embeddings query deadline; when it runs out the lexical answer is returned with degraded timeout",
+                "maximum": 600000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Semantic Budget Ms"
+          },
           "tags": {
             "anyOf": [
               {
@@ -283,6 +297,35 @@
           "name"
         ],
         "title": "CorpusSelection",
+        "type": "object"
+      },
+      "Degraded": {
+        "additionalProperties": false,
+        "description": "Present when only the semantic layer fell short of what was asked: the lexical answer is complete and valid, but it is not the hybrid one.",
+        "properties": {
+          "layer": {
+            "const": "semantic",
+            "title": "Layer",
+            "type": "string"
+          },
+          "reason": {
+            "description": "timeout: the embeddings query deadline (or the request semantic_budget_ms) ran out; provider_error: the embeddings provider failed; store_error: the database failed while searching vectors (both with status unavailable, partial true); no_vectors: nothing is embedded for these projects; embeddings_disabled: the server runs without embeddings (status off)",
+            "enum": [
+              "timeout",
+              "provider_error",
+              "store_error",
+              "no_vectors",
+              "embeddings_disabled"
+            ],
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "layer",
+          "reason"
+        ],
+        "title": "Degraded",
         "type": "object"
       },
       "Details": {
@@ -1109,6 +1152,20 @@
             "title": "Semantic",
             "type": "boolean"
           },
+          "semantic_budget_ms": {
+            "anyOf": [
+              {
+                "description": "Optional: milliseconds the semantic layer may take, never more than the configured embeddings query deadline; when it runs out the lexical answer is returned with degraded timeout",
+                "maximum": 600000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Semantic Budget Ms"
+          },
           "tags": {
             "anyOf": [
               {
@@ -1140,6 +1197,18 @@
             "additionalProperties": true,
             "title": "Backends",
             "type": "object"
+          },
+          "degraded": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Degraded"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional: present only when the semantic layer alone fell short; `partial` keeps its meaning"
           },
           "items": {
             "items": {

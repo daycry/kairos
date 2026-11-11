@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
+import math
 import os
 import re
 from pathlib import Path
@@ -148,6 +149,53 @@ def embedding_job_timeout(settings, inputs: int) -> float:
     return min(ceiling, max(single, batches * getattr(settings, 'embedding_batch_timeout', DEFAULT_EMBED_BATCH_TIMEOUT)))
 
 
+# Fusion of the retrieval layers (reciprocal rank fusion). The values are the ones chosen with the evaluation gate; see
+# memory_platform/tests/retrieval_eval/fusion-tuning.json for the grid and the reason.
+DEFAULT_FUSION_K, FUSION_K_RANGE = 60, (1, 1000)
+DEFAULT_FUSION_VALIDATED_BONUS, FUSION_BONUS_RANGE = 0.0001, (0.0, 1.0)
+FUSION_LAYERS = ('episodic', 'documental', 'temporal', 'semantic')
+FUSION_WEIGHT_RANGE = (0.0, 10.0)
+
+
+def check_fusion(k, bonus, weights) -> None:
+    """Validate the fusion parameters (a hit adds `weight / (k + rank)` per layer, and `bonus` once when it is validated)."""
+    if isinstance(k, bool) or not isinstance(k, int) or not FUSION_K_RANGE[0] <= k <= FUSION_K_RANGE[1]:
+        raise ValueError('MEMORY_FUSION_K must be an integer between %d and %d' % FUSION_K_RANGE)
+    if isinstance(bonus, bool) or not isinstance(bonus, (int, float)) or not math.isfinite(bonus) or not FUSION_BONUS_RANGE[0] <= bonus <= FUSION_BONUS_RANGE[1]:
+        raise ValueError('MEMORY_FUSION_VALIDATED_BONUS must be a number between %s and %s' % FUSION_BONUS_RANGE)
+    if not isinstance(weights, dict):
+        raise ValueError('MEMORY_FUSION_WEIGHTS must map layers to weights')
+    for layer, weight in weights.items():
+        if layer not in FUSION_LAYERS:
+            raise ValueError('MEMORY_FUSION_WEIGHTS: unknown layer %r (expected one of %s)' % (layer, ', '.join(FUSION_LAYERS)))
+        if isinstance(weight, bool) or not isinstance(weight, (int, float)) or not math.isfinite(weight) or not FUSION_WEIGHT_RANGE[0] < weight <= FUSION_WEIGHT_RANGE[1]:
+            raise ValueError('MEMORY_FUSION_WEIGHTS: the weight of %s must be above %s and at most %s' % ((layer,) + FUSION_WEIGHT_RANGE))
+
+
+def fusion_from_env(environ=None) -> tuple:
+    """(k, validated bonus, weights per layer) from MEMORY_FUSION_K, MEMORY_FUSION_VALIDATED_BONUS and MEMORY_FUSION_WEIGHTS (`layer=weight,...`)."""
+    environ = os.environ if environ is None else environ
+    raw_k = environ.get('MEMORY_FUSION_K', str(DEFAULT_FUSION_K)).strip()
+    raw_bonus = environ.get('MEMORY_FUSION_VALIDATED_BONUS', str(DEFAULT_FUSION_VALIDATED_BONUS)).strip()
+    if not raw_k.isascii() or not raw_k.isdigit():
+        raise ValueError('MEMORY_FUSION_K must be an integer between %d and %d' % FUSION_K_RANGE)
+    try:
+        bonus = float(raw_bonus)
+    except ValueError:
+        raise ValueError('MEMORY_FUSION_VALIDATED_BONUS must be a number between %s and %s' % FUSION_BONUS_RANGE) from None
+    weights = {}
+    for part in (p for p in environ.get('MEMORY_FUSION_WEIGHTS', '').split(',') if p.strip()):
+        layer, separator, value = part.partition('=')
+        try:
+            if not separator:
+                raise ValueError()
+            weights[layer.strip()] = float(value)
+        except ValueError:
+            raise ValueError('MEMORY_FUSION_WEIGHTS must look like layer=weight,layer=weight') from None
+    check_fusion(int(raw_k), bonus, weights)
+    return int(raw_k), bonus, weights
+
+
 @dataclass(frozen=True)
 class Settings:
     dsn: str
@@ -172,6 +220,12 @@ class Settings:
     embedding_batch_size: int = DEFAULT_EMBED_BATCH
     embedding_batch_timeout: float = DEFAULT_EMBED_BATCH_TIMEOUT
     embedding_job_timeout_max: float = DEFAULT_EMBED_JOB_MAX_TIMEOUT
+    fusion_k: int = DEFAULT_FUSION_K
+    fusion_validated_bonus: float = DEFAULT_FUSION_VALIDATED_BONUS
+    fusion_weights: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        check_fusion(self.fusion_k, self.fusion_validated_bonus, self.fusion_weights)
 
     @classmethod
     def from_env(cls):
@@ -193,6 +247,7 @@ class Settings:
         chunk_chars, chunk_overlap, chunk_max = chunk_settings()
         batch_size = embed_batch_size()
         batch_timeout, job_timeout_max = embed_timeouts()
+        fusion_k, fusion_bonus, fusion_weights = fusion_from_env()
         return cls(
             dsn=secret('MEMORY_DSN', required=True), allowed_origins=origins,
             cookie_secure=secure, session_ttl=int(os.environ.get('MEMORY_SESSION_TTL', '43200')),
@@ -210,4 +265,5 @@ class Settings:
             embedding_worker_timeout=float(os.environ.get('MEMORY_EMBED_WORKER_TIMEOUT', '120')),
             chunk_chars=chunk_chars, chunk_overlap=chunk_overlap, chunk_max=chunk_max, embedding_batch_size=batch_size,
             embedding_batch_timeout=batch_timeout, embedding_job_timeout_max=job_timeout_max,
+            fusion_k=fusion_k, fusion_validated_bonus=fusion_bonus, fusion_weights=fusion_weights,
         )

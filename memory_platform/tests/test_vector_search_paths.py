@@ -361,6 +361,51 @@ class VectorSearchPathTests(unittest.TestCase):
         self.assertFalse(found.candidates_truncated)
         self.assertEqual(len(found), 29)
 
+    def test_has_vectors_is_an_exists_probe_over_embeddings_and_never_serializes_resources(self):
+        """B-09: readiness used to run the whole candidate query (to_jsonb of every current resource of the project) on every search."""
+        self.add(vectors(30, 768, 21))
+        statements = []
+        with self.spied_transaction(statements):
+            self.assertTrue(self.store.has_vectors(self.actor, [self.pid], MODEL))
+            self.assertFalse(self.store.has_vectors(self.actor, [self.pid], 'other-model'))
+        probes = [query for query, params in statements if 'memory.embeddings' in query]
+        self.assertEqual(len(probes), 2)
+        for query in probes:
+            self.assertIn('EXISTS', query.upper())
+            self.assertNotIn('to_jsonb', query)
+            self.assertNotIn('current_resources', query)
+        with self.store.transaction() as c:  # same meaning as before: only CURRENT resources count
+            c.execute('UPDATE memory.documents SET deleted=true WHERE project_id=%s', (self.pid,))
+        self.assertFalse(self.store.has_vectors(self.actor, [self.pid], MODEL))
+
+    def test_the_final_fetch_selects_the_winners_by_identity_before_serializing_rows(self):
+        """B-09: the payload fetch of the winners reads only their rows, not the whole project."""
+        corpus = vectors(40, 768, 22)
+        self.add(corpus)
+        statements = []
+        with self.spied_transaction(statements):
+            found = self.store.search_vectors(self.actor, [self.pid], corpus[4], MODEL, limit=5)
+        self.assertEqual(found[0]['item_id'], 'doc-0004')
+        fetches = [(query, params) for query, params in statements if 'current_resources' in query]
+        self.assertEqual(len(fetches), 1)
+        query, params = fetches[0]
+        self.assertIn('i.id=ANY(%s)', query)
+        self.assertIn('d.id=ANY(%s)', query)
+        wanted = {hit['item_id'] for hit in found}
+        self.assertEqual(sum(1 for value in params if isinstance(value, list) and set(value) == wanted), 2)  # once per resource type, never the whole project
+        self.assertEqual([hit['project_id'] for hit in found], [self.pid] * len(found))  # still only authorized projects
+
+    def test_a_foreign_project_is_not_reachable_through_the_identity_selection(self):
+        corpus = vectors(10, 768, 23)
+        self.add(corpus)
+        other = 'p-' + uuid.uuid4().hex[:10]
+        self.store.create_project(self.actor, {'id': other, 'title': 'Other project'})
+        self.add(corpus[:3], project=other, prefix='doc')  # the same item ids in another project
+        found = self.store.search_vectors(self.actor, [self.pid], corpus[1], MODEL, limit=10)
+        self.assertEqual({hit['project_id'] for hit in found}, {self.pid})
+        self.assertEqual(len(found), 10)
+
+
 class ExactFallbackSettingTests(unittest.TestCase):
     def test_default_and_validation(self):
         from memory_platform.config import exact_fallback_ms

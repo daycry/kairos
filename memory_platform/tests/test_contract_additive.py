@@ -58,6 +58,31 @@ def additive_violations(base, new, path='$'):
     return [] if layout(base) == layout(new) else [f'{path}: {base!r} became {new!r}']
 
 
+BUDGET_TOOLS = ('search', 'context')
+
+
+def without_budget(tool):
+    """The tool with only `semantic_budget_ms` taken out of its input schema (the one input added after the base commit)."""
+    stripped = json.loads(json.dumps(tool))
+    stripped['inputSchema']['properties'].pop('semantic_budget_ms', None)
+    return stripped
+
+
+def tool_differences(base, new, path='$'):
+    """Exact comparison of two tool definitions (text modulo layout): any added, removed or changed key is a difference."""
+    if isinstance(base, dict) and isinstance(new, dict):
+        found = [f'{path}.{key}: added' for key in new if key not in base] + [f'{path}.{key}: removed' for key in base if key not in new]
+        for key in base:
+            if key in new:
+                found.extend(tool_differences(base[key], new[key], f'{path}.{key}'))
+        return found
+    if isinstance(base, list) and isinstance(new, list):
+        if len(base) != len(new):
+            return [f'{path}: list changed length']
+        return [item for index, (old, current) in enumerate(zip(base, new)) for item in tool_differences(old, current, f'{path}[{index}]')]
+    return [] if layout(base) == layout(new) and type(base) is type(new) else [f'{path}: {base!r} became {new!r}']
+
+
 class ContractAdditiveTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -112,11 +137,33 @@ class ContractAdditiveTests(unittest.TestCase):
         with self.assertRaises(Exception):
             hit(dict(plain, matched_chunk={'ordinal': -1, 'char_start': 0, 'char_end': 1}))
 
-    def test_the_search_tool_still_has_its_previous_input_contract(self):
+    def test_every_tool_keeps_its_exact_contract_except_the_optional_budget_of_search_and_context(self):
+        # Exact equality (not only "additive"): a key that restricts the input (`maximum`, `additionalProperties`, `minLength`,
+        # `dependentRequired`...) would pass an additive rule and still break callers. The one legitimate change of the 34 tools
+        # is the optional `semantic_budget_ms` of `search` and `context` (review of phase 6): it is taken out and the rest compared.
+        before = {tool['name']: tool for tool in self.base['kairos-mcp.json']['tools']}
+        after = {tool['name']: tool for tool in self.exported['kairos-mcp.json']['tools']}
+        self.assertEqual(list(before), list(after))
+        for name in before:
+            current = without_budget(after[name]) if name in BUDGET_TOOLS else after[name]
+            self.assertEqual(tool_differences(before[name], current), [], name)
+        for name in BUDGET_TOOLS:
+            schema = after[name]['inputSchema']
+            self.assertEqual(set(schema['properties']) - set(before[name]['inputSchema']['properties']), {'semantic_budget_ms'}, name)
+            self.assertNotIn('semantic_budget_ms', schema.get('required', []), name)
+        self.assertIs(after['search']['inputSchema']['properties']['semantic']['default'], True)  # the existing default is not touched
+
+    def test_the_exact_check_rejects_a_restricting_key_anywhere_in_a_tool(self):
         before = next(tool for tool in self.base['kairos-mcp.json']['tools'] if tool['name'] == 'search')
-        after = next(tool for tool in self.exported['kairos-mcp.json']['tools'] if tool['name'] == 'search')
-        self.assertEqual(before, after)
-        self.assertIs(after['inputSchema']['properties']['semantic']['default'], True)  # the existing default is not touched
+        exported = next(tool for tool in self.exported['kairos-mcp.json']['tools'] if tool['name'] == 'search')
+        self.assertEqual(tool_differences(before, without_budget(exported)), [])
+        for name, damage in (('maximum', lambda s: s['properties']['limit'].update(maximum=3)),
+                             ('additionalProperties', lambda s: s.update(additionalProperties=False)),
+                             ('minLength', lambda s: s['properties']['q'].update(minLength=5)),
+                             ('dependentRequired', lambda s: s.update(dependentRequired={'layers': ['q']}))):
+            broken = json.loads(json.dumps(exported))
+            damage(broken['inputSchema'])
+            self.assertTrue(tool_differences(before, without_budget(broken)), name)
 
     def test_the_models_module_defines_the_field_once(self):
         self.assertIn('matched_chunk', models.Hit.model_fields)

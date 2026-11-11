@@ -53,7 +53,8 @@ def chunk_rows(store,receipt,text,vector):
 
 
 def stored_item_vector(store,project_id,item_id,resource_type,version,canonical_hash,model):
-    """The item vector already stored for exactly this version, hash and model (or None): the backfill reuses it instead of embedding the text again.
+    """The item vector already stored for exactly this version, hash and model (or None): the backfill keeps it instead of embedding the whole text again,
+    unless its dimensions differ from the fragments' (then the worker embeds the text once more, within the job deadline).
 
     A module function, not a Store method: the public surface of the store (`store_surface.json`) does not change.
     """

@@ -152,11 +152,16 @@ Guía completa: [servidor desde cero](docs/server-install.md) y [configuración]
 
 ## Conectar un agente
 
-El instalador `@daycry/kairos` configura Claude Code, Codex y OpenCode. Mientras el paquete no esté publicado en npm, se usa el tarball local:
+El instalador `@daycry/kairos` (versión 0.3.0) configura Claude Code, Codex y OpenCode. La 0.3.0 no está publicada en npm y el repositorio no incluye ningún tarball (`packages/kairos-cli/artifacts/` está en `.gitignore`): desde un clon, genera primero el tarball local y luego instálalo:
 
 ```powershell
+# Generar el tarball (no publica nada)
+cd packages/kairos-cli
+npm pack --ignore-scripts --offline --pack-destination ./artifacts
+cd ../..
+
 # Previsualizar (no modifica nada)
-npx --offline --yes --package ./packages/kairos-cli/artifacts/daycry-kairos-0.2.0.tgz kairos install `
+npx --offline --yes --package ./packages/kairos-cli/artifacts/daycry-kairos-0.3.0.tgz kairos install `
   --client all --root C:/laragon/www/mi-proyecto --url http://127.0.0.1:5173 `
   --project mi-proyecto --key-file C:/Private/kairos-agent.key --opencode-version 2 --dry-run
 

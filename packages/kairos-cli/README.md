@@ -6,13 +6,16 @@ Requiere **Node.js 20.12 o posterior**. El paquete no tiene dependencias npm, no
 
 ## Estado de distribución
 
-Nombre previsto: `@daycry/kairos`, versión `0.2.0`, ejecutable `kairos`. **No está publicado en npm**. Un nombre similar en el registro no acredita que sea este proyecto. Esta entrega se prueba mediante su tarball local; publicar requiere una acción autorizada independiente.
+Nombre previsto: `@daycry/kairos`, versión `0.3.0`, ejecutable `kairos`. **No está publicado en npm**. Un nombre similar en el registro no acredita que sea este proyecto. **Tampoco hay un tarball de la 0.3.0 en el repositorio**: `artifacts/` está en `.gitignore`, así que un clon nuevo no lo tiene y hay que generarlo. Publicar requiere una acción autorizada independiente.
 
-Una vez descargado el tarball, puede ejecutarse sin consultar el registro:
+Para usarlo desde un clon, genera primero el tarball (no publica nada) y ejecútalo sin consultar el registro; ambos comandos, desde esta carpeta:
 
 ```powershell
-npx --offline --yes --package ./daycry-kairos-0.2.0.tgz kairos --version
+npm pack --ignore-scripts --offline --pack-destination ./artifacts
+npx --offline --yes --package ./artifacts/daycry-kairos-0.3.0.tgz kairos --version
 ```
+
+Generar el tarball no lo da por revisado: `npm run release:check` lo comprueba y la 0.3.0 aún no lo ha pasado.
 
 La forma `npx @daycry/kairos install` sólo estará disponible cuando el paquete se publique y se compruebe esa distribución.
 
@@ -29,13 +32,13 @@ La forma `npx @daycry/kairos install` sólo estará disponible cuando el paquete
 Con terminal interactivo, el comando pregunta por los parámetros que falten y muestra una vista previa antes de aplicar:
 
 ```powershell
-npx --offline --yes --package ./daycry-kairos-0.2.0.tgz kairos install
+npx --offline --yes --package ./artifacts/daycry-kairos-0.3.0.tgz kairos install
 ```
 
 Ejemplo no interactivo para los tres clientes, inicialmente sólo vista previa:
 
 ```powershell
-npx --offline --yes --package ./daycry-kairos-0.2.0.tgz kairos install --client all --root C:/laragon/www/mi-proyecto --url http://127.0.0.1:5173 --project mi-proyecto --key-file C:/Private/kairos-agent.key --opencode-version 2 --dry-run
+npx --offline --yes --package ./artifacts/daycry-kairos-0.3.0.tgz kairos install --client all --root C:/laragon/www/mi-proyecto --url http://127.0.0.1:5173 --project mi-proyecto --key-file C:/Private/kairos-agent.key --opencode-version 2 --dry-run
 ```
 
 Después de revisar el resultado, sustituir `--dry-run` por **`--yes`** para aplicar. El `--yes` anterior a `--package` pertenece a npx; el que va después de `install` pertenece al instalador de Kairos.
@@ -65,7 +68,7 @@ Sin terminal interactivo, omitir `--yes` conserva el modo de vista previa. El in
 | OpenCode 1 | `opencode.json` | `mcp.kairos`, tipo `local`, `enabled: true` |
 | OpenCode 2 | `opencode.json` | `mcp.servers.kairos`, tipo `local`, `disabled: false` |
 
-Cada entrada apunta al ejecutable Node utilizado para instalar y a una copia estable de este paquete en `.kairos/runtime/0.2.0/`. No depende de que npx conserve su caché ni de exportar variables de entorno antes de abrir el cliente. El proxy lee el archivo privado al realizar solicitudes y envía la clave al servidor mediante `Authorization: Bearer`.
+Cada entrada apunta al ejecutable Node utilizado para instalar y a una copia estable de este paquete en `.kairos/runtime/0.3.0/`. No depende de que npx conserve su caché ni de exportar variables de entorno antes de abrir el cliente. El proxy lee el archivo privado al realizar solicitudes y envía la clave al servidor mediante `Authorization: Bearer`.
 
 `.kairos/installation.json` contiene la URL, el ID de proyecto, la ruta del archivo privado y los hashes del runtime; no la clave. Las copias de configuración se conservan en `.kairos/backups/`. `.kairos/.gitignore` excluye esos archivos de Git. Las copias pueden contener otros ajustes sensibles que ya existieran: proteger la carpeta mediante los permisos del sistema y evitar sincronizarla o publicarla.
 
@@ -76,8 +79,8 @@ Los clientes pueden requerir aprobar el servidor o confiar en el proyecto. El in
 ## Comprobar
 
 ```powershell
-npx --offline --yes --package ./daycry-kairos-0.2.0.tgz kairos doctor --root C:/laragon/www/mi-proyecto
-npx --offline --yes --package ./daycry-kairos-0.2.0.tgz kairos doctor --root C:/laragon/www/mi-proyecto --online
+npx --offline --yes --package ./artifacts/daycry-kairos-0.3.0.tgz kairos doctor --root C:/laragon/www/mi-proyecto
+npx --offline --yes --package ./artifacts/daycry-kairos-0.3.0.tgz kairos doctor --root C:/laragon/www/mi-proyecto --online
 ```
 
 La primera comprobación es local. `--online` añade únicamente `initialize`, `notifications/initialized`, `tools/list` y una consulta `projects`. Exige el conjunto mínimo de once herramientas de Kairos; admite herramientas adicionales. Un servidor anterior puede aparecer como `degraded` con `missing_tools`. No se guarda ninguna nota ni se activa captura para obtener un resultado verde.
@@ -89,8 +92,8 @@ La primera comprobación es local. `--online` añade únicamente `initialize`, `
 El instalador valida todos los destinos antes de escribir. Cada archivo se sustituye de forma atómica y el lote mantiene un diario. El lote completo no se presenta como una transacción multiarchivo: si falla una escritura pueden quedar cambios parciales, señalados por `partial_installation_recovery_required`.
 
 ```powershell
-npx --offline --yes --package ./daycry-kairos-0.2.0.tgz kairos recover --root C:/laragon/www/mi-proyecto --dry-run
-npx --offline --yes --package ./daycry-kairos-0.2.0.tgz kairos recover --root C:/laragon/www/mi-proyecto --yes
+npx --offline --yes --package ./artifacts/daycry-kairos-0.3.0.tgz kairos recover --root C:/laragon/www/mi-proyecto --dry-run
+npx --offline --yes --package ./artifacts/daycry-kairos-0.3.0.tgz kairos recover --root C:/laragon/www/mi-proyecto --yes
 ```
 
 La recuperación valida hashes, copias y destinos antes de mutar. Si otro proceso o el usuario modificaron un destino, se rechaza la recuperación automática para conservar esa modificación. No borrar manualmente el diario ni las copias para forzar una nueva instalación.
@@ -102,7 +105,7 @@ Si un proceso terminó abruptamente y dejó `install.lock`, añadir `--unlock` �
 El subcomando `mcp` es el proceso iniciado por los clientes:
 
 ```text
-node .kairos/runtime/0.2.0/bin/kairos.mjs mcp --url URL_BASE --key-file ARCHIVO_PRIVADO
+node .kairos/runtime/0.3.0/bin/kairos.mjs mcp --url URL_BASE --key-file ARCHIVO_PRIVADO
 ```
 
 Su entrada y salida usan mensajes JSON-RPC 2.0 delimitados por líneas. `stdout` contiene exclusivamente el protocolo; los diagnósticos saneados van a `stderr`. No se inventan IDs para notificaciones ni se convierten errores HTTP en respuestas de éxito. Las llamadas conservan IDs y contenido; los resultados inciertos deben reconciliarse con las herramientas de Kairos antes de reintentarlos.
@@ -121,11 +124,11 @@ La outbox privada se sitúa fuera del proyecto, por defecto en `%LOCALAPPDATA%/K
 
 Límites: 200 cuerpos, 10.000 registros y 8 MiB; cinco envíos por evento, espera por registro y hasta sesenta segundos ante fallos de transporte; inactividad del dispatcher de quince minutos. La outbox v2 separa cuerpos de su journal de metadatos y compacta sólo recibos terminales sin cuerpo. Las identidades compactadas se comprueban contra `capture_hash` remoto antes de reutilizarse. Una cola sin espacio recuperable rechaza nuevas admisiones sin descartar trabajo pendiente. Cambiar la conexión crea otra partición; no migra envíos inciertos.
 
-Actualiza primero el servidor. Para pasar de 0.1.0, 0.1.1 o 0.1.2 a 0.2.0, cierra clientes, deja terminar el dispatcher anterior y usa `--replace` para todos los clientes gestionados. La instalación rechaza un propietario activo antes de cambiar archivos. Nunca compartas una partición entre versiones simultáneas. Se conserva el runtime anterior y se migra la cola sin cambiar UUID, fecha ni contenido. El ejecutable Node registrado se usa aunque OpenCode hospede el plugin en otro runtime. No borres locks activos; la recuperación de una guarda obsoleta requiere comprobar ausencia de propietarios y una copia privada. El procedimiento completo está en [instalación](../../docs/install.md).
+Actualiza primero el servidor. Para pasar de 0.1.0, 0.1.1, 0.1.2 o 0.2.0 a 0.3.0, cierra clientes, deja terminar el dispatcher anterior y usa `--replace` para todos los clientes gestionados. La instalación rechaza un propietario activo antes de cambiar archivos. Nunca compartas una partición entre versiones simultáneas. Se conserva el runtime anterior y se migra la cola sin cambiar UUID, fecha ni contenido. El ejecutable Node registrado se usa aunque OpenCode hospede el plugin en otro runtime. No borres locks activos; la recuperación de una guarda obsoleta requiere comprobar ausencia de propietarios y una copia privada. El procedimiento completo está en [instalación](../../docs/install.md).
 
 IPC v2 autentica y cifra cada petición y respuesta con AES-256-GCM; el secreto del endpoint no se transmite al listener. Los endpoints de otra versión se rechazan sin contacto y `doctor` los diagnostica. Los cuerpos en disco siguen necesitando permisos privados. Un cuerpo ausente, inválido o sobredimensionado queda aislado como `failed`; contexto y demás entregas continúan. `queue-retire` funciona también sin dispatcher y con la captura apagada para `pending`, `unknown` y `failed`. Retirar localmente una entrega incierta no confirma que el servidor la haya borrado.
 
-Los eventos técnicos automáticos no solicitan embeddings; los aprendizajes derivados, notas manuales y documentos sí pueden hacerlo. El contexto automático combina términos alternativos y excluye `agent-activity`, con cinco fuentes y 5.000 caracteres como máximo. Los hooks esperan IPC acotado, que puede incluir comprobaciones remotas; no esperan un modelo. Para desactivar, instala `--capture off --context off --replace` para todos los clientes gestionados. Esto conserva recibos y configuración ajena. La aceptación en cada cliente real es una comprobación adicional a las pruebas de protocolo y del proceso de hook.
+Los eventos técnicos automáticos no solicitan embeddings; los aprendizajes derivados, notas manuales y documentos sí pueden hacerlo. El contexto automático combina términos alternativos y excluye `agent-activity`, con cinco fuentes y 5.000 caracteres como máximo. Los hooks esperan IPC acotado, que puede incluir comprobaciones remotas y, en el contexto automático, la capa semántica dentro de su plazo. Desde la versión 0.3.0 el contexto automático pide también la capa semántica (`semantic: true`, la combinación híbrida del servidor). El cliente hace una sola petición al servidor y espera como máximo 1,8 s (el hook, 8 s). Con ella envía `semantic_budget_ms: 1100`, el presupuesto de la capa semántica: si se agota, el servidor mismo responde con los aciertos léxicos y `degraded` (`reason: timeout`), sin reintento del cliente. El servidor solo deja de esperar al proveedor (cancela su propia petición HTTP); Ollama puede terminar el cálculo que ya empezó. Si el servidor informa `degraded` (`timeout`, `provider_error`, `store_error`, `no_vectors` o `embeddings_disabled`), el campo viaja igual en la evidencia. Cualquier otro fallo (autorización, red, plazo del cliente) sigue haciendo fallar el contexto, no se oculta. El servidor limita su propia espera de embeddings de consulta a `MEMORY_EMBED_QUERY_TIMEOUT` (10 s). Para desactivar, instala `--capture off --context off --replace` para todos los clientes gestionados. Esto conserva recibos y configuración ajena. La aceptación en cada cliente real es una comprobación adicional a las pruebas de protocolo y del proceso de hook.
 
 ## Desarrollo y entrega local
 

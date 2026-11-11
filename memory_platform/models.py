@@ -144,6 +144,7 @@ class Search(Model):
     match_mode: Literal['all','any'] = 'all'
     exclude_categories: Annotated[list[Annotated[str, Field(max_length=200)]], Field(max_length=100)] = []
     semantic: bool = True
+    semantic_budget_ms: Annotated[int, Field(strict=True, ge=1, le=600000, description='Optional: milliseconds the semantic layer may take, never more than the configured embeddings query deadline; when it runs out the lexical answer is returned with degraded timeout')] | None = None
     project_ids: Annotated[list[Annotated[str, Field(pattern='^[a-z0-9][a-z0-9_-]{0,63}$')]], Field(max_length=20, min_length=1)]
     q: Annotated[str, Field(max_length=4000)]
     layers: Annotated[list[Literal['episodic', 'documental', 'temporal']], Field(max_length=3)] | None = None
@@ -174,10 +175,16 @@ class Hit(Model):
     lexical_match: Literal['trigram'] | None = None  # present only on hits added by the trigram fallback (approximate title match)
     matched_chunk: MatchedChunk | None = Field(None, description='Fragment that answered this semantic hit, present only when it is not the whole text; offsets are Unicode code points of title + newline + content')  # present only on semantic hits answered by a fragment that is not the whole text; offsets in Unicode code points of title+newline+content
 
+class Degraded(Model):
+    """Present when only the semantic layer fell short of what was asked: the lexical answer is complete and valid, but it is not the hybrid one."""
+    layer: Literal['semantic']
+    reason: Literal['timeout', 'provider_error', 'store_error', 'no_vectors', 'embeddings_disabled'] = Field(description='timeout: the embeddings query deadline (or the request semantic_budget_ms) ran out; provider_error: the embeddings provider failed; store_error: the database failed while searching vectors (both with status unavailable, partial true); no_vectors: nothing is embedded for these projects; embeddings_disabled: the server runs without embeddings (status off)')
+
 class SearchResult(Model):
     items: Annotated[list[Hit], Field(max_length=100)]
     backends: dict[str, Any]
     partial: bool
+    degraded: Degraded | None = Field(None, description='Optional: present only when the semantic layer alone fell short; `partial` keeps its meaning')
 
 class Details(Model):
     refs: Annotated[list[Annotated[str, Field(max_length=4000)]], Field(max_length=20, min_length=1)]
@@ -187,6 +194,7 @@ class Context(Model):
     match_mode: Literal['all','any'] = 'all'
     exclude_categories: Annotated[list[Annotated[str, Field(max_length=200)]], Field(max_length=100)] = []
     semantic: bool = True
+    semantic_budget_ms: Annotated[int, Field(strict=True, ge=1, le=600000, description='Optional: milliseconds the semantic layer may take, never more than the configured embeddings query deadline; when it runs out the lexical answer is returned with degraded timeout')] | None = None
     project_ids: Annotated[list[Annotated[str, Field(pattern='^[a-z0-9][a-z0-9_-]{0,63}$')]], Field(max_length=20, min_length=1)]
     q: Annotated[str, Field(max_length=4000)]
     layers: Annotated[list[Literal['episodic', 'documental', 'temporal']], Field(max_length=3)] | None = None

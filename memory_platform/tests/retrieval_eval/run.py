@@ -77,8 +77,11 @@ def evaluate_gate(report, thresholds, baseline=None):
     """Return the list of failed checks (empty = gate passes).
 
     Decision P-06: fused recall@5 and MRR reach their targets AND each gain subset improves its
-    fused recall@5 by ``subset_gain_points`` over the baseline (both are mandatory). A retrieval
-    backend that is not ``ok`` is reported as ``backend_unavailable:<layer>``, never as recall 0.
+    fused recall@5 by ``subset_gain_points`` over the baseline (both are mandatory). CA-35: no subset of the
+    baseline loses more than ``max_subset_regression_points`` of fused recall@5 (a missing threshold or subset is
+    itself a failure, never a silent pass). CA-18: the MRR of ``fused`` is at least that of the best single layer, overall (``ca18:overall``)
+    and in every subset (``ca18:<subset>``); a report without the single layers fails as ``ca18_layers_missing``. A retrieval backend that is not ``ok`` is reported as
+    ``backend_unavailable:<layer>``, never as recall 0.
     """
     fused = report['layers']['fused']
     failures = []
@@ -104,6 +107,29 @@ def evaluate_gate(report, thresholds, baseline=None):
             gain = round((value - baseline['layers']['fused']['subsets'][subset]['recall@5']) * 100, 4)
             if gain < thresholds['subset_gain_points']:
                 failures.append({'check': 'subset:' + subset, 'value': value, 'gain_points': gain, 'required_gain_points': thresholds['subset_gain_points']})
+        allowed = thresholds.get('max_subset_regression_points')
+        if allowed is None:
+            failures.append({'check': 'threshold_missing:max_subset_regression_points', 'value': None, 'required': 'maximum recall@5 loss per subset, in points (CA-35)'})
+        else:
+            for subset, before in sorted(baseline['layers']['fused']['subsets'].items()):
+                current = fused['subsets'].get(subset)
+                if current is None:
+                    failures.append({'check': 'subset_missing:' + subset, 'value': None, 'required': 'subset of the baseline'})
+                    continue
+                loss = round((before['recall@5'] - current['recall@5']) * 100, 4)
+                if loss > allowed:
+                    failures.append({'check': 'regression:' + subset, 'value': current['recall@5'], 'loss_points': loss, 'allowed_loss_points': allowed})
+    singles = [layer for layer in LAYERS if layer != 'fused' and layer in report['layers']]
+    if not singles:
+        failures.append({'check': 'ca18_layers_missing', 'value': None, 'required': 'the single layers of the report, to compare their MRR with the fused one (CA-18)'})
+    else:
+        scopes = [('overall', fused['overall'], [report['layers'][layer]['overall'] for layer in singles])]
+        for subset, row in sorted(fused['subsets'].items()):
+            scopes.append((subset, row, [report['layers'][layer]['subsets'][subset] for layer in singles if subset in report['layers'][layer]['subsets']]))
+        for name, row, others in scopes:
+            best = max((other['mrr'] for other in others), default=0.0)
+            if row['mrr'] < best:
+                failures.append({'check': 'ca18:' + name, 'value': row['mrr'], 'best_single_layer_mrr': best, 'required': 'fused mrr >= best single layer'})
     return failures
 
 
@@ -243,6 +269,49 @@ async def _measure(store, actor, project, ids, questions, provider, settings, re
                 continue
             rows[layer].append({'subset': question['subset'], 'expected': expected, 'ranked': [ids[i] for i in found[layer] if i in ids]})
     return {layer: aggregate(rows[layer]) for layer in LAYERS}, query_backends
+
+
+async def _fused_aggregate(retrieval, actor, project, ids, questions):
+    """Aggregate of the fused search alone (what a fusion setting changes), over every question."""
+    rows = []
+    for question in questions:
+        result = await retrieval.search(actor, {'project_ids': [project], 'q': question['q'], 'layers': ['episodic', 'documental'], 'semantic': True, 'limit': LIMIT})
+        rows.append({'subset': question['subset'], 'expected': question['expected'], 'ranked': [ids[h['item_id']] for h in result['items'] if h['item_id'] in ids]})
+    return aggregate(rows)
+
+
+def tune(spec, dsn=None, test_dsn=None, dataset=None):
+    """Measure the fused search for every combination of ``spec`` = {"bonus": [...], "k": [...], "weights": [{layer: weight}, ...]}.
+
+    The corpus is indexed once; only the fusion settings change between points. It also returns the other layers at the
+    default settings so the fused MRR can be compared with the best single layer (CA-18). Same isolation guarantees as the gate.
+    """
+    from dataclasses import replace
+    from itertools import product
+    dsn, test_dsn = dsn or os.environ.get('MEMORY_DSN'), test_dsn or os.environ.get('MEMORY_TEST_DSN')
+    check_dsn(dsn, test_dsn)
+    dsn = connect_dsn(dsn)
+    from memory_platform.retrieval import Retrieval
+    from memory_platform.tests.retrieval_eval.fake_embeddings import FakeEmbeddings
+    records, digest = load_dataset(Path(dataset or HERE / 'dataset-v1.jsonl'))
+    store, actor, project = _setup(dsn)
+    settings = Settings(dsn, request_timeout=60.0, embedding_query_timeout=30.0)
+    provider = FakeEmbeddings(settings)
+    ids, _ = _load_corpus(store, actor, project, records)
+    questions = [r for r in records if r['type'] == 'question']
+
+    async def go():
+        await _index(store, project, provider, settings)
+        layers, _health = await _measure(store, actor, project, ids, questions, provider, settings)
+        points = []
+        for bonus, k, weights in product(spec.get('bonus', [settings.fusion_validated_bonus]), spec.get('k', [settings.fusion_k]), spec.get('weights', [{}])):
+            point = replace(settings, fusion_validated_bonus=bonus, fusion_k=k, fusion_weights=weights)
+            points.append({'bonus': bonus, 'k': k, 'weights': weights,
+                           'fused': await _fused_aggregate(Retrieval(store, point, provider), actor, project, ids, questions)})
+        return layers, points
+    layers, points = asyncio.run(go())
+    return {'dataset_sha256': digest, 'default_settings': {'bonus': settings.fusion_validated_bonus, 'k': settings.fusion_k, 'weights': settings.fusion_weights},
+            'layers_at_default': layers, 'grid': points}
 
 
 def build_report(dsn, test_dsn, dataset_path):

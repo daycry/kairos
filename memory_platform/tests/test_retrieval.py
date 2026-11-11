@@ -1,5 +1,6 @@
 import asyncio
 import threading
+import time
 import unittest
 from unittest.mock import Mock, AsyncMock, patch
 from dataclasses import replace
@@ -232,3 +233,216 @@ class RetrievalTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(found['partial'])
         self.assertEqual(found['backends']['semantic']['status'], 'unavailable')
         self.store.search_vectors.assert_not_called()
+
+
+class DegradationTests(unittest.IsolatedAsyncioTestCase):
+    """CA-15..CA-17 and CA-33: a failing semantic layer never fails the answer, and the caller can tell it apart from a fault."""
+    def setUp(self):
+        self.store = Mock()
+        self.row = {'ref': 'episodic:a:lex:1', 'project_id': 'a', 'item_id': 'lex', 'version': 1, 'layer': 'episodic', 'title': 'Lexical hit',
+                    'excerpt': 'x', 'content': 'x', 'validation_status': 'unknown'}
+        self.store.search_items.return_value = [self.row]
+        self.store.search_documents.return_value = []
+        self.store.search_native_facts.return_value = []
+        self.store.has_vectors.return_value = True
+        self.embeddings = Mock(embed=AsyncMock(return_value={'embedding': [1.0, 0.0], 'model': 'nomic-embed-text', 'verified': True}))
+        self.settings = Settings('unused', request_timeout=5, embedding_query_timeout=0.3)
+        self.retrieval = Retrieval(self.store, self.settings, self.embeddings)
+
+    def request(self, **extra):
+        return m.Search(project_ids=['a'], q='fencing', layers=['episodic', 'documental'], **extra)
+
+    async def test_ca15_semantic_only_hit_is_fused_with_the_lexical_ones(self):
+        self.store.search_vectors.return_value = [self.row, {**self.row, 'ref': 'episodic:a:sem:1', 'item_id': 'sem', 'title': 'Semantic only'}]
+        found = await self.retrieval.search({}, self.request())
+        self.assertEqual(found['backends']['semantic']['status'], 'ok')
+        self.assertEqual({v['item_id'] for v in found['items']}, {'lex', 'sem'})
+        self.assertNotIn('degraded', found)
+
+    async def test_ca16_provider_503_keeps_the_lexical_answer_and_reports_degraded(self):
+        from memory_platform.providers import ProviderError
+        self.embeddings.embed.side_effect = ProviderError('http_503')
+        for call in (self.retrieval.search, self.retrieval.context):
+            found = await call({}, self.request() if call == self.retrieval.search else m.Context(project_ids=['a'], q='fencing', layers=['episodic', 'documental']))
+            self.assertEqual([v['item_id'] for v in found['items']], ['lex'])
+            self.assertEqual(found['backends']['semantic']['status'], 'unavailable')
+            self.assertEqual(found['backends']['semantic']['reason'], 'provider_error')
+            self.assertEqual(found['degraded'], {'layer': 'semantic', 'reason': 'provider_error'})
+            self.assertTrue(found['partial'])
+
+    async def test_ca16_provider_timeout_answers_within_the_query_deadline_plus_one_second(self):
+        async def stalled(*args, **kwargs):
+            await asyncio.sleep(30)
+        self.embeddings.embed.side_effect = stalled
+        started = time.monotonic()
+        found = await self.retrieval.search({}, self.request())
+        self.assertLessEqual(time.monotonic() - started, self.settings.embedding_query_timeout + 1.0)
+        self.assertEqual([v['item_id'] for v in found['items']], ['lex'])
+        self.assertEqual(found['degraded'], {'layer': 'semantic', 'reason': 'timeout'})
+
+    async def test_ca17_semantic_false_is_off_without_provider_calls_and_is_not_degraded(self):
+        found = await self.retrieval.search({}, self.request(semantic=False))
+        self.assertEqual(found['backends']['semantic'], {'status': 'off', 'count': 0})
+        self.embeddings.embed.assert_not_awaited()
+        self.store.search_vectors.assert_not_called()
+        self.assertNotIn('degraded', found)
+        self.assertFalse(found['partial'])
+
+    async def test_a_project_without_vectors_is_off_but_says_why(self):
+        self.store.has_vectors.return_value = False
+        found = await self.retrieval.search({}, self.request())
+        self.assertEqual(found['backends']['semantic']['status'], 'off')
+        self.assertEqual(found['degraded'], {'layer': 'semantic', 'reason': 'no_vectors'})
+        self.embeddings.embed.assert_not_awaited()
+
+    async def test_disabled_embeddings_say_why(self):
+        retrieval = Retrieval(self.store, replace(self.settings, embed_enabled=False), self.embeddings)
+        found = await retrieval.search({}, self.request())
+        self.assertEqual(found['degraded'], {'layer': 'semantic', 'reason': 'embeddings_disabled'})
+
+    async def test_degraded_is_only_reported_when_the_semantic_layer_alone_fails(self):
+        from memory_platform.providers import ProviderError
+        self.embeddings.embed.side_effect = ProviderError('http_503')
+        self.store.search_items.side_effect = RuntimeError('database down')
+        found = await self.retrieval.search({}, self.request())
+        self.assertEqual(found['backends']['episodic']['status'], 'unavailable')
+        self.assertEqual(found['backends']['semantic']['status'], 'unavailable')
+        self.assertNotIn('degraded', found)
+
+    async def test_the_semantic_budget_of_the_request_cuts_the_semantic_layer_short_of_the_configured_deadline(self):
+        """Review of phase 6: a caller with a short deadline asks for a budget and still gets the lexical answer, with `degraded` timeout."""
+        async def stalled(*args, **kwargs):
+            await asyncio.sleep(30)
+        self.embeddings.embed.side_effect = stalled
+        retrieval = Retrieval(self.store, replace(self.settings, embedding_query_timeout=5.0), self.embeddings)
+        for call, request in ((retrieval.search, self.request(semantic_budget_ms=150)),
+                              (retrieval.context, m.Context(project_ids=['a'], q='fencing', layers=['episodic', 'documental'], semantic_budget_ms=150))):
+            started = time.monotonic()
+            found = await call({}, request)
+            self.assertLessEqual(time.monotonic() - started, 0.15 + 0.5)  # the budget plus a margin, nowhere near the 5 s configured
+            self.assertEqual([v['item_id'] for v in found['items']], ['lex'])
+            self.assertEqual(found['degraded'], {'layer': 'semantic', 'reason': 'timeout'})
+            self.assertEqual(found['backends']['semantic']['reason'], 'timeout')
+
+    async def test_a_budget_above_the_configured_deadline_never_extends_it(self):
+        async def stalled(*args, **kwargs):
+            await asyncio.sleep(30)
+        self.embeddings.embed.side_effect = stalled
+        started = time.monotonic()
+        found = await self.retrieval.search({}, self.request(semantic_budget_ms=600000))
+        self.assertLessEqual(time.monotonic() - started, self.settings.embedding_query_timeout + 1.0)
+        self.assertEqual(found['degraded'], {'layer': 'semantic', 'reason': 'timeout'})
+
+    async def test_a_budget_that_is_met_changes_nothing(self):
+        self.store.search_vectors.return_value = [self.row]
+        found = await self.retrieval.search({}, self.request(semantic_budget_ms=1000))
+        self.assertEqual(found['backends']['semantic']['status'], 'ok')
+        self.assertNotIn('degraded', found)
+
+    async def test_the_budget_covers_the_vector_existence_check_too(self):
+        """Review of phase 6 (N3): a slow `has_vectors` used to run outside the budget."""
+        def slow(*args, **kwargs):
+            time.sleep(1.0)
+            return True
+        self.store.has_vectors.side_effect = slow
+        started = time.monotonic()
+        found = await self.retrieval.search({}, self.request(semantic_budget_ms=150))
+        self.assertLessEqual(time.monotonic() - started, 0.15 + 0.5)
+        self.assertEqual([v['item_id'] for v in found['items']], ['lex'])
+        self.assertEqual(found['degraded'], {'layer': 'semantic', 'reason': 'timeout'})
+        self.embeddings.embed.assert_not_awaited()
+
+    def test_the_semantic_budget_is_validated_in_range(self):
+        for value in (0, -5, 600001, True, False, '1100', 1100.0, 1.5):  # out of range, and not an integer (a bool or a string is not a budget)
+            for model, extra in ((m.Search, {}), (m.Context, {})):
+                with self.assertRaises(Exception) as raised:
+                    model(project_ids=['a'], q='x', semantic_budget_ms=value, **extra)
+                self.assertIn('semantic_budget_ms', str(raised.exception))
+        self.assertIsNone(m.Search(project_ids=['a'], q='x').semantic_budget_ms)
+        self.assertEqual(m.Context(project_ids=['a'], q='x', semantic_budget_ms=1).semantic_budget_ms, 1)
+
+    async def test_each_failure_of_the_semantic_layer_has_its_own_reason(self):
+        from memory_platform.providers import ProviderError
+        cases = []
+        self.embeddings.embed.side_effect = ProviderError('http_503')
+        cases.append(('provider_error', await self.retrieval.search({}, self.request())))
+        self.embeddings.embed.side_effect = None
+        self.store.has_vectors.side_effect = RuntimeError('database down')  # the database, before any provider call
+        cases.append(('store_error', await self.retrieval.search({}, self.request())))
+        self.store.has_vectors.side_effect = None
+        self.store.search_vectors.side_effect = RuntimeError('scan failed')  # the database, after the provider answered
+        cases.append(('store_error', await self.retrieval.search({}, self.request())))
+        self.store.search_vectors.side_effect = MemoryError('semantic_deadline_exceeded', 'Semantic query exceeded its time budget', 503)
+        cases.append(('timeout', await self.retrieval.search({}, self.request())))
+        self.store.search_vectors.side_effect = None
+        self.embeddings.embed.side_effect = TimeoutError()
+        cases.append(('timeout', await self.retrieval.search({}, self.request())))
+        for reason, found in cases:
+            self.assertEqual(found['backends']['semantic']['reason'], reason)
+            self.assertEqual(found['degraded'], {'layer': 'semantic', 'reason': reason})
+            self.assertEqual([v['item_id'] for v in found['items']], ['lex'])
+        self.assertEqual(m.Degraded(layer='semantic', reason='store_error').reason, 'store_error')
+
+
+class FusionTests(unittest.IsolatedAsyncioTestCase):
+    """T-27: reciprocal rank fusion with a validated bonus (decision D-7) instead of an absolute `validated first` order."""
+    def hit(self, name, status='unknown', **extra):
+        return {'ref': 'episodic:a:%s:1' % name, 'project_id': 'a', 'item_id': name, 'version': 1, 'layer': 'episodic', 'title': name,
+                'excerpt': 'x', 'validation_status': status, **extra}
+
+    def retrieval(self, rows, vectors=None, **settings):
+        store = Mock()
+        store.search_items.return_value = rows
+        store.search_documents.return_value, store.search_native_facts.return_value = [], []
+        store.has_vectors.return_value = vectors is not None
+        store.search_vectors.return_value = vectors or []
+        embeddings = Mock(embed=AsyncMock(return_value={'embedding': [1.0, 0.0], 'model': 'nomic-embed-text', 'verified': True}))
+        return Retrieval(store, Settings('unused', request_timeout=5, **settings), embeddings)
+
+    async def order(self, retrieval):
+        found = await retrieval.search({}, m.Search(project_ids=['a'], q='fencing', layers=['episodic', 'documental']))
+        return [v['item_id'] for v in found['items']]
+
+    async def test_validated_is_a_bonus_not_an_absolute_order(self):
+        rows = [self.hit('first'), self.hit('second', 'validated')]
+        self.assertEqual(await self.order(self.retrieval(rows, fusion_validated_bonus=0.0)), ['first', 'second'])
+        self.assertEqual(await self.order(self.retrieval(rows, fusion_validated_bonus=0.001)), ['second', 'first'])
+        # a bonus smaller than the rank gap (1/60 - 1/61) does not overturn a better rank: validated wins only at a reasonable tie
+        self.assertEqual(await self.order(self.retrieval(rows, fusion_validated_bonus=0.0001)), ['first', 'second'])
+
+    async def test_validated_wins_an_exact_tie_and_a_superseded_fact_gets_no_bonus(self):
+        both = [self.hit('plain'), self.hit('checked', 'validated')]
+        vectors = [self.hit('checked', 'validated'), self.hit('plain')]  # symmetric ranks: exact tie
+        self.assertEqual(await self.order(self.retrieval(both, vectors, fusion_validated_bonus=0.001)), ['checked', 'plain'])
+        old = [self.hit('first'), self.hit('old', 'validated', superseded=True)]
+        self.assertEqual(await self.order(self.retrieval(old, fusion_validated_bonus=0.001)), ['first', 'old'])
+
+    async def test_layer_weights_and_k_change_the_fused_score(self):
+        rows, vectors = [self.hit('lexical')], [self.hit('semantic')]
+        self.assertEqual(await self.order(self.retrieval(rows, vectors, fusion_validated_bonus=0.0)), ['lexical', 'semantic'])  # tie keeps layer order
+        self.assertEqual(await self.order(self.retrieval(rows, vectors, fusion_validated_bonus=0.0, fusion_weights={'semantic': 2.0})), ['semantic', 'lexical'])
+        # `p` is first in one list (1/k); `q` is sixth in two lists (2/(k+5)): q wins only when k > 5
+        lexical = [self.hit(name) for name in ('p', 'f1', 'f2', 'f3', 'f4', 'q')]
+        semantic = [self.hit(name) for name in ('g1', 'g2', 'g3', 'g4', 'g5', 'q')]
+        for k, expected in ((1, ['p', 'q']), (60, ['q', 'p'])):
+            ordered = await self.order(self.retrieval(lexical, semantic, fusion_validated_bonus=0.0, fusion_k=k))
+            self.assertEqual([name for name in ordered if name in ('p', 'q')], expected, k)
+
+    def test_settings_validate_the_fusion_parameters(self):
+        for bad in ({'fusion_k': 0}, {'fusion_k': 1001}, {'fusion_k': 1.5}, {'fusion_validated_bonus': -0.1}, {'fusion_validated_bonus': 1.1},
+                    {'fusion_validated_bonus': float('nan')}, {'fusion_weights': {'unknown': 1.0}}, {'fusion_weights': {'semantic': 0}}, {'fusion_weights': {'semantic': float('inf')}}):
+            with self.assertRaises(ValueError, msg=str(bad)):
+                Settings('unused', **bad)
+        self.assertEqual(Settings('unused', fusion_validated_bonus=0.005, fusion_weights={'semantic': 1.5}).fusion_weights, {'semantic': 1.5})
+
+    def test_environment_values_are_parsed_strictly_with_the_variable_name_in_the_error(self):
+        from memory_platform.config import fusion_from_env, DEFAULT_FUSION_K, DEFAULT_FUSION_VALIDATED_BONUS
+        self.assertEqual(fusion_from_env({}), (DEFAULT_FUSION_K, DEFAULT_FUSION_VALIDATED_BONUS, {}))
+        self.assertEqual(fusion_from_env({'MEMORY_FUSION_K': '30', 'MEMORY_FUSION_VALIDATED_BONUS': '0.004', 'MEMORY_FUSION_WEIGHTS': 'semantic=2, episodic=0.5'}),
+                         (30, 0.004, {'semantic': 2.0, 'episodic': 0.5}))
+        for name, value in (('MEMORY_FUSION_K', '0'), ('MEMORY_FUSION_K', 'x'), ('MEMORY_FUSION_K', '-3'), ('MEMORY_FUSION_VALIDATED_BONUS', 'high'),
+                            ('MEMORY_FUSION_VALIDATED_BONUS', '2'), ('MEMORY_FUSION_VALIDATED_BONUS', 'nan'), ('MEMORY_FUSION_WEIGHTS', 'semantic'),
+                            ('MEMORY_FUSION_WEIGHTS', 'semantic=x'), ('MEMORY_FUSION_WEIGHTS', 'lexical=1')):
+            with self.assertRaises(ValueError, msg=(name, value)) as caught:
+                fusion_from_env({name: value})
+            self.assertIn(name, str(caught.exception))

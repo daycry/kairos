@@ -34,10 +34,10 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 3 — pgvector + HNSW (C-03 · P1) | 6 | 6 | 100% | 0 / 32h | 2,21 / 4,29h | 0 / 1,08h | 0 / 1290k |
 | Fase 4 — FTS por idioma + trigram (C-05 · P4) | 6 | 6 | 100% | 0 / 27h | 2,18 / 3,61h | 0 / 0,91h | 0 / 1090k |
 | Fase 5 — Troceado para embeddings (C-06 · P2) | 7 | 7 | 100.0% | 0 / 28h | 1,43 / 4h | 0 / 1h | 0 / 1200k |
-| Fase 6 — Híbrida con degradación y CLI (C-04 · P3) | 0 | 4 | 0% | 0 / 12h | 0 / 1,6h | 0 / 0,4h | 0 / 470k |
+| Fase 6 — Híbrida con degradación y CLI (C-04 · P3) | 4 | 4 | 100.0% | 0 / 12h | 0 / 1,6h | 0 / 0,4h | 0 / 470k |
 | Fase 7 — Observabilidad (C-07 · P12) — en paralelo desde T-06 | 0 | 4 | 0% | 0 / 18h | 0 / 2,6h | 0 / 0,64h | 0 / 770k |
 | Fase 8 — Integración, revisión y activación | 0 | 5 | 0% | 0 / 26h | 0 / 4,31h | 0 / 1,06h | 0 / 1280k |
-| **TOTAL** | **25** | **38** | **65.8%** | **0 / 173h** | **6,64 / 26,03h** | **0 / 6,5h** | **0 / 7780k** |
+| **TOTAL** | **29** | **38** | **76.3%** | **0 / 173h** | **6,64 / 26,03h** | **0 / 6,5h** | **0 / 7780k** |
 
 > Las horas de este ledger son **base** (sin el margen del 20 %); con margen: humanas 207,6 h, IA 31,2 h. Las horas IA y los tokens son estimaciones (ratio 300.000 tok/h no calibrado).
 
@@ -955,125 +955,145 @@ RED: `test_contract_additive` falló con Ran 7 tests, FAILED errors=1: KeyError 
 
 ## Fase 6 — Híbrida con degradación y CLI (C-04 · P3)
 
-**Estado**: borrador · **Estimado**: 12h base (14.4h con margen) · **Real**: — · **Coste est.**: 719 € · **Tokens est.**: 430k in / 40k out
+**Estado**: completado · **Estimado**: 12h base (14.4h con margen) · **Real**: — · **Coste est.**: 719 € · **Tokens est.**: 430k in / 40k out
 
 ### T-26 — Degradación probada y campo opcional `degraded`
 
 - **Descripción**: Fijar con tests la degradación (proveedor 503/plazo/sin vectores/`semantic=false`) por HTTP y MCP para `search` y `context`, y añadir el campo opcional `degraded` en `backends`/respuesta cuando solo falla la capa semántica (se mantiene `partial` con su semántica actual). Resultado: la respuesta léxica es siempre válida y el cliente distingue una degradación de un fallo.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: La búsqueda y el contexto indican con el campo opcional «degraded» cuándo solo falló la capa semántica y siguen devolviendo los resultados léxicos.
+- **Estado**: completado
 - **Tiempo humano**: est. 3h · real —
-- **Tiempo IA (ejec.)**: est. 0,4h · real —
+- **Tiempo IA (ejec.)**: est. 0,4h · real — (no medido: T-26…T-29 se trabajaron intercaladas en una sola ejecución, sin ventana de usage-meter)
 - **Supervisión**: est. 0,1h (≈25 % IA) · real —
 - **Previsión IA**: 110k in / 10k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-11
 - **Dependencias**: T-25
 - **Tipo**: backend
-- **Archivos**: `memory_platform/retrieval.py`, `memory_platform/models.py`, `memory_platform/mcp.py`, `memory_platform/tests/test_retrieval.py`, `memory_platform/tests/test_api.py`, `memory_platform/tests/test_mcp.py`, `docs/contracts/kairos-mcp.json`
+- **Archivos**: `memory_platform/retrieval.py`, `memory_platform/models.py`, `memory_platform/mcp.py`, `memory_platform/tests/test_retrieval.py`, `memory_platform/tests/test_api.py`, `memory_platform/tests/test_mcp.py`, `docs/contracts/kairos-mcp.json`, `docs/contracts/memory-platform.openapi.json`, `memory_platform/tests/test_contract_additive.py`, `docs/integration.md`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:rq .` → la salida contiene `MEMORY_TEST_RESULT` con `"passed": true`, `failures: 0`, `errors: 0`, `skipped: 0` (incluye CA-15, CA-16, CA-17 y el caso `degraded` en rojo antes del cambio)
+  - Evidencia (árbol final, 2026-11-11): `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 398}` (incluye `DegradationTests`, `DegradedSemanticHttpTests`, `DegradedSemanticToolTests` y `test_contract_additive`); `git diff docs/contracts | grep -c "^-[^-]"` → `0`.
 
 **Criterios de aceptación**
-- [ ] CA-15: sin `semantic` y con vectores, `backends.semantic.status = 'ok'` y hay al menos un acierto solo semántico fusionado con los léxicos
-- [ ] CA-16: con el proveedor devolviendo 503 o excediendo el plazo, `search` y `context` (HTTP y MCP) responden con léxicos, `backends.semantic.status = 'unavailable'`, `degraded` presente y tiempo ≤ `embedding_query_timeout` + 1 s
-- [ ] CA-17: con `semantic=false`, `status = 'off'` y 0 llamadas al proveedor
-- [ ] CA-33: `degraded` es opcional y el contrato solo gana el campo
+- [x] CA-15: sin `semantic` y con vectores, `backends.semantic.status = 'ok'` y hay al menos un acierto solo semántico fusionado con los léxicos
+- [x] CA-16: con el proveedor devolviendo 503 o excediendo el plazo, `search` y `context` (HTTP y MCP) responden con léxicos, `backends.semantic.status = 'unavailable'`, `degraded` presente y tiempo ≤ `embedding_query_timeout` + 1 s
+- [x] CA-17: con `semantic=false`, `status = 'off'` y 0 llamadas al proveedor
+- [x] CA-33: `degraded` es opcional y el contrato solo gana el campo
 
 **Subtareas**
-- [ ] Tests en rojo de degradación y `degraded`
-- [ ] Implementar el campo sin alterar `partial`
-- [ ] Regenerar contrato con `scripts/export-contracts.py`
+- [x] Tests en rojo de degradación y `degraded`
+- [x] Implementar el campo sin alterar `partial`
+- [x] Regenerar contrato con `scripts/export-contracts.py`
 
-**Notas**: Procedencia: spec CA-15…CA-17, decisión P-04. Clase: cambio (test en rojo de degradación y campo `degraded`). Hallazgo de la evaluación: `semantic` ya es `True` por defecto (`models.py:146`, `:181`; `mcp.py:150`, `:160`), por eso la tarea es de endurecimiento. Patrón: estados `partial`/`unavailable`/`off` en `retrieval.py:113`, `:129`, `:146`.
+**Notas**: Procedencia: spec CA-15…CA-17, decisión P-04. Clase: cambio (test en rojo de degradación y campo `degraded`). Hallazgo de la evaluación: `semantic` ya es `True` por defecto (`models.py:146`, `:181`; `mcp.py:150`, `:160`), por eso la tarea es de endurecimiento. Patrón: estados `partial`/`unavailable`/`off` en `retrieval.py:113`, `:129`, `:146`. Resultado (2026-11-11): `degraded` = `{layer: "semantic", reason}` con `reason` ∈ timeout, provider_error (status `unavailable`, `partial` true), no_vectors y embeddings_disabled (status `off`); solo se informa cuando ninguna otra capa falla (si fallan otras, quedan visibles en `backends`/`partial`). `partial` conserva su semántica. `backends.semantic.reason` repite el motivo. `mcp.py` no cambió (las herramientas devuelven el dict de `Retrieval`); el contrato (`Degraded` y el campo opcional en `SearchResult`) se regeneró con `scripts/export-contracts.py` desde la imagen de test (python 3.11) conservando el texto de los docstrings del commit base: `git diff --stat docs/contracts` = 80 inserciones, 0 supresiones; 34 herramientas. Aviso de CA-15: el criterio ya se cumplía (`semantic` es `true` por defecto); el test lo fija. **Corrección tras revisión (intento 2, gaps 2 y 6, fix1)**: gap 6 verificado (`retrieval.py` clasificaba todo como `provider_error`): ahora el plazo (`TimeoutError` o `MemoryError('semantic_deadline_exceeded')`) es `timeout`, un fallo del proveedor de embeddings `provider_error` y cualquier otro (base de datos en `has_vectors` o en el escaneo) un motivo nuevo `store_error`, añadido de forma aditiva al enum de `Degraded` (`models.py`), a los contratos y a `docs/integration.md`; test por motivo (`test_each_failure_of_the_semantic_layer_has_its_own_reason`: 5 casos). Gap 2 (parte servidor): campo OPCIONAL `semantic_budget_ms` (entero 1..600000, `models.Search`/`models.Context`, REST y MCP `search`/`context`); la capa semántica usa min(`MEMORY_EMBED_QUERY_TIMEOUT`, presupuesto) —nunca lo amplía— y al agotarse devuelve los léxicos con `degraded {layer:"semantic", reason:"timeout"}` (el `asyncio.timeout` cancela también el embed en curso, así que la consulta abortada ya no ocupa al proveedor). Tests: `test_retrieval` (presupuesto respetado ≤ presupuesto + 0,5 s con 5 s configurados; un presupuesto superior al configurado no lo extiende; presupuesto cumplido sin `degraded`; rango 0/-5/600001 rechazado), `test_api` (422 para 0, -1, 600001 y texto; 200 con `degraded` timeout en `search` y `context`), `test_mcp` (las herramientas `search` y `context` aceptan el campo; fuera de rango es error). Contratos regenerados con el exportador de Python 3.11 y fusionados conservando el texto base (solo `semantic_budget_ms` en `search`/`context` y `store_error` en el enum: 34 herramientas, `test_contract_additive` en verde; ese test pasa de `assertEqual(before, after)` a `additive_violations` más «la única entrada nueva es `semantic_budget_ms`, opcional»). Desviación: `test_contract_additive.py` y `docs/integration.md` se tocan aquí aunque no estaban en `Archivos`; se añaden. Medición: usage-meter `retrieval-quality/T-26-fix1` … `T-29-fix1` (una ventana compartida por las cuatro, 8 min de reloj; 0,08 h IA (medido), imputadas una sola vez aquí). **Corrección tras revisión (ronda 2, fix2, gaps N1, N3, N4)**: N1 verificado (`additive_violations` aceptaba claves nuevas que restringen la entrada): `test_contract_additive.py` compara ahora cada herramienta con igualdad EXACTA frente a la base (`tool_differences`: clave añadida, quitada o cambiada es diferencia); solo `search` y `context` difieren legítimamente (ya comprobado: las otras 32 son idénticas a 68ca247), y en ellas se quita únicamente la propiedad `semantic_budget_ms` y se compara igual de exacto; además `semantic_budget_ms` no está en `required` y es la única propiedad nueva. Test nuevo `test_the_exact_check_rejects_a_restricting_key_anywhere_in_a_tool`: `maximum`, `additionalProperties:false`, `minLength` y `dependentRequired` hacen fallar la comprobación. `additive_violations` se conserva solo para `result_schemas` y OpenAPI, donde crecer es legítimo. N3 verificado (`retrieval.py:135`): `has_vectors` corre ahora dentro del mismo `asyncio.timeout(budget)` (el presupuesto se calcula antes) y el motivo es `timeout`; test `test_the_budget_covers_the_vector_existence_check_too` (has_vectors de 1 s, presupuesto 150 ms, respuesta en ≤ 0,65 s con `degraded` timeout y sin llamar al proveedor). N4 verificado (`models.py:147,197` aceptaba `true` y `"1100"`): `Field(strict=True)` en `models.Search`/`models.Context` y en la firma de las herramientas MCP `search`/`context` (`mcp.py`), porque FastMCP convertía en modo laxo antes de llegar al modelo; el esquema exportado NO cambia (comprobado: `semantic_budget_ms` idéntico al de `docs/contracts` en MCP y OpenAPI, 34 herramientas, contratos sin regenerar). Tests de rechazo de bool, cadena y decimal en `test_retrieval`, `test_api` (422) y `test_mcp`. Evidencia posterior a las correcciones (2026-11-11, fix2): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 412}` (`docker build --target test ... -t kairos-test:rq6`, exit 0); puerta `docker run --rm --network=none -e MEMORY_RETRIEVAL_EVAL=1 kairos-test:rq6 python -m memory_platform.tests.run_postgres` exit 0, `gate.passed: true`, `failures: []` (CA-18 y CA-35 comprobados por la puerta), `fused` recall@5 1,0, MRR 0,971528 (mejor capa individual `semantic` 0,964583, CA-18 cumplido), CA-35 sin regresiones. Medición: usage-meter no disponible en esta ejecución, tiempo `(estimado)`.
+
+
+RED: `memory_platform/tests/test_retrieval.py::DegradationTests (7 casos), test_api::DegradedSemanticHttpTests, test_mcp::DegradedSemanticToolTests` falló con MEMORY_TEST_RESULT tests=387 failures=1 errors=6 passed=false: KeyError 'degraded' en 5 casos y falta el campo degraded en el contrato exportado · 2026-11-11.
 
 ### T-27 — Ajuste de la fusión RRF con la puerta de evaluación
 
 - **Descripción**: Con los datos de la puerta `retrieval-eval` tras las fases 3-5, comprobar y, si lo justifica la medida, ajustar `k=60` y los pesos por capa en `retrieval.py`. Resultado: el MRR de `fused` ≥ el de la mejor capa individual, en conjunto y por subconjunto.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: En la búsqueda combinada «validado» es una bonificación ajustable (MEMORY_FUSION_VALIDATED_BONUS) y no un orden absoluto; la calidad mejora en todos los subconjuntos.
+- **Estado**: completado
 - **Tiempo humano**: est. 3h · real —
-- **Tiempo IA (ejec.)**: est. 0,4h · real —
+- **Tiempo IA (ejec.)**: est. 0,4h · real — (no medido: T-26…T-29 se trabajaron intercaladas en una sola ejecución, sin ventana de usage-meter)
 - **Supervisión**: est. 0,1h (≈25 % IA) · real —
 - **Previsión IA**: 110k in / 10k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-11
 - **Dependencias**: T-26, T-03
 - **Tipo**: backend
-- **Archivos**: `memory_platform/retrieval.py`, `memory_platform/tests/retrieval_eval/thresholds.json`, `docs/roadmap/2026-11-09-retrieval-quality/testing/fusion-tuning.json`
+- **Archivos**: `memory_platform/retrieval.py`, `memory_platform/tests/retrieval_eval/thresholds.json`, `memory_platform/config.py`, `memory_platform/tests/retrieval_eval/run.py`, `memory_platform/tests/retrieval_eval/test_metrics.py`, `memory_platform/tests/run_postgres.py`, `memory_platform/tests/test_retrieval.py`, `memory_platform/tests/retrieval_eval/fusion-tuning.json`, `docs/configuration.md`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target retrieval-eval -f memory_platform/Dockerfile .` → pasa los umbrales (`fused` recall@5 ≥ 0,80, MRR ≥ 0,60) y el MRR de `fused` ≥ mejor capa individual
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:rq .` → la salida contiene `MEMORY_TEST_RESULT` con `"passed": true`, `failures: 0`, `errors: 0`, `skipped: 0`
+  - Evidencia (árbol final, 2026-11-11): `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 398}`; puerta `docker run --rm --network=none -e MEMORY_RETRIEVAL_EVAL=1 kairos-test:rq6 python -m memory_platform.tests.run_postgres` → exit 0, `gate.passed: true`, `failures: []`, `fused` recall@5 1.0 · MRR 0.971528 (en 1.0/1.0, es 1.0/1.0, long 1.0/0.829, typo_id 1.0/1.0); semantic MRR 0.964583; antes de la bonificación (orden absoluto) el mismo comando salía con exit 1 y `regression:en` −4,17, `regression:typo_id` −16,67.
 
 **Criterios de aceptación**
-- [ ] CA-18: en `retrieval-eval` el MRR de `fused` es ≥ el de la mejor capa individual, en conjunto y por subconjunto
-- [ ] Cualquier cambio de `k` o pesos queda justificado en `testing/fusion-tuning.json` con el antes y el después
-- [ ] Sin cambios de la fusión si la medida no los justifica (se registra igualmente)
+- [x] CA-18: en `retrieval-eval` el MRR de `fused` es ≥ el de la mejor capa individual, en conjunto y por subconjunto
+- [x] Cualquier cambio de `k` o pesos queda justificado en `testing/fusion-tuning.json` con el antes y el después
+- [x] Sin cambios de la fusión si la medida no los justifica (se registra igualmente)
 
 **Subtareas**
-- [ ] Ejecutar la puerta y analizar capas
-- [ ] Probar variantes de fusión solo si hay evidencia
-- [ ] Registrar resultado en `testing/`
+- [x] Ejecutar la puerta y analizar capas
+- [x] Probar variantes de fusión solo si hay evidencia
+- [x] Registrar resultado en `testing/`
 
-**Notas**: Procedencia: spec CA-18, decisión P-06. Clase: cambio (test en rojo en la puerta si la fusión empeora). Patrón: fusión RRF `k=60` en `retrieval.py:97-146`.
+**Notas**: Procedencia: spec CA-18, decisión P-06. Clase: cambio (test en rojo en la puerta si la fusión empeora). Patrón: fusión RRF `k=60` en `retrieval.py:97-146`. Decisión del usuario (2026-11-10): «validado» deja de ser un orden absoluto en la búsqueda combinada (`memory_platform/retrieval.py`, clave `(validado, RRF)`) y pasa a ser una **bonificación ajustable** en la puntuación; T-27 ajusta esa bonificación (además de `k=60` y los pesos por capa) con el conjunto de evaluación hasta cumplir los umbrales (`fused` recall@5 ≥ 0,80, MRR ≥ 0,60, ganancias de subconjuntos) y CA-35 (ningún subconjunto empeora más de 2 puntos de recall@5 frente a `baseline.json`). Resultado: bonificación `0.0001` en `Settings` (`MEMORY_FUSION_VALIDATED_BONUS`, validada al arrancar, 0 a 1; también `MEMORY_FUSION_K` y `MEMORY_FUSION_WEIGHTS`), `k=60` y pesos 1 sin cambios; recall@5 1,0 y MRR 0,9715 (línea base 0,50 y 0,34; fase 5: 0,54 y 0,40), subconjuntos en recall@5 todos 1,0 (cambio frente a la línea base: en +37,5, es +66,7, long +50, typo_id +41,7 puntos; frente a `phase5-eval.json`: en +41,7, es +66,7, long 0, typo_id +58,3), MRR de `fused` ≥ mejor capa individual en conjunto (0,9715 ≥ 0,9646 de `semantic`) y por subconjunto (CA-18). Rejilla (15 bonificaciones × k=60; 4 bonificaciones × k 20/60/100 × 3 juegos de pesos) y motivo en `memory_platform/tests/retrieval_eval/fusion-tuning.json`: el intervalo que cumple todo es 0 < bonificación ≤ 0,0002 (0,0001 y 0,0002 miden igual; se toma el centro, no el borde); de 0,0003 a 0,0005 falla CA-18 (MRR 0,9519); la meseta 0,003-0,01 (recall@5 0,847, MRR 0,820) cumple umbrales y CA-35 pero no CA-18; desde 0,02 reproduce el orden absoluto anterior y la puerta falla (recall@5 0,5417). La puerta de `run.py` comprueba ahora CA-35 (`max_subset_regression_points: 2` en `thresholds.json`; sin esa clave, o sin un subconjunto de la línea base, falla como `threshold_missing`/`subset_missing`, nunca pasa en silencio); umbrales y dataset sin cambios. Desviaciones: (1) `fusion-tuning.json` no está en `testing/` porque un hook reserva `docs/roadmap/**/testing/` a qa y bloqueó la escritura; vive junto a la puerta y puede moverse sin cambios; (2) se declaran además `config.py`, `run.py`, `test_metrics.py`, `run_postgres.py` (modo `MEMORY_FUSION_GRID` para medir la rejilla), `test_retrieval.py` y `docs/configuration.md`; (3) el Compose por defecto no declara las variables nuevas (usa los valores predeterminados). **Corrección tras revisión (intento 2, gaps 3, 4 y 5, fix1)**: gap 3 verificado (`evaluate_gate` no comprobaba CA-18): ahora falla como `ca18:overall` y `ca18:<subconjunto>` si el MRR de `fused` es menor que el de la mejor capa individual (episodic, documental, semantic; solo cuentan las capas que traen ese subconjunto), y como `ca18_layers_missing` si el informe no trae capas individuales (nunca pasa en silencio); las capas ya estaban en el informe. Test `test_ca18_fused_mrr_must_not_fall_below_the_best_single_layer_overall_or_in_any_subset` (igualdad pasa, global, subconjunto con la mejor capa léxica, capas ausentes); los fixtures de los otros tests añaden una capa individual. Evaluación fuera de línea tras el cambio: `gate.passed: true`, sin `failures` (CA-18 y CA-35 incluidos), recall@5 1,0 y MRR 0,9715 (mejor capa individual `semantic` 0,9646). Gap 4 verificado: `config.py:152-153` y `Archivos` apuntaban a `testing/fusion-tuning.json`; ahora citan `memory_platform/tests/retrieval_eval/fusion-tuning.json` (fichero sin mover). Gap 5 verificado: `docs/configuration.md` precisa que `MEMORY_FUSION_VALIDATED_BONUS` equivale a un orden absoluto solo cuando supera la mayor puntuación RRF posible (suma de pesos de capas / k: 0,0667 con k 60 y cuatro capas de peso 1; en el conjunto de evaluación ya desde 0,02), y que con otros k o pesos cambia. Medición: usage-meter `retrieval-quality/T-26-fix1` … `T-29-fix1` (una ventana compartida por las cuatro, 8 min de reloj; 0,08 h IA (medido), imputadas una sola vez aquí). **Corrección tras revisión (ronda 2, fix2, gap N2)**: sin cambios de código en esta tarea. Evidencia posterior a las correcciones (2026-11-11, fix2): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 412}` (`docker build --target test ... -t kairos-test:rq6`, exit 0); puerta `docker run --rm --network=none -e MEMORY_RETRIEVAL_EVAL=1 kairos-test:rq6 python -m memory_platform.tests.run_postgres` exit 0, `gate.passed: true`, `failures: []` (CA-18 y CA-35 comprobados por la puerta), `fused` recall@5 1,0, MRR 0,971528 (mejor capa individual `semantic` 0,964583, CA-18 cumplido), CA-35 sin regresiones (CA-18 repetido tras añadirlo a la puerta).
+
+
+RED: `retrieval-eval (run_postgres con MEMORY_RETRIEVAL_EVAL=1) con la fusion actual y la comprobacion CA-35` falló con gate passed=false: fused recall@5 0.5417 y MRR 0.4031 bajo umbral, subset:es y typo_id sin ganancia, regression:en -4.17 y regression:typo_id -16.67 puntos · 2026-11-11.
 
 ### T-28 — Documentar `backends`, `degraded` y la semántica de `candidates_truncated`
 
 - **Descripción**: Describir en `docs/architecture.md` e `docs/integration.md` los estados de `backends.semantic`, el campo `degraded`, `matched_chunk` y la nueva semántica de `candidates_truncated` (tope de candidatos en ruta exacta o `max_scan_tuples` en ANN).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Los manuales explican los estados de la búsqueda, degraded, matched_chunk y candidates_truncated; los documentos largos se reindexan con otro tamaño de vector y la búsqueda semántica es más rápida.
+- **Estado**: completado
 - **Tiempo humano**: est. 2h · real —
-- **Tiempo IA (ejec.)**: est. 0,27h · real —
+- **Tiempo IA (ejec.)**: est. 0,27h · real — (no medido: T-26…T-29 se trabajaron intercaladas en una sola ejecución, sin ventana de usage-meter)
 - **Supervisión**: est. 0,07h (≈25 % IA) · real —
 - **Previsión IA**: 70k in / 5k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-11
 - **Dependencias**: T-26
 - **Tipo**: docs
-- **Archivos**: `docs/architecture.md`, `docs/integration.md`, `docs/en/architecture.md`
+- **Archivos**: `memory_platform/store_jobs.py`, `docs/architecture.md`, `docs/integration.md`, `docs/en/architecture.md`, `memory_platform/worker.py`, `memory_platform/store_vectors.py`, `memory_platform/tests/test_worker.py`, `memory_platform/tests/test_vector_search_paths.py`, `memory_platform/tests/measure_vector_candidates.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - lectura: ambos manuales describen `status` ∈ {ok, partial, unavailable, off}, `degraded`, `matched_chunk` y `candidates_truncated` con los valores del contrato
   - `python scripts/build-handbook.py` → sin errores
+  - Evidencia (árbol final, 2026-11-11): `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 398}`; `python scripts/build-handbook.py --output /tmp/handbook` (contenedor `python:3.12-slim` + `markdown-it-py`, montado en solo lectura) → `Kairos handbook generated: 24 verified files.` exit 0; `docs/integration.md` y `docs/architecture.md` describen `status` ∈ {ok, partial, unavailable, off}, `degraded`, `matched_chunk`, `candidates_truncated` y `semantic: true` del CLI 0.3.0.
 
 **Criterios de aceptación**
-- [ ] Los manuales coinciden con el contrato regenerado (CA-36)
-- [ ] Se documenta que el CLI usa `semantic: true` desde la versión nueva
+- [x] Los manuales coinciden con el contrato regenerado (CA-36)
+- [x] Se documenta que el CLI usa `semantic: true` desde la versión nueva
 
 **Subtareas**
-- [ ] Redactar secciones
-- [ ] Regenerar el manual
+- [x] Redactar secciones
+- [x] Regenerar el manual
 
-**Notas**: Procedencia: spec CA-36, decisión «candidates_truncated». Clase: documentación. Se comprueba si existe `docs/en/` antes de editarlo; si no existe, se omite sin crearlo.
+**Notas**: Procedencia: spec CA-36, decisión «candidates_truncated». Clase: documentación. Se comprueba si existe `docs/en/` antes de editarlo; si no existe, se omite sin crearlo. Alcance ampliado por el plan director (2026-11-10), con TDD en rojo (4 casos): (a) deuda de la Fase 5: si el vector de elemento reutilizado (`stored_item_vector`) no tiene las dimensiones de los fragmentos, `embed_receipt` (`worker.py`) vuelve a embeber el texto completo (verificado como el resto) en vez de producir un recibo que el almacén rechaza para siempre; `store_jobs.py` no cambió (la comprobación necesita las dimensiones de los fragmentos recién embebidos, que solo se conocen en el worker); (b) B-09: `has_vectors` es un `SELECT EXISTS` sobre `memory.embeddings` con la misma noción de recurso vigente, y la lectura final de `_vector_candidates` filtra por los identificadores ganadores (`i.id=ANY`, `d.id=ANY`) antes de `to_jsonb`; firmas intactas (`store_surface.json` sin diff). Medida (`python -m memory_platform.tests.measure_vector_candidates` con `MEASURE_B09=1`, 10.000 documentos + 10.000 notas embebidos, 15 repeticiones, mediana): `has_vectors` 793,75 ms → 31,33 ms (25,3×); lectura final de 10 ganadores 974,14 ms → 6,64 ms (146,7×); mismas respuestas y mismas filas. Documentación: `docs/architecture.md`, `docs/integration.md` (sección «Estado de cada capa») y `docs/configuration.md` (fusión); `docs/en/` no existe y no se crea. Desviaciones: el script de medida vive en `memory_platform/tests/` y no en `testing/` (hook de qa); `docs/configuration.md` se declara en T-27. **Corrección tras revisión (intento 2, gap 7, fix1)**: verificado (`worker.py:49` re-embebía el texto completo en un `embed_many` aparte que el plazo no contaba). Ahora el texto completo viaja SIEMPRE en el MISMO `embed_many` que los fragmentos (`embed_plan` ya contaba esa entrada: `inputs = fragmentos + 1`, así que el plazo del trabajo `embedding_job_timeout(inputs)` la cubre) y se comprueba `len(vectors) == inputs`. El vector de elemento ya guardado (`stored_item_vector`) se conserva solo si tiene las dimensiones del vector recién calculado; si no, se entrega el nuevo. Coste asumido: se pierde el ahorro de no re-embeber el texto completo en el backfill de fragmentos (una entrada más por trabajo, dentro del mismo lote y plazo) a cambio de una sola llamada acotada. Tests (`test_worker`): una sola llamada con la entrada extra y vector del almacén con otras dimensiones sustituido; el mismo caso sin verificar falla `embedding_unverified`; el vector del mismo tamaño se conserva con una llamada; el plazo se calcula con exactamente las entradas de la llamada. Medición: usage-meter `retrieval-quality/T-26-fix1` … `T-29-fix1` (una ventana compartida por las cuatro, 8 min de reloj; 0,08 h IA (medido), imputadas una sola vez aquí). **Corrección tras revisión (ronda 2, fix2, gap N5; sustituye a la solución de fix1 para el vector guardado)**: verificado (`worker.py:43` re-embebía siempre el texto completo, ~1,9× de trabajo de Ollama en textos cortos). Ahora `embed_receipt` reutiliza el vector guardado cuando existe (solo se envían los fragmentos); sin vector guardado, el texto completo viaja al final del MISMO `embed_many`; si el vector guardado tiene otras dimensiones que los fragmentos, hace una llamada extra `provider.embed(texto)` (verificada como el resto: un `verified:false` falla `embedding_unverified`; dimensiones distintas, `embedding_invalid`). El plazo del trabajo (`worker_deadline`, nuevo, usado en `run_once`) planifica n+1 entradas (`embed_plan` sigue devolviendo fragmentos+1) MÁS la llamada de un solo texto (`embedding_job_timeout(settings, 1)`) más el margen, así que cubre siempre el caso peor. `stored_item_vector` (`store_jobs.py`, se añade a `Archivos`; solo cambia el docstring) ya describe que el vector se conserva salvo dimensiones distintas. Tests (`test_worker`): vector del mismo tamaño → solo fragmentos y vector reutilizado; sin vector → un lote con el texto al final; dimensiones distintas → una llamada extra tras los fragmentos; la llamada extra cabe en el plazo (0,4 s totales con 0,25 s para n+1 entradas); extra sin verificar falla; el plazo planifica n+1 más la llamada extra. Evidencia posterior a las correcciones (2026-11-11, fix2): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 412}` (`docker build --target test ... -t kairos-test:rq6`, exit 0); puerta `docker run --rm --network=none -e MEMORY_RETRIEVAL_EVAL=1 kairos-test:rq6 python -m memory_platform.tests.run_postgres` exit 0, `gate.passed: true`, `failures: []` (CA-18 y CA-35 comprobados por la puerta), `fused` recall@5 1,0, MRR 0,971528 (mejor capa individual `semantic` 0,964583, CA-18 cumplido), CA-35 sin regresiones. Medición: usage-meter no disponible en esta ejecución, tiempo `(estimado)`.
+
+
+RED: `test_worker::ChunkedEmbeddingWorkerTests (2 casos) y test_vector_search_paths::VectorSearchPathTests (2 casos has_vectors/identidades)` falló con MEMORY_TEST_RESULT failures=4 passed=false: AssertionError, sin re-embeber con dimensiones distintas y has_vectors/fetch aun usan to_jsonb sin filtro de identidades · 2026-11-11.
 
 ### T-29 — CLI: `semantic: true` en el contexto automático y versión sin publicar
 
 - **Descripción**: Cambiar `packages/kairos-cli/lib/dispatcher.mjs:84` a `semantic: true`, tolerar el campo `degraded` en la respuesta, actualizar tests y subir la versión del paquete (0.3.0) en `package.json` con su entrada de changelog. NO publicar en npm (cuenta del publicador bloqueada, F-06 abierta).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: El contexto automático del CLI usa también la búsqueda semántica (con plazo propio y aviso «degraded» si no llega a tiempo); versión 0.3.0 preparada, sin publicar.
+- **Estado**: completado
 - **Tiempo humano**: est. 4h · real —
-- **Tiempo IA (ejec.)**: est. 0,53h · real —
+- **Tiempo IA (ejec.)**: est. 0,53h · real — (no medido: T-26…T-29 se trabajaron intercaladas en una sola ejecución, sin ventana de usage-meter)
 - **Supervisión**: est. 0,13h (≈25 % IA) · real —
 - **Previsión IA**: 145k in / 15k out tok · ⚠️ verificar €
+- **Cerrada**: 2026-11-11
 - **Dependencias**: T-26
 - **Tipo**: frontend
-- **Archivos**: `packages/kairos-cli/lib/dispatcher.mjs`, `packages/kairos-cli/package.json`, `packages/kairos-cli/tests/dispatcher.test.mjs`, `packages/kairos-cli/tests/lifecycle.test.mjs`, `packages/kairos-cli/README.md`, `docs/release-cli.md`
+- **Archivos**: `packages/kairos-cli/lib/dispatcher.mjs`, `packages/kairos-cli/package.json`, `packages/kairos-cli/tests/dispatcher.test.mjs`, `packages/kairos-cli/tests/lifecycle.test.mjs`, `packages/kairos-cli/README.md`, `docs/release-cli.md`, `packages/kairos-cli/lib/config.mjs`, `docs/install.md`, `docs/code-analysis.md`, `README.md`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `node --test packages/kairos-cli/tests/dispatcher.test.mjs` → todos pasan, incluido el caso `semantic: true` en el contexto automático y el manejo de `degraded`
   - `grep -n "semantic: true" packages/kairos-cli/lib/dispatcher.mjs && grep -n "\"version\"" packages/kairos-cli/package.json` → ocurrencia en la línea del contexto automático y versión nueva
   - `git status --short packages/kairos-cli` → solo cambios de código/versión; ningún `npm publish` ejecutado (lectura: historial de comandos del cierre)
+  - Evidencia (árbol final, 2026-11-11): `node --test tests/dispatcher.test.mjs` → `tests 12 · pass 12 · fail 0` (incluye `semantic: true` y los dos casos de `degraded`); las siete suites de `npm test` (`install, mcp, capture, dispatcher, lifecycle, code-analysis, artifact`) → `tests 90 · pass 90 · fail 0 · skipped 0`; `grep -n "semantic: true" packages/kairos-cli/lib/dispatcher.mjs` → línea 87; `"version": "0.3.0"` (package.json línea 3); `git status --short packages/kairos-cli` solo ficheros de código/versión/README; ningún `npm publish` ejecutado.
 
 **Criterios de aceptación**
-- [ ] Decisión P-04: el contexto automático del CLI usa `semantic: true` y no falla si la respuesta trae `degraded`
-- [ ] La versión del paquete sube a la siguiente menor (0.3.0) y no se publica en npm
-- [ ] Latencia: con el proveedor lento el contexto automático no excede `embedding_query_timeout` (10 s) más 1 s
+- [x] Decisión P-04: el contexto automático del CLI usa `semantic: true` y no falla si la respuesta trae `degraded`
+- [x] La versión del paquete sube a la siguiente menor (0.3.0) y no se publica en npm
+- [x] Latencia: con el proveedor lento el contexto automático no excede `embedding_query_timeout` (10 s) más 1 s
 
 **Subtareas**
-- [ ] Test en rojo del caso `semantic: true`
-- [ ] Cambiar el despachador
-- [ ] Subir versión y documentar en `docs/release-cli.md` el bloqueo de publicación
-- [ ] Ejecutar tests del paquete
+- [x] Test en rojo del caso `semantic: true`
+- [x] Cambiar el despachador
+- [x] Subir versión y documentar en `docs/release-cli.md` el bloqueo de publicación
+- [x] Ejecutar tests del paquete
 
-**Notas**: Procedencia: decisión P-04, riesgo de latencia de la evaluación. Clase: cambio (test en rojo). Patrón: `packages/kairos-cli/lib/dispatcher.mjs:84` (`layers: ['episodic','documental'], semantic: false, limit: 5, max_chars: 5000`). La publicación queda para cuando se desbloquee la cuenta (ver `docs/roadmap/2026-11-06-functional-parity/tasks.md`, F-06).
+**Notas**: Procedencia: decisión P-04, riesgo de latencia de la evaluación. Clase: cambio (test en rojo). Patrón: `packages/kairos-cli/lib/dispatcher.mjs:84` (`layers: ['episodic','documental'], semantic: false, limit: 5, max_chars: 5000`). La publicación queda para cuando se desbloquee la cuenta (ver `docs/roadmap/2026-11-06-functional-parity/tasks.md`, F-06). Implementado: `dispatcher.mjs` pide `semantic: true`; si la llamada excede el plazo del cliente (`mcp_timeout`, 1,8 s por llamada; hook 8 s) repite una vez solo léxica y lo declara en la evidencia como `degraded: {layer: "semantic", reason: "client_timeout"}`; si el servidor informa `degraded` solo viajan `layer` y `reason` conocidos (nunca texto libre); cualquier otro error (autorización, red) sigue fallando. Versión `0.3.0` en `package.json` y `VERSION` (`config.mjs`; `COMPATIBLE_VERSIONS` conserva `0.2.0`); README, `docs/release-cli.md`, `docs/install.md` y `docs/code-analysis.md` actualizados, con el bloqueo de publicación (F-06). NO se ejecutó `npm publish` ni se construyó/publicó tarball alguno en ningún registro. Latencia: el servidor acota la espera de embeddings a `embedding_query_timeout` (probado: ≤ plazo + 1 s) y el cliente nunca espera más de su plazo por llamada. Desviaciones: `config.mjs`, `docs/install.md` y `docs/code-analysis.md` no estaban en `Archivos` (versión y rutas del runtime); el cambio de la aserción previa `semantic === false` del test de contexto a `true` es la decisión P-04 misma. **Corrección tras revisión (intento 2, gaps 1 y 2, fix1)**: gap 1 verificado (`docs/install.md:17` y `packages/kairos-cli/README.md` mandaban instalar `artifacts/daycry-kairos-0.3.0.tgz` y afirmaban un `release:check` del tarball que no existe; `README.md` raíz apuntaba al tarball 0.2.0 ignorado por git, hallazgo O-07 del audit): la prosa dice ahora que la 0.3.0 no está publicada ni empaquetada, que `artifacts/` está en `.gitignore` y que, desde un clon, primero se genera el tarball con `npm pack --ignore-scripts --offline --pack-destination ./artifacts` (el mismo comando de `docs/release-cli.md`; `package.json` no tiene script de empaquetado propio) dentro de `packages/kairos-cli` y luego se instala ese fichero; los comandos de `packages/kairos-cli/README.md` usan `./artifacts/daycry-kairos-0.3.0.tgz`. No se construyó ni publicó ningún tarball. `README.md` se añade a `Archivos` (sección «Conectar un agente»). Gap 2 (parte CLI) verificado: el hook abortaba a 1,8 s y el reintento léxico no cabía en los 2,2 s del IPC, y la petición abortada seguía en el servidor. Ahora el CLI envía UNA petición con `semantic_budget_ms: 1100` (`SEMANTIC_BUDGET_MS`, margen de 700 ms bajo el plazo de 1,8 s) y se elimina el reintento léxico y `client_timeout`; un `mcp_timeout` del cliente falla como cualquier error de transporte; el `degraded` del servidor (ahora también `store_error`) se tolera y viaja. Tests (`dispatcher.test.mjs`): una sola petición, presupuesto enviado y entre 1000 y 1200 ms, `degraded` timeout tolerado, sin reintento ante `mcp_timeout`. Documentación actualizada en `docs/integration.md`, `docs/install.md`, `packages/kairos-cli/README.md` y `docs/release-cli.md` (que aún describía el reintento). Medición: usage-meter `retrieval-quality/T-26-fix1` … `T-29-fix1` (una ventana compartida por las cuatro, 8 min de reloj; 0,08 h IA (medido), imputadas una sola vez aquí). **Corrección tras revisión (ronda 2, fix2, gaps N2 y N6)**: N6 verificado: `docs/install.md`, `docs/integration.md` y `packages/kairos-cli/README.md` afirmaban que la consulta de embeddings no sigue en marcha; ahora dicen que el servidor solo deja de esperar al proveedor (cancela su petición HTTP) y que Ollama puede terminar el cálculo; `docs/integration.md` añade que el presupuesto cubre toda la capa semántica y que `true`/`"1100"` se rechazan. El comentario de `dispatcher.mjs:11` cita ahora el plazo del IPC (2200 ms, `lifecycle.mjs:123`) y el del hook (8 s, `hooks.mjs:22`). Evidencia posterior a las correcciones (2026-11-11, fix2): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 412}` (`docker build --target test ... -t kairos-test:rq6`, exit 0); puerta `docker run --rm --network=none -e MEMORY_RETRIEVAL_EVAL=1 kairos-test:rq6 python -m memory_platform.tests.run_postgres` exit 0, `gate.passed: true`, `failures: []` (CA-18 y CA-35 comprobados por la puerta), `fused` recall@5 1,0, MRR 0,971528 (mejor capa individual `semantic` 0,964583, CA-18 cumplido), CA-35 sin regresiones; `npm test` en `packages/kairos-cli`: exit 0, 90 pruebas, 90 pasan, 0 fallan (fix2).
 
 ---
+
+
+RED: `packages/kairos-cli/tests/dispatcher.test.mjs (3 casos de contexto automatico)` falló con node --test: pass 9 fail 3; AssertionError actual false expected true en args.semantic y degraded undefined en el payload · 2026-11-11.
 
 ## Fase 7 — Observabilidad (C-07 · P12) — en paralelo desde T-06
 
@@ -1434,3 +1454,40 @@ Lentes: A+B+C+D. Las correcciones 1-11 del intento 2 se verifican ✓ (A, B, C, 
 - 2026-11-10 · «Revisión de dos lentes — intento 1: Fase 4 (T-13…T-18) (T-13, T-14, T-15, T-16, T-17, T-18)» → [execution-history.md](execution-history.md) · SHA-256 `04565b00abc6a24d1b2513a26bbd56bc5cde166e1366d4fc8c862c6905fc3a74`
 - 2026-11-10 · «Revisión de dos lentes — intento 1: Fase 5 (T-19…T-25) (T-19, T-20, T-21, T-22, T-23, T-24, T-25)» → [execution-history.md](execution-history.md) · SHA-256 `321726471cd7c7840f901bd04e76c97b65fa30650edfbad97682166d0e132f8c`
 - 2026-11-10 · «Revisión de dos lentes — intento 2: Fase 5 (T-19…T-25) (T-19, T-20, T-21, T-22, T-23, T-24, T-25)» → [execution-history.md](execution-history.md) · SHA-256 `8f53e668ea189469619321c4dff97dae3925b9a1aa8734fe77133c691ef18f6a`
+
+## Revisión de dos lentes — intento 1: Fase 6 (T-26…T-29) — degradación, bonificación ajustable, B-09 y CLI 0.3.0 (T-26, T-27, T-28, T-29)
+
+Lentes: A+B+D (C no aplica: `review-lens-select.py` sin motivos; D por ruta `worker`). `scope-check.py --base 68ca247` exit 0 (32 en alcance). Lente A: todos los criterios de T-26…T-29 ✓; `openapi-lint.py --diff` sin cambios rompedores; 34 herramientas.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | `docs/install.md:17` y `packages/kairos-cli/README.md:14,32,38` mandan instalar `artifacts/daycry-kairos-0.3.0.tgz` y afirman un `release:check` del tarball que no existe (`release-cli.md:3` dice lo contrario) | T-29 | corregido (intento 2) | Lente A |
+| 2 | Important | El hook de contexto aborta a 1,8 s y reintenta solo léxico dentro de un plazo IPC de 2,2 s (`lifecycle.mjs:123`): el reintento casi nunca cabe y el hook se queda sin contexto, peor que con `semantic:false`; la petición abortada sigue en el servidor hasta 10 s y su embed ocupa Ollama durante el backfill | T-26/T-29 | corregido (intento 2) | Lentes B (#1) y D (G1), fusionados |
+| 3 | Minor | La puerta no comprueba CA-18 (MRR de `fused` ≥ mejor capa); una bonificación de 0,005 pasa en verde | T-27 | corregido (intento 2) | Lente A (#2) |
+| 4 | Minor | `config.py:152-153` y `Archivos` de T-27 apuntan a `testing/fusion-tuning.json`, que vive en `memory_platform/tests/retrieval_eval/` | T-27 | corregido (intento 2) | Lente A (#3) |
+| 5 | Minor | `docs/configuration.md`: «1 equivale a un orden absoluto» solo con k y pesos por defecto | T-27 | corregido (intento 2) | Lentes A (#4) y B |
+| 6 | Minor | `retrieval.py:131-144` clasifica errores de base de datos y `semantic_deadline_exceeded` como `provider_error` | T-26 | corregido (intento 2) | Lente B (#2) |
+| 7 | Minor | `worker.py:49` re-embebe el texto completo en una llamada aparte que el plazo de `worker.py:91` no cuenta (timeout posible; 2× peticiones al proveedor) | T-28 | corregido (intento 2) | Lentes B (#3) y D (G2), fusionados |
+
+## Revisión de dos lentes — intento 2: Fase 6 (T-26…T-29) — correcciones del intento 1 (T-26, T-27, T-28, T-29)
+
+Lentes: A+B+D en un solo revisor de contexto fresco (C sin motivos). `scope-check.py --base 68ca247` exit 0 (35 en alcance). Gaps 1-7 del intento 1: ✓ cerrados. `openapi-lint.py --diff` sin cambios rompedores; 34/34 herramientas; solo `search` y `context` ganan `semantic_budget_ms` opcional.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| N1 | Important | `test_contract_additive.py:115-122`: `additive_violations` acepta claves nuevas que restringen la entrada (`maximum`, `additionalProperties:false`, `minLength`, `dependentRequired`); la prueba de `search` ya no caza lo que cazaba la igualdad | T-26 | corregido (intento 3) | Lente A, mutaciones ejecutadas |
+| N2 | Important | Ledger sin evidencia posterior a las correcciones: T-26…T-28 siguen con 398 tests y la puerta `retrieval-eval` no consta repetida tras añadir CA-18 | T-26…T-28 | corregido (intento 3) | Lente A |
+| N3 | Minor | `has_vectors` (`retrieval.py:135`) queda fuera del presupuesto `semantic_budget_ms` | T-26 | corregido (intento 3) | Lente B |
+| N4 | Minor | `semantic_budget_ms` acepta `true` (→ 1 ms) y `"1100"` por validación laxa | T-26 | corregido (intento 3) | Lente B |
+| N5 | Minor | `worker.py:43` re-embebe siempre el texto completo, también cuando el vector guardado coincide: ~1,9× trabajo de Ollama en corpus cortos; docstring de `stored_item_vector` falso | T-28 | corregido (intento 3) | Lente D |
+| N6 | Minor | `docs/install.md:148` y `docs/integration.md:36` afirman que el proveedor deja de calcular al agotarse el presupuesto; solo se cancela la espera HTTP | T-26 | corregido (intento 3) | Lente A (no verificable sin Ollama) |
+
+## Revisión de dos lentes — intento 3: Fase 6 (T-26…T-29) — correcciones del intento 2 (T-26, T-27, T-28, T-29)
+
+Lentes: A+B+D en un solo revisor de contexto fresco (C sin motivos). N1-N6 del intento 2: ✓ cerrados (test de contrato endurecido detecta mutaciones; 34/34 herramientas; `openapi-lint.py --diff` sin cambios; `node --test` 90/90; 93/96 unittest locales, 3 por falta de psycopg en el host). Sin gaps Critical ni Important: la fase queda cerrada. Los Minor pasan como deuda a la Fase 7 (T-30/T-34).
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| R1 | Minor | `worker_deadline` (`worker.py:31,105`) suma siempre la posible llamada extra (120 s), también sin vector guardado: un proveedor colgado retiene al trabajador hasta 1030 s en vez de 910 s | T-28 | deuda aceptada → Fase 7 | Lente D |
+| R2 | Minor | `docs/operations.md:186,189` y `docs/configuration.md:51` siguen diciendo que el job no pasa de 900 s + 10 s | T-28 | deuda aceptada → T-34 | Lente A |
+| R3 | Minor | `strict=True` rechaza `500.0` aunque el esquema publicado es `integer`; la documentación solo menciona `1.5` | T-26 | deuda aceptada → T-34 (documentar) | Lente B |

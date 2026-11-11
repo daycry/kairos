@@ -37,10 +37,11 @@ class MetricTests(unittest.TestCase):
         self.assertEqual(result['subsets']['es']['recall@5'], 0.0)
 
     def test_gate_requires_targets_and_the_subset_gain(self):
-        thresholds = {'fused_recall_at_5': 0.8, 'fused_mrr': 0.6, 'subset_gain_points': 15, 'gain_subsets': ['es']}
+        thresholds = {'fused_recall_at_5': 0.8, 'fused_mrr': 0.6, 'subset_gain_points': 15, 'gain_subsets': ['es'], 'max_subset_regression_points': 2}
 
         def report(r5, mrr_value, es, sha='x'):
-            return {'dataset_sha256': sha, 'layers': {'fused': {'overall': {'recall@5': r5, 'mrr': mrr_value}, 'subsets': {'es': {'recall@5': es}}}}}
+            return {'dataset_sha256': sha, 'layers': {'fused': {'overall': {'recall@5': r5, 'mrr': mrr_value}, 'subsets': {'es': {'recall@5': es, 'mrr': mrr_value}}},
+                                                      'semantic': {'overall': {'recall@5': 0, 'mrr': 0.1}, 'subsets': {'es': {'recall@5': 0, 'mrr': 0.1}}}}}
         base = report(0.1, 0.1, 0.3)
         self.assertEqual(evaluate_gate(report(0.9, 0.7, 0.5), thresholds, baseline=base), [])
         failed = evaluate_gate(report(0.7, 0.5, 0.4), thresholds, baseline=base)
@@ -52,9 +53,48 @@ class MetricTests(unittest.TestCase):
         mismatch = evaluate_gate(report(0.9, 0.7, 0.9), thresholds, baseline=report(0.1, 0.1, 0.3, sha='other'))
         self.assertEqual([f['check'] for f in mismatch], ['baseline_dataset_mismatch'])
 
+    def test_ca35_no_subset_may_lose_more_than_the_allowed_points_of_recall_at_5(self):
+        thresholds = {'fused_recall_at_5': 0.0, 'fused_mrr': 0.0, 'subset_gain_points': 0, 'gain_subsets': ['es'], 'max_subset_regression_points': 2}
+
+        def report(es, en, sha='x'):
+            return {'dataset_sha256': sha, 'layers': {'fused': {'overall': {'recall@5': 1, 'mrr': 1}, 'subsets': {'es': {'recall@5': es, 'mrr': 1}, 'en': {'recall@5': en, 'mrr': 1}}},
+                                                      'semantic': {'overall': {'recall@5': 0, 'mrr': 0}, 'subsets': {'es': {'recall@5': 0, 'mrr': 0}, 'en': {'recall@5': 0, 'mrr': 0}}}}}
+        base = report(0.5, 0.625)
+        self.assertEqual(evaluate_gate(report(0.9, 0.625 - 0.02), thresholds, baseline=base), [])  # exactly the allowed loss
+        failed = evaluate_gate(report(0.9, 0.625 - 0.0201), thresholds, baseline=base)
+        self.assertEqual([f['check'] for f in failed], ['regression:en'])
+        self.assertAlmostEqual(failed[0]['loss_points'], 2.01, places=3)
+        # a subset gone from the report is a failure, and so is a gate without the threshold: nothing passes silently
+        gone = report(0.9, 0.9)
+        del gone['layers']['fused']['subsets']['en']
+        self.assertEqual([f['check'] for f in evaluate_gate(gone, thresholds, baseline=base)], ['subset_missing:en'])
+        without = {k: v for k, v in thresholds.items() if k != 'max_subset_regression_points'}
+        self.assertEqual([f['check'] for f in evaluate_gate(report(0.9, 0.9), without, baseline=base)], ['threshold_missing:max_subset_regression_points'])
+        self.assertEqual(json.loads((HERE / 'thresholds.json').read_text(encoding='utf-8'))['max_subset_regression_points'], 2)
+
+    def test_ca18_fused_mrr_must_not_fall_below_the_best_single_layer_overall_or_in_any_subset(self):
+        thresholds = {'fused_recall_at_5': 0.0, 'fused_mrr': 0.0, 'subset_gain_points': 0, 'gain_subsets': ['es'], 'max_subset_regression_points': 2}
+
+        def report(fused, semantic, lexical=(0.0, 0.0, 0.0)):
+            def layer(overall, es, en):
+                return {'overall': {'recall@5': 1, 'mrr': overall}, 'subsets': {'es': {'recall@5': 1, 'mrr': es}, 'en': {'recall@5': 1, 'mrr': en}}}
+            return {'dataset_sha256': 'x', 'layers': {'fused': layer(*fused), 'semantic': layer(*semantic), 'episodic': layer(*lexical)}}
+        ok = report((0.9, 0.9, 0.9), (0.9, 0.8, 0.9), (0.5, 0.9, 0.1))  # equal to the best layer of each scope still passes
+        self.assertEqual(evaluate_gate(ok, thresholds, baseline=ok), [])
+        overall = report((0.89, 0.9, 0.9), (0.9, 0.8, 0.9))
+        self.assertEqual([f['check'] for f in evaluate_gate(overall, thresholds, baseline=overall)], ['ca18:overall'])
+        subset = report((0.9, 0.9, 0.7), (0.8, 0.8, 0.7), (0.5, 0.9, 0.71))  # best of `en` is the lexical layer
+        failed = evaluate_gate(subset, thresholds, baseline=subset)
+        self.assertEqual([f['check'] for f in failed], ['ca18:en'])
+        self.assertEqual(failed[0]['best_single_layer_mrr'], 0.71)
+        bonus = report((0.9, 0.9, 0.9), (0.9, 0.9, 0.9))
+        del bonus['layers']['semantic'], bonus['layers']['episodic']
+        self.assertEqual([f['check'] for f in evaluate_gate(bonus, thresholds, baseline=bonus)], ['ca18_layers_missing'])
+
     def test_unavailable_backend_fails_with_a_distinguishable_reason(self):
-        thresholds = {'fused_recall_at_5': 0.0, 'fused_mrr': 0.0, 'subset_gain_points': 0, 'gain_subsets': ['es']}
-        rep = {'dataset_sha256': 'x', 'layers': {'fused': {'overall': {'recall@5': 1, 'mrr': 1}, 'subsets': {'es': {'recall@5': 1}}}},
+        thresholds = {'fused_recall_at_5': 0.0, 'fused_mrr': 0.0, 'subset_gain_points': 0, 'gain_subsets': ['es'], 'max_subset_regression_points': 2}
+        rep = {'dataset_sha256': 'x', 'layers': {'fused': {'overall': {'recall@5': 1, 'mrr': 1}, 'subsets': {'es': {'recall@5': 1, 'mrr': 1}}},
+                                                 'semantic': {'overall': {'recall@5': 0, 'mrr': 0}, 'subsets': {'es': {'recall@5': 0, 'mrr': 0}}}},
                'query_backends': [{'id': 'q1', 'episodic': {'backends': {'episodic': 'unavailable'}, 'partial': True}}]}
         self.assertEqual([f['check'] for f in evaluate_gate(rep, thresholds, baseline=rep)], ['backend_unavailable:episodic'])
 
@@ -76,7 +116,7 @@ class MetricTests(unittest.TestCase):
         layers, health = asyncio.run(_measure(Store(), {}, 'p', {}, [question], Provider(), None, retrieval=Retrieval()))
         self.assertEqual(health[0]['episodic'], {'backends': {'episodic': 'unavailable'}, 'partial': True})
         self.assertEqual(health[0]['semantic']['backends'], {'semantic': 'unavailable'})
-        thresholds = {'fused_recall_at_5': 0.0, 'fused_mrr': 0.0, 'subset_gain_points': 0, 'gain_subsets': ['es']}
+        thresholds = {'fused_recall_at_5': 0.0, 'fused_mrr': 0.0, 'subset_gain_points': 0, 'gain_subsets': ['es'], 'max_subset_regression_points': 2}
         rep = {'dataset_sha256': 'x', 'layers': layers, 'query_backends': health}
         checks = [f['check'] for f in evaluate_gate(rep, thresholds, baseline=rep)]
         self.assertIn('backend_unavailable:episodic', checks)

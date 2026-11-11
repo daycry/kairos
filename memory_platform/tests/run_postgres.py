@@ -40,6 +40,11 @@ def main():
             from memory_platform.tests.live_probe import run
             run(os.environ['MEMORY_TEST_DSN'])
             return
+        if os.environ.get('MEMORY_FUSION_GRID'):
+            # Fusion tuning (fusion-tuning.json): measures a grid of fusion settings over the evaluation corpus, no gate.
+            from memory_platform.tests.retrieval_eval.run import tune
+            print('FUSION_GRID_RESULT ' + json.dumps(tune(json.loads(os.environ['MEMORY_FUSION_GRID'])), sort_keys=True, ensure_ascii=False), flush=True)
+            return
         if os.environ.get('MEMORY_RETRIEVAL_EVAL') == '1':
             # Quality gate, deliberately outside the regression suite: exit 1 below the thresholds.
             from memory_platform.tests.retrieval_eval.run import run

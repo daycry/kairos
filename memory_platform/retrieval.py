@@ -123,37 +123,60 @@ class Retrieval:
             except Exception:
                 return layer, [], {'status': 'unavailable', 'count': 0}
         async def vectors():
-            if not request.semantic or not request.q.strip() or not getattr(self.settings, 'embed_enabled', True) or not set(layers).intersection({'episodic', 'documental'}):
+            if not request.semantic or not request.q.strip() or not set(layers).intersection({'episodic', 'documental'}):
                 return 'semantic', [], {'status': 'off', 'count': 0}
+            # Asked for but not run: the answer says why (`reason`), so a lexical-only answer is never mistaken for a complete hybrid one.
+            if not getattr(self.settings, 'embed_enabled', True):
+                return 'semantic', [], {'status': 'off', 'count': 0, 'reason': 'embeddings_disabled'}
+            # Who failed decides the reason: the embeddings provider -> provider_error; the plazo (configured or the caller's budget) -> timeout;
+            # anything else (database, scan) -> store_error.
+            phase = 'store'
             try:
-                if not await asyncio.to_thread(self.store.has_vectors, actor, request.project_ids, self.settings.embedding_model):
-                    return 'semantic', [], {'status': 'off', 'count': 0}
-                async with asyncio.timeout(getattr(self.settings, 'embedding_query_timeout', 10.0)):
-                    deadline=time.monotonic()+getattr(self.settings,'embedding_query_timeout',10.0)
+                budget = getattr(self.settings, 'embedding_query_timeout', 10.0)
+                if request.semantic_budget_ms is not None:
+                    budget = min(budget, request.semantic_budget_ms/1000)
+                # The budget covers the whole semantic layer, the existence check included.
+                async with asyncio.timeout(budget):
+                    deadline=time.monotonic()+budget
+                    if not await asyncio.to_thread(self.store.has_vectors, actor, request.project_ids, self.settings.embedding_model):
+                        return 'semantic', [], {'status': 'off', 'count': 0, 'reason': 'no_vectors'}
+                    phase = 'provider'
                     embedded = await self.embeddings.embed(request.q, query=True)
+                    phase = 'store'
                     values = await self._scan_vectors(actor,request,embedded,deadline)
                 # An empty answer can still be truncated, and the hits' own fields are dropped by hit(): read both first.
                 truncated = bool(getattr(values, 'candidates_truncated', False)) or any(value.get('candidates_truncated', False) for value in values)
                 candidate_limit = max((value.get('candidate_limit', 0) for value in values), default=0) or getattr(values, 'candidate_limit', 10000)
                 values = [hit(value) for value in values if value['layer'] in layers and value['project_id'] in request.project_ids and value.get('category') not in request.exclude_categories]
                 return 'semantic', values, {'status': 'partial' if truncated else 'ok', 'count': len(values), 'candidate_limit': candidate_limit, 'candidates_truncated': truncated}
-            except Exception:
-                return 'semantic', [], {'status': 'unavailable', 'count': 0}
+            except Exception as exc:
+                timed_out = isinstance(exc, TimeoutError) or getattr(exc, 'code', None) == 'semantic_deadline_exceeded'
+                return 'semantic', [], {'status': 'unavailable', 'count': 0, 'reason': 'timeout' if timed_out else 'provider_error' if phase == 'provider' else 'store_error'}
         results = await asyncio.gather(*(run(layer) for layer in dict.fromkeys(layers)), vectors())
         ranked, backends = {}, {}
         for layer, values, status in results:
             backends[layer] = status
+            weight = self.settings.fusion_weights.get(layer, 1.0)
             for rank, value in enumerate(values):
-                priority = value.get('validation_status') == 'validated' and not value.get('superseded')
                 key = (value['layer'], value['project_id'], value['item_id'])
                 if key not in ranked:
-                    ranked[key] = [priority, 0.0, value]
-                ranked[key][1] += 1/(60+rank)
+                    ranked[key] = [0.0, value]
+                ranked[key][0] += weight/(self.settings.fusion_k+rank)
                 if not value['ref'].startswith('external:'):
-                    ranked[key][2] = value
-        ordered = sorted(ranked.values(), key=lambda value: (value[0], value[1]), reverse=True)
-        return {'items': [v[2] for v in ordered[:request.limit]], 'backends': backends,
-                'partial': any(v['status'] not in ('ok', 'off') for v in backends.values())}
+                    ranked[key][1] = value
+        # Reciprocal rank fusion plus an adjustable bonus for validated, current memory (decision D-7: validation is a score bonus, not an absolute order).
+        bonus = self.settings.fusion_validated_bonus
+        for entry in ranked.values():
+            if entry[1].get('validation_status') == 'validated' and not entry[1].get('superseded'):
+                entry[0] += bonus
+        ordered = sorted(ranked.values(), key=lambda value: value[0], reverse=True)
+        answer = {'items': [v[1] for v in ordered[:request.limit]], 'backends': backends,
+                  'partial': any(v['status'] not in ('ok', 'off') for v in backends.values())}
+        # `degraded` is only reported when the semantic layer alone fell short; any other failing backend is already visible in `backends`/`partial`.
+        reason = backends['semantic'].get('reason')
+        if reason and all(v['status'] in ('ok', 'off') for name, v in backends.items() if name != 'semantic'):
+            answer['degraded'] = {'layer': 'semantic', 'reason': reason}
+        return answer
 
     async def details(self, actor, request):
         request = request if isinstance(request, m.Details) else m.Details.model_validate(request)

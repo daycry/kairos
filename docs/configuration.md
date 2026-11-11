@@ -66,6 +66,18 @@ La búsqueda semántica usa la extensión pgvector con el operador de distancia 
 
 Cambiar `MEMORY_VECTOR_INDEXES` no borra índices antiguos: ejecuta `admin migrate` para crear los nuevos y elimina los que sobren manualmente. Construir un índice nuevo en una base ya migrada toma un bloqueo `SHARE` sobre `memory.embeddings` (bloquea las escrituras de embeddings durante la construcción); por encima de unas 6,5·10^4 filas a 768 dimensiones el grafo deja de caber en los 256 MB de `MEMORY_MIGRATION_MAINTENANCE_WORK_MEM` y la construcción se vuelve mucho más lenta, así que conviene subir ese valor (ver [operación](operations.md#imagen-postgresql)). `MEMORY_VECTOR_INDEXES` debe declararse en `x-memory-environment` del Compose, como el resto de variables avanzadas, para llegar a los contenedores. Los vectores se escriben a la vez en `vector` (`double precision[]`, que permite el retroceso) y en `embedding` (pgvector).
 
+## Fusión de capas de la búsqueda
+
+La búsqueda combina las capas por fusión de rangos recíprocos: cada acierto suma `peso / (k + posición)` por capa y, si está validado y vigente, una bonificación. Se validan al arrancar y un valor fuera de rango impide el arranque.
+
+| Variable | Predeterminado | Efecto |
+|---|---|---|
+| `MEMORY_FUSION_VALIDATED_BONUS` | `0.0001` | Bonificación (0 a 1) que suma un acierto validado y no sustituido. 0 desactiva la preferencia por lo validado. Equivale a un orden absoluto (lo validado primero) solo cuando supera la mayor puntuación RRF posible, la suma de los pesos de las capas dividida por `MEMORY_FUSION_K`: con k 60 y las cuatro capas con peso 1 es 0,0667 (en el conjunto de evaluación ya ocurre desde 0,02); con otros k o pesos el umbral cambia (con k pequeño y pesos altos, incluso 1 puede no bastar) |
+| `MEMORY_FUSION_K` | `60` | Constante `k` de la fusión (entero de 1 a 1.000) |
+| `MEMORY_FUSION_WEIGHTS` | vacío (peso 1 en todas) | Pesos por capa, `capa=peso,...`, con capas `episodic`, `documental`, `temporal` y `semantic` y pesos mayores que 0 y hasta 10 |
+
+Para llegar a los contenedores deben declararse en `x-memory-environment` del Compose, como el resto de variables avanzadas (el Compose por defecto no las declara y usa los valores predeterminados). Los valores predeterminados salen de `memory_platform/tests/retrieval_eval/fusion-tuning.json` (rejilla explorada y motivo). Cualquier cambio debe pasar la puerta `retrieval-eval`, que exige recall@5 ≥ 0,80, MRR ≥ 0,60 y que ningún subconjunto pierda más de 2 puntos de recall@5 frente a la línea base.
+
 ## Proyectos, categorías y permisos
 
 Se gestionan desde **Configuración** del portal, con permiso de administración. Cada proyecto tiene identidad y política propias. `off` desactiva nuevas capturas; `summary` admite resúmenes y `full` requiere consentimiento explícito para contenido completo. Cambiar una política no elimina automáticamente registros ni colas pendientes.

@@ -4,6 +4,35 @@
   "result_schemas": {
     "search": {
       "$defs": {
+        "Degraded": {
+          "additionalProperties": false,
+          "description": "Present when only the semantic layer fell short of what was asked: the lexical answer is complete and valid, but it is not the hybrid one.",
+          "properties": {
+            "layer": {
+              "const": "semantic",
+              "title": "Layer",
+              "type": "string"
+            },
+            "reason": {
+              "description": "timeout: the embeddings query deadline (or the request semantic_budget_ms) ran out; provider_error: the embeddings provider failed; store_error: the database failed while searching vectors (both with status unavailable, partial true); no_vectors: nothing is embedded for these projects; embeddings_disabled: the server runs without embeddings (status off)",
+              "enum": [
+                "timeout",
+                "provider_error",
+                "store_error",
+                "no_vectors",
+                "embeddings_disabled"
+              ],
+              "title": "Reason",
+              "type": "string"
+            }
+          },
+          "required": [
+            "layer",
+            "reason"
+          ],
+          "title": "Degraded",
+          "type": "object"
+        },
         "Hit": {
           "additionalProperties": false,
           "properties": {
@@ -237,6 +266,18 @@
           "additionalProperties": true,
           "title": "Backends",
           "type": "object"
+        },
+        "degraded": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Degraded"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional: present only when the semantic layer alone fell short; `partial` keeps its meaning"
         },
         "items": {
           "items": {
@@ -1055,6 +1096,18 @@
             "default": true,
             "title": "Semantic",
             "type": "boolean"
+          },
+          "semantic_budget_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Semantic Budget Ms"
           }
         },
         "required": [
@@ -1165,6 +1218,18 @@
             "default": true,
             "title": "Semantic",
             "type": "boolean"
+          },
+          "semantic_budget_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Semantic Budget Ms"
           }
         },
         "required": [

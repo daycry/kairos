@@ -14,22 +14,28 @@ Guarda la clave sin prefijo `Bearer`, comillas ni JSON en un fichero privado ext
 
 ## Distribución disponible
 
-El paquete propio se llama `@daycry/kairos`, versión `0.2.0`. Su publicación en npm está pendiente: el tarball revisado superó de nuevo `release:check` el 9 de noviembre de 2026, pero el registro todavía no contiene el paquete. Por tanto, no se presenta `npx @daycry/kairos` como una instalación pública ya disponible. Usa el archivo local preparado en `packages/kairos-cli/artifacts/daycry-kairos-0.2.0.tgz`.
+El paquete propio se llama `@daycry/kairos`, versión `0.3.0`. **La versión 0.3.0 no está publicada en npm ni empaquetada**: el registro todavía no contiene el paquete y el repositorio no incluye ningún tarball (`packages/kairos-cli/artifacts/` está en `.gitignore`, así que un clon nuevo no lo tiene). Por tanto, no se presenta `npx @daycry/kairos` como una instalación pública ya disponible. Para instalar desde un clon, genera primero el tarball y después instala ese fichero.
 
-Desde la raíz de este repositorio, comprueba su versión:
+Desde `packages/kairos-cli`, genera el tarball local (no publica nada):
 
 ```powershell
-npx --offline --yes --package ./packages/kairos-cli/artifacts/daycry-kairos-0.2.0.tgz kairos --version
+npm pack --ignore-scripts --offline --pack-destination ./artifacts
 ```
 
-`--offline` evita consultar el registro. El archivo debe existir; esta opción no lo descarga ni sustituye la entrega del tarball. Las pruebas del paquete verifican su instalación local; la publicación y disponibilidad pública requieren otra entrega explícita.
+Después, desde la raíz de este repositorio, comprueba su versión:
+
+```powershell
+npx --offline --yes --package ./packages/kairos-cli/artifacts/daycry-kairos-0.3.0.tgz kairos --version
+```
+
+`--offline` evita consultar el registro. El archivo debe existir (lo crea el comando anterior); esta opción no lo descarga ni sustituye la entrega del tarball. Que el tarball se genere no acredita que esté revisado: `npm run release:check` lo comprueba y la 0.3.0 aún no lo ha pasado. Las pruebas del paquete verifican su instalación local; la publicación y disponibilidad pública requieren otra entrega explícita.
 
 ## Previsualizar e instalar
 
 Ejemplo para los tres clientes de un proyecto consumidor:
 
 ```powershell
-npx --offline --yes --package ./packages/kairos-cli/artifacts/daycry-kairos-0.2.0.tgz kairos install --client all --root C:/laragon/www/mi-proyecto --url http://127.0.0.1:5173 --project mi-proyecto --key-file C:/Private/kairos-agent.key --opencode-version 2 --dry-run
+npx --offline --yes --package ./packages/kairos-cli/artifacts/daycry-kairos-0.3.0.tgz kairos install --client all --root C:/laragon/www/mi-proyecto --url http://127.0.0.1:5173 --project mi-proyecto --key-file C:/Private/kairos-agent.key --opencode-version 2 --dry-run
 ```
 
 Revisa el destino, el proyecto remoto y los archivos previstos. Para aplicar, sustituye el último `--dry-run` por `--yes`. El primer `--yes`, antes de `--package`, pertenece a npx; el último confirma al instalador Kairos. `--dry-run` prevalece y no modifica archivos ni llama al servidor.
@@ -47,7 +53,7 @@ En una terminal interactiva, `kairos install` pregunta los datos que falten y mu
 | OpenCode 1 | `opencode.json` | `mcp.kairos` |
 | OpenCode 2 | `opencode.json` | `mcp.servers.kairos` |
 
-La configuración ejecuta Node con una copia estable del puente en `.kairos/runtime/0.2.0/`. No depende de que la caché temporal de npx siga existiendo. `.kairos/installation.json` guarda la dirección, proyecto, ruta de clave y hashes del runtime; no guarda el secreto.
+La configuración ejecuta Node con una copia estable del puente en `.kairos/runtime/0.3.0/`. No depende de que la caché temporal de npx siga existiendo. `.kairos/installation.json` guarda la dirección, proyecto, ruta de clave y hashes del runtime; no guarda el secreto.
 
 Las copias están en `.kairos/backups/`. Pueden contener configuraciones previas sensibles: protégelas. El instalador conserva entradas de otros MCP y ajustes ajenos. Si encuentra JSONC o una estructura TOML que no puede actualizar de forma segura, rechaza el cambio antes de escribir; adapta la configuración explícitamente y vuelve a previsualizar.
 
@@ -56,8 +62,8 @@ Las copias están en `.kairos/backups/`. Pueden contener configuraciones previas
 Después de instalar puedes ejecutar el runtime persistente desde el proyecto consumidor:
 
 ```powershell
-node .kairos/runtime/0.2.0/bin/kairos.mjs doctor --root .
-node .kairos/runtime/0.2.0/bin/kairos.mjs doctor --root . --online
+node .kairos/runtime/0.3.0/bin/kairos.mjs doctor --root .
+node .kairos/runtime/0.3.0/bin/kairos.mjs doctor --root . --online
 ```
 
 La primera comprobación valida archivos, hashes y configuración local. La segunda inicializa MCP y consulta herramientas y proyectos. Es de lectura: no crea memorias, no publica documentos y no prueba al trabajador de generación. Un estado `ready` significa que esas comprobaciones terminaron; no certifica la aceptación completa de tu cliente.
@@ -67,8 +73,8 @@ Reabre el cliente si necesita recargar sus servidores. Revisa que aparece `kairo
 ## Recuperar una instalación local
 
 ```powershell
-node .kairos/runtime/0.2.0/bin/kairos.mjs recover --root . --dry-run
-node .kairos/runtime/0.2.0/bin/kairos.mjs recover --root . --yes
+node .kairos/runtime/0.3.0/bin/kairos.mjs recover --root . --dry-run
+node .kairos/runtime/0.3.0/bin/kairos.mjs recover --root . --yes
 ```
 
 La recuperación comprueba hashes y destinos. Si alguien editó el archivo después de la instalación, puede rechazar la restauración para no pisar ese trabajo. Resuelve ese conflicto revisando la copia, no borrando toda la configuración de clientes.
@@ -80,7 +86,7 @@ La recuperación comprueba hashes y destinos. Si alguien editó el archivo despu
 La conexión MCP básica continúa sin captura. Para instalar también el ciclo de vida añade `--capture summary --context auto` a la vista previa. Para actualizar una instalación existente, selecciona todos sus clientes y añade `--replace`. El servidor debe permitir captura en ese proyecto y la clave debe tener `read` y `write`; el instalador no cambia esa política.
 
 ```powershell
-npx --offline --yes --package ./packages/kairos-cli/artifacts/daycry-kairos-0.2.0.tgz kairos install --client all --root C:/laragon/www/mi-proyecto --url http://127.0.0.1:5173 --project mi-proyecto --key-file C:/Private/kairos-agent.key --opencode-version 2 --capture summary --context auto --dry-run
+npx --offline --yes --package ./packages/kairos-cli/artifacts/daycry-kairos-0.3.0.tgz kairos install --client all --root C:/laragon/www/mi-proyecto --url http://127.0.0.1:5173 --project mi-proyecto --key-file C:/Private/kairos-agent.key --opencode-version 2 --capture summary --context auto --dry-run
 ```
 
 Sustituye el último `--dry-run` por `--yes` después de revisar. La política efectiva es la más restrictiva entre cliente y servidor.
@@ -104,8 +110,8 @@ La cola se guarda fuera del proyecto: por defecto en `%LOCALAPPDATA%/Kairos/memo
 Un proceso local Node recibe IPC autenticado exclusivamente en `127.0.0.1`, mantiene la cola y habla con MCP. El hook no llama directamente al servidor ni espera al modelo. Sí espera una respuesta IPC acotada, que puede incluir comprobaciones remotas de permisos y contexto; una red lenta puede consumir ese presupuesto. El dispatcher limita el tiempo de red y termina después de quince minutos sin actividad de hooks. Las entregas admitidas sobreviven en disco y se reanudan al siguiente evento o con `sync`:
 
 ```powershell
-node .kairos/runtime/0.2.0/bin/kairos.mjs sync --root .
-node .kairos/runtime/0.2.0/bin/kairos.mjs status --root .
+node .kairos/runtime/0.3.0/bin/kairos.mjs sync --root .
+node .kairos/runtime/0.3.0/bin/kairos.mjs status --root .
 ```
 
 `sync` arranca el dispatcher si falta y solicita procesamiento en segundo plano; su respuesta no significa que toda la cola haya terminado. `status` consulta un dispatcher activo y muestra contadores y los veinte recibos locales más recientes, sin cuerpos ni claves. Si el dispatcher ya terminó por inactividad, ejecuta `sync` antes.
@@ -129,8 +135,8 @@ Si la política baja de `full` a `summary`, los cuerpos completos pendientes no 
 Para resolver `failed`, consulta primero `event_status` y el error del trabajo. Estas operaciones locales exigen el UUID original y confirmación explícita:
 
 ```powershell
-node .kairos/runtime/0.2.0/bin/kairos.mjs queue-retry --root . --event-id UUID --yes
-node .kairos/runtime/0.2.0/bin/kairos.mjs queue-retire --root . --event-id UUID --yes
+node .kairos/runtime/0.3.0/bin/kairos.mjs queue-retry --root . --event-id UUID --yes
+node .kairos/runtime/0.3.0/bin/kairos.mjs queue-retire --root . --event-id UUID --yes
 ```
 
 `queue-retry` vuelve a conciliar: un evento ya aceptado sólo consulta su recibo, sin republicar el cuerpo ni relanzar automáticamente un trabajo central fallido. `queue-retire` admite `pending`, `unknown` y `failed`; abandona la entrega local y retira su cuerpo. Funciona también con la automatización apagada y sin dispatcher: adquiere el bloqueo exclusivo de la cola. No borra memoria del servidor y una entrega `unknown` puede haberse aceptado allí. Conserva su identificador para investigar. No cambia el consentimiento ni lo reactiva.
@@ -139,13 +145,13 @@ Al retirar consentimiento, los cuerpos admitidos anteriormente se conservan hast
 
 Si falta un cuerpo o falla su hash/JSON, sólo esa fila pasa a `failed` con `capture_source_corrupt`. El contexto y otras entregas pueden continuar. No se reconstruye ni reenvía contenido inventado; `queue-retry` exige reparar el origen, o puedes retirar esa fila. Un journal o metadatos globales corruptos siguen deteniendo la cola para proteger identidades y autorización.
 
-El contexto automático busca términos alternativos (`match_mode=any`), excluye `agent-activity` y limita el resultado a cinco fuentes y 5.000 caracteres. La búsqueda normal conserva `match_mode=all`. Las fuentes son texto no confiable, con procedencia; el cliente no debe convertirlas en instrucciones. Esta delimitación no garantiza inmunidad a instrucciones maliciosas dentro de un documento.
+El contexto automático busca términos alternativos (`match_mode=any`), excluye `agent-activity` y limita el resultado a cinco fuentes y 5.000 caracteres. La búsqueda normal conserva `match_mode=all`. Desde la versión 0.3.0 el contexto automático pide también la capa semántica (`semantic: true`, la combinación híbrida del servidor). El cliente hace una sola petición al servidor y espera como máximo 1,8 s (el hook, 8 s). Con ella envía `semantic_budget_ms: 1100`, el presupuesto de la capa semántica: si se agota, el servidor mismo responde con los aciertos léxicos y `degraded` (`reason: timeout`), sin reintento del cliente. El servidor solo deja de esperar al proveedor (cancela su propia petición HTTP); Ollama puede terminar el cálculo que ya empezó. Si el servidor informa `degraded` (`timeout`, `provider_error`, `store_error`, `no_vectors` o `embeddings_disabled`), el campo viaja igual en la evidencia. Cualquier otro fallo (autorización, red, plazo del cliente) sigue haciendo fallar el contexto, no se oculta. El servidor limita su propia espera de embeddings de consulta a `MEMORY_EMBED_QUERY_TIMEOUT` (10 s). Las fuentes son texto no confiable, con procedencia; el cliente no debe convertirlas en instrucciones. Esta delimitación no garantiza inmunidad a instrucciones maliciosas dentro de un documento.
 
 ## Actualizar una instalación anterior
 
 Actualiza primero el servidor y verifica el contrato con `doctor --online`. Después cierra las sesiones de agentes afectadas y deja terminar el dispatcher anterior (quince minutos sin actividad). Comprueba que ya no existe un proceso propietario activo antes de migrar una cola. No ejecutes versiones de dispatcher distintas sobre la misma partición.
 
-La versión 0.2.0 admite actualizar desde las versiones 0.1.0 a 0.1.6 con `install --replace`, seleccionando todos los clientes gestionados. La previsualización y la aplicación comprueban que el dispatcher anterior esté detenido; un propietario activo produce `dispatcher_upgrade_requires_stop` antes de cambiar la configuración. Mantén los clientes cerrados durante toda la operación. Previsualiza y aplica con la misma URL, proyecto, fichero de clave y carpeta privada. Conserva el runtime anterior para recuperación. Las versiones desconocidas se rechazan. El ejecutable Node físico elegido al instalar queda registrado; OpenCode puede usar su propio runtime sin cambiar ese Node. Si cambia la ubicación de Node, repite la instalación explícita.
+Las versiones 0.2.0 y 0.3.0 admiten actualizar desde las versiones 0.1.0 a 0.1.6 (y la 0.3.0 también desde la 0.2.0) con `install --replace`, seleccionando todos los clientes gestionados. La previsualización y la aplicación comprueban que el dispatcher anterior esté detenido; un propietario activo produce `dispatcher_upgrade_requires_stop` antes de cambiar la configuración. Mantén los clientes cerrados durante toda la operación. Previsualiza y aplica con la misma URL, proyecto, fichero de clave y carpeta privada. Conserva el runtime anterior para recuperación. Las versiones desconocidas se rechazan. El ejecutable Node físico elegido al instalar queda registrado; OpenCode puede usar su propio runtime sin cambiar ese Node. Si cambia la ubicación de Node, repite la instalación explícita.
 
 El IPC v2 vincula el endpoint a la versión del runtime. `doctor` informa `version_mismatch` y los hooks rechazan `dispatcher_version_mismatch` sin contactar ni mantener activo al daemon antiguo. Espera su cierre con los clientes detenidos; no retires su lock ni lances versiones simultáneas.
 

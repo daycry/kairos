@@ -1,6 +1,6 @@
 # CLI release preparation and public verification
 
-The current source version is 0.2.0. Status on 2026-11-09: `release:check` passed again on the reviewed tarball (sha256 `c7316e0d813edd584edbca7b0c6d19950e2a7eb2d5809cdc0e088e144da84451`); publication was attempted but not completed and `registry-check` returns exit 2 (version not found). A local package, a successful native-client test, and a public npm distribution are separate deliverables. This procedure never treats one as proof of another.
+The current source version is 0.3.0 (prepared on 2026-11-11, **not built into a reviewed tarball and not published**). The 0.3.0 changes: the automatic context asks for the semantic layer (`semantic: true`) and carries the server's optional `degraded` field, sending one request with `semantic_budget_ms: 1100` (no client retry) so the server itself answers lexical-only with `degraded.reason = timeout` when the semantic layer is slower than that budget; installations of 0.2.0 upgrade in place (`COMPATIBLE_VERSIONS`). Publication is blocked: the publisher's npm account is blocked (F-06 of `docs/roadmap/2026-11-06-functional-parity/tasks.md` is still open) and no `npm publish` was run for this version. Status of the previous version on 2026-11-09: `release:check` passed again on the reviewed tarball (sha256 `c7316e0d813edd584edbca7b0c6d19950e2a7eb2d5809cdc0e088e144da84451`); publication was attempted but not completed and `registry-check` returns exit 2 (version not found). A local package, a successful native-client test, and a public npm distribution are separate deliverables. This procedure never treats one as proof of another.
 
 ## Prepare without publishing
 
@@ -10,7 +10,7 @@ From `packages/kairos-cli`:
 npm test
 node tests/npx-smoke.mjs
 npm pack --ignore-scripts --offline --pack-destination ./artifacts
-node tests/artifact-report.mjs ./artifacts/daycry-kairos-0.2.0.tgz
+node tests/artifact-report.mjs ./artifacts/daycry-kairos-0.3.0.tgz
 npm run release:check
 ```
 
@@ -33,7 +33,7 @@ After the reviewer has approved the exact artifact, license/provenance and owner
 After an authorized publication, verify the exact version anonymously and compare registry tarball bytes with the reviewed local artifact:
 
 ```powershell
-node tests/registry-check.mjs 0.2.0 ./artifacts/daycry-kairos-0.2.0.tgz
+node tests/registry-check.mjs 0.3.0 ./artifacts/daycry-kairos-0.3.0.tgz
 ```
 
 This check reads no npm configuration or tokens. It uses only the official public HTTPS registry, rejects redirects, bounds responses and deadlines, checks package identity and SHA-512 integrity and optionally verifies byte-for-byte equality. Exit 2 means the exact version was not found; exit 1 means verification failed/unavailable. Neither result means the name is owned or available to this account.

@@ -185,20 +185,90 @@ class ChunkedEmbeddingWorkerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(receipt['chunks_truncated'], True)
         self.assertEqual(receipt['chunks'][-1]['char_end'], receipt['chunks_covered_chars'])
 
-    async def test_an_existing_item_vector_is_reused_and_only_the_fragments_are_embedded(self):
-        """Attempt 2, gap 3: the backfill of a resource that only lacks fragments does not embed its whole text again."""
+    def fragments(self):
+        from memory_platform.chunking import chunk_text, embedding_text
+        text = embedding_text('Long note', self.content)
+        return text, [chunk.text(text).strip() for chunk in chunk_text(text)]
+
+    async def test_a_stored_item_vector_with_other_dimensions_costs_one_extra_call_after_the_fragments(self):
+        """Review of phase 6 (N5): the stored vector is reused; only when its size differs is the whole text embedded, once more."""
+        self.stored.return_value = [9.0, 9.0, 9.0]  # three dimensions; the provider answers with two
+        async def embed_many(texts, query=False):
+            self.calls.append(list(texts))
+            return {'embeddings': [[float(index + 1), 0.5] for index in range(len(texts))], 'model': 'nomic-embed-text', 'verified': True}
+        whole = AsyncMock(return_value={'embedding': [7.0, 7.5], 'model': 'nomic-embed-text', 'verified': True})
+        await self.worker(embed_many, embed=whole).run_once()
+        text, fragments = self.fragments()
+        self.assertEqual(self.calls, [fragments])  # the fragments alone: the whole text is not in that call
+        whole.assert_awaited_once_with(text)
+        self.store.fail_job.assert_not_called()
+        receipt = self.store.complete_job.call_args.args[2]
+        self.assertEqual(receipt['vector'], [7.0, 7.5])
+        self.assertTrue(all(len(chunk['vector']) == len(receipt['vector']) for chunk in receipt['chunks']))
+        self.assertTrue(receipt['verified'])
+
+    async def test_the_extra_call_for_other_dimensions_fits_inside_the_job_deadline(self):
+        """The deadline plans n+1 inputs plus the single-text call: both calls together may exceed the batch time of n+1 inputs."""
+        self.settings = Settings('unused', lease_seconds=5, embedding_worker_timeout=0.25, embedding_batch_timeout=0.25, embedding_job_timeout_max=0.25)
+        self.stored.return_value = [9.0, 9.0, 9.0]
+        async def embed_many(texts, query=False):
+            await asyncio.sleep(0.2)
+            return {'embeddings': [[1.0, 0.5] for _ in texts], 'model': 'm', 'verified': True}
+        async def embed(text, query=False):
+            await asyncio.sleep(0.2)
+            return {'embedding': [1.0, 0.5], 'model': 'm', 'verified': True}
+        with patch('memory_platform.worker.JOB_DEADLINE_MARGIN', 0):
+            await self.worker(embed_many, embed=embed).run_once()  # 0.4 s in total, over the 0.25 s of the n+1 inputs
+        self.store.fail_job.assert_not_called()
+        self.store.complete_job.assert_called_once()
+
+    async def test_an_unverified_extra_embedding_is_a_failed_job(self):
+        self.stored.return_value = [9.0, 9.0, 9.0]
+        async def embed_many(texts, query=False):
+            return {'embeddings': [[1.0, 0.5] for _ in texts], 'model': 'm', 'verified': True}
+        whole = AsyncMock(return_value={'embedding': [1.0, 0.5], 'model': 'm', 'verified': False})
+        await self.worker(embed_many, embed=whole).run_once()
+        self.store.complete_job.assert_not_called()
+        self.assertEqual(self.store.fail_job.call_args.args[2], 'embedding_unverified')
+
+    async def test_an_unverified_embedding_is_a_failed_job_even_with_a_stored_item_vector(self):
+        self.stored.return_value = [9.0, 9.0]
+        async def embed_many(texts, query=False):
+            return {'embeddings': [[float(index + 1), 0.5] for index in range(len(texts))], 'model': 'nomic-embed-text', 'verified': False}
+        await self.worker(embed_many).run_once()
+        self.store.complete_job.assert_not_called()
+        self.assertEqual(self.store.fail_job.call_args.args[2], 'embedding_unverified')
+
+    async def test_a_stored_item_vector_of_the_same_size_is_reused_without_embedding_the_text_again(self):
         stored = [9.0, 9.0]
         self.stored.return_value = stored
         async def embed_many(texts, query=False):
             self.calls.append(list(texts))
             return {'embeddings': [[float(index + 1), 0.5] for index in range(len(texts))], 'model': 'nomic-embed-text', 'verified': True}
-        await self.worker(embed_many).run_once()
-        from memory_platform.chunking import chunk_text, embedding_text
-        text = embedding_text('Long note', self.content)
-        expected = chunk_text(text)
-        self.assertEqual(self.calls, [[chunk.text(text).strip() for chunk in expected]])  # no whole-text input
+        await self.worker(embed_many).run_once()  # `embed` raises if called: no second call
+        text, fragments = self.fragments()
+        self.assertEqual(self.calls, [fragments])
+        self.assertNotIn(text, self.calls[0])
         receipt = self.store.complete_job.call_args.args[2]
-        self.assertEqual((receipt['vector'], len(receipt['chunks'])), (stored, len(expected)))
+        self.assertEqual((receipt['vector'], len(receipt['chunks'])), (stored, len(fragments)))
+
+    async def test_without_a_stored_item_vector_the_whole_text_travels_in_the_same_batch(self):
+        async def embed_many(texts, query=False):
+            self.calls.append(list(texts))
+            return {'embeddings': [[float(index + 1), 0.5] for index in range(len(texts))], 'model': 'nomic-embed-text', 'verified': True}
+        await self.worker(embed_many).run_once()
+        text, fragments = self.fragments()
+        self.assertEqual(self.calls, [fragments + [text]])
+        self.assertEqual(self.store.complete_job.call_args.args[2]['vector'], [float(len(fragments) + 1), 0.5])
+
+    async def test_the_job_deadline_plans_n_plus_one_inputs_and_the_possible_extra_call(self):
+        from memory_platform.worker import embed_plan, worker_deadline, JOB_DEADLINE_MARGIN
+        from memory_platform.config import embedding_job_timeout
+        _, chunks, inputs = embed_plan(self.settings, self.job['payload'])
+        self.assertEqual(inputs, len(chunks) + 1)  # the whole text is one more input, counted even when a stored vector may replace it
+        self.assertEqual(worker_deadline(self.settings, inputs),
+                         embedding_job_timeout(self.settings, inputs) + embedding_job_timeout(self.settings, 1) + JOB_DEADLINE_MARGIN)
+        self.assertEqual(worker_deadline(self.settings, 1), embedding_job_timeout(self.settings, 1) + JOB_DEADLINE_MARGIN)
 
     async def test_a_text_with_a_long_blank_run_is_embedded_without_blank_fragments_and_keeps_its_item_vector(self):
         """Gap 3: a run of blanks as long as a fragment used to fail the job for good (embedding_empty_input)."""

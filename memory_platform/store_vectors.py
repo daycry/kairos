@@ -275,8 +275,17 @@ class VectorsMixin:
 
         `stream` is accepted and ignored: it kept the private surface (CA-05) unchanged when the cursor went away.
         """
-        selection=''
-        params=[projects,projects,model,categories,categories,tags,tags]
+        selection,wanted_items,wanted_documents='','',''
+        params=[projects]
+        if identities is not None:
+            # The rows to serialize (`to_jsonb`) are chosen by identity first: the winners' ids, not every current resource of the projects (B-09).
+            ids=sorted({str(identity['item_id']) for identity in identities})
+            wanted_items,wanted_documents=' AND i.id=ANY(%s)',' AND d.id=ANY(%s)'
+            params.append(ids)
+        params.append(projects)
+        if identities is not None:
+            params.append(ids)
+        params.extend([model,categories,categories,tags,tags])
         if identities is not None:
             selection=''' AND EXISTS (SELECT 1 FROM jsonb_to_recordset(%s::jsonb)
                 AS wanted(project_id text,item_id text,resource_type text)
@@ -287,11 +296,11 @@ class VectorsMixin:
         query="""WITH current_resources AS (
             SELECT i.project_id,i.id,i.version,i.canonical_hash,'item'::text AS resource_type,i.payload,to_jsonb(i) AS current_row
             FROM memory.memory_items i LEFT JOIN memory.memory_items p ON p.project_id=i.project_id AND p.id=i.parent_item_id
-            WHERE i.project_id=ANY(%s) AND NOT i.deleted AND i.superseded_by IS NULL
+            WHERE i.project_id=ANY(%s)"""+wanted_items+""" AND NOT i.deleted AND i.superseded_by IS NULL
             AND (i.parent_item_id IS NULL OR (p.version=i.parent_version AND p.canonical_hash=i.parent_hash AND NOT p.deleted AND p.superseded_by IS NULL))
             UNION ALL
             SELECT d.project_id,d.id,d.version,d.canonical_hash,'document'::text,d.body,to_jsonb(d)
-            FROM memory.documents d WHERE d.project_id=ANY(%s) AND NOT d.deleted
+            FROM memory.documents d WHERE d.project_id=ANY(%s)"""+wanted_documents+""" AND NOT d.deleted
         ) SELECT """+COLUMNS+""",r.payload,r.current_row FROM current_resources r JOIN memory.embeddings e
             ON e.project_id=r.project_id AND e.item_id=r.id AND e.resource_type=r.resource_type
             AND e.version=r.version AND e.canonical_hash=r.canonical_hash
@@ -308,7 +317,9 @@ class VectorsMixin:
         with self.transaction() as c:
             for pid in project_ids:
                 self._require(c,actor,pid,'read')
-            return bool(self._vector_candidates(c,project_ids,model,None,None,1))
+            # A probe, not a candidate query: no row of any resource is serialized to answer "is there anything embedded in scope" (B-09).
+            return c.execute('SELECT EXISTS (SELECT 1 FROM memory.embeddings e WHERE e.project_id=ANY(%s) AND e.model=%s AND '+CURRENT_RESOURCE+') AS found',
+                             (project_ids,model,None,None,None,None,None,None,None,None)).fetchone()['found']
 
     def search_vectors(self,actor,project_ids,vector,model,limit=20,categories=None,tags=None,*,deadline=None):
         """Cosine top-k over authorized current embeddings.
