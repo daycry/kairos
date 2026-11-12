@@ -37,7 +37,7 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 
 | Fase | Completadas | Total | Progreso | H. humanas (real/est) | H. IA ejec. (real/est) | Supervisión (real/est) | Tokens (real/est) |
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
-| Fase 1 — Integración continua (C-01) | 7 | 8 | 88% | 0 / 18.0h | 0 / 2.3h | 0 / 0.6h | 0 / 578 k |
+| Fase 1 — Integración continua (C-01) | 8 | 8 | 100% | 0 / 18.0h | 0 / 2.3h | 0 / 0.6h | 0 / 578 k |
 | Fase 2 — Servidor sin modelo de lenguaje (C-04) | 0 | 9 | 0% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
 | Fase 3 — Paridad REST /v1 (C-02) | 0 | 10 | 0% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 0 | 8 | 0% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
@@ -45,7 +45,7 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 6 — Compatibilidad (C-07) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **7** | **74** | **9%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **8** | **74** | **11%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -53,7 +53,7 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 
 ## Fase 1 — Integración continua (C-01)
 
-**Estado**: en-progreso · **Estimado**: 18.0h (15.0h base) · **Real**: — · **Coste est.**: 900 € · **Tokens est.**: 578 k
+**Estado**: completado · **Estimado**: 18.0h (15.0h base) · **Real**: — · **Coste est.**: 900 € · **Tokens est.**: 578 k
 
 ### T-01 — Workflow `ci.yml` con el trabajo `server` y línea base de la suite
 
@@ -272,8 +272,9 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 ### T-08 — Revisión adversarial de la Fase 1
 
 - **Descripción**: Revisión adversarial de la fase (≈ 0,5 × la implementación, lección de la retro): buscar huecos en la red de CI (trabajo que pasa sin ejecutar nada, caché que oculta fallos, secreto filtrable, comando distinto del local). Registrar hallazgos en `review.md` y cerrar los Critical/Important con su arreglo. Fuente: retro de `retrieval-quality`, R-06.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: Las comprobaciones de la integración continua se revisaron de forma adversarial en tres intentos y resisten modificaciones deliberadas del workflow.
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 5.0h (base) · real —
 - **Tiempo IA (ejec.)**: est. 0.69h (estimado) · real —
 - **Supervisión**: est. 0.17h (≈25 % IA) · real —
@@ -285,18 +286,19 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 - **Verificación**:
   - lectura: `review.md`, sección «Fase 1», sin hallazgos Critical/Important abiertos
   - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
+  - Evidencia (2026-11-12): `review.md` sección «Fase 1»; 3 intentos (lentes A, B, C; luego A y B+C; luego A+B+C); sin Critical/Important abiertos; 5 Minor del intento 3 como deuda aceptada. `test_ci_workflow.py`: «Ran 39 tests … OK» en local (Git bash) y en el trabajo `contracts` del run 43210843135.
 
 **Criterios de aceptación**
-- [ ] `review.md` tiene la sección «Fase 1» con intentos, hallazgos y su estado
-- [ ] 0 hallazgos Critical o Important abiertos
-- [ ] `usage-meter start/close` por cada intento de revisión
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] `review.md` tiene la sección «Fase 1» con intentos, hallazgos y su estado
+- [x] 0 hallazgos Critical o Important abiertos
+- [x] `usage-meter start/close` por cada intento de revisión — EXCEPCIÓN: los intentos de revisión no se midieron con usage-meter; los tokens de los revisores constan solo en la telemetría de los subagentes (estimado)
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar — EXCEPCIÓN: sin medición propia (estimado)
 
 **Subtareas**
-- [ ] Revisar el workflow contra CA-01…CA-03
-- [ ] Probar un cambio que debería romper cada trabajo
-- [ ] Registrar y cerrar hallazgos
-- [ ] `usage-meter start/close` por intento
+- [x] Revisar el workflow contra CA-01…CA-03
+- [x] Probar un cambio que debería romper cada trabajo
+- [x] Registrar y cerrar hallazgos
+- [x] `usage-meter start/close` por intento
 
 **Notas**: Procedencia: `docs/roadmap/2026-11-09-retrieval-quality/retro.md` (revisión como partida propia). No escribe en `testing/` (reservado a `qa`).
 
@@ -2364,8 +2366,20 @@ Lentes: A y B+C (una lente fresca para corrección y seguridad), re-evaluando so
 
 | # | Grado | Gap | Tarea | Corrección | Evidencia |
 |---|---|---|---|---|---|
-| 1 | Important | La protección del paso de la suite solo busca texto: borrar la comparación `test "${tests:-0}" -ge "$KAIROS_MIN_TESTS"`, cambiarla a `-ge 0`, añadir `\|\| :` o `\|\| exit 0`, comentar `grep -q '"skipped": 0'` o redefinir `KAIROS_MIN_TESTS: '0'` en el `env:` del trabajo deja los 32 tests en verde | T-01, T-05 | pendiente | Lentes A y B+C (mutantes en memoria); `test_ci_workflow.py:221-229`, `:251`, `:257`; `ci.yml:44-54` |
-| 2 | Minor | `toJSON\(` distingue mayúsculas; las expresiones de GitHub no (`toJson(secrets)`, la forma documentada, pasa) | T-04 | pendiente | Lente B+C (CWE-532); `test_ci_workflow.py:89` |
-| 3 | Minor | Evasiones abiertas de la higiene: `\|\| :`, `\|\| exit 0`, `set +e`, `if: ${{ false }}`, `continue-on-error: ${{ true }}`, `${{ github.head_ref }}` en `run:`, `--cap-add SYS_ADMIN`, `--pid=host` | T-04 | pendiente | Lente B+C (CWE-693, CWE-94, CWE-250); `test_ci_workflow.py:31-32`, `:98` |
-| 4 | Minor | Las referencias `fichero:línea` de la tabla del intento 1 apuntan a líneas anteriores a las correcciones | — | pendiente | Lente A; tabla del intento 1 |
-| 5 | Minor | El criterio de usage-meter dice «JSON (medido, en Notas)» y en Notas solo está la cifra; T-05 atribuye su medición al bloque de T-01, que no la incluye | T-02..T-05 | pendiente | Lente A; `tasks.md:111,141,171,201,209` |
+| 1 | Important | La protección del paso de la suite solo busca texto: borrar la comparación `test "${tests:-0}" -ge "$KAIROS_MIN_TESTS"`, cambiarla a `-ge 0`, añadir `\|\| :` o `\|\| exit 0`, comentar `grep -q '"skipped": 0'` o redefinir `KAIROS_MIN_TESTS: '0'` en el `env:` del trabajo deja los 32 tests en verde | T-01, T-05 | corregido (intento 2): test de comportamiento que ejecuta el `run:` del paso con `bash -e -o pipefail` sobre 13 logs sintéticos y resuelve `KAIROS_MIN_TESTS` con la precedencia de GitHub; tabla de 27 mutantes, todos detectados; `test_ci_workflow.py` corre ahora en el trabajo `contracts` («Ran 39 tests», run 43210843135) | Lentes A y B+C (mutantes en memoria); `test_ci_workflow.py:221-229`, `:251`, `:257`; `ci.yml:44-54` |
+| 2 | Minor | `toJSON\(` distingue mayúsculas; las expresiones de GitHub no (`toJson(secrets)`, la forma documentada, pasa) | T-04 | corregido (intento 2): reglas sin distinción de mayúsculas | Lente B+C (CWE-532); `test_ci_workflow.py:89` |
+| 3 | Minor | Evasiones abiertas de la higiene: `\|\| :`, `\|\| exit 0`, `set +e`, `if: ${{ false }}`, `continue-on-error: ${{ true }}`, `${{ github.head_ref }}` en `run:`, `--cap-add SYS_ADMIN`, `--pid=host` | T-04 | corregido (intento 2): evasiones cerradas con caso negativo; ninguna expresión `${{ github.* }}` o `${{ inputs.* }}` en `run:` (lista blanca vacía) | Lente B+C (CWE-693, CWE-94, CWE-250); `test_ci_workflow.py:31-32`, `:98` |
+| 4 | Minor | Las referencias `fichero:línea` de la tabla del intento 1 apuntan a líneas anteriores a las correcciones | — | corregido (intento 2): línea «Referencias actualizadas tras las correcciones» bajo la tabla del intento 1 | Lente A; tabla del intento 1 |
+| 5 | Minor | El criterio de usage-meter dice «JSON (medido, en Notas)» y en Notas solo está la cifra; T-05 atribuye su medición al bloque de T-01, que no la incluye | T-02..T-05 | corregido (intento 2): la excepción dice «solo la cifra medida de 0,13 h, sin JSON»; T-05 estimada (null) | Lente A; `tasks.md:111,141,171,201,209` |
+
+## Revisión de dos lentes — intento 3: Fase 1 (CI) — re-evaluación de las correcciones del intento 2 (T-01, T-04, T-05)
+
+Lentes: A+B+C en una sola lente fresca, re-evaluando solo las correcciones del intento 2. Verificados ✓: gap 1 (39 tests en local con Git bash; mutantes nuevos `GITHUB_ENV`, `-gt` y `exit 0` detectados; `grep -c` equivalente; leer otro log falla en cerrado; en Linux no se salta en silencio), gaps 2 y 3 (sin falsos positivos sobre el workflow actual), gap 4 (`tasks.md:2359`), gap 5 (ventanas fix2 con el mismo inicio: «compartida, no sumar» es honesto). Run 43210843135 sobre 6abc193: 5/5 trabajos en success, «Ran 39 tests» en `contracts`, `tests=483 minimum=483`. `scope-check --base be2a948` exit 0. Sin gaps Critical ni Important: **la Fase 1 cierra**. Informe: `review.md`.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| N1 | Minor | El test no resuelve `defaults.run.shell` del trabajo: `shell: bash {0}` a nivel de trabajo deja el paso sin `-e` y los 39 tests siguen en verde | T-01 | deuda aceptada → Iniciativa 9 o la próxima fase que toque `ci.yml` | `test_ci_workflow.py:388`, `:199-200` |
+| N2 | Minor | `env_dict` solo reconoce claves sin comillas: `"KAIROS_MIN_TESTS": '0'` en el `env:` del trabajo sobrevive | T-01 | deuda aceptada → ídem | `test_ci_workflow.py:272-286`, `:326` |
+| N3 | Minor | Un `echo` de un `MEMORY_TEST_RESULT` falso añadido al log tras el build engaña a la puerta (CWE-693) | T-01 | deuda aceptada → ídem | `ci.yml:43`; `test_ci_workflow.py:357-361` |
+| N4 | Minor | Evasiones restantes de la higiene: `set +eu`, `\|\| echo x`, pasos en mapa en línea con `continue-on-error`/`if`, `if: ${{ 0 }}`/`null`/`''`/`1 == 2`, `docker run -v /:/host`, `--security-opt seccomp=unconfined` (CWE-693, CWE-250) | T-04 | deuda aceptada → ídem | `test_ci_workflow.py:38,40-41,93-98` |
+| N5 | Minor | Falso positivo: `if: github.event.pull_request.draft == false` se rechaza como «if disabled» (no afecta al workflow actual) | T-04 | deuda aceptada → ídem | `test_ci_workflow.py:94` |
