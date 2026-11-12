@@ -63,8 +63,11 @@ class WorkflowStructureTests(unittest.TestCase):
         self.assertRegex(block, r'runs-on:\s*ubuntu-latest')
         self.assertIn('docker build --target test -f memory_platform/Dockerfile', block)
 
-    def test_layer_cache_uses_actions_cache_not_a_push_action(self):
-        self.assertIn('actions/cache@', self.text)
+    def test_the_suite_is_never_replayed_from_an_imported_cache(self):
+        # Observed in CI (run 43202142933): with --cache-from the last RUN of the test stage was CACHED even with
+        # --no-cache-filter, so the suite did not run. The test image is built from the Dockerfile on a clean runner.
+        for forbidden in ('actions/cache@', '--cache-from', '--cache-to', 'type=local'):
+            self.assertNotIn(forbidden, self.text)
         self.assertNotIn('build-push-action', self.text)
 
 
@@ -84,6 +87,9 @@ class AuxiliaryJobsTests(unittest.TestCase):
         block = self.jobs['retrieval-eval']
         self.assertIn('docker build --target retrieval-eval -f memory_platform/Dockerfile', block)
         self.assertNotIn('MEMORY_LLM', block)  # simulated provider only: no model, no external service
+        # The gate really ran and passed: its report line is read back from the build log.
+        self.assertIn('RETRIEVAL_EVAL_RESULT', block)
+        self.assertIn('"passed": true', block)
 
     def test_client_job_runs_tests_and_release_check_in_the_package(self):
         self.assertIn('client', self.jobs)

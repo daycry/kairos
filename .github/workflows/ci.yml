@@ -29,20 +29,11 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - name: Restore the image layer cache
-        uses: actions/cache@v4
-        with:
-          path: /tmp/buildx-cache
-          key: buildx-server-${{ github.sha }}
-          restore-keys: buildx-server-
       - name: Run the backend suite (target test)
         run: |
           set -euo pipefail
-          # The suite layer is never taken from the cache: a cached RUN would skip the tests and hide a regression.
-          docker buildx install
-          docker build --target test -f memory_platform/Dockerfile -t kairos-test:ci --progress=plain \
-            --cache-from type=local,src=/tmp/buildx-cache --cache-to type=local,dest=/tmp/buildx-cache-new,mode=max . 2>&1 | tee /tmp/server.log
+          # No layer cache on purpose: an imported cache replays a passing suite layer instead of running it.
+          docker build --target test -f memory_platform/Dockerfile -t kairos-test:ci --progress=plain . 2>&1 | tee /tmp/server.log
       - name: The suite really ran and nothing was skipped
         run: |
           line="$(grep -o 'MEMORY_TEST_RESULT {.*}' /tmp/server.log | tail -1)"
@@ -51,11 +42,6 @@ jobs:
           echo "$line" | grep -q '"failures": 0'
           echo "$line" | grep -q '"errors": 0'
           echo "$line" | grep -q '"skipped": 0'
-      - name: Rotate the layer cache
-        if: always()
-        run: |
-          rm -rf /tmp/buildx-cache
-          if [ -d /tmp/buildx-cache-new ]; then mv /tmp/buildx-cache-new /tmp/buildx-cache; fi
 
   retrieval-eval:
     # Quality gate with the simulated (offline) embedding provider: recall@5 >= 0.80 and MRR >= 0.60 or the build fails.
@@ -63,24 +49,15 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - name: Restore the image layer cache
-        uses: actions/cache@v4
-        with:
-          path: /tmp/buildx-cache
-          key: buildx-eval-${{ github.sha }}
-          restore-keys: buildx-eval-
       - name: Run the retrieval gate (target retrieval-eval)
         run: |
           set -euo pipefail
-          docker buildx install
-          docker build --target retrieval-eval -f memory_platform/Dockerfile -t kairos-eval:ci --progress=plain \
-            --no-cache-filter retrieval-eval --cache-from type=local,src=/tmp/buildx-cache --cache-to type=local,dest=/tmp/buildx-cache-new,mode=max . 2>&1 | tee /tmp/eval.log
-      - name: Rotate the layer cache
-        if: always()
+          docker build --target retrieval-eval -f memory_platform/Dockerfile -t kairos-eval:ci --progress=plain . 2>&1 | tee /tmp/eval.log
+      - name: The gate really ran and passed
         run: |
-          rm -rf /tmp/buildx-cache
-          if [ -d /tmp/buildx-cache-new ]; then mv /tmp/buildx-cache-new /tmp/buildx-cache; fi
+          line="$(grep -o 'RETRIEVAL_EVAL_RESULT {.*' /tmp/eval.log | tail -1)"
+          echo "${line:0:300}"
+          echo "$line" | grep -q '"gate": {[^}]*"passed": true'
 
   client:
     # Installable CLI: its tests and the offline release check (it prepares the package, it never publishes).
