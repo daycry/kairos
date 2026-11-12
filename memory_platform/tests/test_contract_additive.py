@@ -59,6 +59,7 @@ def additive_violations(base, new, path='$'):
 
 
 BUDGET_TOOLS = ('search', 'context')
+ENDPOINT_KEY = 'x-kairos-endpoint'  # added by C-02: where each tool lives in `/v1` (CA-04)
 
 
 def without_budget(tool):
@@ -66,6 +67,20 @@ def without_budget(tool):
     stripped = json.loads(json.dumps(tool))
     stripped['inputSchema']['properties'].pop('semantic_budget_ms', None)
     return stripped
+
+
+def endpoints(declared):
+    """Every `{method, path}` object inside a declaration, nested ones included."""
+    found = [declared] if 'path' in declared else []
+    for value in declared.values():
+        if isinstance(value, dict):
+            found.extend(endpoints(value))
+    return found
+
+
+def without_endpoint(tool):
+    """The tool with only the additive `x-kairos-endpoint` taken out (the one top-level key added by C-02)."""
+    return {key: value for key, value in tool.items() if key != ENDPOINT_KEY}
 
 
 def tool_differences(base, new, path='$'):
@@ -145,7 +160,7 @@ class ContractAdditiveTests(unittest.TestCase):
         after = {tool['name']: tool for tool in self.exported['kairos-mcp.json']['tools']}
         self.assertEqual(list(before), list(after))
         for name in before:
-            current = without_budget(after[name]) if name in BUDGET_TOOLS else after[name]
+            current = without_endpoint(without_budget(after[name]) if name in BUDGET_TOOLS else after[name])
             self.assertEqual(tool_differences(before[name], current), [], name)
         for name in BUDGET_TOOLS:
             schema = after[name]['inputSchema']
@@ -153,17 +168,42 @@ class ContractAdditiveTests(unittest.TestCase):
             self.assertNotIn('semantic_budget_ms', schema.get('required', []), name)
         self.assertIs(after['search']['inputSchema']['properties']['semantic']['default'], True)  # the existing default is not touched
 
+    def test_ca04_every_tool_declares_an_endpoint_that_exists_in_the_openapi_or_is_local(self):
+        paths = self.exported['memory-platform.openapi.json']['paths']
+        tools = self.exported['kairos-mcp.json']['tools']
+        self.assertEqual(len(tools), EXPECTED_TOOLS)
+        local = []
+        for tool in tools:
+            declared = tool.get(ENDPOINT_KEY)
+            self.assertIsNotNone(declared, tool['name'] + ' has no ' + ENDPOINT_KEY)
+            if declared == 'local':
+                local.append(tool['name'])
+                continue
+            self.assertTrue({'method', 'path'} <= set(declared), tool['name'])
+            for endpoint in endpoints(declared):  # the endpoint itself and the alternatives it names (`event_status` without a project)
+                self.assertIn(endpoint['path'], paths, tool['name'])
+                self.assertIn(endpoint['method'].lower(), paths[endpoint['path']], tool['name'])
+        self.assertEqual(local, ['important_workflow'])
+        # the seven endpoints C-02 created are the ones their tools declare
+        declared = {tool['name']: tool[ENDPOINT_KEY] for tool in tools}
+        self.assertEqual(declared['capture_policy'], {'method': 'GET', 'path': '/v1/projects/{project_id}/capture-policy'})
+        self.assertEqual(declared['query_corpus']['path'], '/v1/projects/{project_id}/corpora/{name}/query')
+        self.assertEqual(declared['team_search']['path'], '/v1/projects/{project_id}/team-search')
+        self.assertEqual(declared['get_observations'], {'method': 'POST', 'path': '/v1/projects/{project_id}/observations/get'})
+        # the existing operations are not renamed: the declared endpoints never point at the portal listing
+        self.assertNotEqual(declared['observation_search']['path'], '/v1/observations')
+
     def test_the_exact_check_rejects_a_restricting_key_anywhere_in_a_tool(self):
         before = next(tool for tool in self.base['kairos-mcp.json']['tools'] if tool['name'] == 'search')
         exported = next(tool for tool in self.exported['kairos-mcp.json']['tools'] if tool['name'] == 'search')
-        self.assertEqual(tool_differences(before, without_budget(exported)), [])
+        self.assertEqual(tool_differences(before, without_endpoint(without_budget(exported))), [])
         for name, damage in (('maximum', lambda s: s['properties']['limit'].update(maximum=3)),
                              ('additionalProperties', lambda s: s.update(additionalProperties=False)),
                              ('minLength', lambda s: s['properties']['q'].update(minLength=5)),
                              ('dependentRequired', lambda s: s.update(dependentRequired={'layers': ['q']}))):
             broken = json.loads(json.dumps(exported))
             damage(broken['inputSchema'])
-            self.assertTrue(tool_differences(before, without_budget(broken)), name)
+            self.assertTrue(tool_differences(before, without_endpoint(without_budget(broken))), name)
 
     def test_the_models_module_defines_the_field_once(self):
         self.assertIn('matched_chunk', models.Hit.model_fields)

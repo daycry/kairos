@@ -314,7 +314,11 @@
         "title": "projectsArguments",
         "type": "object"
       },
-      "name": "projects"
+      "name": "projects",
+      "x-kairos-endpoint": {
+        "method": "GET",
+        "path": "/v1/projects"
+      }
     },
     {
       "annotations": {
@@ -710,7 +714,11 @@
         "title": "rememberArguments",
         "type": "object"
       },
-      "name": "remember"
+      "name": "remember",
+      "x-kairos-endpoint": {
+        "method": "POST",
+        "path": "/v1/events"
+      }
     },
     {
       "annotations": {
@@ -733,7 +741,11 @@
         "title": "capture_policyArguments",
         "type": "object"
       },
-      "name": "capture_policy"
+      "name": "capture_policy",
+      "x-kairos-endpoint": {
+        "method": "GET",
+        "path": "/v1/projects/{project_id}/capture-policy"
+      }
     },
     {
       "annotations": {
@@ -769,7 +781,19 @@
         "title": "event_statusArguments",
         "type": "object"
       },
-      "name": "event_status"
+      "name": "event_status",
+      "x-kairos-endpoint": {
+        "method": "GET",
+        "path": "/v1/projects/{project_id}/events/{event_id}/status",
+        "without_project_id": {
+          "jobs": {
+            "method": "GET",
+            "path": "/v1/jobs/{job_id}"
+          },
+          "method": "GET",
+          "path": "/v1/events/{event_id}"
+        }
+      }
     },
     {
       "annotations": {
@@ -942,7 +966,11 @@
         "title": "publish_documentArguments",
         "type": "object"
       },
-      "name": "publish_document"
+      "name": "publish_document",
+      "x-kairos-endpoint": {
+        "method": "POST",
+        "path": "/v1/projects/{project_id}/documents"
+      }
     },
     {
       "annotations": {
@@ -971,7 +999,11 @@
         "title": "document_statusArguments",
         "type": "object"
       },
-      "name": "document_status"
+      "name": "document_status",
+      "x-kairos-endpoint": {
+        "method": "GET",
+        "path": "/v1/projects/{project_id}/documents/{document_id}"
+      }
     },
     {
       "annotations": {
@@ -1014,7 +1046,11 @@
         "title": "document_manifestArguments",
         "type": "object"
       },
-      "name": "document_manifest"
+      "name": "document_manifest",
+      "x-kairos-endpoint": {
+        "method": "GET",
+        "path": "/v1/projects/{project_id}/manifest"
+      }
     },
     {
       "annotations": {
@@ -1050,7 +1086,11 @@
         "title": "revoke_documentArguments",
         "type": "object"
       },
-      "name": "revoke_document"
+      "name": "revoke_document",
+      "x-kairos-endpoint": {
+        "method": "DELETE",
+        "path": "/v1/projects/{project_id}/documents/{document_id}"
+      }
     },
     {
       "annotations": {
@@ -1117,7 +1157,11 @@
         "title": "searchArguments",
         "type": "object"
       },
-      "name": "search"
+      "name": "search",
+      "x-kairos-endpoint": {
+        "method": "POST",
+        "path": "/v1/search"
+      }
     },
     {
       "annotations": {
@@ -1147,7 +1191,11 @@
         "title": "detailsArguments",
         "type": "object"
       },
-      "name": "details"
+      "name": "details",
+      "x-kairos-endpoint": {
+        "method": "POST",
+        "path": "/v1/details"
+      }
     },
     {
       "annotations": {
@@ -1239,7 +1287,11 @@
         "title": "contextArguments",
         "type": "object"
       },
-      "name": "context"
+      "name": "context",
+      "x-kairos-endpoint": {
+        "method": "POST",
+        "path": "/v1/context"
+      }
     },
     {
       "annotations": {
@@ -1305,7 +1357,11 @@
         "title": "timelineArguments",
         "type": "object"
       },
-      "name": "timeline"
+      "name": "timeline",
+      "x-kairos-endpoint": {
+        "method": "POST",
+        "path": "/v1/timeline"
+      }
     },
     {
       "annotations": {
@@ -1375,6 +1431,10 @@
         ],
         "title": "work_state_writeOutput",
         "type": "object"
+      },
+      "x-kairos-endpoint": {
+        "method": "POST",
+        "path": "/v1/projects/{project_id}/work-state"
       }
     },
     {
@@ -1430,6 +1490,10 @@
         ],
         "title": "work_state_readOutput",
         "type": "object"
+      },
+      "x-kairos-endpoint": {
+        "method": "GET",
+        "path": "/v1/projects/{project_id}/work-state"
       }
     },
     {
@@ -1559,6 +1623,10 @@
         ],
         "title": "build_corpusOutput",
         "type": "object"
+      },
+      "x-kairos-endpoint": {
+        "method": "POST",
+        "path": "/v1/projects/{project_id}/corpora"
       }
     },
     {
@@ -1595,6 +1663,10 @@
         ],
         "title": "list_corporaOutput",
         "type": "object"
+      },
+      "x-kairos-endpoint": {
+        "method": "GET",
+        "path": "/v1/projects/{project_id}/corpora"
       }
     },
     {
@@ -1657,6 +1729,10 @@
         ],
         "title": "rebuild_corpusOutput",
         "type": "object"
+      },
+      "x-kairos-endpoint": {
+        "method": "POST",
+        "path": "/v1/projects/{project_id}/corpora/{name}/rebuild"
       }
     },
     {
@@ -1700,6 +1776,10 @@
         ],
         "title": "prime_corpusOutput",
         "type": "object"
+      },
+      "x-kairos-endpoint": {
+        "method": "POST",
+        "path": "/v1/projects/{project_id}/corpora/{name}/prime"
       }
     },
     {
@@ -1743,6 +1823,13 @@
         ],
         "title": "reprime_corpusOutput",
         "type": "object"
+      },
+      "x-kairos-endpoint": {
+        "body": {
+          "fresh": true
+        },
+        "method": "POST",
+        "path": "/v1/projects/{project_id}/corpora/{name}/prime"
       }
     },
     {
@@ -1798,6 +1885,10 @@
         ],
         "title": "query_corpusOutput",
         "type": "object"
+      },
+      "x-kairos-endpoint": {
+        "method": "POST",
+        "path": "/v1/projects/{project_id}/corpora/{name}/query"
       }
     },
     {
@@ -1844,6 +1935,10 @@
         ],
         "title": "get_observationsOutput",
         "type": "object"
+      },
+      "x-kairos-endpoint": {
+        "method": "POST",
+        "path": "/v1/projects/{project_id}/observations/get"
       }
     },
     {
@@ -1892,6 +1987,10 @@
         ],
         "title": "observation_searchOutput",
         "type": "object"
+      },
+      "x-kairos-endpoint": {
+        "method": "GET",
+        "path": "/v1/projects/{project_id}/observations/search"
       }
     },
     {
@@ -1940,6 +2039,10 @@
         ],
         "title": "observation_contextOutput",
         "type": "object"
+      },
+      "x-kairos-endpoint": {
+        "method": "GET",
+        "path": "/v1/projects/{project_id}/observations/context"
       }
     },
     {
@@ -1977,6 +2080,10 @@
         ],
         "title": "observation_generation_statusOutput",
         "type": "object"
+      },
+      "x-kairos-endpoint": {
+        "method": "GET",
+        "path": "/v1/jobs/{job_id}"
       }
     },
     {
@@ -2004,7 +2111,8 @@
         ],
         "title": "important_workflowOutput",
         "type": "object"
-      }
+      },
+      "x-kairos-endpoint": "local"
     },
     {
       "annotations": {
@@ -2413,6 +2521,10 @@
         ],
         "title": "observation_addOutput",
         "type": "object"
+      },
+      "x-kairos-endpoint": {
+        "method": "POST",
+        "path": "/v1/observations"
       }
     },
     {
@@ -2822,6 +2934,10 @@
         ],
         "title": "observation_record_eventOutput",
         "type": "object"
+      },
+      "x-kairos-endpoint": {
+        "method": "POST",
+        "path": "/v1/observations/events"
       }
     },
     {
@@ -2905,6 +3021,10 @@
         ],
         "title": "get_tool_usesOutput",
         "type": "object"
+      },
+      "x-kairos-endpoint": {
+        "method": "GET",
+        "path": "/v1/tool-uses"
       }
     },
     {
@@ -2976,6 +3096,10 @@
         ],
         "title": "team_work_writeOutput",
         "type": "object"
+      },
+      "x-kairos-endpoint": {
+        "method": "POST",
+        "path": "/v1/projects/{project_id}/team-work"
       }
     },
     {
@@ -3031,6 +3155,10 @@
         ],
         "title": "team_work_readOutput",
         "type": "object"
+      },
+      "x-kairos-endpoint": {
+        "method": "GET",
+        "path": "/v1/projects/{project_id}/team-work"
       }
     },
     {
@@ -3079,6 +3207,10 @@
         ],
         "title": "team_searchOutput",
         "type": "object"
+      },
+      "x-kairos-endpoint": {
+        "method": "GET",
+        "path": "/v1/projects/{project_id}/team-search"
       }
     },
     {
@@ -3122,6 +3254,10 @@
         ],
         "title": "team_briefOutput",
         "type": "object"
+      },
+      "x-kairos-endpoint": {
+        "method": "GET",
+        "path": "/v1/projects/{project_id}/team-brief"
       }
     },
     {
@@ -3193,6 +3329,10 @@
         ],
         "title": "corpus_answerOutput",
         "type": "object"
+      },
+      "x-kairos-endpoint": {
+        "method": "POST",
+        "path": "/v1/projects/{project_id}/corpora/{name}/answers"
       }
     },
     {
@@ -3243,6 +3383,10 @@
         ],
         "title": "corpus_answer_statusOutput",
         "type": "object"
+      },
+      "x-kairos-endpoint": {
+        "method": "GET",
+        "path": "/v1/projects/{project_id}/corpora/{name}/answers/{request_id}"
       }
     }
   ],

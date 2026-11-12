@@ -39,13 +39,13 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Integración continua (C-01) | 8 | 8 | 100% | 0 / 18.0h | 0 / 2.3h | 0 / 0.6h | 0 / 578 k |
 | Fase 2 — Servidor sin modelo de lenguaje (C-04) | 9 | 9 | 100% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
-| Fase 3 — Paridad REST /v1 (C-02) | 6 | 10 | 60% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
+| Fase 3 — Paridad REST /v1 (C-02) | 7 | 10 | 70% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 0 | 8 | 0% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 0 | 15 | 0% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **23** | **74** | **31.1%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **24** | **74** | **32.4%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -824,10 +824,11 @@ RED: `memory_platform/tests/test_api.py::ParityEndpointTests::test_team_search_r
 ### T-24 — `x-kairos-endpoint` por herramienta en el contrato MCP
 
 - **Descripción**: Añadir el campo aditivo `x-kairos-endpoint` (`{method, path}` o `local` para `important_workflow`) a cada una de las 34 herramientas en el exportador y regenerar los contratos. Fuente: CA-04, plan director §2.2.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: Cada una de las 34 herramientas del contrato MCP declara en `x-kairos-endpoint` el método y la ruta `/v1` que la sirve (`local` para `important_workflow`); los demás campos del contrato no cambian.
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 2.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.36h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.36h (estimado) · real 0.09h (medido, ventana win-1a8fa55c, 15:47Z-15:52Z)
 - **Supervisión**: est. 0.09h (≈25 % IA) · real —
 - **Previsión IA**: 100 k in / 9 k out tok · ⚠️ verificar €
 - **Dependencias**: T-23
@@ -839,18 +840,21 @@ RED: `memory_platform/tests/test_api.py::ParityEndpointTests::test_team_search_r
   - `python scripts/export-contracts.py && git diff --stat docs/contracts` → solo adiciones
 
 **Criterios de aceptación**
-- [ ] Cada herramienta de `tools` tiene `x-kairos-endpoint` con `method` y `path` presentes en `memory-platform.openapi.json`, o `local` (solo `important_workflow`)
-- [ ] El contrato regenerado tiene 34 herramientas, mismo orden y ningún campo existente cambiado
-- [ ] El MCP interno sigue listando las mismas herramientas (el campo se añade al contrato, no al protocolo)
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] Cada herramienta de `tools` tiene `x-kairos-endpoint` con `method` y `path` presentes en `memory-platform.openapi.json`, o `local` (solo `important_workflow`)
+- [x] El contrato regenerado tiene 34 herramientas, mismo orden y ningún campo existente cambiado
+- [x] El MCP interno sigue listando las mismas herramientas (el campo se añade al contrato, no al protocolo)
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Test en rojo de CA-04
-- [ ] Definir la tabla herramienta → endpoint en el exportador
-- [ ] Regenerar contratos
-- [ ] `usage-meter start/close`
+- [x] Test en rojo de CA-04
+- [x] Definir la tabla herramienta → endpoint en el exportador
+- [x] Regenerar contratos
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-04. Patrón: exportador en `scripts/export-contracts.py:11-30`; regla aditiva en `memory_platform/tests/test_contract_additive.py:28-40`. La tabla de correspondencia es la de la spec, §Arquitectura. Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde.
+**Notas**: Procedencia: spec CA-04. Patrón: exportador en `scripts/export-contracts.py:11-30`; regla aditiva en `memory_platform/tests/test_contract_additive.py:28-40`. La tabla de correspondencia es la de la spec, §Arquitectura. Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde. Implementación: `scripts/export-contracts.py` define la tabla `ENDPOINTS` (las 34 herramientas, la de la spec §Arquitectura con las rutas de T-18..T-23) y añade `x-kairos-endpoint` (`{method, path}` o `'local'`) a cada herramienta del contrato; el exportador aborta si la tabla y las herramientas del MCP difieren (una herramienta nueva sin ruta no se exporta). Decisiones: (1) `event_status` tiene `project_id` opcional: la entrada principal es la reconciliación por proyecto (T-20) y lleva la clave adicional `without_project_id` con el recibo `GET /v1/events/{event_id}` y `GET /v1/jobs/{job_id}` por trabajo, para que kairos-mcp (Fase 5) pueda servir también la llamada sin proyecto; (2) `reprime_corpus` apunta a `…/prime` con `body: {fresh: true}` (la herramienta es esa variante). Ambas son claves adicionales dentro de la extensión; CA-04 exige `method` y `path`, que están en todas. Tests (`test_contract_additive.py`): `test_ca04_every_tool_declares_an_endpoint_that_exists_in_the_openapi_or_is_local` (cada ruta y método, incluidas las alternativas anidadas, existen en el OpenAPI; solo `important_workflow` es `local`; las rutas de T-19..T-23 son las declaradas, ninguna apunta al listado del portal) y el test de igualdad exacta por herramienta ahora ignora solo esa clave nueva (`without_endpoint`, como ya hacía con `semantic_budget_ms`). Contrato: el JSON de `kairos-mcp.json` es idéntico al de HEAD una vez quitada la clave en las 34 herramientas (34 herramientas, mismo orden); el diff de texto muestra 157 líneas añadidas y 13 quitadas, y esas 13 son solo la coma final de la línea `name` anterior a la clave nueva (verificado cargando ambos JSON); `memory-platform.openapi.json` no cambia en esta tarea. Verificación: MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 536} (docker build --target test, rc 0, kairos-test:t24); `python scripts/export-contracts.py && git diff --stat docs/contracts` → solo `kairos-mcp.json` (adiciones; 13 líneas son comas). usage-meter close three-components/T-24: 0.09 h IA (medido, win-1a8fa55c15d44a4491a5f73381bed49a).
+
+
+RED: `memory_platform/tests/test_contract_additive.py::ContractAdditiveTests::test_ca04_every_tool_declares_an_endpoint_that_exists_in_the_openapi_or_is_local` falló con AssertionError: unexpectedly None : projects has no x-kairos-endpoint contra las fuentes de HEAD · 2026-11-12.
 
 ### T-25 — Prueba de correspondencia: las 34 herramientas por el MCP interno y por `/v1` (CA-06)
 
