@@ -329,7 +329,7 @@ class CorpusAnswerSwitchTests(unittest.TestCase):
     def test_off_reusing_a_stored_request_id_reads_the_operation_and_a_new_one_is_refused(self):
         on = CorpusAnswers(self.store, settings(), self.provider)
         stored = asyncio.run(on.answer(*self.args()))
-        off = CorpusAnswers(self.store, SimpleNamespace(ollama_url='http://synthetic.invalid', llm_model='', provider_timeout=5, corpus_answer_enabled=False), self.provider)
+        off = CorpusAnswers(self.store, SimpleNamespace(ollama_url='http://synthetic.invalid', llm_model='synthetic-model', provider_timeout=5, corpus_answer_enabled=False), self.provider)
         self.assertEqual(asyncio.run(off.answer(*self.args())), stored)  # same request_id: reads, never resends
         self.assertEqual(len(self.provider.calls), 1)
         with self.assertRaises(MemoryError) as error: asyncio.run(off.answer(*self.args('request-2')))
@@ -337,8 +337,25 @@ class CorpusAnswerSwitchTests(unittest.TestCase):
         with self.store.transaction() as c:  # nothing new reserved
             self.assertEqual(c.execute('SELECT count(*) AS n FROM memory.corpus_answers WHERE project_id=%s', (self.project,)).fetchone()['n'], 1)
         stranger = {'id': '00000000-0000-0000-0000-000000000000', 'credential_type': 'bootstrap'}  # no grant on the project: authorization is unchanged
-        with self.assertRaises(Exception) as denied: asyncio.run(off.answer(stranger, *self.args()[1:]))
-        self.assertNotEqual(getattr(denied.exception, 'code', None), None)
+        with self.assertRaises(Unauthorized): asyncio.run(off.answer(stranger, *self.args()[1:]))
+        user = self.store.create_user(self.actor, {'username': 'peer-grantee', 'password': 'synthetic-password-123', 'project_ids': [self.project], 'scopes': ['read', 'write']})
+        peer = {'id': user['id'], 'credential_type': 'bootstrap'}  # a second real actor with read/write on the same project
+        with self.assertRaises(MemoryError) as other: asyncio.run(off.answer(peer, *self.args()[1:]))  # a real grantee cannot read another actor's answer
+        self.assertEqual(other.exception.code, 'corpus_answer_disabled')
+        self.assertEqual(len(self.provider.calls), 1)
+
+    def test_off_same_request_id_with_another_request_conflicts_like_when_on(self):
+        on = CorpusAnswers(self.store, settings(), self.provider)
+        stored = asyncio.run(on.answer(*self.args()))
+        off = CorpusAnswers(self.store, SimpleNamespace(ollama_url='http://synthetic.invalid', llm_model='synthetic-model', provider_timeout=5, corpus_answer_enabled=False), self.provider)
+        different = list(self.args()); different[3] = 'a completely different question'
+        with self.assertRaises(Conflict) as on_error: asyncio.run(on.answer(*different))
+        with self.assertRaises(Conflict) as off_error: asyncio.run(off.answer(*different))
+        self.assertEqual(off_error.exception.message, on_error.exception.message)
+        self.assertIn('different answer', off_error.exception.message)
+        self.assertEqual(asyncio.run(off.answer(*self.args())), stored)  # the same request still reads the stored answer
+        stale = list(self.args()); stale[5] = 'stale-session'
+        with self.assertRaises(Conflict): asyncio.run(off.answer(*stale))
         self.assertEqual(len(self.provider.calls), 1)
 
 

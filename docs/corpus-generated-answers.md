@@ -11,9 +11,12 @@ source quotations. Generated text is not an approved learning or a validated fac
 unless the operator turns this on with `MEMORY_CORPUS_ANSWER=on` and names a model
 in `MEMORY_LLM_MODEL` (there is no default model, and the server refuses to start
 with the switch on and no model). While it is off the tool stays in the list of 34
-MCP tools, so existing clients and the contract do not change, but calling it
-(over MCP or `POST /v1/projects/{id}/corpora/{name}/answers`) fails with the error
-`corpus_answer_disabled` (HTTP 403) before any reservation or provider call.
+MCP tools, so existing clients and the contract do not change, but a new
+request (over MCP or `POST /v1/projects/{id}/corpora/{name}/answers`) fails with the
+error `corpus_answer_disabled` (HTTP 403) before any reservation or provider call.
+Repeating a `request_id` stored while the switch was on with the same request
+returns the stored answer, and with a different request it is a conflict, exactly
+as when the switch is on.
 `corpus_answer_status` keeps working and still reads answers stored while the
 switch was on. With the switch on, the proxy that fronts Ollama also needs
 `OLLAMA_ALLOW_CHAT=1`, otherwise `/api/chat` answers 403. See

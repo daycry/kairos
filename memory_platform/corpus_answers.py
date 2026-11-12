@@ -244,12 +244,28 @@ class CorpusAnswers:
             self.store._audit(c, actor, 'corpus.answer.reserved', project, request_id)
             return self._public(row), (messages, evidence) if evidence else None
 
+    def _stored(self, actor, project, name, question, request_id, session, generation):
+        text(question, 'question', 4000); text(request_id, 'request_id'); text(session, 'expected_session_id')
+        integer(generation, 'expected_generation', 1, 2_147_483_646)
+        request_hash = digest({'name': name, 'question': question, 'session': session, 'generation': generation,
+                               'model': self.settings.llm_model, 'prompt': 'corpus-answer-v1'})
+        with self.store.transaction() as c:
+            corpus = self._generation(c, actor, project, name, session, generation)
+            old = c.execute('SELECT request_hash,corpus_id FROM memory.corpus_answers WHERE project_id=%s AND actor_id=%s AND request_id=%s',
+                            (project, actor['id'], request_id)).fetchone()
+            if not old:
+                raise NotFound()
+            if old['request_hash'] != request_hash or old['corpus_id'] != corpus['id']:
+                raise Conflict('request_id already identifies a different answer')
+        return self.status(actor, project, name, request_id)
+
     async def answer(self, actor, project, name, question, request_id, expected_session_id, expected_generation):
         if not getattr(self.settings, 'corpus_answer_enabled', False):
             # MEMORY_CORPUS_ANSWER=off (default, D-4): never reserve or call a provider. Reusing a request_id reads the stored operation
-            # (same authorization and freshness checks as `status`); without one, the call is refused.
+            # only for the same request fingerprint (else the same Conflict as when on); without one, the call is refused.
             try:
-                return await asyncio.to_thread(self.status, actor, project, name, request_id)
+                return await asyncio.to_thread(self._stored, actor, project, name, question, request_id,
+                                               expected_session_id, expected_generation)
             except NotFound:
                 pass
             raise MemoryError('corpus_answer_disabled', 'corpus_answer_disabled: generated answers are off on this server (MEMORY_CORPUS_ANSWER=off)', 403)

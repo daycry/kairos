@@ -11,7 +11,7 @@ Kairos aún no tiene versiones etiquetadas. Todo lo que sigue está sin publicar
 El servidor ya no necesita un modelo de lenguaje. [Ledger](docs/roadmap/2026-11-12-three-components/tasks.md)
 
 - **Sin extracción en el servidor por defecto.** `MEMORY_EXTRACT_ENABLED` es `0`: un evento con `generate: true` (el CLI lo envía con los resúmenes) se acepta con 202 y no crea trabajo `extract`. El recibo añade el campo `extraction: "disabled"`. Los trabajos que ya estaban en cola se conservan y quedan marcados `extraction_disabled`; `POST /v1/jobs/{id}/retry` los vuelve a encolar cuando actives la extracción.
-- **`corpus_answer` viene apagada.** `MEMORY_CORPUS_ANSWER=off` mantiene la herramienta en la lista de 34 y responde `corpus_answer_disabled` sin llamar a ningún proveedor; `corpus_answer_status` sigue leyendo las respuestas guardadas.
+- **`corpus_answer` viene apagada.** `MEMORY_CORPUS_ANSWER=off` mantiene la herramienta en la lista de 34 y rechaza una petición nueva con `corpus_answer_disabled` sin llamar a ningún proveedor (repetir un `request_id` guardado devuelve la respuesta guardada, o un conflicto si la petición difiere); `corpus_answer_status` sigue leyendo las respuestas guardadas.
 - **Sin modelo por defecto.** `MEMORY_LLM_MODEL` ya no tiene valor; activar la extracción o las respuestas generadas sin él detiene el arranque con un mensaje que nombra la variable. Una instalación que dependía del valor anterior debe fijarlo.
 - **Proxy de Ollama cerrado.** El proxy interno solo reenvía `/api/embed` y `/api/version`; lo demás recibe 403 del propio proxy. `OLLAMA_ALLOW_CHAT=1` permite además `/api/chat`. El proxy ya no corre como root.
 
