@@ -38,14 +38,14 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase | Completadas | Total | Progreso | H. humanas (real/est) | H. IA ejec. (real/est) | Supervisión (real/est) | Tokens (real/est) |
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Integración continua (C-01) | 8 | 8 | 100% | 0 / 18.0h | 0 / 2.3h | 0 / 0.6h | 0 / 578 k |
-| Fase 2 — Servidor sin modelo de lenguaje (C-04) | 8 | 9 | 88.9% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
+| Fase 2 — Servidor sin modelo de lenguaje (C-04) | 9 | 9 | 100% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
 | Fase 3 — Paridad REST /v1 (C-02) | 0 | 10 | 0% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 0 | 8 | 0% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 0 | 15 | 0% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **16** | **74** | **21.6%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **17** | **74** | **23.0%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -306,7 +306,7 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 
 ## Fase 2 — Servidor sin modelo de lenguaje (C-04)
 
-**Estado**: en-progreso · **Estimado**: 37.8h (31.5h base) · **Real**: — · **Coste est.**: 1.890 € · **Tokens est.**: 1245 k
+**Estado**: completado · **Estimado**: 37.8h (31.5h base) · **Real**: — · **Coste est.**: 1.890 € · **Tokens est.**: 1245 k
 
 ### T-09 — Interruptor `MEMORY_EXTRACT_ENABLED` en la ingesta con recibo aditivo
 
@@ -588,8 +588,9 @@ RED: `memory_platform/tests/test_no_llm.py` falló con AssertionError: 'beam:clo
 ### T-17 — Revisión adversarial de la Fase 2
 
 - **Descripción**: Revisión adversarial: ¿queda algún camino que llame a `/api/chat`? ¿se pierde algún trabajo `extract` heredado? ¿el recibo aditivo rompe a un cliente? ¿el 403 del proxy se puede esquivar (rutas con `//`, mayúsculas, `/api/embed/..`)? Registrar y cerrar hallazgos. Fuente: retro, R-03.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: El servidor sin modelo de lenguaje se revisó de forma adversarial en tres intentos (conformidad, defectos, seguridad del proxy y rendimiento del worker) sin hallazgos Critical ni Important abiertos.
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 10.5h (base) · real —
 - **Tiempo IA (ejec.)**: est. 1.44h (estimado) · real —
 - **Supervisión**: est. 0.36h (≈25 % IA) · real —
@@ -601,18 +602,19 @@ RED: `memory_platform/tests/test_no_llm.py` falló con AssertionError: 'beam:clo
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t17 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
   - lectura: `review.md`, sección «Fase 2», sin hallazgos Critical/Important abiertos
+  - Evidencia (2026-11-12): `review.md` sección «Fase 2»; 3 intentos (A+B+C+D; A y B; A+B). Intento 1: 1 Important (fixture e2e del portal) corregido en de1e229. Intento 2: 3 Minor corregidos en ec7e750. Intento 3: 1 Minor como deuda aceptada y documentado. Suite tras cada arreglo: 528 (4dabeba) y 529 (ec7e750), 0 skipped, `llm_chat_calls` 0; CI runs 43233832269 y 43240152321 en verde. La Lente C probó el proxy en `kairos-proxy-lensc` (19 peticiones × 5 valores de `OLLAMA_ALLOW_CHAT`) sin evasiones.
 
 **Criterios de aceptación**
-- [ ] `review.md` tiene la sección «Fase 2» con intentos y hallazgos
-- [ ] 0 hallazgos Critical o Important abiertos
-- [ ] Suite completa en verde tras cada arreglo
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] `review.md` tiene la sección «Fase 2» con intentos y hallazgos
+- [x] 0 hallazgos Critical o Important abiertos
+- [x] Suite completa en verde tras cada arreglo
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar — EXCEPCIÓN: los intentos de revisión no se midieron con usage-meter; los tokens de los revisores constan solo en la telemetría de los subagentes (estimado)
 
 **Subtareas**
-- [ ] Probar evasiones de la lista de permitidos
-- [ ] Buscar llamadas a proveedores con `grep -rn "/api/chat" memory_platform`
-- [ ] Cerrar hallazgos
-- [ ] `usage-meter start/close` por intento
+- [x] Probar evasiones de la lista de permitidos
+- [x] Buscar llamadas a proveedores con `grep -rn "/api/chat" memory_platform`
+- [x] Cerrar hallazgos
+- [x] `usage-meter start/close` por intento — EXCEPCIÓN: ver el criterio anterior
 
 **Notas**: Procedencia: retro de `retrieval-quality`. No escribe en `testing/`.
 
@@ -2438,3 +2440,11 @@ Veredicto: **sin Critical ni Important**. Lentes: A y B (B con la comprobación 
 | 2 | Minor | El test de acceso denegado usa un actor inexistente (`Unauthorized` 401) y no prueba el aislamiento entre actores con permiso sobre el proyecto | T-11 | corregido (ec7e750) | Lentes A y B: `test_corpus_answers.py:339-341` |
 | 3 | Minor | La documentación dice que con `off` toda llamada falla; ahora un `request_id` guardado se lee | T-11 | corregido (ec7e750) | Lente A: `docs/corpus-generated-answers.md:14-17`, `docs/configuration.md:26,38`, `CHANGELOG*.md:14` |
 | 4 | Minor | El run de CI de las correcciones no constaba en el ledger | T-09..T-15 | corregido (este veredicto) | run 43233832269 |
+
+## Revisión de dos lentes — intento 3: Fase 2 (servidor sin modelo de lenguaje) — correcciones Minor del intento 2 (T-11)
+
+Veredicto: **sin Critical ni Important; la Fase 2 cierra en el intento 3 de 3**. Lentes: A+B en un solo revisor (C y D no aplican al diff `7ccb41f..8e933e8`). La huella de `_stored` es una copia literal de la de `_reserve`; la autorización no se debilita y un actor ajeno recibe `corpus_answer_disabled` exista o no el `request_id`. `scope-check --base 31d288d` exit 0. Suite: `MEMORY_TEST_RESULT` 529, 0 skipped, `llm_chat_calls` 0 (ec7e750); CI run 43240152321 en verde.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Minor | Con `off`, la huella del reintento incluye `MEMORY_LLM_MODEL`; si el operador lo vacía o cambia al apagar, repetir la misma petición da `Conflict` en vez de la respuesta guardada. Sin pérdida de datos: `corpus_answer_status` la lee | T-11 | deuda aceptada en el código; la documentación (`docs/corpus-generated-answers.md`, `docs/configuration.md`, `CHANGELOG*.md`) lo dice y remite a `corpus_answer_status` (commit de cierre de la fase) | `corpus_answers.py:250-251`, `test_corpus_answers.py:332`; recálculo de `digest` con modelo `''` frente a `synthetic-model`: distinto |

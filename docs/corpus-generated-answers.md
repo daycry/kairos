@@ -16,7 +16,9 @@ request (over MCP or `POST /v1/projects/{id}/corpora/{name}/answers`) fails with
 error `corpus_answer_disabled` (HTTP 403) before any reservation or provider call.
 Repeating a `request_id` stored while the switch was on with the same request
 returns the stored answer, and with a different request it is a conflict, exactly
-as when the switch is on.
+as when the switch is on. The configured `MEMORY_LLM_MODEL` is part of the
+request: if you clear or change it when you switch off, the retry is a conflict,
+and `corpus_answer_status` is the way to read the stored answer.
 `corpus_answer_status` keeps working and still reads answers stored while the
 switch was on. With the switch on, the proxy that fronts Ollama also needs
 `OLLAMA_ALLOW_CHAT=1`, otherwise `/api/chat` answers 403. See
