@@ -184,7 +184,7 @@ class RegistryTests(unittest.TestCase):
 
     def test_the_queue_depth_follows_real_jobs(self):
         from memory_platform.tests.test_store import create_core, event
-        store, actor, pid = create_core()
+        store, actor, pid = create_core(extraction=True)
         accepted = store.ingest_event(actor, event(pid))
         with store.transaction() as c:
             row = c.execute('SELECT destination FROM memory.jobs WHERE id=%s', (accepted['jobs'][0],)).fetchone()

@@ -316,3 +316,37 @@ class ChunkedEmbeddingWorkerTests(unittest.IsolatedAsyncioTestCase):
         embed.assert_awaited_once_with('Short\ntiny body')
         many.assert_not_awaited()
         self.store.complete_job.assert_called_once_with('job', 4, {'vector': [1.0, 0.0], 'model': 'nomic-embed-text', 'canonical_hash': 'a'*64, 'verified': True})
+
+
+class ExtractionSwitchTests(unittest.IsolatedAsyncioTestCase):
+    """MEMORY_EXTRACT_ENABLED (CA-14): the worker only builds the `extract` provider when the operator turned extraction on."""
+
+    def test_default_worker_has_no_extract_provider_and_never_builds_one(self):
+        with patch('memory_platform.worker.Ollama') as ollama:
+            worker = Worker(Mock(), Settings('unused'))
+        ollama.assert_not_called()
+        self.assertEqual(set(worker.providers), {'embed'})
+
+    def test_enabled_worker_keeps_both_providers(self):
+        worker = Worker(Mock(), Settings('unused', extract_enabled=True, llm_model='fixture-model'))
+        self.assertEqual(set(worker.providers), {'extract', 'embed'})
+
+    async def test_inherited_extract_job_is_recorded_not_run_and_not_lost(self):
+        store = Mock()
+        store.claim_job.return_value = {'id': 'job', 'fence': 4, 'attempts': 1, 'destination': 'extract', 'payload': {'title': 'Source', 'content': 'Summary'}}
+        with patch('memory_platform.worker.Ollama') as ollama:
+            await Worker(store, Settings('unused', lease_seconds=0.3)).run_once()
+        ollama.assert_not_called()
+        store.complete_job.assert_not_called()
+        # Failed with its own reason and no retry: `POST /v1/jobs/{id}/retry` puts it back in the queue once extraction is on.
+        self.assertEqual(store.fail_job.call_args.args, ('job', 4, 'extraction_disabled', None, False))
+
+    async def test_inherited_extract_job_runs_normally_when_extraction_is_enabled(self):
+        store = Mock()
+        store.claim_job.return_value = {'id': 'job', 'fence': 4, 'attempts': 1, 'destination': 'extract', 'payload': {'title': 'Source', 'content': 'Summary'}}
+        receipt = {'payload': {'title': 'Lesson', 'content': 'Summary'}, 'status': 'extracted'}
+        settings = Settings('unused', lease_seconds=0.3, extract_enabled=True, llm_model='fixture-model')
+        worker = Worker(store, settings)
+        worker.providers['extract'] = Mock(extract=AsyncMock(return_value=receipt))
+        await worker.run_once()
+        store.complete_job.assert_called_once_with('job', 4, receipt)

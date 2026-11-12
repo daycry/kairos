@@ -2,6 +2,7 @@
 import asyncio
 import hashlib
 import json
+import os
 import time
 import uuid
 
@@ -14,15 +15,18 @@ from memory_platform.worker import Worker
 
 
 def run(dsn):
+    if not os.environ.get('MEMORY_LLM_MODEL'):
+        raise SystemExit('This probe exercises extraction against a live model: set MEMORY_LLM_MODEL (the server has no default model).')
     asyncio.run(_run(dsn))
 
 
 async def _run(dsn):
     start = time.monotonic()
     _, actor, pid = create_core()
-    settings = Settings(dsn, ollama_url='http://host.docker.internal:11434', provider_timeout=90,
+    settings = Settings(dsn, ollama_url='http://host.docker.internal:11434', llm_model=os.environ['MEMORY_LLM_MODEL'], extract_enabled=True, provider_timeout=90,
                         embedding_worker_timeout=45, embedding_query_timeout=20)
     store = Store(dsn, embedding_enabled=True)
+    store.extraction_enabled = True
     text = 'El trabajador debe comprobar el token de fencing antes de confirmar una proyeccion. No reutilices un resultado de una version anterior.'
     value = event(pid)
     value['payload'] = {'title': 'Prueba: "memoria", acentos á '+chr(0x1f9e0), 'content': text,
@@ -47,7 +51,7 @@ async def _run(dsn):
         vectors = c.execute('SELECT count(*) AS n FROM memory.embeddings WHERE project_id=%s', (pid,)).fetchone()['n']
     assert jobs and all(j['state'] == 'succeeded' for j in jobs), jobs
     assert derived and derived['payload']['validation_status'] == 'unverified', derived
-    assert derived['payload']['provenance']['model'] == 'beam:cloud'
+    assert derived['payload']['provenance']['model'] == settings.llm_model
     assert vectors >= 2, vectors
     # Fresh objects and separate connections reload canon and vectors from disk.
     reloaded = Store(dsn, embedding_enabled=True)
@@ -62,7 +66,7 @@ async def _run(dsn):
     assert found['items'] and any(item['layer'] == 'documental' for item in found['items'])
     assert reloaded.get_event_receipt(actor, accepted['event_id'])['item_id'] == value['item_id']
     print('MEMORY_LIVE_RESULT '+json.dumps({'passed': True, 'environment': 'isolated-postgres-synthetic-live-provider',
-          'models': ['beam:cloud', 'nomic-embed-text'], 'jobs': len(jobs), 'vectors': vectors,
+          'models': [settings.llm_model, 'nomic-embed-text'], 'jobs': len(jobs), 'vectors': vectors,
           'derived_unverified': True, 'source_hash_verified': True, 'unicode_tags_reloaded': True,
           'graph_nodes': len(graph['nodes']), 'graph_links': len(graph['links']), 'semantic_hits': len(found['items']),
           'seconds': round(time.monotonic()-start, 3)}, sort_keys=True), flush=True)

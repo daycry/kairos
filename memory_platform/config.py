@@ -208,6 +208,15 @@ def metrics_mode_from_env(environ=None) -> str:
     return value
 
 
+def switch_from_env(name: str, on: tuple[str, ...], off: tuple[str, ...], default: str, environ=None) -> bool:
+    """A server-side switch that fails closed at startup: an unknown value is an error, never a silent `on` or `off`."""
+    environ = os.environ if environ is None else environ
+    value = environ.get(name, default).strip().lower()
+    if value not in on + off:
+        raise ValueError(name + ' must be one of: ' + ', '.join(on + off))
+    return value in on
+
+
 @dataclass(frozen=True)
 class Settings:
     dsn: str
@@ -216,7 +225,9 @@ class Settings:
     session_ttl: int = 43200
     project_maps: dict = field(default_factory=dict)
     ollama_url: str = 'http://ollama:11434'
-    llm_model: str = 'beam:cloud'
+    llm_model: str = ''
+    extract_enabled: bool = False
+    corpus_answer_enabled: bool = False
     embedding_model: str = 'nomic-embed-text'
     request_timeout: float = 30.0
     provider_timeout: float = 180.0
@@ -264,12 +275,17 @@ class Settings:
         batch_timeout, job_timeout_max = embed_timeouts()
         fusion_k, fusion_bonus, fusion_weights = fusion_from_env()
         metrics_mode = metrics_mode_from_env()
+        extract_enabled = switch_from_env('MEMORY_EXTRACT_ENABLED', ('1',), ('0',), '0')
+        corpus_answer_enabled = switch_from_env('MEMORY_CORPUS_ANSWER', ('on',), ('off',), 'off')
+        llm_model = os.environ.get('MEMORY_LLM_MODEL', '').strip()
+        if (extract_enabled or corpus_answer_enabled) and not llm_model:
+            raise ValueError('MEMORY_LLM_MODEL must name a model when MEMORY_EXTRACT_ENABLED=1 or MEMORY_CORPUS_ANSWER=on')
         return cls(
             dsn=secret('MEMORY_DSN', required=True), allowed_origins=origins,
             cookie_secure=secure, session_ttl=int(os.environ.get('MEMORY_SESSION_TTL', '43200')),
             project_maps=maps,
             ollama_url=endpoint('MEMORY_OLLAMA_URL', 'http://ollama:11434'),
-            llm_model=os.environ.get('MEMORY_LLM_MODEL', 'beam:cloud'),
+            llm_model=llm_model, extract_enabled=extract_enabled, corpus_answer_enabled=corpus_answer_enabled,
             embedding_model=os.environ.get('MEMORY_EMBEDDING_MODEL', 'nomic-embed-text'),
             request_timeout=float(os.environ.get('MEMORY_REQUEST_TIMEOUT', '30')),
             provider_timeout=float(os.environ.get('MEMORY_PROVIDER_TIMEOUT', '180')),

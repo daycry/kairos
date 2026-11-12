@@ -47,8 +47,9 @@ class NativeRuntimeTests(unittest.TestCase):
     def test_default_worker_has_only_native_providers_and_preserves_models(self):
         settings = Settings('unused')
         worker = Worker(Mock(), settings)
-        self.assertEqual(set(worker.providers), {'extract', 'embed'})
-        self.assertEqual(settings.llm_model, 'beam:cloud')
+        self.assertEqual(set(worker.providers), {'embed'})  # extraction is off by default (MEMORY_EXTRACT_ENABLED)
+        self.assertEqual(set(Worker(Mock(), Settings('unused', extract_enabled=True, llm_model='fixture-model')).providers), {'extract', 'embed'})
+        self.assertEqual(settings.llm_model, '')  # no default model: the operator names one when turning a model feature on
         self.assertEqual(settings.embedding_model, 'nomic-embed-text')
         self.assertEqual(settings.ollama_url, 'http://ollama:11434')
         classes = {name for name, value in vars(providers).items()

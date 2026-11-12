@@ -21,7 +21,9 @@ El Compose interpola estas opciones. Cambiarlas exige volver a desplegar los ser
 | Variable | Valor de ejemplo | Significado |
 |---|---|---|
 | `MEMORY_SECRETS_DIR` | `C:/docker-secrets/knowledge-memory` | Carpeta externa de secretos. En Linux configura una ruta del servidor |
-| `MEMORY_LLM_MODEL` | `beam:cloud` | Modelo usado para generación y extracción; debe estar disponible en el proveedor |
+| `MEMORY_LLM_MODEL` | Sin valor | Modelo de lenguaje para extracción y respuestas generadas; solo es obligatorio si se activa `MEMORY_EXTRACT_ENABLED=1` o `MEMORY_CORPUS_ANSWER=on` (sin él, el arranque falla nombrando la variable) |
+| `MEMORY_EXTRACT_ENABLED` | `0` | Con `0`, el worker no crea el proveedor `extract` y un evento con `generate: true` se acepta sin trabajo `extract` (el recibo añade `extraction: "disabled"`) |
+| `MEMORY_CORPUS_ANSWER` | `off` | Con `off`, `corpus_answer` sigue listada pero responde `corpus_answer_disabled` sin llamar a ningún proveedor; `corpus_answer_status` lee las respuestas ya guardadas |
 | `MEMORY_EMBEDDING_MODEL` | `nomic-embed-text` | Modelo de embeddings; sus vectores deben ser compatibles con los índices existentes |
 | `OLLAMA_UPSTREAM` | `host.docker.internal:11434` | Destino `host:puerto` al que conecta el proxy interno de Ollama |
 | `MEMORY_ALLOWED_ORIGINS` | `http://127.0.0.1:5173,http://localhost:5173` | Orígenes exactos separados por comas, sin rutas ni barra final |

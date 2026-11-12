@@ -111,7 +111,7 @@ class PrivacyPostgresTests(unittest.TestCase):
             self.assertNotIn(private,persisted)
 
     def test_activity_resume_includes_derived_learning_once_and_is_project_scoped(self):
-        store,actor,pid=create_core()
+        store,actor,pid=create_core(extraction=True)
         receipt=store.ingest_event(actor,event(pid))
         initial=store.list_activity(actor,pid,limit=1)
         self.assertEqual(len(initial['items']),1)

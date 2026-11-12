@@ -109,6 +109,7 @@ class EmbeddingTests(unittest.TestCase):
         self.assertEqual(self.store.search_vectors(reader,[self.pid],[1,0],MODEL),[])
 
     def test_derived_learning_is_embedded_once_and_tracks_parent_lineage(self):
+        self.store.extraction_enabled = True  # this test needs the `extract` job: explicit opt-in to MEMORY_EXTRACT_ENABLED
         original=event(self.pid,generate=True)
         accepted=self.store.ingest_event(self.actor,original)
         self.assertEqual(self.store.ingest_event(self.actor,original),accepted)

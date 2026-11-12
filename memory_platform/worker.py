@@ -79,7 +79,12 @@ class Worker:
     def __init__(self, store, settings, providers=None, worker_id=None):
         self.store, self.settings = store, settings
         self.id = worker_id or socket.gethostname()+':'+str(uuid.uuid4())
-        self.providers = providers if providers is not None else {'extract': Ollama(settings), 'embed': Embeddings(settings)}
+        if providers is None:
+            # The language-model provider exists only when the operator turned extraction on (MEMORY_EXTRACT_ENABLED).
+            providers = {'embed': Embeddings(settings)}
+            if getattr(settings, 'extract_enabled', False):
+                providers['extract'] = Ollama(settings)
+        self.providers = providers
         self.stopping = asyncio.Event()
 
     async def run_once(self):
@@ -105,6 +110,9 @@ class Worker:
         pulse = asyncio.create_task(heartbeat())
         try:
             provider = self.providers.get(job['destination']) if job['destination'] in {'extract', 'embed'} else None
+            if not provider and job['destination'] == 'extract':
+                # A job queued while extraction was on: it fails with its own reason, stays in the table and can be retried once extraction is enabled.
+                raise ProviderError('extraction_disabled')
             if not provider:
                 raise ProviderError('unsupported_destination')
             if job['destination'] == 'embed':
@@ -179,7 +187,9 @@ class Worker:
 async def serve():
     observability.configure_logging()
     settings = Settings.from_env()
-    worker = Worker(Store(settings.dsn, settings.project_maps, embedding_enabled=getattr(settings, 'embed_enabled', True)), settings)
+    store = Store(settings.dsn, settings.project_maps, embedding_enabled=getattr(settings, 'embed_enabled', True))
+    store.extraction_enabled = getattr(settings, 'extract_enabled', False)
+    worker = Worker(store, settings)
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:

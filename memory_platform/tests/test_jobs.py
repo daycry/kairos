@@ -6,7 +6,7 @@ from memory_platform.tests.test_store import create_core, event, extraction_rece
 
 class JobTests(unittest.TestCase):
     def test_skip_locked_and_expired_lease_recovery(self):
-        store,actor,pid=create_core()
+        store,actor,pid=create_core(extraction=True)
         accepted=store.ingest_event(actor,event(pid))
         jid=accepted['jobs'][0]
         with store.transaction() as c:
@@ -27,7 +27,7 @@ class JobTests(unittest.TestCase):
         self.assertEqual(store.retry_job(actor,jid)['state'],'succeeded')
 
     def test_unknown_is_reconciled_and_errors_redacted(self):
-        store,actor,pid=create_core()
+        store,actor,pid=create_core(extraction=True)
         accepted=store.ingest_event(actor,event(pid))
         jid=accepted['jobs'][0]
         with store.transaction() as c:

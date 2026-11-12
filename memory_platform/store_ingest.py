@@ -180,11 +180,17 @@ class IngestMixin:
             c.execute("INSERT INTO memory.memory_items(project_id,id,version,canonical_hash,event_type,payload,session_id,agent_id,occurred_at,deleted,search_vector,search_vector_es,search_vector_en) VALUES(%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,setweight(to_tsvector('simple',%s),'A') || setweight(to_tsvector('simple',%s),'A') || setweight(to_tsvector('simple',%s),'B'),memory.item_fts('spanish',%s,%s),memory.item_fts('english',%s,%s)) ON CONFLICT(project_id,id) DO UPDATE SET version=EXCLUDED.version,canonical_hash=EXCLUDED.canonical_hash,event_type=EXCLUDED.event_type,payload=EXCLUDED.payload,session_id=EXCLUDED.session_id,agent_id=EXCLUDED.agent_id,occurred_at=EXCLUDED.occurred_at,deleted=EXCLUDED.deleted,search_vector=EXCLUDED.search_vector,search_vector_es=EXCLUDED.search_vector_es,search_vector_en=EXCLUDED.search_vector_en", (pid,iid,event['version'],content_hash,event['event_type'],canonical(payload),event['session_id'],event['agent_id'],occurred,deleted,payload.get('title',''),payload.get('problem','')+' '+payload.get('correction',''),payload.get('content',''),*2*(payload.get('title','')+' '+payload.get('problem','')+' '+payload.get('correction',''),payload.get('content',''))))
             c.execute('INSERT INTO memory.item_versions VALUES(%s,%s,%s,%s,%s::jsonb)', (pid,iid,event['version'],content_hash,canonical(event)))
             c.execute('INSERT INTO memory.sessions(project_id,id,agent_id,started_at,ended_at) VALUES(%s,%s,%s,%s,%s) ON CONFLICT(project_id,id) DO UPDATE SET ended_at=COALESCE(EXCLUDED.ended_at,memory.sessions.ended_at)', (pid,event['session_id'],event['agent_id'],occurred,occurred if event['event_type']=='session_end' else None))
-            destinations = ['extract'] if event['generate'] and not deleted else []
+            requested = bool(event['generate'] and not deleted)
+            # The switch is an instance attribute set by the process that builds the Store (`create_app`, the worker): `Store`'s frozen
+            # surface (store_surface.json) takes no new constructor argument or class attribute. Unset means off.
+            extraction = bool(getattr(self, 'extraction_enabled', False))
+            destinations = ['extract'] if requested and extraction else []
             # Summary extraction is explicit policy, never automatic transcript capture.
             technical = bool(capture or auto_mode or payload.get('category') == 'agent-activity')
             jobs = self._jobs(c,pid,iid,event['version'],content_hash,'item',destinations,'delete' if deleted else 'upsert',embed=not technical)
             receipt = {'event_id': event['event_id'], 'item_id': iid, 'version': event['version'], 'status': 'accepted', 'jobs': jobs}
+            if requested and not extraction:
+                receipt['extraction'] = 'disabled'  # P-03: accepted, but this server does not extract; additive field
             if capture:
                 receipt['capture_hash'] = capture['fingerprint']
             if redacted:

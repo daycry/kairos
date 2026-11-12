@@ -162,6 +162,7 @@ class PostgresAPITests(unittest.TestCase):
         self.client.__exit__(None, None, None)
 
     def test_ingest_dedupe_search_details_and_scope(self):
+        self.store.extraction_enabled = True  # this test needs the `extract` job: explicit opt-in to MEMORY_EXTRACT_ENABLED
         value = event(self.pid)
         response = self.client.post('/v1/events', json=value, headers=self.headers)
         self.assertEqual(response.status_code, 202, response.text)

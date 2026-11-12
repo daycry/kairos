@@ -119,6 +119,7 @@ class Event(Model):
 class Receipt(Model):
     capture_hash: Annotated[str, Field(pattern='^[a-f0-9]{64}$')] | None = None
     redacted: bool | None = None
+    extraction: Literal['disabled'] | None = None
     event_id: UUID
     item_id: UUID
     version: int

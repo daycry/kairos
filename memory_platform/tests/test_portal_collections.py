@@ -11,7 +11,7 @@ from memory_platform.tests.test_store import create_core, event
 
 class PortalCollectionsTests(unittest.TestCase):
     def test_category_filters_sessions_jobs_and_history_before_paging_and_http(self):
-        store, actor, project = create_core()
+        store, actor, project = create_core(extraction=True)
         service, source = PortalStore(store), {}
         for category, session in [('other', 'excluded'), ('API', 'session-a'), ('API', 'session-b')]:
             value = event(project, session_id=session, payload={'title': 'Selected '+session,
@@ -44,7 +44,7 @@ class PortalCollectionsTests(unittest.TestCase):
 
     def test_each_text_filter_matches_a_query_without_accent_or_inflection(self):
         """Decision P-03: the five text filters use the Spanish/English configurations too (all failed before)."""
-        store, actor, project = create_core()
+        store, actor, project = create_core(extraction=True)
         service = PortalStore(store)
         value = event(project, session_id='session-fts', agent_id='configuración-ágil', payload={
             'title': 'Configuración de las canciones', 'content': 'La configuración vive en el servidor', 'category': 'API'})

@@ -65,7 +65,9 @@ def mount_label(request):
 
 def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity_duration=25.0, activity_poll_interval=2.0):
     settings = settings or Settings.from_env()
-    store = store or Store(settings.dsn, settings.project_maps, embedding_enabled=getattr(settings, 'embed_enabled', True))
+    if store is None:
+        store = Store(settings.dsn, settings.project_maps, embedding_enabled=getattr(settings, 'embed_enabled', True))
+        store.extraction_enabled = getattr(settings, 'extract_enabled', False)
     auth = auth or Auth(store, settings.allowed_origins, settings.session_ttl)
     if retrieval is None:
         from .retrieval import Retrieval

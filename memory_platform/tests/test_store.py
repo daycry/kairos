@@ -10,7 +10,8 @@ from memory_platform.errors import Conflict, Forbidden, NotFound
 from memory_platform.store import Store, digest
 
 
-def create_core():
+def create_core(extraction=False):
+    """An isolated project. `extraction=True` is the explicit opt-in to MEMORY_EXTRACT_ENABLED: by default a `generate: true` event creates no `extract` job."""
     dsn = os.getenv('MEMORY_TEST_DSN')
     if not dsn:
         raise unittest.SkipTest('MEMORY_TEST_DSN must point to an isolated PostgreSQL test database')
@@ -19,6 +20,7 @@ def create_core():
     except ImportError:
         raise unittest.SkipTest('psycopg is required for integration tests')
     store = Store(dsn)
+    store.extraction_enabled = extraction
     store.migrate()
     # Dedicated fixtures use globally unique names and projects, never truncate shared data.
     suffix = uuid.uuid4().hex[:14]
@@ -50,6 +52,7 @@ class StoreTests(unittest.TestCase):
 
     def test_concurrent_duplicate_and_conflict(self):
         store,actor,pid=self.core
+        store.extraction_enabled = True
         value=event(pid)
         with ThreadPoolExecutor(max_workers=4) as pool:
             receipts=list(pool.map(lambda _:store.ingest_event(actor,value),range(8)))
@@ -68,6 +71,7 @@ class StoreTests(unittest.TestCase):
 
     def test_version_tombstone_and_stale_completion(self):
         store,actor,pid=self.core
+        store.extraction_enabled = True
         value=event(pid)
         receipt=store.ingest_event(actor,value)
         # Select our job explicitly so parallel test runs cannot steal another fixture's job.
@@ -89,6 +93,7 @@ class StoreTests(unittest.TestCase):
 
     def test_fencing_and_receipts(self):
         store,actor,pid=self.core
+        store.extraction_enabled = True
         receipt=store.ingest_event(actor,event(pid))
         jid=receipt['jobs'][0]
         with store.transaction() as c:

@@ -17,7 +17,7 @@ from memory_platform.tests.test_store import create_core, event
 
 
 def settings():
-    return SimpleNamespace(ollama_url='http://synthetic.invalid', llm_model='synthetic-model', provider_timeout=5)
+    return SimpleNamespace(ollama_url='http://synthetic.invalid', llm_model='synthetic-model', provider_timeout=5, corpus_answer_enabled=True)
 
 
 def output(sources):
@@ -287,6 +287,44 @@ class CorpusAnswerDatabaseTests(unittest.TestCase):
         service = CorpusAnswers(self.store,settings(),self.provider, AnswerLimits(input_bytes=1024))
         with self.assertRaises(MemoryError) as error: asyncio.run(service.answer(*self.args('long','fencing '+('word '*400))))
         self.assertEqual(error.exception.code,'corpus_answer_input_budget'); self.assertEqual(len(self.provider.calls),1)
+
+
+class CorpusAnswerSwitchTests(unittest.TestCase):
+    """MEMORY_CORPUS_ANSWER (CA-15, P-04): off by default, `corpus_answer_disabled` without touching any provider."""
+
+    def setUp(self):
+        self.store, self.actor, self.project = create_core()
+        with self.store.transaction() as c: migrate_corpus_answers(c)
+        agent = AgentStore(self.store)
+        self.store.ingest_event(self.actor, event(self.project, generate=False))
+        agent.build_corpus(self.actor, self.project, 'review')
+        self.corpus = agent.prime_corpus(self.actor, self.project, 'review')
+        self.provider = FakeProvider()
+
+    def args(self, request='request-1'):
+        return (self.actor, self.project, 'review', 'fencing', request, self.corpus['session_id'], self.corpus['version'])
+
+    def test_default_settings_have_the_switch_off(self):
+        from memory_platform.config import Settings
+        self.assertIs(Settings('unused').corpus_answer_enabled, False)
+
+    def test_off_answers_the_error_and_never_calls_a_provider(self):
+        off = SimpleNamespace(ollama_url='http://synthetic.invalid', llm_model='', provider_timeout=5, corpus_answer_enabled=False)
+        service = CorpusAnswers(self.store, off, self.provider)
+        with self.assertRaises(MemoryError) as error: asyncio.run(service.answer(*self.args()))
+        self.assertEqual(error.exception.code, 'corpus_answer_disabled')
+        self.assertIn('corpus_answer_disabled', error.exception.message)
+        self.assertEqual(self.provider.calls, [])
+        with self.store.transaction() as c:  # nothing was reserved either
+            self.assertEqual(c.execute('SELECT count(*) AS n FROM memory.corpus_answers WHERE project_id=%s', (self.project,)).fetchone()['n'], 0)
+
+    def test_status_still_reads_answers_stored_while_it_was_on(self):
+        on = CorpusAnswers(self.store, settings(), self.provider)
+        stored = asyncio.run(on.answer(*self.args()))
+        off = SimpleNamespace(ollama_url='http://synthetic.invalid', llm_model='', provider_timeout=5, corpus_answer_enabled=False)
+        read = CorpusAnswers(self.store, off, self.provider).status(self.actor, self.project, 'review', 'request-1')
+        self.assertEqual(read, stored)
+        self.assertEqual(len(self.provider.calls), 1)
 
 
 if __name__ == '__main__':

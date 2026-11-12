@@ -13,7 +13,7 @@ class NativeMemoryTests(unittest.TestCase):
             c.execute("UPDATE memory.jobs SET state='running',fence=7,lease_until=clock_timestamp()+interval '1 minute' WHERE id=%s",(jid,))
 
     def test_extract_materializes_and_parent_update_invalidates(self):
-        store,actor,pid=create_core()
+        store,actor,pid=create_core(extraction=True)
         original=event(pid)
         accepted=store.ingest_event(actor,original)
         self.assertEqual(len(accepted['jobs']),1)
@@ -43,7 +43,7 @@ class NativeMemoryTests(unittest.TestCase):
         self.assertFalse(store.complete_job(accepted['jobs'][0],7,receipt))
 
     def test_extraction_rejects_invented_quote_atomically(self):
-        store,actor,pid=create_core()
+        store,actor,pid=create_core(extraction=True)
         accepted=store.ingest_event(actor,event(pid))
         self._running(store,accepted['jobs'][0])
         receipt=extraction_receipt()
@@ -87,7 +87,7 @@ class NativeMemoryTests(unittest.TestCase):
         self.assertEqual(store.search_native_facts(actor,[pid]),[])
 
     def test_validated_derived_memory_protects_parent_and_csrf_refresh(self):
-        store,admin,pid=create_core()
+        store,admin,pid=create_core(extraction=True)
         original=event(pid)
         accepted=store.ingest_event(admin,original)
         self._running(store,accepted['jobs'][0])
