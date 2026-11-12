@@ -97,6 +97,22 @@ class NoLanguageModelTests(unittest.TestCase):
         self.assertEqual((row['state'], row['error_code']), ('failed', 'extraction_disabled'))
         self.assertEqual(self.spy.chat_calls, [])
 
+    def test_an_unknown_extract_job_that_is_retried_is_closed_as_extraction_disabled(self):
+        """`retry_job` keeps an `unknown` job in `unknown` (it must be reconciled first); with extraction off the worker still closes it."""
+        value = event(self.pid, event_type='summary')
+        self.core.ingest_event(self.actor, value)
+        job_id = str(uuid.uuid4())
+        with self.core.transaction() as c:
+            version = c.execute('SELECT version, canonical_hash FROM memory.memory_items WHERE project_id=%s AND id=%s', (self.pid, value['item_id'])).fetchone()
+            c.execute("INSERT INTO memory.jobs(id,project_id,item_id,version,canonical_hash,resource_type,destination,operation,state) VALUES(%s,%s,%s,%s,%s,'item','extract','upsert','unknown')",
+                      (job_id, self.pid, value['item_id'], version['version'], version['canonical_hash']))
+        self.assertEqual(self.core.retry_job(self.actor, job_id)['state'], 'unknown')
+        drain(Worker(self.core.__class__(self.core.dsn, embedding_enabled=True), self.settings, worker_id='no-llm'))
+        with self.core.transaction() as c:
+            row = c.execute('SELECT state, error_code FROM memory.jobs WHERE id=%s', (job_id,)).fetchone()
+        self.assertEqual((row['state'], row['error_code']), ('failed', 'extraction_disabled'))
+        self.assertEqual(self.spy.chat_calls, [])
+
     def test_corpus_answer_is_refused_without_a_chat_call(self):
         headers = self.headers()
         self.core.ingest_event(self.actor, event(self.pid, generate=False, payload={'title': 'Fencing', 'content': 'Check the fencing token before publication.'}))
