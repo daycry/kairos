@@ -13,6 +13,11 @@ on:
 permissions:
   contents: read
 
+# Baseline of the backend suite (T-01: 483 tests, 0 failures, 0 errors, 0 skipped). The `server` job fails when fewer tests are
+# discovered. Single source: raise it when the suite grows, never lower it (checked by scripts/tests/test_ci_workflow.py).
+env:
+  KAIROS_MIN_TESTS: '483'
+
 # `shell: bash` runs with -eo pipefail; the unset default is only `bash -e` and a failed piped docker build would stay green.
 defaults:
   run:
@@ -28,7 +33,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Run the backend suite (target test)
         run: |
           set -euo pipefail
@@ -42,13 +49,18 @@ jobs:
           echo "$line" | grep -q '"failures": 0'
           echo "$line" | grep -q '"errors": 0'
           echo "$line" | grep -q '"skipped": 0'
+          tests="$(echo "$line" | grep -o '"tests": [0-9]*' | grep -o '[0-9]*$')"
+          echo "tests=$tests minimum=$KAIROS_MIN_TESTS"
+          test "${tests:-0}" -ge "$KAIROS_MIN_TESTS"
 
   retrieval-eval:
     # Quality gate with the simulated (offline) embedding provider: recall@5 >= 0.80 and MRR >= 0.60 or the build fails.
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Run the retrieval gate (target retrieval-eval)
         run: |
           set -euo pipefail
@@ -64,8 +76,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
       - name: Tests
@@ -80,8 +94,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
       - name: Install from the lockfile
@@ -104,15 +120,22 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.13'
       - name: Install the server dependencies
         run: pip install --no-cache-dir -r memory_platform/requirements.txt
-      - name: Additive diff against the contracts of the initiative base
+      - name: Additive diff against the contracts of memory_platform/tests/contracts_base (T-26 reassigns that base)
         run: python -m unittest memory_platform.tests.test_contract_additive
       - name: Exported contracts equal the versioned ones
         run: |
           python scripts/export-contracts.py
           git diff --ignore-cr-at-eol --exit-code -- docs/contracts
+          # `git diff` does not see a new (untracked) or a deleted contract file: `git status` does.
+          if git status --porcelain --untracked-files=all -- docs/contracts | grep -E '^(\?\?|.D|D.)'; then
+            echo 'A contract file is new (untracked) or missing compared with the versioned ones' >&2
+            exit 1
+          fi
