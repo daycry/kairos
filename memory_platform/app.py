@@ -261,7 +261,8 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
     def build_corpus(project_id: str, payload: m.CorpusSelection, actor=Depends(identity)):
         from .agent_store import AgentStore
         return AgentStore(store).build_corpus(actor, project_id, payload.name, payload.description, query=payload.query,
-                                             types=payload.types, concepts=payload.concepts, files=payload.files, limit=payload.limit)
+                                             types=payload.types, concepts=payload.concepts, files=payload.files,
+                                             date_start=payload.date_start, date_end=payload.date_end, limit=payload.limit)
 
     @app.post('/v1/projects/{project_id}/corpora/{name}/prime', operation_id='kairos_prime_corpus')
     def prime_corpus(project_id: str, name: str, payload: m.CorpusPrime, actor=Depends(identity)):

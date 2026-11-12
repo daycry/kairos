@@ -39,13 +39,13 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Integración continua (C-01) | 8 | 8 | 100% | 0 / 18.0h | 0 / 2.3h | 0 / 0.6h | 0 / 578 k |
 | Fase 2 — Servidor sin modelo de lenguaje (C-04) | 9 | 9 | 100% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
-| Fase 3 — Paridad REST /v1 (C-02) | 0 | 10 | 0% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
+| Fase 3 — Paridad REST /v1 (C-02) | 1 | 10 | 10% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 0 | 8 | 0% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 0 | 15 | 0% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **17** | **74** | **23.0%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **18** | **74** | **24.3%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -622,15 +622,16 @@ RED: `memory_platform/tests/test_no_llm.py` falló con AssertionError: 'beam:clo
 
 ## Fase 3 — Paridad REST /v1 (C-02)
 
-**Estado**: borrador · **Estimado**: 36.0h (30.0h base) · **Real**: — · **Coste est.**: 1.800 € · **Tokens est.**: 1282 k
+**Estado**: en-progreso · **Estimado**: 36.0h (30.0h base) · **Real**: — · **Coste est.**: 1.800 € · **Tokens est.**: 1282 k
 
 ### T-18 — `POST …/corpora` acepta `date_start` y `date_end`
 
 - **Descripción**: Añadir los campos opcionales `date_start` y `date_end` a `CorpusSelection` y pasarlos a `build_corpus`, como ya hace la herramienta. Fuente: CA-05; hallazgo de paridad `build_corpus` (parcial).
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: `POST /v1/projects/{id}/corpora` acepta `date_start` y `date_end` opcionales y filtra por fechas igual que la herramienta `build_corpus`; las peticiones sin ellos no cambian.
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 1.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.22h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.22h (estimado) · real 0.15h (medido, ventana win-1d16767d, 14:54Z-15:12Z)
 - **Supervisión**: est. 0.05h (≈25 % IA) · real —
 - **Previsión IA**: 60 k in / 5 k out tok · ⚠️ verificar €
 - **Dependencias**: T-17
@@ -641,17 +642,20 @@ RED: `memory_platform/tests/test_no_llm.py` falló con AssertionError: 'beam:clo
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t18 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
 
 **Criterios de aceptación**
-- [ ] `POST …/corpora` con fechas filtra igual que la herramienta `build_corpus`
-- [ ] Los campos son opcionales: ninguna petición existente cambia
-- [ ] Hay test de acceso permitido, de lector sin permiso (403) y de proyecto ajeno
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] `POST …/corpora` con fechas filtra igual que la herramienta `build_corpus`
+- [x] Los campos son opcionales: ninguna petición existente cambia
+- [x] Hay test de acceso permitido, de lector sin permiso (403) y de proyecto ajeno
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Test en rojo (el campo se ignora hoy)
-- [ ] Añadir campos y su paso a `build_corpus`
-- [ ] `usage-meter start/close`
+- [x] Test en rojo (el campo se ignora hoy)
+- [x] Añadir campos y su paso a `build_corpus`
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-05. Patrón: `CorpusSelection` en `memory_platform/models.py:37-44`; la herramienta pasa las fechas en `memory_platform/agent_tools.py:72`; ruta en `memory_platform/app.py:258`. Un campo `required` nuevo rompería `test_contract_additive.py:33-40`: ambos opcionales. Clase: cambio de comportamiento → primer oráculo: test en rojo que fija el comportamiento nuevo; los tests que asumían el anterior se ajustan en la misma tarea.
+**Notas**: Procedencia: spec CA-05. Patrón: `CorpusSelection` en `memory_platform/models.py:37-44`; la herramienta pasa las fechas en `memory_platform/agent_tools.py:72`; ruta en `memory_platform/app.py:258`. Un campo `required` nuevo rompería `test_contract_additive.py:33-40`: ambos opcionales. Clase: cambio de comportamiento → primer oráculo: test en rojo que fija el comportamiento nuevo; los tests que asumían el anterior se ajustan en la misma tarea. Implementación: `CorpusSelection` gana `date_start`/`date_end` (cadenas ISO opcionales de hasta 100 caracteres, `None` por defecto: nada `required` nuevo) y la ruta `kairos_build_corpus` de `app.py` las pasa a `AgentStore.build_corpus`, que ya las validaba (`corpus_filters`: ISO inválida o inicio posterior al fin dan 422). Test nuevo `test_api.ParityEndpointTests` (clase base de la Fase 3: proyecto aislado, claves de escritor, lector y de otro proyecto): tres observaciones en tres días, ventana que deja una, igual que la llamada directa que usa la herramienta; sin fechas se conservan las tres; fecha inválida 422; lector 403; clave de otro proyecto 404. Contrato: `scripts/export-contracts.py` con Python 3.13 local (el de los contratos versionados; la imagen de test es 3.11 y cambia el sangrado de las descripciones) regenera `memory-platform.openapi.json` con 24 líneas añadidas y 0 quitadas (solo los dos campos opcionales), `kairos-mcp.json` idéntico. Bucle rápido de trabajo (no sustituye a la verificación): `docker run --network=none` con el árbol montado y solo los módulos afectados. Verificación: MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 530} (docker build --target test, rc 0, kairos-test:t18). usage-meter close three-components/T-18: 0.15 h IA (medido, win-1d16767d93e24ebba0124e9676fbc9c1).
+
+
+RED: `memory_platform/tests/test_api.py::ParityEndpointTests::test_build_corpus_accepts_date_start_and_date_end_like_the_tool` falló con AssertionError: 422 != 200 (campos date_start/date_end rechazados por extra=forbid) contra las fuentes de HEAD · 2026-11-12.
 
 ### T-19 — Endpoint `/v1` de `capture_policy`
 

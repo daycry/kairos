@@ -241,6 +241,48 @@ class PostgresAPITests(unittest.TestCase):
         self.assertEqual(self.client.get('/v1/auth/me').status_code, 401)
 
 
+class ParityEndpointTests(unittest.TestCase):
+    """C-02: every MCP tool has a `/v1` endpoint. Each endpoint is checked for an allowed caller, a reader without the permission (403) and a project that is not the caller's."""
+    def setUp(self):
+        self.store, self.admin, self.pid = create_core()
+        self.client = TestClient(create_app(Settings(self.store.dsn), store=self.store))
+        self.client.__enter__()
+        self.writer = self.headers(['read', 'write'])
+        self.reader = self.headers(['read'])
+        self.other = 'other-' + self.pid[5:]
+        self.store.create_project(self.admin, {'id': self.other, 'title': 'Another synthetic project'})
+        self.foreign = self.headers(['read', 'write'], [self.other])
+        self.prefix = '/v1/projects/' + self.pid
+
+    def tearDown(self):
+        self.client.__exit__(None, None, None)
+
+    def headers(self, scopes, projects=None):
+        key = self.store.create_key(self.admin, {'name': 'parity', 'project_ids': projects or [self.pid], 'scopes': scopes})
+        return {'Authorization': 'Bearer ' + key['token']}
+
+    def add(self, **changes):
+        value = event(self.pid, generate=False, payload={'title': 'Fencing note', 'content': 'Use fencing before projection', 'category': 'decision', 'source': {'uri': 'fixture://parity'}}, **changes)
+        self.store.ingest_event(self.admin, value)
+        return value
+
+    def test_build_corpus_accepts_date_start_and_date_end_like_the_tool(self):
+        for day in ('2026-11-01', '2026-11-05', '2026-11-09'):
+            self.add(occurred_at=day + 'T10:00:00Z')
+        body = {'name': 'window', 'date_start': '2026-11-03', 'date_end': '2026-11-07'}
+        built = self.client.post(self.prefix + '/corpora', json=body, headers=self.writer)
+        self.assertEqual(built.status_code, 200, built.text)
+        from memory_platform.agent_store import AgentStore
+        direct = AgentStore(self.store).build_corpus({'id': self.admin['id'], 'credential_type': 'bootstrap'}, self.pid, 'window-direct', date_start='2026-11-03', date_end='2026-11-07')
+        self.assertEqual(built.json()['count'], 1)
+        self.assertEqual(built.json()['count'], direct['count'])
+        unfiltered = self.client.post(self.prefix + '/corpora', json={'name': 'everything'}, headers=self.writer)
+        self.assertEqual(unfiltered.json()['count'], 3)  # no field, no change: an existing request keeps its meaning
+        self.assertEqual(self.client.post(self.prefix + '/corpora', json={'name': 'bad', 'date_start': 'yesterday'}, headers=self.writer).status_code, 422)
+        self.assertEqual(self.client.post(self.prefix + '/corpora', json=body, headers=self.reader).status_code, 403)
+        self.assertEqual(self.client.post(self.prefix + '/corpora', json=body, headers=self.foreign).status_code, 404)
+
+
 class DegradedSemanticHttpTests(unittest.TestCase):
     """CA-16 and CA-17 over HTTP with the real retrieval: a failing embeddings provider degrades, it does not fail."""
     def build(self, embed, query_timeout=0.3):

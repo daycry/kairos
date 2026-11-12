@@ -41,6 +41,8 @@ class CorpusSelection(Model):
     types: Annotated[list[str], Field(max_length=100)] = Field(default_factory=list)
     concepts: Annotated[list[str], Field(max_length=100)] = Field(default_factory=list)
     files: Annotated[list[str], Field(max_length=100)] = Field(default_factory=list)
+    date_start: Annotated[str, Field(max_length=100)] | None = None
+    date_end: Annotated[str, Field(max_length=100)] | None = None
     limit: Annotated[int, Field(ge=1, le=500)] = 500
 
 class CorpusPrime(Model):
