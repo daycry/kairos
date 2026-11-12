@@ -218,7 +218,7 @@ No se aplican `interop/**` ni las piezas de `docs/agents/CONTRACTS.md`: este rep
 ## Dependencias y prerequisitos
 
 - **Externa (no es tarea):** el PR #2 (`feat/retrieval-quality`) debe estar fusionado en `main` antes de la Fase 7 (C-06, P-09); T-57 lo comprueba y no empieza sin ello.
-- **Externa:** GitHub Actions activas en el repositorio (P-01, decidida) para T-05, T-06 y T-65. El `push` de la rama y de la rama desechable son acciones sobre el remoto: confirmación del usuario si no están autorizadas.
+- **Externa:** GitHub Actions activas en el repositorio (P-01, decidida) para T-05, T-06 y T-65. **Autorizado por el usuario el 2026-11-12**: push de `feat/three-components` al cerrar cada fase y de una rama desechable para el rojo de T-06 (que se borra); sin merges a `main`, sin publicar y sin abrir PR. Por eso el workflow añade el disparador `push` con `branches-ignore: main`, y el `pull_request` se ejercita al abrir el PR de la iniciativa (T-65). El `push` de la rama y de la rama desechable son acciones sobre el remoto: confirmación del usuario si no están autorizadas.
 - Orden entre fases: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8; C-03 necesita los endpoints de C-02 y C-07 necesita C-03.
 - Hipótesis a confirmar pronto: el SDK `mcp==1.27.1` admite `inputSchema` arbitrario (T-38) y la suite cabe en el tiempo de un trabajo de CI (T-05).
 

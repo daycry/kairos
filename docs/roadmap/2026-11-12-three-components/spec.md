@@ -155,6 +155,7 @@ Todos se comprueban con fixtures aislados (PostgreSQL efímero del target `test`
 **C-01 · Integración continua (B-04, O-04)**
 
 - [ ] [GWT] CA-01 — Dado `.github/workflows/ci.yml`, Cuando se abre o actualiza un PR, Entonces se ejecutan los trabajos `server` (suite backend completa en el target `test`), `retrieval-eval` (proveedor simulado, umbrales recall@5 ≥ 0,80 y MRR ≥ 0,60), `client` (`npm test` y `release:check`), `web` (`typecheck`, `test`, `build`) y `contracts` (diff aditivo), y todos terminan en verde en el PR de esta rama (enlace a la ejecución en el ledger).
+  - **Nota (2026-11-12, autorización del usuario)**: durante la iniciativa la CI se dispara también con `push` a ramas distintas de `main` (el usuario autorizó los push de `feat/three-components` y de la rama desechable, sin merges a `main`, sin publicar y sin abrir PR). CA-01 se verifica en esas ejecuciones `push`; el disparador `pull_request` se ejercita cuando se abra el PR de la iniciativa (T-65), que pide su propia autorización.
 - [ ] CA-02 — El workflow no referencia más secreto que `GITHUB_TOKEN`, no hace `docker push` ni `npm publish` y no contacta con servicios desplegados (comprobación con `grep` en la puerta: `secrets\.`, `push`, `publish`).
 - [ ] CA-03 — Un test que falla a propósito, en una rama desechable que no se fusiona, deja el trabajo correspondiente en rojo (enlace a la ejecución).
 
