@@ -14,6 +14,8 @@ from memory_platform.retrieval import hit
 HERE = Path(__file__).parent
 BASE = HERE / 'contracts_base'
 EXPORTER = Path(__file__).parents[2] / 'scripts' / 'export-contracts.py'
+BASE_23CED03 = HERE / 'contracts_base_23ced03'
+BASELINES = {'6008da0': BASE, '23ced03': BASE_23CED03}  # the contracts of the commit each initiative started from; both are kept
 EXPECTED_TOOLS = 34
 
 
@@ -192,6 +194,28 @@ class ContractAdditiveTests(unittest.TestCase):
         self.assertEqual(declared['get_observations'], {'method': 'POST', 'path': '/v1/projects/{project_id}/observations/get'})
         # the existing operations are not renamed: the declared endpoints never point at the portal listing
         self.assertNotEqual(declared['observation_search']['path'], '/v1/observations')
+
+    def test_ca07_ca29_the_exported_contracts_only_gain_against_every_baseline_and_keep_every_tool_exact_against_the_latest(self):
+        for commit, directory in BASELINES.items():
+            base = {path.name: json.loads(path.read_text(encoding='utf-8')) for path in directory.glob('*.json')}
+            self.assertEqual(set(base), {'kairos-mcp.json', 'memory-platform.openapi.json'}, commit)
+            self.assertEqual(len(base['kairos-mcp.json']['tools']), EXPECTED_TOOLS, commit)
+            for name, value in self.exported.items():
+                self.assertEqual(additive_violations(base[name], json.loads(json.dumps(value))), [], (commit, name))
+            self.assertEqual([tool['name'] for tool in self.exported['kairos-mcp.json']['tools']], [tool['name'] for tool in base['kairos-mcp.json']['tools']], commit)
+        # `23ced03` already had the optional budget of search and context: against it, no existing key of any tool changes at all
+        latest = {tool['name']: tool for tool in json.loads((BASE_23CED03 / 'kairos-mcp.json').read_text(encoding='utf-8'))['tools']}
+        self.assertTrue(all('semantic_budget_ms' in latest[name]['inputSchema']['properties'] for name in BUDGET_TOOLS))
+        for tool in self.exported['kairos-mcp.json']['tools']:
+            self.assertEqual(tool_differences(latest[tool['name']], without_endpoint(tool)), [], tool['name'])
+        # the existing routes keep their operations: every (path, method) of the baseline is still there with its parameters and body
+        base_paths = json.loads((BASE_23CED03 / 'memory-platform.openapi.json').read_text(encoding='utf-8'))['paths']
+        paths = self.exported['memory-platform.openapi.json']['paths']
+        for path, operations in base_paths.items():
+            for method, operation in operations.items():
+                self.assertEqual(paths[path][method].get('parameters'), operation.get('parameters'), (path, method))
+                self.assertEqual(paths[path][method].get('requestBody'), operation.get('requestBody'), (path, method))
+        self.assertGreater(len(paths), len(base_paths))  # C-02 added the new ones
 
     def test_the_exact_check_rejects_a_restricting_key_anywhere_in_a_tool(self):
         before = next(tool for tool in self.base['kairos-mcp.json']['tools'] if tool['name'] == 'search')

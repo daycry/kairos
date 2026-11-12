@@ -39,13 +39,13 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Integración continua (C-01) | 8 | 8 | 100% | 0 / 18.0h | 0 / 2.3h | 0 / 0.6h | 0 / 578 k |
 | Fase 2 — Servidor sin modelo de lenguaje (C-04) | 9 | 9 | 100% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
-| Fase 3 — Paridad REST /v1 (C-02) | 8 | 10 | 80% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
+| Fase 3 — Paridad REST /v1 (C-02) | 9 | 10 | 90% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 0 | 8 | 0% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 0 | 15 | 0% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **25** | **74** | **33.8%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **26** | **74** | **35.1%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -894,10 +894,11 @@ RED: `memory_platform/tests/test_tool_endpoint_parity.py::ToolEndpointParityTest
 ### T-26 — Línea base de contratos en `23ced03` y diff aditivo de OpenAPI y MCP (CA-07, CA-29)
 
 - **Descripción**: Guardar los contratos del commit `23ced03` como línea base de esta iniciativa y comprobar el diff aditivo de ambos contratos contra ella (la línea base anterior se conserva). Fuente: CA-07, CA-29.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: La suite fija como línea base los contratos del commit `23ced03` junto a la anterior y comprueba que el OpenAPI y el contrato MCP actuales solo han crecido respecto a ambas.
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 0.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.07h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.07h (estimado) · real 0.92h (medido, ventana win-c0828e46, 16:03Z-16:07Z)
 - **Supervisión**: est. 0.02h (≈25 % IA) · real —
 - **Previsión IA**: 20 k in / 2 k out tok · ⚠️ verificar €
 - **Dependencias**: T-24
@@ -909,17 +910,20 @@ RED: `memory_platform/tests/test_tool_endpoint_parity.py::ToolEndpointParityTest
   - `git show 23ced03:docs/contracts/kairos-mcp.json | diff - memory_platform/tests/contracts_base_23ced03/kairos-mcp.json` → sin diferencias
 
 **Criterios de aceptación**
-- [ ] Existe la línea base `23ced03` con ambos contratos tal como estaban en ese commit (`git show 23ced03:docs/contracts/...`)
-- [ ] El test de aditividad pasa contra ambas líneas base
-- [ ] Ninguna ruta, operación, campo, valor por defecto ni `required` eliminado o cambiado
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] Existe la línea base `23ced03` con ambos contratos tal como estaban en ese commit (`git show 23ced03:docs/contracts/...`)
+- [x] El test de aditividad pasa contra ambas líneas base
+- [x] Ninguna ruta, operación, campo, valor por defecto ni `required` eliminado o cambiado
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Extraer los contratos con `git show 23ced03:…`
-- [ ] Parametrizar el test
-- [ ] `usage-meter start/close`
+- [x] Extraer los contratos con `git show 23ced03:…`
+- [x] Parametrizar el test
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-29 (commit de inicio `23ced03`). Patrón: `memory_platform/tests/contracts_base/` y `test_contract_additive.py:1-40`. Los ficheros base se copian byte a byte (EOL conservado: `.gitattributes` es `* -text`). Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde.
+**Notas**: Procedencia: spec CA-29 (commit de inicio `23ced03`). Patrón: `memory_platform/tests/contracts_base/` y `test_contract_additive.py:1-40`. Los ficheros base se copian byte a byte (EOL conservado: `.gitattributes` es `* -text`). Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde. Implementación: `memory_platform/tests/contracts_base_23ced03/` guarda `kairos-mcp.json` y `memory-platform.openapi.json` tal como estaban en `23ced03` (extraídos con `git show 23ced03:docs/contracts/<fichero>`, bytes idénticos, EOL conservado por `.gitattributes` `* -text`); `contracts_base/` (6008da0) se conserva y sus tests siguen. Test nuevo `test_ca07_ca29_the_exported_contracts_only_gain_against_every_baseline_and_keep_every_tool_exact_against_the_latest` en `test_contract_additive.py`: contra cada una de las dos líneas base, ninguna clave del contrato exportado se quita ni cambia (la regla `additive_violations`: las listas conservan longitud y orden, y `required` es idéntico, de modo que un `required` nuevo o camuflado no pasa), las 34 herramientas siguen en el mismo orden; contra `23ced03` (que ya traía `semantic_budget_ms`) cada herramienta es idéntica clave a clave salvo la nueva `x-kairos-endpoint`, y cada operación existente del OpenAPI conserva sus `parameters` y su `requestBody` exactos (las rutas nuevas de C-02 son las únicas que crecen). Verificado: `git show 23ced03:docs/contracts/kairos-mcp.json | diff - memory_platform/tests/contracts_base_23ced03/kairos-mcp.json` y el equivalente del OpenAPI → sin diferencias. Verificación: MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 573} (docker build --target test, rc 0, kairos-test:t26). usage-meter close three-components/T-26: 0.92 h IA (medido, win-c0828e4680fb4d62ac6c9a494630ea07).
+
+
+RED: `memory_platform/tests/test_contract_additive.py::ContractAdditiveTests::test_ca07_ca29_the_exported_contracts_only_gain_against_every_baseline_and_keep_every_tool_exact_against_the_latest` falló con AssertionError: Items in the second set but not the first (sin el directorio contracts_base_23ced03 la línea base no existe: el test falla antes de añadirla) · 2026-11-12.
 
 ### T-27 — Revisión adversarial de la Fase 3
 
