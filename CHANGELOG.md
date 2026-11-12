@@ -6,6 +6,15 @@ Kairos has no tagged releases yet. Everything below is unreleased. The `@daycry/
 
 ## [Unreleased]
 
+### Changed — `three-components` initiative (2026-11-12, in progress: server without a language model)
+
+The server no longer needs a language model. [Ledger](docs/roadmap/2026-11-12-three-components/tasks.md)
+
+- **No extraction in the server by default.** `MEMORY_EXTRACT_ENABLED` is `0`: an event with `generate: true` (the CLI sends it with summaries) is accepted with 202 and creates no `extract` job. The receipt gains an additive `extraction: "disabled"` field. Jobs already queued are kept and marked `extraction_disabled`; `POST /v1/jobs/{id}/retry` queues them again once extraction is on.
+- **`corpus_answer` is off by default.** `MEMORY_CORPUS_ANSWER=off` keeps the tool in the list of 34 and answers `corpus_answer_disabled` without calling any provider; `corpus_answer_status` still reads saved answers.
+- **No default model.** `MEMORY_LLM_MODEL` has no value any more; turning on extraction or generated answers without it stops the startup with a message that names the variable. An installation that relied on the previous default must set it.
+- **A closed Ollama proxy.** The internal proxy only forwards `/api/embed` and `/api/version`; everything else gets 403 from the proxy. `OLLAMA_ALLOW_CHAT=1` also allows `/api/chat`. The proxy no longer runs as root.
+
 ### Changed — `retrieval-quality` initiative (2026-11-09)
 
 Search is now measurable and finds more of what you stored. [Ledger](docs/roadmap/2026-11-09-retrieval-quality/tasks.md) · [final review](docs/roadmap/2026-11-09-retrieval-quality/review.md)

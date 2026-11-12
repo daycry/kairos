@@ -26,8 +26,19 @@ El Compose interpola estas opciones. Cambiarlas exige volver a desplegar los ser
 | `MEMORY_CORPUS_ANSWER` | `off` | Con `off`, `corpus_answer` sigue listada pero responde `corpus_answer_disabled` sin llamar a ningún proveedor; `corpus_answer_status` lee las respuestas ya guardadas |
 | `MEMORY_EMBEDDING_MODEL` | `nomic-embed-text` | Modelo de embeddings; sus vectores deben ser compatibles con los índices existentes |
 | `OLLAMA_UPSTREAM` | `host.docker.internal:11434` | Destino `host:puerto` al que conecta el proxy interno de Ollama |
+| `OLLAMA_ALLOW_CHAT` | `0` | Con `0`, el proxy interno de Ollama solo deja pasar `/api/embed` y `/api/version`; el resto recibe 403 desde el propio proxy. Con `1` deja pasar también `/api/chat`; solo hace falta si activas `MEMORY_EXTRACT_ENABLED=1` o `MEMORY_CORPUS_ANSWER=on` |
 | `MEMORY_ALLOWED_ORIGINS` | `http://127.0.0.1:5173,http://localhost:5173` | Orígenes exactos separados por comas, sin rutas ni barra final |
 | `MEMORY_COOKIE_SECURE` | `0` local; `1` con HTTPS | Cookie de sesión segura. Un origen remoto exige HTTPS y valor `1` |
+
+### Servidor sin modelo de lenguaje
+
+Por defecto el servidor solo usa el modelo de embeddings (`nomic-embed-text`): no extrae ni genera texto. Tres variables lo gobiernan y las tres vienen apagadas o vacías:
+
+- `MEMORY_EXTRACT_ENABLED=0`: el worker no crea el proveedor de extracción. Un evento con `generate: true` (el CLI lo envía en los resúmenes) se acepta igualmente con 202 y no crea trabajo `extract`; el recibo añade el campo `extraction: "disabled"` y conserva todos los demás. Los trabajos `extract` que ya estaban en cola no se borran: el worker no llama a ningún proveedor, los deja `failed` con `error_code` `extraction_disabled` y `POST /v1/jobs/{id}/retry` los devuelve a la cola si activas la extracción más adelante.
+- `MEMORY_CORPUS_ANSWER=off`: `corpus_answer` sigue en la lista de herramientas (son 34) y responde el error `corpus_answer_disabled` sin llamar a ningún proveedor; `corpus_answer_status` sigue leyendo las respuestas ya guardadas. Los valores admitidos son `on` y `off`.
+- `MEMORY_LLM_MODEL` no tiene valor por defecto. Activar `MEMORY_EXTRACT_ENABLED=1` o `MEMORY_CORPUS_ANSWER=on` sin un modelo hace fallar el arranque de `memory-api` y `memory-worker` con un mensaje que nombra la variable. Una instalación que usaba el modelo por defecto anterior debe fijar `MEMORY_LLM_MODEL` si quiere seguir generando. `MEMORY_EXTRACT_ENABLED` solo admite `0` y `1`; cualquier otro valor impide arrancar.
+
+Si activas alguna de las dos funciones, pon también `OLLAMA_ALLOW_CHAT=1`: sin ello el proxy interno responde 403 a `/api/chat`.
 
 La configuración actual se conserva durante una actualización. Cambiar el modelo de embeddings no convierte automáticamente los vectores ya guardados: planifica y verifica una migración de índice antes de hacerlo. El proxy Ollama no inicia sesión ni descarga modelos; su proveedor debe estar preparado.
 
@@ -40,6 +51,9 @@ Las siguientes variables las interpreta `memory_platform/config.py`. Para llegar
 | `MEMORY_DSN_FILE` | Requerido en el despliegue | Archivo montado que contiene el DSN; el Compose usa `/run/secrets/memory_dsn` |
 | `MEMORY_PROJECT_MAP_FILE` | Sin archivo en ejecución directa | Mapa JSON del servidor; el Compose incluye `projects.example.json`. No sustituye los permisos de proyecto |
 | `MEMORY_OLLAMA_URL` | `http://ollama:11434` | URL de proveedor; el Compose utiliza el proxy interno |
+| `MEMORY_LLM_MODEL` | Sin valor | Modelo de lenguaje; obligatorio solo con `MEMORY_EXTRACT_ENABLED=1` o `MEMORY_CORPUS_ANSWER=on` |
+| `MEMORY_EXTRACT_ENABLED` | `0` | Extracción en el servidor (`0` o `1`); el Compose la propaga con ese valor |
+| `MEMORY_CORPUS_ANSWER` | `off` | Respuestas generadas de corpus (`on` u `off`); el Compose la propaga con ese valor |
 | `MEMORY_SESSION_TTL` | `43200` segundos | Duración de sesión del portal |
 | `MEMORY_REQUEST_TIMEOUT` | `30` segundos | Límite general de solicitudes según el consumidor |
 | `MEMORY_PROVIDER_TIMEOUT` | `180` segundos | Plazo del proveedor; las respuestas de corpus lo acotan como máximo a 180 segundos |

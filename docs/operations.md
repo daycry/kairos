@@ -236,13 +236,23 @@ El workflow `.github/workflows/ci.yml` se ejecuta en cada pull request, en cada 
 
 | Trabajo | Qué comprueba | Comando local equivalente | Tiempo en CI | Tiempo local |
 |---|---|---|---|---|
-| `server` | Suite completa del backend (483 pruebas) contra PostgreSQL aislado | `docker build --target test -f memory_platform/Dockerfile -t kairos-test:ci .` | 2 min 7 s | 8 min 41 s (primera construcción) |
+| `server` | Suite completa del backend (525 pruebas) contra PostgreSQL aislado | `docker build --target test -f memory_platform/Dockerfile -t kairos-test:ci .` | 2 min 7 s | 8 min 41 s (primera construcción) |
 | `retrieval-eval` | Puerta de calidad con embeddings simulados: recall@5 ≥ 0,80 y MRR ≥ 0,60 | `docker build --target retrieval-eval -f memory_platform/Dockerfile -t kairos-eval:ci .` | 2 min 42 s | 1 min 58 s |
 | `client` | Pruebas y comprobación de publicación del instalador (sin publicar) | en `packages/kairos-cli`: `npm test` y `npm run release:check` | 30 s | 2 min 12 s (solo `npm test`) |
 | `web` | `typecheck`, pruebas y build del portal, y la etapa `test` de la imagen web | en `web`: `npm ci`, `npm run typecheck`, `npm test`, `npm run build`; y `docker build --target test -f memory_platform/Dockerfile.web -t kairos-web-test:ci .` | 43 s | no medido |
 | `contracts` | Los contratos MCP y REST solo crecen respecto a la base y los ficheros versionados coinciden con la exportación | `python -m unittest memory_platform.tests.test_contract_additive` y `python scripts/export-contracts.py` con Python 3.13 y `git diff --ignore-cr-at-eol --exit-code -- docs/contracts` | 14 s | no medido |
 
 Los tiempos de CI son los de la ejecución 43202850710 en `ubuntu-latest`. El trabajo `contracts` usa Python 3.13 porque los contratos versionados se escribieron con esa versión (la imagen de pruebas trae 3.11, con otra sangría en las descripciones) e ignora el fin de línea porque están guardados con CRLF.
+
+## Servidor sin modelo de lenguaje y proxy de Ollama
+
+El servidor arranca y pasa su suite sin ningún modelo de lenguaje: extrae en el cliente, no en el servidor. `MEMORY_EXTRACT_ENABLED`, `MEMORY_CORPUS_ANSWER` y `MEMORY_LLM_MODEL` están descritos en [configuración](configuration.md#servidor-sin-modelo-de-lenguaje). La suite lo comprueba: se ejecuta sin `MEMORY_LLM_MODEL`, con un espía de loopback que responde 500 a `/api/chat` y cuenta las llamadas (`llm_chat_calls` en el recibo `MEMORY_TEST_RESULT`, que debe ser 0), y `test_no_llm` ingiere un resumen con `generate: true`, lo indexa y rechaza `corpus_answer` con el espía vigilando.
+
+**Proxy de Ollama (`ollama` en el Compose).** Solo deja pasar `POST /api/embed` y `GET /api/version`; `pull`, `delete`, `create`, `generate` y todo lo demás reciben 403 desde el propio proxy y no llegan al Ollama. `/api/chat` llega únicamente con `OLLAMA_ALLOW_CHAT=1` en `.env` (por defecto `0`). Cada ruta permitida se compara de forma exacta y el proxy envía al Ollama siempre la ruta fija de su regla, nunca la que mande el cliente (`//api/embed`, `/api/embed/../pull`, mayúsculas). El proceso corre como usuario sin privilegios (UID 101, sin capacidades, sistema de ficheros de solo lectura con `tmpfs` para lo que escribe). Tras cambiar `OLLAMA_ALLOW_CHAT` o la plantilla, recrea el servicio: `docker compose up -d --force-recreate ollama`.
+
+Para comprobar el proxy sin tocar la instalación, ejecuta la sonda en un proyecto Compose propio (`kairos-proxy-*`, con sus redes y volúmenes renombrados y un upstream simulado que registra lo que le llega): `python -m memory_platform.tests.ollama_proxy_probe` desde la raíz del repositorio (necesita Docker y una imagen local con Python; por defecto usa `kairos-test:i2p2`, o la que indiques en `KAIROS_PROXY_STUB_IMAGE`). Se niega a ejecutarse en un proyecto que no empiece por `kairos-proxy-`, nunca usa el Ollama del equipo y borra lo que crea.
+
+**Trabajos `extract` heredados.** Con la extracción apagada, un trabajo `extract` que ya estaba en cola no se borra ni llama a ningún proveedor: queda `failed` con `error_code` `extraction_disabled` y `POST /v1/jobs/{id}/retry` lo devuelve a la cola cuando actives la extracción.
 
 ## Qué incluir en una incidencia
 

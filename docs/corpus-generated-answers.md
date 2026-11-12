@@ -5,6 +5,20 @@ evidence without calling a model. `corpus_answer` explicitly invokes the server'
 configured model and produces an **unverified generated answer** with literal
 source quotations. Generated text is not an approved learning or a validated fact.
 
+## Off by default
+
+`corpus_answer` is **off by default**: the server does not run a language model
+unless the operator turns this on with `MEMORY_CORPUS_ANSWER=on` and names a model
+in `MEMORY_LLM_MODEL` (there is no default model, and the server refuses to start
+with the switch on and no model). While it is off the tool stays in the list of 34
+MCP tools, so existing clients and the contract do not change, but calling it
+(over MCP or `POST /v1/projects/{id}/corpora/{name}/answers`) fails with the error
+`corpus_answer_disabled` (HTTP 403) before any reservation or provider call.
+`corpus_answer_status` keeps working and still reads answers stored while the
+switch was on. With the switch on, the proxy that fronts Ollama also needs
+`OLLAMA_ALLOW_CHAT=1`, otherwise `/api/chat` answers 403. See
+[configuration](configuration.md#servidor-sin-modelo-de-lenguaje).
+
 ## Agent workflow
 
 1. Use `build_corpus` to select existing, authorized observations for one project.
