@@ -101,6 +101,21 @@ class AuxiliaryJobsTests(unittest.TestCase):
         self.assertIn('docker build --target test -f memory_platform/Dockerfile.web', block)
 
 
+class PipeFailureTests(unittest.TestCase):
+    """A piped build must fail the step: GitHub's default `bash -e` has no pipefail, so `docker build | tee` would stay green."""
+
+    def test_default_shell_is_bash_with_pipefail(self):
+        self.assertRegex(read(), r'(?m)^defaults:\s*\n  run:\s*\n    shell: bash\s*$')
+
+    def test_every_step_that_pipes_a_build_sets_pipefail_explicitly(self):
+        steps = re.split(r'(?m)^      - (?=name:|uses:)', read())
+        piped = [step for step in steps if re.search(r'\|\s*tee\b', step)]
+        self.assertTrue(piped)
+        for step in piped:
+            with self.subTest(step=step.splitlines()[0]):
+                self.assertIn('set -euo pipefail', step)
+
+
 class ContractsJobTests(unittest.TestCase):
     def setUp(self):
         self.jobs = jobs(read())
