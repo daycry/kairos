@@ -9,6 +9,7 @@ generacion:
   duracion: 20m            # reloj: 5m
   ratio_usado: 300000      # default no calibrado
   # ventana compartida con improvement-plan.md
+estado: completado
 verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige ledger-lint (exit 1 si falta)
 ---
 
@@ -16,7 +17,7 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 
 | | |
 |---|---|
-| **Estado** | en-progreso |
+| **Estado** | completado |
 | **Fecha** | 2026-11-09 |
 | **Plan** | [`improvement-plan.md`](./improvement-plan.md) |
 | **Diseño** | n/a |
@@ -38,6 +39,8 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 7 — Observabilidad (C-07 · P12) — en paralelo desde T-06 | 4 | 4 | 100.0% | 0 / 18h | 0,49 / 2,6h | 0 / 0,64h | 0 / 770k |
 | Fase 8 — Integración, revisión y activación | 5 | 5 | 100.0% | 0 / 26h | 0 / 4,31h | 0 / 1,06h | 0 / 1280k |
 | **TOTAL** | **38** | **38** | **100.0%** | **0 / 173h** | **7,13 / 26,03h** | **0 / 6,5h** | **0 / 7780k** |
+
+> qa: sin UI por diseño (`test-plan: n/a (sin UI)`)
 
 > Las horas de este ledger son **base** (sin el margen del 20 %); con margen: humanas 207,6 h, IA 31,2 h. Las horas IA y los tokens son estimaciones (ratio 300.000 tok/h no calibrado).
 

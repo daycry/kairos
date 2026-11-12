@@ -19,7 +19,7 @@ generacion:
 | | |
 |---|---|
 | **Fecha** | 2026-11-09 |
-| **Estado** | en-progreso |
+| **Estado** | completado |
 | **Tipo** | Nueva Funcionalidad / Refactor / Infra |
 | **Prioridad** | Alta |
 | **Solicitante** | Daycry (vía `/dev-cycle`, flujo completo) |
