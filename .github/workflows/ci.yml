@@ -139,3 +139,5 @@ jobs:
             echo 'A contract file is new (untracked) or missing compared with the versioned ones' >&2
             exit 1
           fi
+      - name: Workflow tests (suite-gate behaviour with mutants, hygiene rules)
+        run: python -m unittest discover -s scripts/tests -p test_ci_workflow.py
