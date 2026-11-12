@@ -51,8 +51,10 @@ def main():
             if not run()['gate']['passed']:
                 raise SystemExit(1)
             return
-        # CA-18: the suite runs as a default install does, with no language model configured and Ollama replaced by a loopback
-        # spy that answers 500 to /api/chat and /api/generate and counts them; any call fails the run below.
+        # CA-18: the suite runs as a default install does, with no language model configured and MEMORY_OLLAMA_URL pointing at a
+        # loopback spy that answers 500 to /api/chat and /api/generate and counts them. The spy only sees the tests that build
+        # `Settings.from_env()` (the ~70 `Settings('unused', ...)` ignore the environment); a counted call fails the run below.
+        # The guarantee that a default install never calls the model is `test_no_llm`, not this spy.
         from memory_platform.tests.llm_spy import ChatSpy
         spy = ChatSpy().start()
         for name in ('MEMORY_LLM_MODEL', 'MEMORY_EXTRACT_ENABLED', 'MEMORY_CORPUS_ANSWER'):
