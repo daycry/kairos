@@ -235,13 +235,15 @@ Copias, restauración aislada, claves e incidencias: [operación y recuperación
 
 | Ámbito | Cómo se verifica |
 |---|---|
-| Backend | Suite completa contra PostgreSQL aislado (480 pruebas) |
+| Backend | Suite completa contra PostgreSQL aislado (483 pruebas) |
 | Calidad de recuperación | Puerta `retrieval-eval` (recall@5, MRR y no regresión por subconjunto sobre un conjunto sintético congelado), con embeddings simulados en la suite y con un Ollama desechable en la medida con el modelo real |
 | Web | Pruebas unitarias (65), TypeScript y build de producción con Vite |
 | Interfaz | Navegación real en Chromium con Playwright (20 escenarios), escritorio y móvil |
 | Manuales | Generación sin conexión y comprobación en dos anchos de pantalla |
 | Instalador | `npm run release:check` en `packages/kairos-cli`: tests, instalación `npx` sin conexión y verificación byte a byte del tarball |
 | Despliegue | Fase `verify`: llamadas MCP reales, catálogo de herramientas y manifiesto documental |
+
+La integración continua (`.github/workflows/ci.yml`) repite en cada pull request y rama los trabajos `server`, `retrieval-eval`, `client`, `web` y `contracts`, sin secretos ni publicación; comandos y tiempos en [Operación](docs/operations.md#integración-continua).
 
 Las pruebas nunca se ejecutan contra la base de datos desplegada. Las evidencias de cada iniciativa (recibos, hashes y capturas) están en `docs/roadmap/<fecha>-<slug>/testing/`.
 
