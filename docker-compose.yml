@@ -42,6 +42,7 @@ services:
     restart: unless-stopped
     environment:
       OLLAMA_UPSTREAM: ${OLLAMA_UPSTREAM:-host.docker.internal:11434}
+      OLLAMA_ALLOW_CHAT: ${OLLAMA_ALLOW_CHAT:-0}
       NGINX_ENTRYPOINT_QUIET_LOGS: '1'
     volumes: ['./ollama-proxy/default.conf.template:/etc/nginx/templates/default.conf.template:ro']
     networks:
@@ -52,6 +53,15 @@ services:
       interval: 10s
       timeout: 6s
       retries: 12
+    # Sin root (S-09, P-10): el proceso es el usuario `nginx` (101) y solo escribe en estos tmpfs; la plantilla se renderiza en conf.d.
+    user: '101:101'
+    read_only: true
+    tmpfs:
+      - /etc/nginx/conf.d:uid=101,gid=101,mode=0755
+      - /run:uid=101,gid=101,mode=0755
+      - /var/cache/nginx:uid=101,gid=101,mode=0755
+      - /tmp:uid=101,gid=101,mode=1777
+    cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
 
   memory-postgres:

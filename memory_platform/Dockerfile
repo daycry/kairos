@@ -43,6 +43,7 @@ COPY --chown=postgres:postgres scripts/memory-admin.py /app/scripts/memory-admin
 COPY --chown=postgres:postgres scripts/deploy-memory.py /app/scripts/deploy-memory.py
 COPY --chown=postgres:postgres scripts/export-contracts.py /app/scripts/export-contracts.py
 COPY --chown=postgres:postgres docker-compose.yml /app/docker-compose.yml
+COPY --chown=postgres:postgres ollama-proxy /app/ollama-proxy
 USER postgres
 ENV PYTHONPATH=/app
 RUN python -m memory_platform.tests.run_postgres
