@@ -1,0 +1,133 @@
+name: ci
+
+# Pull-request gate for Kairos. It only reads the repository: no secrets besides the implicit GITHUB_TOKEN,
+# no image or package is published, and nothing talks to a deployed Kairos installation.
+on:
+  pull_request:
+  # Branch pushes (never main) so a branch is verified without opening a pull request; main is only reached through a PR.
+  push:
+    branches-ignore:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    # Full backend suite in the isolated PostgreSQL test image (same command as docs/operations.md).
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Restore the image layer cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/buildx-cache
+          key: buildx-server-${{ github.sha }}
+          restore-keys: buildx-server-
+      - name: Run the backend suite (target test)
+        run: |
+          # The suite layer is never taken from the cache: a cached RUN would skip the tests and hide a regression.
+          docker buildx install
+          docker build --target test -f memory_platform/Dockerfile -t kairos-test:ci --progress=plain \
+            --cache-from type=local,src=/tmp/buildx-cache --cache-to type=local,dest=/tmp/buildx-cache-new,mode=max . 2>&1 | tee /tmp/server.log
+      - name: The suite really ran and nothing was skipped
+        run: |
+          line="$(grep -o 'MEMORY_TEST_RESULT {.*}' /tmp/server.log | tail -1)"
+          echo "$line"
+          echo "$line" | grep -q '"passed": true'
+          echo "$line" | grep -q '"failures": 0'
+          echo "$line" | grep -q '"errors": 0'
+          echo "$line" | grep -q '"skipped": 0'
+      - name: Rotate the layer cache
+        if: always()
+        run: |
+          rm -rf /tmp/buildx-cache
+          if [ -d /tmp/buildx-cache-new ]; then mv /tmp/buildx-cache-new /tmp/buildx-cache; fi
+
+  retrieval-eval:
+    # Quality gate with the simulated (offline) embedding provider: recall@5 >= 0.80 and MRR >= 0.60 or the build fails.
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Restore the image layer cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/buildx-cache
+          key: buildx-eval-${{ github.sha }}
+          restore-keys: buildx-eval-
+      - name: Run the retrieval gate (target retrieval-eval)
+        run: |
+          docker buildx install
+          docker build --target retrieval-eval -f memory_platform/Dockerfile -t kairos-eval:ci --progress=plain             --no-cache-filter retrieval-eval --cache-from type=local,src=/tmp/buildx-cache --cache-to type=local,dest=/tmp/buildx-cache-new,mode=max . 2>&1 | tee /tmp/eval.log
+      - name: Rotate the layer cache
+        if: always()
+        run: |
+          rm -rf /tmp/buildx-cache
+          if [ -d /tmp/buildx-cache-new ]; then mv /tmp/buildx-cache-new /tmp/buildx-cache; fi
+
+  client:
+    # Installable CLI: its tests and the offline release check (it prepares the package, it never publishes).
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Tests
+        working-directory: packages/kairos-cli
+        run: npm test
+      - name: Release check
+        working-directory: packages/kairos-cli
+        run: npm run release:check
+
+  web:
+    # Portal: dependencies from the lockfile, typecheck, tests, build, and the nginx/web image test target.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install from the lockfile
+        working-directory: web
+        run: npm ci
+      - name: Typecheck
+        working-directory: web
+        run: npm run typecheck
+      - name: Tests
+        working-directory: web
+        run: npm test
+      - name: Build
+        working-directory: web
+        run: npm run build
+      - name: Web image test target
+        run: docker build --target test -f memory_platform/Dockerfile.web -t kairos-web-test:ci .
+
+  contracts:
+    # The MCP and OpenAPI contracts may only grow (test_contract_additive) and the exported files must match the versioned ones.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install the server dependencies
+        run: pip install --no-cache-dir -r memory_platform/requirements.txt
+      - name: Additive diff against the contracts of the initiative base
+        run: python -m unittest memory_platform.tests.test_contract_additive
+      - name: Exported contracts equal the versioned ones
+        run: |
+          python scripts/export-contracts.py
+          git diff --ignore-cr-at-eol --exit-code -- docs/contracts
