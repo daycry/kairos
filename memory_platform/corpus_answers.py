@@ -246,7 +246,12 @@ class CorpusAnswers:
 
     async def answer(self, actor, project, name, question, request_id, expected_session_id, expected_generation):
         if not getattr(self.settings, 'corpus_answer_enabled', False):
-            # MEMORY_CORPUS_ANSWER=off (default, D-4): refuse before any reservation or provider call. `status` keeps reading stored answers.
+            # MEMORY_CORPUS_ANSWER=off (default, D-4): never reserve or call a provider. Reusing a request_id reads the stored operation
+            # (same authorization and freshness checks as `status`); without one, the call is refused.
+            try:
+                return await asyncio.to_thread(self.status, actor, project, name, request_id)
+            except NotFound:
+                pass
             raise MemoryError('corpus_answer_disabled', 'corpus_answer_disabled: generated answers are off on this server (MEMORY_CORPUS_ANSWER=off)', 403)
         receipt, packet = await asyncio.to_thread(self._reserve, actor, project, name, question, request_id,
                                                   expected_session_id, expected_generation)

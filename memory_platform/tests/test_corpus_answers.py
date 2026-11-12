@@ -326,6 +326,21 @@ class CorpusAnswerSwitchTests(unittest.TestCase):
         self.assertEqual(read, stored)
         self.assertEqual(len(self.provider.calls), 1)
 
+    def test_off_reusing_a_stored_request_id_reads_the_operation_and_a_new_one_is_refused(self):
+        on = CorpusAnswers(self.store, settings(), self.provider)
+        stored = asyncio.run(on.answer(*self.args()))
+        off = CorpusAnswers(self.store, SimpleNamespace(ollama_url='http://synthetic.invalid', llm_model='', provider_timeout=5, corpus_answer_enabled=False), self.provider)
+        self.assertEqual(asyncio.run(off.answer(*self.args())), stored)  # same request_id: reads, never resends
+        self.assertEqual(len(self.provider.calls), 1)
+        with self.assertRaises(MemoryError) as error: asyncio.run(off.answer(*self.args('request-2')))
+        self.assertEqual(error.exception.code, 'corpus_answer_disabled')
+        with self.store.transaction() as c:  # nothing new reserved
+            self.assertEqual(c.execute('SELECT count(*) AS n FROM memory.corpus_answers WHERE project_id=%s', (self.project,)).fetchone()['n'], 1)
+        stranger = {'id': '00000000-0000-0000-0000-000000000000', 'credential_type': 'bootstrap'}  # no grant on the project: authorization is unchanged
+        with self.assertRaises(Exception) as denied: asyncio.run(off.answer(stranger, *self.args()[1:]))
+        self.assertNotEqual(getattr(denied.exception, 'code', None), None)
+        self.assertEqual(len(self.provider.calls), 1)
+
 
 if __name__ == '__main__':
     # The same owned temporary-PG harness, restricted to this domain's tests.
