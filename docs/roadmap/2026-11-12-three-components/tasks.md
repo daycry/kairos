@@ -37,7 +37,7 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 
 | Fase | Completadas | Total | Progreso | H. humanas (real/est) | H. IA ejec. (real/est) | Supervisión (real/est) | Tokens (real/est) |
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
-| Fase 1 — Integración continua (C-01) | 0 | 8 | 0% | 0 / 18.0h | 0 / 2.3h | 0 / 0.6h | 0 / 578 k |
+| Fase 1 — Integración continua (C-01) | 6 | 8 | 75% | 0 / 18.0h | 0 / 2.3h | 0 / 0.6h | 0 / 578 k |
 | Fase 2 — Servidor sin modelo de lenguaje (C-04) | 0 | 9 | 0% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
 | Fase 3 — Paridad REST /v1 (C-02) | 0 | 10 | 0% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 0 | 8 | 0% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
@@ -45,7 +45,7 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 6 — Compatibilidad (C-07) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **0** | **74** | **0%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **6** | **74** | **8%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -58,10 +58,11 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 ### T-01 — Workflow `ci.yml` con el trabajo `server` y línea base de la suite
 
 - **Descripción**: Crear `.github/workflows/ci.yml` con disparador `pull_request` (y `workflow_dispatch`) y el trabajo `server`, que ejecuta `docker build --target test -f memory_platform/Dockerfile` en `ubuntu-latest` con caché de capas. Registra la línea base de la suite (nº de tests, 0 fallos, 0 omitidos) en `Notas`. Fuente: CA-01, B-04, O-04; P-01.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: Cada pull request y cada rama que se sube ejecutan en GitHub la suite completa del servidor en un contenedor aislado, y un fallo o una suite omitida deja la comprobación en rojo.
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 2.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.31h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.31h (estimado) · real 0.17h (medido, bloque T-01..T-04)
 - **Supervisión**: est. 0.08h (≈25 % IA) · real —
 - **Previsión IA**: 85 k in / 8 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna (P-01 decidida: Actions activas, solo Linux)
@@ -72,26 +73,27 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
   - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
 
 **Criterios de aceptación**
-- [ ] Existe `.github/workflows/ci.yml` con el trabajo `server` y sin disparador `push`
-- [ ] `scripts/tests/test_ci_workflow.py` comprueba la estructura del workflow (trabajos, `runs-on`, comando del target `test`) sin dependencias externas
-- [ ] La línea base de la suite (`tests`, `failures`, `errors`, `skipped`) queda anotada en `Notas` de esta tarea: es el número que las demás tareas comparan
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] Existe `.github/workflows/ci.yml` con el trabajo `server` y sin disparador `push`
+- [x] `scripts/tests/test_ci_workflow.py` comprueba la estructura del workflow (trabajos, `runs-on`, comando del target `test`) sin dependencias externas
+- [x] La línea base de la suite (`tests`, `failures`, `errors`, `skipped`) queda anotada en `Notas` de esta tarea: es el número que las demás tareas comparan
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Escribir primero `test_ci_workflow.py` (rojo: el workflow no existe)
-- [ ] Crear el workflow con el trabajo `server`
-- [ ] Ejecutar la suite local y anotar la línea base
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero `test_ci_workflow.py` (rojo: el workflow no existe)
+- [x] Crear el workflow con el trabajo `server`
+- [x] Ejecutar la suite local y anotar la línea base
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Procedencia: spec CA-01, evaluación C-01. Patrones: la suite corre así en `memory_platform/Dockerfile:31` y `memory_platform/tests/run_postgres.py:18-57`; el resumen se imprime en `run_postgres.py:61`; los tests de `scripts/` viven en `scripts/tests/test_accept_native_clients.py`. No uses acciones con `push` en el nombre (`docker/build-push-action`): rompen la puerta de T-04; usa `run: docker build` y `actions/cache` para las capas. Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde.
+**Notas**: Procedencia: spec CA-01, evaluación C-01. Patrones: la suite corre así en `memory_platform/Dockerfile:31` y `memory_platform/tests/run_postgres.py:18-57`; el resumen se imprime en `run_postgres.py:61`; los tests de `scripts/` viven en `scripts/tests/test_accept_native_clients.py`. No uses acciones con `push` en el nombre (`docker/build-push-action`): rompen la puerta de T-04; usa `run: docker build` y `actions/cache` para las capas. Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde. RED: test_ci_workflow (3 tests) falló con FileNotFoundError: .github/workflows/ci.yml · 2026-11-12. Línea base de la suite en local (docker build --no-cache-filter test --target test, 521 s con las capas ya construidas): MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 483}; 483 es el número que comparan las demás tareas. usage-meter close three-components/T-01: 0.17 h IA medidas, abarca el bloque T-01..T-04 (se escribieron y comitearon juntas: commit ceeaa2d). Desviaciones: (1) por autorización del usuario del 2026-11-12 el workflow añade el disparador push con branches-ignore: main además de pull_request y workflow_dispatch (sin PR no hay otro modo de ejecutarlo, y workflow_dispatch exige el fichero en main); el criterio 'sin disparador push' pasa a 'sin push a main' y el test lo fija. (2) La suite y la puerta de retrieval-eval llevan --no-cache-filter para que la caché de capas nunca salte las pruebas; el paso 'The suite really ran' exige passed true, failures/errors/skipped 0 en el MEMORY_TEST_RESULT del log.
 
 ### T-02 — Trabajos `retrieval-eval`, `client` y `web` del workflow
 
 - **Descripción**: Añadir al workflow tres trabajos: `retrieval-eval` (target `retrieval-eval`, proveedor simulado, umbrales recall@5 ≥ 0,80 y MRR ≥ 0,60), `client` (`npm test` y `npm run release:check` en `packages/kairos-cli`) y `web` (`typecheck`, `test`, `build` en `web/` más el target `test` de `Dockerfile.web`). Fuente: CA-01; R-08 (puesta en verde en Linux).
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: La CI comprueba además la puerta de calidad de recuperación (recall@5 y MRR), las pruebas y la comprobación de publicación del cliente, y el typecheck, las pruebas y el build del portal.
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 2.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.31h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.31h (estimado) · real 0h (incluido en T-01)
 - **Supervisión**: est. 0.08h (≈25 % IA) · real —
 - **Previsión IA**: 85 k in / 8 k out tok · ⚠️ verificar €
 - **Dependencias**: T-01
@@ -103,26 +105,27 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
   - `docker build --target retrieval-eval -f memory_platform/Dockerfile -t kairos-eval:t02 .` → termina con exit 0 (umbrales cumplidos)
 
 **Criterios de aceptación**
-- [ ] El workflow declara los trabajos `retrieval-eval`, `client` y `web`, cada uno con su comando exacto, y el test estructural los comprueba
-- [ ] `retrieval-eval` usa el proveedor simulado y no contacta con ningún servicio externo salvo los espejos de `apt-get` del target
-- [ ] Cada trabajo tiene `timeout-minutes` explícito
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] El workflow declara los trabajos `retrieval-eval`, `client` y `web`, cada uno con su comando exacto, y el test estructural los comprueba
+- [x] `retrieval-eval` usa el proveedor simulado y no contacta con ningún servicio externo salvo los espejos de `apt-get` del target
+- [x] Cada trabajo tiene `timeout-minutes` explícito
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Ampliar `test_ci_workflow.py` (rojo) con los tres trabajos
-- [ ] Añadir los trabajos al workflow
-- [ ] Anotar los tiempos locales de cada comando como referencia
-- [ ] `usage-meter start/close`
+- [x] Ampliar `test_ci_workflow.py` (rojo) con los tres trabajos
+- [x] Añadir los trabajos al workflow
+- [x] Anotar los tiempos locales de cada comando como referencia
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-01. Patrones: `memory_platform/Dockerfile:46-52` (target `retrieval-eval`), `packages/kairos-cli/package.json:9` (scripts `test`, `release:check`), `web/package.json:7` (script `test`), `memory_platform/Dockerfile.web:27-29` (target `test`). El target `retrieval-eval` instala paquetes con `apt-get` (riesgo del evaluador: depende de la red). Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde.
+**Notas**: Procedencia: spec CA-01. Patrones: `memory_platform/Dockerfile:46-52` (target `retrieval-eval`), `packages/kairos-cli/package.json:9` (scripts `test`, `release:check`), `web/package.json:7` (script `test`), `memory_platform/Dockerfile.web:27-29` (target `test`). El target `retrieval-eval` instala paquetes con `apt-get` (riesgo del evaluador: depende de la red). Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde. RED: AuxiliaryJobsTests falló con AssertionError: 'retrieval-eval' not found in {'server': ...} (3 fallos) · 2026-11-12. Verificación local: docker build --target retrieval-eval --no-cache-filter retrieval-eval -t kairos-eval:t02 → exit 0 en 118 s (RETRIEVAL_EVAL_RESULT con la puerta cumplida, proveedor fake-hashed-words-and-char-ngrams); npm test en packages/kairos-cli → 90 pass, 0 fail, 132 s. El resto (release:check, web, Dockerfile.web) se verifica en la ejecución de CI de T-05. Tiempo IA medido: incluido en T-01 (bloque T-01..T-04). Commit ceeaa2d.
 
 ### T-03 — Trabajo `contracts` (diff aditivo de ambos contratos)
 
 - **Descripción**: Añadir el trabajo `contracts`: ejecuta `test_contract_additive` en la imagen de test y comprueba que `docs/contracts/*.json` coinciden con lo que exporta `scripts/export-contracts.py` (sin diff). Fuente: CA-01, CA-07, CA-29.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: La CI falla si los contratos MCP y REST de Kairos pierden o cambian algo respecto a la base de la iniciativa, o si los ficheros versionados no coinciden con los exportados.
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 1.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.12h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.12h (estimado) · real 0h (incluido en T-01)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 34 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: T-01
@@ -133,24 +136,25 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
   - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK` con el trabajo `contracts`
 
 **Criterios de aceptación**
-- [ ] El trabajo `contracts` falla si el contrato exportado difiere del versionado o si el diff contra la línea base no es aditivo
-- [ ] No necesita red ni servicios desplegados
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] El trabajo `contracts` falla si el contrato exportado difiere del versionado o si el diff contra la línea base no es aditivo
+- [x] No necesita red ni servicios desplegados
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Ampliar el test estructural (rojo)
-- [ ] Añadir el trabajo
-- [ ] `usage-meter start/close`
+- [x] Ampliar el test estructural (rojo)
+- [x] Añadir el trabajo
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-01/CA-07. Patrones: `memory_platform/tests/test_contract_additive.py:28-40` (regla aditiva), `scripts/export-contracts.py:11-30`. Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde.
+**Notas**: Procedencia: spec CA-01/CA-07. Patrones: `memory_platform/tests/test_contract_additive.py:28-40` (regla aditiva), `scripts/export-contracts.py:11-30`. Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde. RED: ContractsJobTests falló con AssertionError: 'contracts' not found · 2026-11-12. Desviación: el trabajo corre en el runner con Python 3.13 y no en la imagen de test, porque (a) esa imagen ya ejecuta test_contract_additive dentro del trabajo server y (b) su Python es 3.11 y los contratos versionados (CRLF, escritos con 3.13) difieren en la sangría de las docstrings: comprobado en local, la exportación desde la imagen difiere en 2 descripciones; el diff se hace con git diff --ignore-cr-at-eol. La exportación local con la imagen no se pudo usar como prueba directa porque el entorno local no tiene dependencias; se verifica en la ejecución de CI de T-05. Tiempo IA: incluido en T-01. Commit ceeaa2d.
 
 ### T-04 — Puerta de higiene del workflow: sin secretos, sin publicar, sin servicios desplegados
 
 - **Descripción**: Fijar la comprobación de CA-02 como test: el workflow no referencia más secreto que `GITHUB_TOKEN`, no contiene `docker push`, `npm publish` ni `push: true`, y no menciona recursos `knowledge-graphs-*`. Fuente: CA-02, CA-30; restricción «la CI no usa más secretos que `GITHUB_TOKEN`».
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: La CI rechaza mecánicamente cualquier secreto distinto de GITHUB_TOKEN, cualquier publicación de imágenes o paquetes y cualquier referencia a los recursos de la instalación desplegada.
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 0.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.06h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.06h (estimado) · real 0h (incluido en T-01)
 - **Supervisión**: est. 0.02h (≈25 % IA) · real —
 - **Previsión IA**: 17 k in / 2 k out tok · ⚠️ verificar €
 - **Dependencias**: T-02
@@ -162,23 +166,24 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
   - `grep -nEi "secrets\.|docker push|npm publish|push: true|knowledge-graphs-" .github/workflows/ci.yml` → solo líneas con `GITHUB_TOKEN` o ninguna
 
 **Criterios de aceptación**
-- [ ] El test falla si se introduce `secrets.X` distinto de `GITHUB_TOKEN`, `docker push`, `npm publish` o `knowledge-graphs-`
-- [ ] Con el workflow actual el test pasa
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] El test falla si se introduce `secrets.X` distinto de `GITHUB_TOKEN`, `docker push`, `npm publish` o `knowledge-graphs-`
+- [x] Con el workflow actual el test pasa
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Escribir el test con un caso positivo y tres negativos sobre texto sintético
-- [ ] `usage-meter start/close`
+- [x] Escribir el test con un caso positivo y tres negativos sobre texto sintético
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-02/CA-30. Patrón: `memory_platform/tests/test_deploy_isolation.py:29-48` (rechaza el nombre de la instalación real). Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde.
+**Notas**: Procedencia: spec CA-02/CA-30. Patrón: `memory_platform/tests/test_deploy_isolation.py:29-48` (rechaza el nombre de la instalación real). Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde. RED: HygieneTests falló con NameError: name 'hygiene_violations' is not defined (10 errores) · 2026-11-12. Verde: python -m unittest discover -s scripts/tests -p test_ci_workflow.py → Ran 14 tests, OK. grep -nEi "secrets\.|docker push|npm publish|push: true|knowledge-graphs-" .github/workflows/ci.yml → sin coincidencias (exit 1). Cubre 1 caso positivo y 3 grupos negativos (secreto ajeno, publicación, recurso knowledge-graphs-*). Tiempo IA: incluido en T-01. Commit ceeaa2d.
 
 ### T-05 — Puesta en verde del PR (CA-01) y enlace de la ejecución en el ledger
 
 - **Descripción**: Abrir o actualizar el PR de `feat/three-components` y dejar los trabajos `server`, `retrieval-eval`, `client`, `web` y `contracts` en verde en `ubuntu-latest`. Corregir las diferencias Linux/Docker Desktop que afloren. Anotar en `Notas` el enlace de la ejecución y los tiempos medidos. Fuente: CA-01; R-08.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: Los cinco trabajos de la CI (servidor, calidad de recuperación, cliente, portal y contratos) terminan en verde en Linux y un fallo del build ya no puede dejar un trabajo en verde.
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 2.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.25h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.25h (estimado) · real 0.3h (estimado)
 - **Supervisión**: est. 0.06h (≈25 % IA) · real —
 - **Previsión IA**: 68 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-03, T-04
@@ -190,24 +195,24 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
   - `gh run view <id> --json jobs --jq '.jobs[].conclusion'` → 5 × `success`
 
 **Criterios de aceptación**
-- [ ] Los cinco trabajos terminan en verde en el PR de esta rama; enlace anotado en `Notas`
-- [ ] Los tiempos de cada trabajo en CI quedan anotados (la hipótesis de la spec pasa a hecho medido)
-- [ ] Ningún test se desactiva ni se marca como omitido para conseguir el verde
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] Los cinco trabajos terminan en verde en el PR de esta rama; enlace anotado en `Notas`
+- [x] Los tiempos de cada trabajo en CI quedan anotados (la hipótesis de la spec pasa a hecho medido)
+- [x] Ningún test se desactiva ni se marca como omitido para conseguir el verde
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Hacer `git push` de la rama y abrir el PR (acción visible: requiere confirmación del usuario si no está autorizada)
-- [ ] Diagnosticar los fallos de Linux uno a uno
-- [ ] Anotar enlace y tiempos
-- [ ] `usage-meter start/close`
+- [x] Hacer `git push` de la rama y abrir el PR (acción visible: requiere confirmación del usuario si no está autorizada)
+- [x] Diagnosticar los fallos de Linux uno a uno
+- [x] Anotar enlace y tiempos
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-01, R-08. Dependencia externa: Actions activas en el repositorio (P-01, decidida). Si el repositorio no admite el `push` o Actions no está activo, la tarea queda bloqueada, no se sustituye por una ejecución local. Clase: defecto de entorno (oráculo: el trabajo en rojo en CI antes de cada arreglo).
+**Notas**: Procedencia: spec CA-01, R-08. Dependencia externa: Actions activas en el repositorio (P-01, decidida). Si el repositorio no admite el `push` o Actions no está activo, la tarea queda bloqueada, no se sustituye por una ejecución local. Clase: defecto de entorno (oráculo: el trabajo en rojo en CI antes de cada arreglo). Ejecución en verde en la rama: https://github.com/daycry/kairos/actions/runs/43202850710 (feat/three-components, commit 4b22aa5): 5 × success. Tiempos medidos en CI (ubuntu-latest): server 127 s (483 pruebas, 0 fallos/errores/omitidas, línea base igual), retrieval-eval 162 s, client 30 s, web 43 s, contracts 14 s (la hipótesis de la spec pasa a hecho medido). Primera ejecución verde: https://github.com/daycry/kairos/actions/runs/43200885564. Desviaciones: (1) sin PR, por autorización del usuario: ejecuciones por el disparador push (branches-ignore main). (2) La puesta en verde destapó tres defectos del propio workflow, corregidos con test en rojo antes (PipeFailureTests, test_the_suite_is_never_replayed_from_an_imported_cache, paso 'The gate really ran and passed'): a) la rama desechable mostró retrieval-eval en verde tras fallar su docker build, porque el shell por defecto es bash -e sin pipefail (run 43201411278): ahora defaults.run.shell: bash y set -euo pipefail; b) con --cache-from la última RUN del target test salió CACHED aunque se pasó --no-cache-filter y la suite no se ejecutó (run 43202142933, server en rojo por el paso de comprobación del registro): se quitó la caché de capas de actions/cache (la construcción limpia cuesta ~2 min); c) retrieval-eval ahora lee su RETRIEVAL_EVAL_RESULT con gate.passed true del registro. Ningún test se desactivó ni se omitió. Commits: ceeaa2d, 41ee014, 4b22aa5. Tiempo IA: usage-meter no devolvió medición para este tramo (null); estimado ~0.3h (estimado).
 
 ### T-06 — Prueba de rojo en rama desechable (CA-03)
 
 - **Descripción**: En una rama desechable que no se fusiona, introducir un test que falla a propósito y comprobar que el trabajo correspondiente queda en rojo; borrar la rama. Anotar el enlace de la ejecución. Fuente: CA-03.
 - **Changelog**: 
-- **Estado**: borrador
+- **Estado**: en-progreso
 - **Tiempo humano**: est. 1.0h (base) · real —
 - **Tiempo IA (ejec.)**: est. 0.12h (estimado) · real —
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
@@ -221,25 +226,26 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
   - `git branch -a --list '*ci-red-probe*'` → vacío
 
 **Criterios de aceptación**
-- [ ] La ejecución de la rama desechable deja en rojo el trabajo `server` (enlace en `Notas`)
+- [x] La ejecución de la rama desechable deja en rojo el trabajo `server` (enlace en `Notas`)
 - [ ] La rama se borra y no se fusiona; `git branch -a` no la lista al cerrar
 - [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Crear rama `ci-red-probe`, añadir un test con `self.fail()`, empujar
-- [ ] Comprobar el rojo y anotar el enlace
+- [x] Crear rama `ci-red-probe`, añadir un test con `self.fail()`, empujar
+- [x] Comprobar el rojo y anotar el enlace
 - [ ] Borrar la rama local y remota
 - [ ] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-03. El `push` de la rama desechable es una acción sobre el remoto: pedir confirmación si no está autorizada. Clase: capacidad nueva (verificación negativa de la red de seguridad).
+**Notas**: Procedencia: spec CA-03. El `push` de la rama desechable es una acción sobre el remoto: pedir confirmación si no está autorizada. Clase: capacidad nueva (verificación negativa de la red de seguridad). BLOQUEADA SOLO EN EL BORRADO: el rojo está probado, pero el hook de guardarraíles bloquea `git branch -D` (el `-d` se niega porque la rama no está fusionada) y `git push --delete`; no se ha esquivado. Pendiente de quien tenga permiso: `git push origin --delete ci-red-probe` y `git branch -D ci-red-probe` (la rama local y la remota existen; el worktree temporal se retiró salvo un directorio residual `.git/worktrees/wt-probe` con permiso denegado: `git worktree prune`). Rojo comprobado: https://github.com/daycry/kairos/actions/runs/43201411278 (commit 4ba0a7c con test_ci_red_probe.py y self.fail(): server failure; retrieval-eval aparecía en verde por el defecto de pipefail, corregido en T-05) y, con el workflow corregido, https://github.com/daycry/kairos/actions/runs/43202864405 (server failure y retrieval-eval failure; client, web y contracts success). `gh run list --branch ci-red-probe --limit 1` → conclusion failure. La rama no se fusionó (el merge fue de feat/three-components hacia ci-red-probe, nunca al revés). usage-meter: sin start/close propio (el tramo se midió dentro del conjunto T-01..T-07); estimado 0.1h (estimado).
 
 ### T-07 — Documentar la CI en `docs/operations.md`
 
 - **Descripción**: Añadir a `docs/operations.md` una sección «Integración continua»: qué trabajos hay, cómo reproducir cada uno en local, tiempos medidos y política de no publicar ni usar secretos. Fuente: CA-01, CA-32.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: La documentación de operación describe la integración continua: los cinco trabajos, cómo repetir cada uno en local, sus tiempos medidos y la política de no publicar ni usar secretos.
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 0.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.06h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.06h (estimado) · real 0.01h (medido)
 - **Supervisión**: est. 0.02h (≈25 % IA) · real —
 - **Previsión IA**: 17 k in / 2 k out tok · ⚠️ verificar €
 - **Dependencias**: T-05
@@ -251,16 +257,16 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
   - lectura: cada comando citado en la sección coincide con el del workflow
 
 **Criterios de aceptación**
-- [ ] La sección lista los cinco trabajos con su comando local equivalente
-- [ ] Las rutas y comandos citados existen (`ls` de cada uno)
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] La sección lista los cinco trabajos con su comando local equivalente
+- [x] Las rutas y comandos citados existen (`ls` de cada uno)
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Redactar según `docs-style.md`
-- [ ] Comprobar los comandos citados
-- [ ] `usage-meter start/close`
+- [x] Redactar según `docs-style.md`
+- [x] Comprobar los comandos citados
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-32, evaluación C-01 (documentación 1 h). Patrón: estructura de `docs/operations.md` existente. Clase: documentación (oráculo: lectura contra el workflow real).
+**Notas**: Procedencia: spec CA-32, evaluación C-01 (documentación 1 h). Patrón: estructura de `docs/operations.md` existente. Clase: documentación (oráculo: lectura contra el workflow real). Sección 'Integración continua' en docs/operations.md (antes de 'Qué incluir en una incidencia'; fichero CRLF conservado) y párrafo en README.md (tabla de pruebas: 480 → 483). Verificación: grep -n "Integración continua" docs/operations.md → línea 233; ls de ci.yml, export-contracts.py, Dockerfile.web, package.json de client y web y test_contract_additive.py → todos existen; los comandos de la tabla coinciden con los del workflow (lectura). usage-meter close three-components/T-07: 0.01 h IA medidas. Commit eb4b453.
 
 ### T-08 — Revisión adversarial de la Fase 1
 
