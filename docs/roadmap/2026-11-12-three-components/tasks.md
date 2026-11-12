@@ -37,7 +37,7 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 
 | Fase | Completadas | Total | Progreso | H. humanas (real/est) | H. IA ejec. (real/est) | Supervisión (real/est) | Tokens (real/est) |
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
-| Fase 1 — Integración continua (C-01) | 6 | 8 | 75% | 0 / 18.0h | 0 / 2.3h | 0 / 0.6h | 0 / 578 k |
+| Fase 1 — Integración continua (C-01) | 7 | 8 | 88% | 0 / 18.0h | 0 / 2.3h | 0 / 0.6h | 0 / 578 k |
 | Fase 2 — Servidor sin modelo de lenguaje (C-04) | 0 | 9 | 0% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
 | Fase 3 — Paridad REST /v1 (C-02) | 0 | 10 | 0% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 0 | 8 | 0% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
@@ -45,7 +45,7 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 6 — Compatibilidad (C-07) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **6** | **74** | **8%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **7** | **74** | **9%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -62,7 +62,7 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 - **Estado**: completado
 - **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 2.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.31h (estimado) · real 0.17h (medido, bloque T-01..T-04)
+- **Tiempo IA (ejec.)**: est. 0.31h (estimado) · real 0.17h (medido, bloque T-01..T-04) + 0.13h (medido, corrección fix1 T-01..T-05)
 - **Supervisión**: est. 0.08h (≈25 % IA) · real —
 - **Previsión IA**: 85 k in / 8 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna (P-01 decidida: Actions activas, solo Linux)
@@ -84,7 +84,7 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 - [x] Ejecutar la suite local y anotar la línea base
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Procedencia: spec CA-01, evaluación C-01. Patrones: la suite corre así en `memory_platform/Dockerfile:31` y `memory_platform/tests/run_postgres.py:18-57`; el resumen se imprime en `run_postgres.py:61`; los tests de `scripts/` viven en `scripts/tests/test_accept_native_clients.py`. No uses acciones con `push` en el nombre (`docker/build-push-action`): rompen la puerta de T-04; usa `run: docker build` y `actions/cache` para las capas. Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde. RED: test_ci_workflow (3 tests) falló con FileNotFoundError: .github/workflows/ci.yml · 2026-11-12. Línea base de la suite en local (docker build --no-cache-filter test --target test, 521 s con las capas ya construidas): MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 483}; 483 es el número que comparan las demás tareas. usage-meter close three-components/T-01: 0.17 h IA medidas, abarca el bloque T-01..T-04 (se escribieron y comitearon juntas: commit ceeaa2d). Desviaciones: (1) por autorización del usuario del 2026-11-12 el workflow añade el disparador push con branches-ignore: main además de pull_request y workflow_dispatch (sin PR no hay otro modo de ejecutarlo, y workflow_dispatch exige el fichero en main); el criterio 'sin disparador push' pasa a 'sin push a main' y el test lo fija. (2) La suite y la puerta de retrieval-eval llevan --no-cache-filter para que la caché de capas nunca salte las pruebas; el paso 'The suite really ran' exige passed true, failures/errors/skipped 0 en el MEMORY_TEST_RESULT del log.
+**Notas**: Procedencia: spec CA-01, evaluación C-01. Patrones: la suite corre así en `memory_platform/Dockerfile:31` y `memory_platform/tests/run_postgres.py:18-57`; el resumen se imprime en `run_postgres.py:61`; los tests de `scripts/` viven en `scripts/tests/test_accept_native_clients.py`. No uses acciones con `push` en el nombre (`docker/build-push-action`): rompen la puerta de T-04; usa `run: docker build` sin caché de capas importada (T-05 retiró `actions/cache` y `--no-cache-filter`: reproducían la capa de la suite sin ejecutarla). Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde. RED: test_ci_workflow (3 tests) falló con FileNotFoundError: .github/workflows/ci.yml · 2026-11-12. Línea base de la suite en local (docker build --target test, 521 s en local con las capas ya construidas; en CI, sin caché importada): MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 483}; 483 es el número que comparan las demás tareas. usage-meter close three-components/T-01: 0.17 h IA medidas, abarca el bloque T-01..T-04 (se escribieron y comitearon juntas: commit ceeaa2d). Desviaciones: (1) por autorización del usuario del 2026-11-12 el workflow añade el disparador push con branches-ignore: main además de pull_request y workflow_dispatch (sin PR no hay otro modo de ejecutarlo, y workflow_dispatch exige el fichero en main); el criterio 'sin disparador push' pasa a 'sin push a main' y el test lo fija. (2) Desviación retirada en T-05: no hay caché de capas ni --no-cache-filter (la suite se construye sin caché importada); el paso 'The suite really ran' exige passed true, failures/errors/skipped 0 y tests >= KAIROS_MIN_TESTS (483) en el MEMORY_TEST_RESULT del log, y `test_ci_workflow.py` lo protege con mutantes (revisión intento 1, fix1). Revisión intento 1 (fix1): paso 'The suite really ran' protegido por tests con mutantes (borrarlo, `"failures": 0` -> `"failures"`) y comparación `tests >= KAIROS_MIN_TESTS` (483, un único sitio documentado en `env:`); acciones fijadas por SHA con la etiqueta en comentario (checkout 11d5960, setup-node 49933ea, setup-python a26af69; SHAs resueltos con `gh api repos/<acción>/git/ref/tags/<tag>`, todos `commit` directo) y `persist-credentials: false` en todos los checkout (ningún paso usa el token para git). RED: SuiteGateStepTests/SupplyChainTests fallaron (13 fallos de 32 tests: paso sin KAIROS_MIN_TESTS, acciones por etiqueta, checkout sin persist-credentials) · 2026-11-12. usage-meter close three-components/T-01-fix1: 0.13 h IA (medido; las ventanas fix1 de T-01..T-05 se abrieron y cerraron juntas).
 
 ### T-02 — Trabajos `retrieval-eval`, `client` y `web` del workflow
 
@@ -108,15 +108,15 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 - [x] El workflow declara los trabajos `retrieval-eval`, `client` y `web`, cada uno con su comando exacto, y el test estructural los comprueba
 - [x] `retrieval-eval` usa el proveedor simulado y no contacta con ningún servicio externo salvo los espejos de `apt-get` del target
 - [x] Cada trabajo tiene `timeout-minutes` explícito
-- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar — EXCEPCIÓN: sin JSON propio del tramo original (se midió solo en el bloque de T-01; tiempo (estimado)); la corrección fix1 sí tiene JSON (medido, en Notas)
 
 **Subtareas**
 - [x] Ampliar `test_ci_workflow.py` (rojo) con los tres trabajos
 - [x] Añadir los trabajos al workflow
 - [x] Anotar los tiempos locales de cada comando como referencia
-- [x] `usage-meter start/close`
+- [x] `usage-meter start/close` — EXCEPCIÓN: tiempo del tramo original (estimado), sin start/close propio
 
-**Notas**: Procedencia: spec CA-01. Patrones: `memory_platform/Dockerfile:46-52` (target `retrieval-eval`), `packages/kairos-cli/package.json:9` (scripts `test`, `release:check`), `web/package.json:7` (script `test`), `memory_platform/Dockerfile.web:27-29` (target `test`). El target `retrieval-eval` instala paquetes con `apt-get` (riesgo del evaluador: depende de la red). Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde. RED: AuxiliaryJobsTests falló con AssertionError: 'retrieval-eval' not found in {'server': ...} (3 fallos) · 2026-11-12. Verificación local: docker build --target retrieval-eval --no-cache-filter retrieval-eval -t kairos-eval:t02 → exit 0 en 118 s (RETRIEVAL_EVAL_RESULT con la puerta cumplida, proveedor fake-hashed-words-and-char-ngrams); npm test en packages/kairos-cli → 90 pass, 0 fail, 132 s. El resto (release:check, web, Dockerfile.web) se verifica en la ejecución de CI de T-05. Tiempo IA medido: incluido en T-01 (bloque T-01..T-04). Commit ceeaa2d.
+**Notas**: Procedencia: spec CA-01. Patrones: `memory_platform/Dockerfile:46-52` (target `retrieval-eval`), `packages/kairos-cli/package.json:9` (scripts `test`, `release:check`), `web/package.json:7` (script `test`), `memory_platform/Dockerfile.web:27-29` (target `test`). El target `retrieval-eval` instala paquetes con `apt-get` (riesgo del evaluador: depende de la red). Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde. RED: AuxiliaryJobsTests falló con AssertionError: 'retrieval-eval' not found in {'server': ...} (3 fallos) · 2026-11-12. Verificación local: docker build --target retrieval-eval --no-cache-filter retrieval-eval -t kairos-eval:t02 → exit 0 en 118 s (RETRIEVAL_EVAL_RESULT con la puerta cumplida, proveedor fake-hashed-words-and-char-ngrams); npm test en packages/kairos-cli → 90 pass, 0 fail, 132 s. El resto (release:check, web, Dockerfile.web) se verifica en la ejecución de CI de T-05. Tiempo IA medido: incluido en T-01 (bloque T-01..T-04). Commit ceeaa2d. Revisión intento 1 (fix1): ver T-01 (SHAs y persist-credentials también en `retrieval-eval`, `client` y `web`). usage-meter close three-components/T-02-fix1: ventana compartida con T-01-fix1 (0.13 h IA, medido, no sumar).
 
 ### T-03 — Trabajo `contracts` (diff aditivo de ambos contratos)
 
@@ -138,14 +138,14 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 **Criterios de aceptación**
 - [x] El trabajo `contracts` falla si el contrato exportado difiere del versionado o si el diff contra la línea base no es aditivo
 - [x] No necesita red ni servicios desplegados
-- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar — EXCEPCIÓN: sin JSON propio del tramo original (se midió solo en el bloque de T-01; tiempo (estimado)); la corrección fix1 sí tiene JSON (medido, en Notas)
 
 **Subtareas**
 - [x] Ampliar el test estructural (rojo)
 - [x] Añadir el trabajo
-- [x] `usage-meter start/close`
+- [x] `usage-meter start/close` — EXCEPCIÓN: tiempo del tramo original (estimado), sin start/close propio
 
-**Notas**: Procedencia: spec CA-01/CA-07. Patrones: `memory_platform/tests/test_contract_additive.py:28-40` (regla aditiva), `scripts/export-contracts.py:11-30`. Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde. RED: ContractsJobTests falló con AssertionError: 'contracts' not found · 2026-11-12. Desviación: el trabajo corre en el runner con Python 3.13 y no en la imagen de test, porque (a) esa imagen ya ejecuta test_contract_additive dentro del trabajo server y (b) su Python es 3.11 y los contratos versionados (CRLF, escritos con 3.13) difieren en la sangría de las docstrings: comprobado en local, la exportación desde la imagen difiere en 2 descripciones; el diff se hace con git diff --ignore-cr-at-eol. La exportación local con la imagen no se pudo usar como prueba directa porque el entorno local no tiene dependencias; se verifica en la ejecución de CI de T-05. Tiempo IA: incluido en T-01. Commit ceeaa2d.
+**Notas**: Procedencia: spec CA-01/CA-07. Patrones: `memory_platform/tests/test_contract_additive.py:28-40` (regla aditiva), `scripts/export-contracts.py:11-30`. Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde. RED: ContractsJobTests falló con AssertionError: 'contracts' not found · 2026-11-12. Desviación: el trabajo corre en el runner con Python 3.13 y no en la imagen de test, porque (a) esa imagen ya ejecuta test_contract_additive dentro del trabajo server y (b) su Python es 3.11 y los contratos versionados (CRLF, escritos con 3.13) difieren en la sangría de las docstrings: comprobado en local, la exportación desde la imagen difiere en 2 descripciones; el diff se hace con git diff --ignore-cr-at-eol. La exportación local con la imagen no se pudo usar como prueba directa porque el entorno local no tiene dependencias; se verifica en la ejecución de CI de T-05. Tiempo IA: incluido en T-01. Commit ceeaa2d. Revisión intento 1 (fix1): el trabajo `contracts` falla también con ficheros sin seguimiento o borrados en `docs/contracts` (`git status --porcelain --untracked-files=all` filtrado por `??`, ` D`, `D `, dentro de un `if`: un `! pipeline` no dispara `set -e`); no se usa 'status vacío' porque los contratos versionados son CRLF y el exportado en Linux es LF, así que `M` aparecería siempre y lo cubre `git diff --ignore-cr-at-eol`. Comprobado en un repo temporal: exit 0 limpio, exit 1 con `??` y con ` D`. El paso ya no dice 'initiative base': nombra `memory_platform/tests/contracts_base` (6008da0), que T-26 reasigna. RED: test_contracts_job_fails_on_untracked_or_deleted_contract_files y test_the_initiative_base_step_names_the_base_it_really_compares_with fallaron · 2026-11-12. usage-meter close three-components/T-03-fix1: ventana compartida con T-01-fix1 (0.13 h IA, medido, no sumar).
 
 ### T-04 — Puerta de higiene del workflow: sin secretos, sin publicar, sin servicios desplegados
 
@@ -168,13 +168,13 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 **Criterios de aceptación**
 - [x] El test falla si se introduce `secrets.X` distinto de `GITHUB_TOKEN`, `docker push`, `npm publish` o `knowledge-graphs-`
 - [x] Con el workflow actual el test pasa
-- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar — EXCEPCIÓN: sin JSON propio del tramo original (se midió solo en el bloque de T-01; tiempo (estimado)); la corrección fix1 sí tiene JSON (medido, en Notas)
 
 **Subtareas**
 - [x] Escribir el test con un caso positivo y tres negativos sobre texto sintético
-- [x] `usage-meter start/close`
+- [x] `usage-meter start/close` — EXCEPCIÓN: tiempo del tramo original (estimado), sin start/close propio
 
-**Notas**: Procedencia: spec CA-02/CA-30. Patrón: `memory_platform/tests/test_deploy_isolation.py:29-48` (rechaza el nombre de la instalación real). Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde. RED: HygieneTests falló con NameError: name 'hygiene_violations' is not defined (10 errores) · 2026-11-12. Verde: python -m unittest discover -s scripts/tests -p test_ci_workflow.py → Ran 14 tests, OK. grep -nEi "secrets\.|docker push|npm publish|push: true|knowledge-graphs-" .github/workflows/ci.yml → sin coincidencias (exit 1). Cubre 1 caso positivo y 3 grupos negativos (secreto ajeno, publicación, recurso knowledge-graphs-*). Tiempo IA: incluido en T-01. Commit ceeaa2d.
+**Notas**: Procedencia: spec CA-02/CA-30. Patrón: `memory_platform/tests/test_deploy_isolation.py:29-48` (rechaza el nombre de la instalación real). Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde. RED: HygieneTests falló con NameError: name 'hygiene_violations' is not defined (10 errores) · 2026-11-12. Verde: python -m unittest discover -s scripts/tests -p test_ci_workflow.py → Ran 14 tests, OK. grep -nEi "secrets\.|docker push|npm publish|push: true|knowledge-graphs-" .github/workflows/ci.yml → sin coincidencias (exit 1). Cubre 1 caso positivo y 3 grupos negativos (secreto ajeno, publicación, recurso knowledge-graphs-*). Tiempo IA: incluido en T-01. Commit ceeaa2d. Revisión intento 1 (fix1): la puerta de higiene detecta además `toJSON(secrets)`, `permissions` distinto de `contents: read` (workflow y trabajo), `gh release`, `twine upload`, `${{ github.event.` dentro de `run:`, `--privileged`, `docker.sock`, `continue-on-error: true`, `|| true` e `if: false`, cada una con su caso negativo (32 tests en total). Las reglas nuevas se escribieron junto a su caso negativo y el workflow actual ya las cumplía, así que su rojo se comprobó con el texto sintético de cada caso. usage-meter close three-components/T-04-fix1: ventana compartida con T-01-fix1 (0.13 h IA, medido, no sumar).
 
 ### T-05 — Puesta en verde del PR (CA-01) y enlace de la ejecución en el ledger
 
@@ -198,21 +198,22 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 - [x] Los cinco trabajos terminan en verde en el PR de esta rama; enlace anotado en `Notas`
 - [x] Los tiempos de cada trabajo en CI quedan anotados (la hipótesis de la spec pasa a hecho medido)
 - [x] Ningún test se desactiva ni se marca como omitido para conseguir el verde
-- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar — EXCEPCIÓN: sin JSON propio del tramo original (se midió solo en el bloque de T-01; tiempo (estimado)); la corrección fix1 sí tiene JSON (medido, en Notas)
 
 **Subtareas**
 - [x] Hacer `git push` de la rama y abrir el PR (acción visible: requiere confirmación del usuario si no está autorizada)
 - [x] Diagnosticar los fallos de Linux uno a uno
 - [x] Anotar enlace y tiempos
-- [x] `usage-meter start/close`
+- [x] `usage-meter start/close` — EXCEPCIÓN: tiempo del tramo original (estimado), sin start/close propio
 
-**Notas**: Procedencia: spec CA-01, R-08. Dependencia externa: Actions activas en el repositorio (P-01, decidida). Si el repositorio no admite el `push` o Actions no está activo, la tarea queda bloqueada, no se sustituye por una ejecución local. Clase: defecto de entorno (oráculo: el trabajo en rojo en CI antes de cada arreglo). Ejecución en verde en la rama: https://github.com/daycry/kairos/actions/runs/43202850710 (feat/three-components, commit 4b22aa5): 5 × success. Tiempos medidos en CI (ubuntu-latest): server 127 s (483 pruebas, 0 fallos/errores/omitidas, línea base igual), retrieval-eval 162 s, client 30 s, web 43 s, contracts 14 s (la hipótesis de la spec pasa a hecho medido). Primera ejecución verde: https://github.com/daycry/kairos/actions/runs/43200885564. Desviaciones: (1) sin PR, por autorización del usuario: ejecuciones por el disparador push (branches-ignore main). (2) La puesta en verde destapó tres defectos del propio workflow, corregidos con test en rojo antes (PipeFailureTests, test_the_suite_is_never_replayed_from_an_imported_cache, paso 'The gate really ran and passed'): a) la rama desechable mostró retrieval-eval en verde tras fallar su docker build, porque el shell por defecto es bash -e sin pipefail (run 43201411278): ahora defaults.run.shell: bash y set -euo pipefail; b) con --cache-from la última RUN del target test salió CACHED aunque se pasó --no-cache-filter y la suite no se ejecutó (run 43202142933, server en rojo por el paso de comprobación del registro): se quitó la caché de capas de actions/cache (la construcción limpia cuesta ~2 min); c) retrieval-eval ahora lee su RETRIEVAL_EVAL_RESULT con gate.passed true del registro. Ningún test se desactivó ni se omitió. Commits: ceeaa2d, 41ee014, 4b22aa5. Tiempo IA: usage-meter no devolvió medición para este tramo (null); estimado ~0.3h (estimado).
+**Notas**: Procedencia: spec CA-01, R-08. Dependencia externa: Actions activas en el repositorio (P-01, decidida). Si el repositorio no admite el `push` o Actions no está activo, la tarea queda bloqueada, no se sustituye por una ejecución local. Clase: defecto de entorno (oráculo: el trabajo en rojo en CI antes de cada arreglo). Ejecución en verde en la rama: https://github.com/daycry/kairos/actions/runs/43202850710 (feat/three-components, commit 4b22aa5): 5 × success. Tiempos medidos en CI (ubuntu-latest): server 127 s (483 pruebas, 0 fallos/errores/omitidas, línea base igual), retrieval-eval 162 s, client 30 s, web 43 s, contracts 14 s (la hipótesis de la spec pasa a hecho medido). Primera ejecución verde: https://github.com/daycry/kairos/actions/runs/43200885564. Desviaciones: (1) sin PR, por autorización del usuario: ejecuciones por el disparador push (branches-ignore main). (2) La puesta en verde destapó tres defectos del propio workflow, corregidos con test en rojo antes (PipeFailureTests, test_the_suite_is_never_replayed_from_an_imported_cache, paso 'The gate really ran and passed'): a) la rama desechable mostró retrieval-eval en verde tras fallar su docker build, porque el shell por defecto es bash -e sin pipefail (run 43201411278): ahora defaults.run.shell: bash y set -euo pipefail; b) con --cache-from la última RUN del target test salió CACHED aunque se pasó --no-cache-filter y la suite no se ejecutó (run 43202142933, server en rojo por el paso de comprobación del registro): se quitó la caché de capas de actions/cache (la construcción limpia cuesta ~2 min); c) retrieval-eval ahora lee su RETRIEVAL_EVAL_RESULT con gate.passed true del registro. Ningún test se desactivó ni se omitió. Commits: ceeaa2d, 41ee014, 4b22aa5. Tiempo IA: usage-meter no devolvió medición para este tramo (null); estimado ~0.3h (estimado). Revisión intento 1 (fix1): ver T-01; el run de verificación de las correcciones se anota abajo. usage-meter close three-components/T-05-fix1: ventana compartida con T-01-fix1 (0.13 h IA, medido, no sumar). El tiempo IA real de T-05 sigue (estimado).
 
 ### T-06 — Prueba de rojo en rama desechable (CA-03)
 
 - **Descripción**: En una rama desechable que no se fusiona, introducir un test que falla a propósito y comprobar que el trabajo correspondiente queda en rojo; borrar la rama. Anotar el enlace de la ejecución. Fuente: CA-03.
 - **Changelog**: 
-- **Estado**: en-progreso
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 1.0h (base) · real —
 - **Tiempo IA (ejec.)**: est. 0.12h (estimado) · real —
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
@@ -227,16 +228,16 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 
 **Criterios de aceptación**
 - [x] La ejecución de la rama desechable deja en rojo el trabajo `server` (enlace en `Notas`)
-- [ ] La rama se borra y no se fusiona; `git branch -a` no la lista al cerrar
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] La rama se borra y no se fusiona; `git branch -a` no la lista al cerrar
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar — EXCEPCIÓN: sin JSON propio (tiempo (estimado) 0.1h, ver Notas)
 
 **Subtareas**
 - [x] Crear rama `ci-red-probe`, añadir un test con `self.fail()`, empujar
 - [x] Comprobar el rojo y anotar el enlace
-- [ ] Borrar la rama local y remota
-- [ ] `usage-meter start/close`
+- [x] Borrar la rama local y remota
+- [x] `usage-meter start/close` — EXCEPCIÓN: tiempo del tramo (estimado), sin start/close propio
 
-**Notas**: Procedencia: spec CA-03. El `push` de la rama desechable es una acción sobre el remoto: pedir confirmación si no está autorizada. Clase: capacidad nueva (verificación negativa de la red de seguridad). BLOQUEADA SOLO EN EL BORRADO: el rojo está probado, pero el hook de guardarraíles bloquea `git branch -D` (el `-d` se niega porque la rama no está fusionada) y `git push --delete`; no se ha esquivado. Pendiente de quien tenga permiso: `git push origin --delete ci-red-probe` y `git branch -D ci-red-probe` (la rama local y la remota existen; el worktree temporal se retiró salvo un directorio residual `.git/worktrees/wt-probe` con permiso denegado: `git worktree prune`). Rojo comprobado: https://github.com/daycry/kairos/actions/runs/43201411278 (commit 4ba0a7c con test_ci_red_probe.py y self.fail(): server failure; retrieval-eval aparecía en verde por el defecto de pipefail, corregido en T-05) y, con el workflow corregido, https://github.com/daycry/kairos/actions/runs/43202864405 (server failure y retrieval-eval failure; client, web y contracts success). `gh run list --branch ci-red-probe --limit 1` → conclusion failure. La rama no se fusionó (el merge fue de feat/three-components hacia ci-red-probe, nunca al revés). usage-meter: sin start/close propio (el tramo se midió dentro del conjunto T-01..T-07); estimado 0.1h (estimado).
+**Notas**: Procedencia: spec CA-03. El `push` de la rama desechable es una acción sobre el remoto: pedir confirmación si no está autorizada. Clase: capacidad nueva (verificación negativa de la red de seguridad). CERRADA TRAS EL BORRADO (2026-11-12): el orquestador borró la rama local y la remota `ci-red-probe` con autorización del usuario; el implementer no pudo hacerlo por el hook (`git branch -D`, `git push --delete`), que no se esquivó. Histórico del bloqueo: el rojo está probado, pero el hook de guardarraíles bloquea `git branch -D` (el `-d` se niega porque la rama no está fusionada) y `git push --delete`; no se ha esquivado. Pendiente de quien tenga permiso: `git push origin --delete ci-red-probe` y `git branch -D ci-red-probe` (la rama local y la remota existen; el worktree temporal se retiró salvo un directorio residual `.git/worktrees/wt-probe` con permiso denegado: `git worktree prune`). Rojo comprobado: https://github.com/daycry/kairos/actions/runs/43201411278 (commit 4ba0a7c con test_ci_red_probe.py y self.fail(): server failure; retrieval-eval aparecía en verde por el defecto de pipefail, corregido en T-05) y, con el workflow corregido, https://github.com/daycry/kairos/actions/runs/43202864405 (server failure y retrieval-eval failure; client, web y contracts success). `gh run list --branch ci-red-probe --limit 1` → conclusion failure. La rama no se fusionó (el merge fue de feat/three-components hacia ci-red-probe, nunca al revés). usage-meter: sin start/close propio (el tramo se midió dentro del conjunto T-01..T-07); estimado 0.1h (estimado).
 
 ### T-07 — Documentar la CI en `docs/operations.md`
 
@@ -2340,3 +2341,17 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 **Notas**: Procedencia: retro de `retrieval-quality`, plan director (cierre). No escribe en `testing/`.
 
 ---
+
+## Revisión de dos lentes — intento 1: Fase 1 (CI) — workflow, higiene, verde y rojo comprobados, documentación (T-01, T-02, T-03, T-04, T-05, T-06, T-07)
+
+Lentes: A+B+C (C por la ruta `.github/workflows/`; D no aplica). Puerta previa: `scope-check --base be2a948` exit 0. Los cinco trabajos ejecutaron de verdad sus suites en el run 43202850710 (483 tests, `gate.passed: true`, 90 tests del CLI, 65 del portal, 8 de contrato); el rojo de T-06 está probado en el run 43202864405. Repositorio privado; permisos `contents: read`, sin secretos ni publicación. La rama `ci-red-probe` la borró el orquestador con autorización del usuario (2026-11-12), después de que un hook se lo impidiera al implementer.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | `contracts` usa `git diff --exit-code`, que no ve ficheros sin seguimiento: un `git rm` de un contrato versionado, o un contrato nuevo sin versionar, deja el trabajo en verde | T-03 | pendiente | Lentes A y B; `ci.yml:116-118`, reproducido en el scratchpad |
+| 2 | Important | El paso «The suite really ran and nothing was skipped» no tiene test: borrarlo o debilitar `"failures": 0` deja los 16 tests en verde; tampoco compara `tests` con la línea base de 483 | T-01, T-05 | pendiente | Lente B (mutantes en memoria); Lente A; `test_ci_workflow.py:60-64`, `ci.yml:37-44` |
+| 3 | Important | CA-01 pide verde «en el PR»; se cerró con un run `push` y el disparador `pull_request` nunca se ha ejecutado. La autorización del usuario consta solo en Notas, no en la spec ni en el plan | T-05, T-01 | pendiente | Lente A; `spec.md:157`, `tasks.md:198` |
+| 4 | Minor | La puerta de higiene se evade: `toJSON(secrets)`, `permissions` ampliados, `gh release create`/`twine upload`, `${{ github.event.* }}` en `run:`, `--privileged` o el socket de Docker, `continue-on-error`, `\|\| true`, `if: false` | T-04 | pendiente | Lentes B y C (CWE-532, 250, 693, 94); `test_ci_workflow.py:27-46`, `:110-122` |
+| 5 | Minor | `actions/checkout` deja el `GITHUB_TOKEN` en `.git/config` (`persist-credentials` por defecto) | T-01..T-03 | pendiente | Lente C (CWE-522); `ci.yml:83-89`, `:107-112` |
+| 6 | Minor | Acciones fijadas por etiqueta y no por SHA | T-01..T-03 | pendiente | Lente C (CWE-829); `ci.yml:31,68,84,108` |
+| 7 | Minor | Notas de T-01 citan `--no-cache-filter` y «caché de capas», que T-05 retiró; criterios de usage-meter marcados [x] sin JSON en T-02..T-05; el paso de `contracts` dice «initiative base» pero compara con `contracts_base` (6008da0) | T-01..T-05 | pendiente | Lentes A y B; `tasks.md:60,87,111,141,171,201`; `ci.yml:113` |
