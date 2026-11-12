@@ -636,7 +636,7 @@ RED: `memory_platform/tests/test_no_llm.py` falló con AssertionError: 'beam:clo
 - **Previsión IA**: 60 k in / 5 k out tok · ⚠️ verificar €
 - **Dependencias**: T-17
 - **Tipo**: backend
-- **Archivos**: `memory_platform/models.py`, `memory_platform/app.py`, `memory_platform/tests/test_api.py`, `docs/contracts/memory-platform.openapi.json`
+- **Archivos**: `memory_platform/models.py`, `memory_platform/app.py`, `memory_platform/tests/test_api.py`, `docs/contracts/memory-platform.openapi.json`, `memory_platform/agent_store.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t18 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
@@ -656,6 +656,8 @@ RED: `memory_platform/tests/test_no_llm.py` falló con AssertionError: 'beam:clo
 
 
 RED: `memory_platform/tests/test_api.py::ParityEndpointTests::test_build_corpus_accepts_date_start_and_date_end_like_the_tool` falló con AssertionError: 422 != 200 (campos date_start/date_end rechazados por extra=forbid) contra las fuentes de HEAD · 2026-11-12.
+
+Corrección intento 1 (gap 2, 16539ea): `agent_store.corpus_filters` captura `OverflowError` además de `ValueError` (fechas válidas extremas → 422 `Invalid ISO date filter`); test REST y MCP `test_extreme_valid_dates_are_invalid_input_through_the_endpoint_and_the_tool`. usage-meter three-components/T-18-fix1: 0.05 h IA (medido, win-4c1e82fe). Suite: 591 tests, 0 fallos, 0 omitidos, `llm_chat_calls` 0.
 
 ### T-19 — Endpoint `/v1` de `capture_policy`
 
@@ -789,6 +791,8 @@ RED: `memory_platform/tests/test_api.py::ParityEndpointTests::test_observation_r
 
 RED: `memory_platform/tests/test_api.py::ParityEndpointTests::test_query_corpus_returns_what_the_tool_returns_without_a_language_model` falló con AssertionError: 404 != 409 (la ruta corpora/{name}/query no existe) contra las fuentes de HEAD · 2026-11-12.
 
+Corrección intento 1 (gap 4, 16539ea): las cinco rutas `…/corpora/{name}/…` pasan a `{name:path}` (un nombre con `/` enviado como `%2F` llega a query, prime, rebuild, answers y status; OpenAPI sigue mostrando `{name}`, contrato OpenAPI sin diferencias); test `test_a_corpus_name_with_a_slash_is_reached_by_every_route_with_a_name_like_the_tool` y casos `*_slash` en la paridad. usage-meter three-components/T-22-fix1: 0.01 h IA (medido, win-7a3127dc).
+
 ### T-23 — Endpoint `/v1` de `team_search`
 
 - **Descripción**: Crear el endpoint de búsqueda de trabajo de equipo (`team_search`). Fuente: CA-05; hallazgo «Falta».
@@ -833,7 +837,7 @@ RED: `memory_platform/tests/test_api.py::ParityEndpointTests::test_team_search_r
 - **Previsión IA**: 100 k in / 9 k out tok · ⚠️ verificar €
 - **Dependencias**: T-23
 - **Tipo**: backend
-- **Archivos**: `scripts/export-contracts.py`, `docs/contracts/kairos-mcp.json`, `docs/contracts/memory-platform.openapi.json`, `memory_platform/tests/test_contract_additive.py`
+- **Archivos**: `scripts/export-contracts.py`, `docs/contracts/kairos-mcp.json`, `docs/contracts/memory-platform.openapi.json`, `memory_platform/tests/test_contract_additive.py`, `memory_platform/tests/test_tool_endpoint_parity.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t24 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
@@ -855,6 +859,8 @@ RED: `memory_platform/tests/test_api.py::ParityEndpointTests::test_team_search_r
 
 
 RED: `memory_platform/tests/test_contract_additive.py::ContractAdditiveTests::test_ca04_every_tool_declares_an_endpoint_that_exists_in_the_openapi_or_is_local` falló con AssertionError: unexpectedly None : projects has no x-kairos-endpoint contra las fuentes de HEAD · 2026-11-12.
+
+Corrección intento 1 (gap 1, 16539ea): `x-kairos-endpoint` pasa a `{method, path, args, [fixed], [without_project_id]}`: `args` lista TODOS los argumentos de la herramienta (`in` path/query/body, `name` REST, `transform: csv-list` para `types/concepts/files`, cuerpo completo si no hay `name`), `fixed` (`fresh: true` de `reprime_corpus`), `when_absent` (lectura + pick) para `rebuild_corpus.expected_version`, y `without_project_id` con la composición y la regla `complete` (recibo `superseded` nunca completo) de `event_status`; reglas generales en la clave nueva `x-kairos-translation` de `kairos-mcp.json`. Decisión: NO se relaja `CorpusRebuild` en el servidor (su `required` ya está en la línea base 6008da0 y quitarlo no es aditivo: lo probó `test_contract_additive`), por eso el contrato declara la transformación; `expected_version: 0` no es traducible (la herramienta da conflicto, el endpoint 422: ambos rechazan). `types` como cadena: transformación declarada, el endpoint sigue aceptando solo listas. Comentario del exportador corregido. Contrato: 34 herramientas, OpenAPI sin cambios, kairos-mcp.json solo gana claves. usage-meter three-components/T-24-fix1: 0.16 h IA (medido, win-bf9902fd). PARADA POR ORDEN DEL USUARIO tras el commit 16539ea; quedan: CI del commit (push), comprobar diff aditivo contra 33fd830 con scope-check y el cierre de la revisión (intento 2).
 
 ### T-25 — Prueba de correspondencia: las 34 herramientas por el MCP interno y por `/v1` (CA-06)
 
@@ -890,6 +896,8 @@ RED: `memory_platform/tests/test_contract_additive.py::ContractAdditiveTests::te
 
 
 RED: `memory_platform/tests/test_tool_endpoint_parity.py::ToolEndpointParityTests::test_parity_team_search` falló con mutación (ruta team-search renombrada a team-find en app.py): ERROR test_parity_team_search, la ruta declarada responde 404; con limit=1 fijo en observation_search: FAIL test_parity_observation_search · 2026-11-12.
+
+Corrección intento 1 (gaps 1 y 3, 16539ea): el test ya no escribe la petición REST: `translate` genérico construye la petición desde los argumentos MCP y el contrato (incluye `when_absent` y la composición de `event_status`); 44 casos (todas las herramientas, más includeClosed con tarea cerrada, dateStart/dateEnd, types en cadena, rebuild sin expected_version, get_tool_uses con PostToolUse sembrado y contenido no vacío, event_status sin proyecto con recibo `superseded`, `corpus_answer_status` sobre una respuesta guardada, nombres con `/`); test estático de que cada argumento de cada herramienta tiene regla y apunta a una operación/parámetro/campo reales de OpenAPI; 6 tests de mutación (contrato por nombre → el test falla): ROJO demostrado con includeClosed, dateStart, types sin transform, project de get_tool_uses, `complete` sin la regla superseded y rebuild sin `when_absent`. usage-meter three-components/T-25-fix1: 0.30 h IA (medido, win-2d190371). Suite `kairos-test:i2p3fix`: 591 tests, 0 fallos, 0 omitidos, `llm_chat_calls` 0; puerta offline exit 0.
 
 ### T-26 — Línea base de contratos en `23ced03` y diff aditivo de OpenAPI y MCP (CA-07, CA-29)
 
@@ -2484,3 +2492,15 @@ Veredicto: **sin Critical ni Important; la Fase 2 cierra en el intento 3 de 3**.
 | # | Grado | Gap | Tarea | Corrección | Evidencia |
 |---|---|---|---|---|---|
 | 1 | Minor | Con `off`, la huella del reintento incluye `MEMORY_LLM_MODEL`; si el operador lo vacía o cambia al apagar, repetir la misma petición da `Conflict` en vez de la respuesta guardada. Sin pérdida de datos: `corpus_answer_status` la lee | T-11 | deuda aceptada en el código; la documentación (`docs/corpus-generated-answers.md`, `docs/configuration.md`, `CHANGELOG*.md`) lo dice y remite a `corpus_answer_status` (commit de cierre de la fase) | `corpus_answers.py:250-251`, `test_corpus_answers.py:332`; recálculo de `digest` con modelo `''` frente a `synthetic-model`: distinto |
+
+## Revisión de dos lentes — intento 1: Fase 3 (paridad REST /v1) (T-18, T-19, T-20, T-21, T-22, T-23, T-24, T-25, T-26)
+
+Veredicto: **1 Important abierto** → vuelve al implementador (intento 2 de 3). Lentes: A, B (con rendimiento: D se activó solo por la ruta `scripts/export-contracts.py`) y C (forzada por el orquestador: endpoints nuevos con autorización). A: T-18..T-26 ✓; `openapi-lint --diff` 0 rompedores; contrato MCP idéntico a 33fd830 sin `x-kairos-endpoint`; línea base 23ced03 idéntica byte a byte; suite reproducida (573, 0 skipped). C: sin IDOR, sin enumeración por 404/403, sin SQLi. B: sin N+1 ni conflictos de enrutado.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | `x-kairos-endpoint` no describe cómo se traducen los argumentos; el exportador dice «by name» y es falso: `includeClosed` (se ignora en silencio y omite tareas cerradas), `dateStart`/`dateEnd` (422 por `extra=forbid`), `types` como cadena, `expected_version` opcional/0 en `rebuild_corpus` (422), `project` en query como `project_id` en `get_tool_uses`, `jobId`→`{job_id}`, `event`/`document` envueltos, regla `complete` de `without_project_id`. El test de paridad escribe la petición REST a mano y no lo caza. Bloquea la Fase 5 (kairos-mcp traduce desde el contrato) | T-24, T-25 | corregido (16539ea) | Lente B (`export-contracts.py:13-14,28,31,39,46`, `app.py:213,279`, `models.py:63`; app FastAPI mínima: `?includeClosed=true` → 200 con `False`); Lente A gap 3 (`test_tool_endpoint_parity.py:247`) |
+| 2 | Minor | Fechas extremas válidas (`0001-01-01T00:00:00+01:00`, `9999-12-31T23:59:59-01:00`) lanzan `OverflowError` no capturado → 503 en vez de 422 | T-18 | corregido (16539ea) | Lente B: `agent_store.py:144-149` |
+| 3 | Minor | Paridad trivial de `get_tool_uses` (sin eventos PostToolUse sembrados, `items` vacío) y `corpus_answer_status` comparado solo en la ruta de error | T-25 | corregido (16539ea) | Lente A: `test_tool_endpoint_parity.py:162,171,238-240` |
+| 4 | Minor | Un corpus con `/` en el nombre no se alcanza por `POST …/corpora/{name}/query` (404; por MCP sí). Mismo patrón que ya tenían prime, rebuild y answers | T-22 | corregido (16539ea) | Lente B: `app.py:301` |
+| 5 | Minor | Las lecturas REST de observaciones no tienen el tope de bytes de la herramienta MCP (32 KB / 256 KB); CWE-770 | T-21 | deuda planificada: el presupuesto de bytes lo aplica kairos-mcp (T-41..T-44, `mcp/kairos_mcp/budget.py`); la paridad exacta se mantiene mientras no haya truncado | Lente C: `app.py:250-266`, `agent_tools.py:15-27,44-47` |
