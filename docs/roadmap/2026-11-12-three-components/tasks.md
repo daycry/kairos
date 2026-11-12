@@ -39,13 +39,13 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Integración continua (C-01) | 8 | 8 | 100% | 0 / 18.0h | 0 / 2.3h | 0 / 0.6h | 0 / 578 k |
 | Fase 2 — Servidor sin modelo de lenguaje (C-04) | 9 | 9 | 100% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
-| Fase 3 — Paridad REST /v1 (C-02) | 7 | 10 | 70% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
+| Fase 3 — Paridad REST /v1 (C-02) | 8 | 10 | 80% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 0 | 8 | 0% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 0 | 15 | 0% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **24** | **74** | **32.4%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **25** | **74** | **33.8%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -859,10 +859,11 @@ RED: `memory_platform/tests/test_contract_additive.py::ContractAdditiveTests::te
 ### T-25 — Prueba de correspondencia: las 34 herramientas por el MCP interno y por `/v1` (CA-06)
 
 - **Descripción**: Escenario sembrado en PostgreSQL aislado: llamar a cada herramienta por el MCP interno y a su endpoint por `/v1` con la misma credencial y argumentos, y comparar el contenido (salvo presupuesto de bytes y campos aditivos de S-05). Recorre las 34. Fuente: CA-06.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: Una prueba recorre las 34 herramientas MCP y compara su respuesta con la del endpoint `/v1` que declara el contrato, con la misma clave y los mismos argumentos; una ruta que falte o cambie de contenido la pone en rojo.
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 3.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.43h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.43h (estimado) · real 0.18h (medido, ventana win-65490a67, 15:52Z-16:02Z)
 - **Supervisión**: est. 0.11h (≈25 % IA) · real —
 - **Previsión IA**: 120 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: T-24
@@ -874,18 +875,21 @@ RED: `memory_platform/tests/test_contract_additive.py::ContractAdditiveTests::te
   - `docker build` anterior incluye `test_tool_endpoint_parity` con 34 casos → `ok`
 
 **Criterios de aceptación**
-- [ ] La prueba recorre las 34 herramientas y falla si falta una
-- [ ] El contenido devuelto es igual salvo presupuesto de bytes y campos aditivos
-- [ ] Un endpoint ausente o con otra semántica hace fallar la prueba (mutación manual comprobada)
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] La prueba recorre las 34 herramientas y falla si falta una
+- [x] El contenido devuelto es igual salvo presupuesto de bytes y campos aditivos
+- [x] Un endpoint ausente o con otra semántica hace fallar la prueba (mutación manual comprobada)
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Sembrar el escenario
-- [ ] Escribir el recorrido parametrizado
-- [ ] Probar una mutación para ver el rojo
-- [ ] `usage-meter start/close`
+- [x] Sembrar el escenario
+- [x] Escribir el recorrido parametrizado
+- [x] Probar una mutación para ver el rojo
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-06. Patrón: arnés de herramientas en `memory_platform/tests/test_mcp.py` y `test_agent_tools.py`. Es la base de la comparación de C-03 (T-47/T-48). Clase: capacidad nueva (oráculo: rojo al quitar un endpoint).
+**Notas**: Procedencia: spec CA-06. Patrón: arnés de herramientas en `memory_platform/tests/test_mcp.py` y `test_agent_tools.py`. Es la base de la comparación de C-03 (T-47/T-48). Clase: capacidad nueva (oráculo: rojo al quitar un endpoint). Implementación: `memory_platform/tests/test_tool_endpoint_parity.py` siembra una vez un escenario en PostgreSQL aislado (dos observaciones, un evento con trabajo `extract`, dos documentos, cuatro corpus —uno preparado, uno para reconstruir y dos gemelos para `reprime_corpus`—, trabajo privado y de equipo) y una clave de escritor con `read`, `write`, `publish` y `validate`; la tabla `CASES` (función `cases`) trae por herramienta los argumentos MCP y la petición `/v1`. Genera 34 tests `test_parity_<herramienta>` (uno por herramienta; `important_workflow` es local: se comprueba que responde y que el contrato dice `local`) más dos de cobertura: la tabla, las herramientas que lista el servidor y las del contrato exportado son exactamente las mismas 34, y la ruta de cada caso es la declarada en `x-kairos-endpoint` (con los ids sustituidos por sus marcadores). Cada caso llama primero a la herramienta por `/mcp/` y después al endpoint (las escrituras son idempotentes, así que el endpoint devuelve el mismo recibo), exige el mismo estado (ok/error) y el mismo contenido; solo se ignoran `id`, `name` y `session_id` en `reprime_corpus` (abre una sesión nueva en cada llamada) y el prefijo `Error executing tool X:` que FastMCP antepone a los errores. `corpus_answer` y `corpus_answer_status` son los dos únicos casos que se espera que rechacen (generación apagada, P-04) y deben dar el mismo mensaje; `event_status` se comprueba además sin `project_id` (recibo y trabajos por `GET /v1/events/{id}` y `GET /v1/jobs/{id}`). Espía de T-15 activo: `tearDownClass` exige 0 llamadas a `/api/chat`. Diferencias permitidas por la spec (presupuesto de bytes de `render` y campos aditivos de S-05): hoy ninguna se produce, por lo que la igualdad es exacta. Mutaciones comprobadas (bucle rápido sobre el árbol, revertidas byte a byte): renombrar `/team-search` a `/team-find` en `app.py` → `test_parity_team_search` en error (404); pasar `limit=1` fijo en `observation_search` → `test_parity_observation_search` en fallo (contenido distinto); el resto en verde (35 de 36). Verificación: MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 572} (docker build --target test, rc 0, kairos-test:t25); el log del build contiene 34 `test_parity_*` en `ok` y `ToolEndpointParityTests` completo (36 tests). usage-meter close three-components/T-25: 0.18 h IA (medido, win-65490a67d2ca4562ad1fd09a8c3008cb).
+
+
+RED: `memory_platform/tests/test_tool_endpoint_parity.py::ToolEndpointParityTests::test_parity_team_search` falló con mutación (ruta team-search renombrada a team-find en app.py): ERROR test_parity_team_search, la ruta declarada responde 404; con limit=1 fijo en observation_search: FAIL test_parity_observation_search · 2026-11-12.
 
 ### T-26 — Línea base de contratos en `23ced03` y diff aditivo de OpenAPI y MCP (CA-07, CA-29)
 
