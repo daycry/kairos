@@ -235,6 +235,11 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
         from .extended_store import ExtendedStore
         return ExtendedStore(store).team_write(actor, project_id, payload.list, payload.fields, payload.request_id, payload.expected_version)
 
+    @app.get('/v1/projects/{project_id}/team-search', operation_id='kairos_team_search')
+    def team_search(project_id: str, query: str = Query(default='', max_length=2000), limit: int = Query(default=20, ge=1, le=100), actor=Depends(identity)):
+        from .extended_store import ExtendedStore
+        return ExtendedStore(store).team_search(actor, project_id, query, limit)
+
     @app.get('/v1/projects/{project_id}/team-brief', operation_id='kairos_team_brief')
     def team_brief(project_id: str, limit: int = Query(default=20, ge=1, le=100), actor=Depends(identity)):
         from .extended_store import ExtendedStore

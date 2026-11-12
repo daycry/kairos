@@ -39,13 +39,13 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Integración continua (C-01) | 8 | 8 | 100% | 0 / 18.0h | 0 / 2.3h | 0 / 0.6h | 0 / 578 k |
 | Fase 2 — Servidor sin modelo de lenguaje (C-04) | 9 | 9 | 100% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
-| Fase 3 — Paridad REST /v1 (C-02) | 5 | 10 | 50% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
+| Fase 3 — Paridad REST /v1 (C-02) | 6 | 10 | 60% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 0 | 8 | 0% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 0 | 15 | 0% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **22** | **74** | **29.7%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **23** | **74** | **31.1%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -792,30 +792,34 @@ RED: `memory_platform/tests/test_api.py::ParityEndpointTests::test_query_corpus_
 ### T-23 — Endpoint `/v1` de `team_search`
 
 - **Descripción**: Crear el endpoint de búsqueda de trabajo de equipo (`team_search`). Fuente: CA-05; hallazgo «Falta».
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: Nuevo `GET /v1/projects/{id}/team-search`: busca en el trabajo de equipo del proyecto con los mismos resultados que la herramienta `team_search`.
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 1.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.22h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.22h (estimado) · real 0.05h (medido, ventana win-dfc5ac09, 15:42Z-15:47Z)
 - **Supervisión**: est. 0.05h (≈25 % IA) · real —
 - **Previsión IA**: 60 k in / 5 k out tok · ⚠️ verificar €
 - **Dependencias**: T-22
 - **Tipo**: backend
-- **Archivos**: `memory_platform/app.py`, `memory_platform/models.py`, `memory_platform/tests/test_api.py`, `memory_platform/tests/test_extended_gateway.py`
+- **Archivos**: `memory_platform/app.py`, `memory_platform/models.py`, `memory_platform/tests/test_api.py`, `memory_platform/tests/test_extended_gateway.py`, `docs/contracts/memory-platform.openapi.json`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t23 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
 
 **Criterios de aceptación**
-- [ ] El endpoint devuelve lo mismo que la herramienta `team_search`
-- [ ] Test de acceso permitido, 403 y proyecto ajeno
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] El endpoint devuelve lo mismo que la herramienta `team_search`
+- [x] Test de acceso permitido, 403 y proyecto ajeno
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Test en rojo
-- [ ] Añadir ruta y modelo
-- [ ] `usage-meter start/close`
+- [x] Test en rojo
+- [x] Añadir ruta y modelo
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-05. Patrón: `ExtendedStore.team_search` en `memory_platform/extended_store.py:202`; rutas hermanas `…/team-work` y `…/team-brief` en `memory_platform/app.py:222-251`. Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde.
+**Notas**: Procedencia: spec CA-05. Patrón: `ExtendedStore.team_search` en `memory_platform/extended_store.py:202`; rutas hermanas `…/team-work` y `…/team-brief` en `memory_platform/app.py:222-251`. Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde. Implementación: `GET /v1/projects/{project_id}/team-search?query=&limit=` (`kairos_team_search`; `query` opcional de hasta 2000 caracteres, `limit` de 1 a 100, por defecto 20) que llama a `ExtendedStore.team_search` con los argumentos de la herramienta, junto a sus rutas hermanas `team-work` y `team-brief`. Requiere lectura: una clave sin lectura recibe 403, la de otro proyecto 404, sin credencial 401. Test `test_team_search_returns_what_the_tool_returns` (en `test_api.ParityEndpointTests`; `test_extended_gateway.py` y `models.py` no hicieron falta: no hay cuerpo nuevo): dos listas de equipo escritas por REST, búsqueda con coincidencia única y sin filtro (orden `docs`, `release`), igualdad con la herramienta por el MCP interno, límites 422. Contrato: OpenAPI aditivo (0 líneas quitadas), `openapi.json` añadido a `Archivos`. Verificación: MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 535} (docker build --target test, rc 0, kairos-test:t23). usage-meter close three-components/T-23: 0.05 h IA (medido, win-dfc5ac09c7af4c3e82b072144457d57e).
+
+
+RED: `memory_platform/tests/test_api.py::ParityEndpointTests::test_team_search_returns_what_the_tool_returns` falló con AssertionError: 404 != 200 (la ruta team-search no existe) contra las fuentes de HEAD · 2026-11-12.
 
 ### T-24 — `x-kairos-endpoint` por herramienta en el contrato MCP
 

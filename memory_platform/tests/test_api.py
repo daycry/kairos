@@ -408,6 +408,24 @@ class ParityEndpointTests(unittest.TestCase):
         self.assertEqual(self.client.post(corpus + '/missing/query', json=body, headers=self.writer).status_code, 404)
         self.assertEqual(self.client.post(url, json=body).status_code, 401)
 
+    def test_team_search_returns_what_the_tool_returns(self):
+        for name, task in (('release', 'Rotate the fencing token'), ('docs', 'Write the handbook')):
+            written = self.client.post(self.prefix + '/team-work', json={'list': name, 'fields': {'task': task, 'status': 'todo'}, 'request_id': 'r-' + name}, headers=self.writer)
+            self.assertEqual(written.status_code, 200, written.text)
+        url = self.prefix + '/team-search'
+        found = self.client.get(url, params={'query': 'fencing', 'limit': 5}, headers=self.reader)
+        self.assertEqual(found.status_code, 200, found.text)
+        self.assertEqual([item['list'] for item in found.json()['lists']], ['release'])
+        self.assertEqual(found.json(), self.tool(self.reader, 'team_search', {'project': self.pid, 'query': 'fencing', 'limit': 5}))
+        everything = self.client.get(url, headers=self.reader)  # query and limit are optional, as in the tool
+        self.assertEqual([item['list'] for item in everything.json()['lists']], ['docs', 'release'])
+        self.assertEqual(everything.json(), self.tool(self.reader, 'team_search', {'project': self.pid}))
+        self.assertEqual(self.client.get(url, params={'limit': 101}, headers=self.reader).status_code, 422)
+        self.assertEqual(self.client.get(url, params={'limit': 0}, headers=self.reader).status_code, 422)
+        self.assertEqual(self.client.get(url, params={'query': 'fencing'}, headers=self.headers(['write'])).status_code, 403)
+        self.assertEqual(self.client.get(url, params={'query': 'fencing'}, headers=self.foreign).status_code, 404)
+        self.assertEqual(self.client.get(url).status_code, 401)
+
 
 class DegradedSemanticHttpTests(unittest.TestCase):
     """CA-16 and CA-17 over HTTP with the real retrieval: a failing embeddings provider degrades, it does not fail."""
