@@ -93,6 +93,8 @@ Orden de ejecución. Las iniciativas 5 y 6 pueden ir en paralelo a partir del ci
 
 **Cierre**: copia restaurada y comparada; rama subida.
 
+**Estado (2026-11-12)**: cerrada. La rama está subida y el README usa `npm pack` (O-07, hecho en la Iniciativa 1). Los secretos reales están en `C:/docker-secrets/knowledge-memory`, fuera del repositorio y de OneDrive, y Git no sigue ningún fichero de secretos (S-10). La copia y la prueba de restauración (O-01, O-02) no se hacen: el usuario decidió el 2026-11-12 que los datos actuales no se migran a producción (decisión abierta 4).
+
 ### Iniciativa 1 — Cerrar `retrieval-quality` (fases 6 a 8)
 
 Se retoma en `docs/roadmap/2026-11-09-retrieval-quality/` con estos ajustes:
@@ -223,5 +225,5 @@ Orden por dependencias.
 1. Modelo por defecto del observador (Iniciativa 6).
 2. Reutilizar código de claude-mem o reimplementar.
 3. Cuántas personas usarán Kairos: condiciona el alcance de la gestión de usuarios (Iniciativa 4).
-4. Migrar los datos de la instalación local o empezar de cero en el VPS (Iniciativa 5).
+4. ~~Migrar los datos de la instalación local o empezar de cero en el VPS (Iniciativa 5).~~ **Decidido el 2026-11-12**: los datos actuales no se migran a producción; el VPS empieza de cero.
 5. Retirada de Kwipu y Graphiti: versión mayor inmediata o periodo con aviso (Iniciativa 7).
