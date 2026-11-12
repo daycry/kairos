@@ -51,15 +51,24 @@ def main():
             if not run()['gate']['passed']:
                 raise SystemExit(1)
             return
+        # CA-18: the suite runs as a default install does, with no language model configured and Ollama replaced by a loopback
+        # spy that answers 500 to /api/chat and /api/generate and counts them; any call fails the run below.
+        from memory_platform.tests.llm_spy import ChatSpy
+        spy = ChatSpy().start()
+        for name in ('MEMORY_LLM_MODEL', 'MEMORY_EXTRACT_ENABLED', 'MEMORY_CORPUS_ANSWER'):
+            os.environ.pop(name, None)
+        os.environ['MEMORY_OLLAMA_URL'] = spy.url
         suite = unittest.defaultTestLoader.discover(str(Path(__file__).parent), pattern='test_*.py', top_level_dir=str(Path(__file__).parents[2]))
         result = unittest.TextTestRunner(verbosity=2).run(suite)
+        chat_calls = len(spy.chat_calls)
+        spy.stop()
         if result.testsRun == 0:
             raise SystemExit('No tests were discovered; refusing an empty green build.')
         report = {'database': 'PostgreSQL', 'database_version': subprocess.check_output(['postgres', '--version'], text=True).strip(),
                   'tests': result.testsRun, 'failures': len(result.failures), 'errors': len(result.errors),
-                  'skipped': len(result.skipped), 'passed': result.wasSuccessful(), 'environment': 'isolated-container-build'}
+                  'skipped': len(result.skipped), 'passed': result.wasSuccessful() and chat_calls == 0, 'llm_chat_calls': chat_calls, 'environment': 'isolated-container-build'}
         print('MEMORY_TEST_RESULT ' + json.dumps(report, sort_keys=True), flush=True)
-        if not result.wasSuccessful():
+        if not report['passed']:
             raise SystemExit(1)
     finally:
         if started:
