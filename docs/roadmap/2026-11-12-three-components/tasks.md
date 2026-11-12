@@ -39,13 +39,13 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Integración continua (C-01) | 8 | 8 | 100% | 0 / 18.0h | 0 / 2.3h | 0 / 0.6h | 0 / 578 k |
 | Fase 2 — Servidor sin modelo de lenguaje (C-04) | 9 | 9 | 100% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
-| Fase 3 — Paridad REST /v1 (C-02) | 4 | 10 | 40% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
+| Fase 3 — Paridad REST /v1 (C-02) | 5 | 10 | 50% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 0 | 8 | 0% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 0 | 15 | 0% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **21** | **74** | **28.4%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **22** | **74** | **29.7%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -759,31 +759,35 @@ RED: `memory_platform/tests/test_api.py::ParityEndpointTests::test_observation_r
 ### T-22 — Endpoint `/v1` de `query_corpus`
 
 - **Descripción**: Crear el endpoint de consulta de un corpus (`query_corpus`) con la misma semántica que `AgentStore.query_corpus`. Fuente: CA-05; hallazgo «Falta».
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: Nuevo `POST /v1/projects/{id}/corpora/{name}/query`: consulta un corpus ya preparado y devuelve la misma evidencia léxica que la herramienta `query_corpus`, sin llamar a ningún modelo de lenguaje.
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 2.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.36h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.36h (estimado) · real 0.04h (medido, ventana win-7f7ac855, 15:36Z-15:42Z)
 - **Supervisión**: est. 0.09h (≈25 % IA) · real —
 - **Previsión IA**: 100 k in / 9 k out tok · ⚠️ verificar €
 - **Dependencias**: T-21
 - **Tipo**: backend
-- **Archivos**: `memory_platform/app.py`, `memory_platform/models.py`, `memory_platform/tests/test_api.py`
+- **Archivos**: `memory_platform/app.py`, `memory_platform/models.py`, `memory_platform/tests/test_api.py`, `docs/contracts/memory-platform.openapi.json`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t22 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
 
 **Criterios de aceptación**
-- [ ] El endpoint devuelve el mismo contenido que la herramienta para igual credencial y argumentos
-- [ ] Test de acceso permitido, 403 y proyecto ajeno
-- [ ] No llama a ningún modelo de lenguaje (usa el espía de T-15)
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] El endpoint devuelve el mismo contenido que la herramienta para igual credencial y argumentos
+- [x] Test de acceso permitido, 403 y proyecto ajeno
+- [x] No llama a ningún modelo de lenguaje (usa el espía de T-15)
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Test en rojo
-- [ ] Añadir ruta y modelo
-- [ ] `usage-meter start/close`
+- [x] Test en rojo
+- [x] Añadir ruta y modelo
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-05. Patrón: `AgentStore.query_corpus` en `memory_platform/agent_store.py:345` (ya añade aviso de contenido no fiable). Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde.
+**Notas**: Procedencia: spec CA-05. Patrón: `AgentStore.query_corpus` en `memory_platform/agent_store.py:345` (ya añade aviso de contenido no fiable). Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde. Implementación: `POST /v1/projects/{project_id}/corpora/{name}/query` (`kairos_query_corpus`), cuerpo `CorpusQuery` (`question` de 1 a 4000 caracteres, `limit` de 1 a 50, por defecto 10) que llama a `AgentStore.query_corpus` con los mismos argumentos que la herramienta (el servicio ya añade `warning` de dato no fiable, el presupuesto de respuesta y el historial acotado). Exige permiso de escritura (la consulta registra el historial privado del corpus): el lector recibe 403; un corpus sin preparar, 409 (como la herramienta); un corpus desconocido o un proyecto ajeno, 404. Test `test_query_corpus_returns_what_the_tool_returns_without_a_language_model`: construye y prepara el corpus por REST, igualdad con la herramienta por el MCP interno (con la misma clave: el corpus es privado de la clave), límites 422, 403/404/409/401. Espía de T-15: `ParityEndpointTests` arranca ahora un `ChatSpy` y construye el `Settings` con su URL; `tearDown` exige 0 llamadas a `/api/chat` y `/api/generate` para todos los tests de la clase. Contrato: OpenAPI aditivo (0 líneas quitadas), `openapi.json` añadido a `Archivos`. Verificación: MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 534} (docker build --target test, rc 0, kairos-test:t22). usage-meter close three-components/T-22: 0.04 h IA (medido, win-7f7ac85562b346f799f654ad522d4399).
+
+
+RED: `memory_platform/tests/test_api.py::ParityEndpointTests::test_query_corpus_returns_what_the_tool_returns_without_a_language_model` falló con AssertionError: 404 != 409 (la ruta corpora/{name}/query no existe) contra las fuentes de HEAD · 2026-11-12.
 
 ### T-23 — Endpoint `/v1` de `team_search`
 

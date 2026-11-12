@@ -293,6 +293,12 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
         from .agent_store import AgentStore
         return AgentStore(store).prime_corpus(actor, project_id, name, fresh=payload.fresh)
 
+    @app.post('/v1/projects/{project_id}/corpora/{name}/query', operation_id='kairos_query_corpus')
+    def query_corpus(project_id: str, name: str, payload: m.CorpusQuery, actor=Depends(identity)):
+        # Lexical evidence from a primed corpus (the `query_corpus` tool): no provider, no model.
+        from .agent_store import AgentStore
+        return AgentStore(store).query_corpus(actor, project_id, name, payload.question, payload.limit)
+
     @app.post('/v1/projects/{project_id}/corpora/{name}/rebuild', operation_id='kairos_rebuild_corpus')
     def rebuild_corpus(project_id: str, name: str, payload: m.CorpusRebuild, actor=Depends(identity)):
         from .agent_store import AgentStore

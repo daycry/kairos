@@ -247,7 +247,9 @@ class ParityEndpointTests(unittest.TestCase):
     def setUp(self):
         self.store, self.admin, self.pid = create_core()
         origin = 'http://localhost:8790'
-        self.client = TestClient(create_app(Settings(self.store.dsn, allowed_origins=[origin]), store=self.store, auth=Auth(self.store, [origin])), base_url=origin)
+        from memory_platform.tests.llm_spy import ChatSpy
+        self.spy = ChatSpy().start()  # no endpoint of this class may reach a language model (CA-18)
+        self.client = TestClient(create_app(Settings(self.store.dsn, allowed_origins=[origin], ollama_url=self.spy.url), store=self.store, auth=Auth(self.store, [origin])), base_url=origin)
         self.client.__enter__()
         self.writer = self.headers(['read', 'write'])
         self.reader = self.headers(['read'])
@@ -258,6 +260,8 @@ class ParityEndpointTests(unittest.TestCase):
 
     def tearDown(self):
         self.client.__exit__(None, None, None)
+        self.spy.stop()
+        self.assertEqual(self.spy.chat_calls, [])
 
     def headers(self, scopes, projects=None):
         key = self.store.create_key(self.admin, {'name': 'parity', 'project_ids': projects or [self.pid], 'scopes': scopes})
@@ -380,6 +384,29 @@ class ParityEndpointTests(unittest.TestCase):
         self.assertEqual(listing.status_code, 200, listing.text)
         self.assertEqual(set(listing.json()), {'items', 'next_cursor', 'has_more', 'filters', 'ordering', 'rule_policy'})  # the shape of HEAD
         self.assertNotIn('mode', listing.json())
+
+    def test_query_corpus_returns_what_the_tool_returns_without_a_language_model(self):
+        self.add(item_id=str(uuid.uuid4()))
+        corpus = self.prefix + '/corpora'
+        self.assertEqual(self.client.post(corpus, json={'name': 'evidence'}, headers=self.writer).status_code, 200)
+        url = corpus + '/evidence/query'
+        body = {'question': 'fencing', 'limit': 5}
+        # a corpus must be primed before it is queried (the tool's Conflict)
+        self.assertEqual(self.client.post(url, json=body, headers=self.writer).status_code, 409)
+        self.assertEqual(self.client.post(corpus + '/evidence/prime', json={}, headers=self.writer).status_code, 200)
+        answer = self.client.post(url, json=body, headers=self.writer)
+        self.assertEqual(answer.status_code, 200, answer.text)
+        self.assertEqual(answer.json()['mode'], 'lexical_evidence')
+        self.assertIn('fencing', answer.json()['items'][0]['content'])
+        self.assertIn('untrusted', answer.json()['warning'])
+        self.assertEqual(answer.json(), self.tool(self.writer, 'query_corpus', {'project': self.pid, 'name': 'evidence', 'question': 'fencing', 'limit': 5}))
+        self.assertEqual(self.client.post(url, json={'question': 'fencing', 'limit': 51}, headers=self.writer).status_code, 422)
+        self.assertEqual(self.client.post(url, json={'question': ''}, headers=self.writer).status_code, 422)
+        # querying writes the private query history: a reader is refused, another project's key finds no project, an unknown corpus is a 404
+        self.assertEqual(self.client.post(url, json=body, headers=self.reader).status_code, 403)
+        self.assertEqual(self.client.post(url, json=body, headers=self.foreign).status_code, 404)
+        self.assertEqual(self.client.post(corpus + '/missing/query', json=body, headers=self.writer).status_code, 404)
+        self.assertEqual(self.client.post(url, json=body).status_code, 401)
 
 
 class DegradedSemanticHttpTests(unittest.TestCase):

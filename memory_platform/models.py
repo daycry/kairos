@@ -56,6 +56,10 @@ class ObservationIds(Model):
 class CorpusPrime(Model):
     fresh: bool = False
 
+class CorpusQuery(Model):
+    question: Annotated[str, Field(min_length=1, max_length=4000)]
+    limit: Annotated[int, Field(ge=1, le=50)] = 10
+
 class CorpusRebuild(Model):
     expected_version: Annotated[int, Field(ge=1, le=2_147_483_646)]
     force: bool = False
