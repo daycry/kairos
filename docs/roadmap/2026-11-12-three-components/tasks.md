@@ -38,14 +38,14 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase | Completadas | Total | Progreso | H. humanas (real/est) | H. IA ejec. (real/est) | Supervisión (real/est) | Tokens (real/est) |
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Integración continua (C-01) | 8 | 8 | 100% | 0 / 18.0h | 0 / 2.3h | 0 / 0.6h | 0 / 578 k |
-| Fase 2 — Servidor sin modelo de lenguaje (C-04) | 0 | 9 | 0% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
+| Fase 2 — Servidor sin modelo de lenguaje (C-04) | 8 | 9 | 88.9% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
 | Fase 3 — Paridad REST /v1 (C-02) | 0 | 10 | 0% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 0 | 8 | 0% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 0 | 15 | 0% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **8** | **74** | **11%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **16** | **74** | **21.6%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -306,111 +306,124 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 
 ## Fase 2 — Servidor sin modelo de lenguaje (C-04)
 
-**Estado**: borrador · **Estimado**: 37.8h (31.5h base) · **Real**: — · **Coste est.**: 1.890 € · **Tokens est.**: 1245 k
+**Estado**: en-progreso · **Estimado**: 37.8h (31.5h base) · **Real**: — · **Coste est.**: 1.890 € · **Tokens est.**: 1245 k
 
 ### T-09 — Interruptor `MEMORY_EXTRACT_ENABLED` en la ingesta con recibo aditivo
 
 - **Descripción**: Añadir `MEMORY_EXTRACT_ENABLED` (por defecto `0`). Con la extracción apagada, un evento con `generate: true` se acepta (202) sin crear trabajo `extract` y el recibo lleva el campo aditivo `extraction: "disabled"`. Ajustar los tests que asumían `extract` para que lo activen explícitamente. Fuente: CA-14, P-03 (decidida), R-03.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: Con la configuración por defecto, un resumen con `generate: true` se acepta con 202 sin crear trabajo de extracción y el recibo lo indica con `extraction: "disabled"`; el resto del recibo no cambia.
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 3.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.45h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.45h (estimado) · real 1.25h (medido, ventana win-271d361e de las 12:03Z a las 13:23Z: cubre T-09..T-16 en bloque; no sumar a las demás)
 - **Supervisión**: est. 0.11h (≈25 % IA) · real —
 - **Previsión IA**: 125 k in / 11 k out tok · ⚠️ verificar €
 - **Dependencias**: T-05
 - **Tipo**: backend
-- **Archivos**: `memory_platform/config.py`, `memory_platform/store_ingest.py`, `memory_platform/models.py`, `memory_platform/tests/test_native.py`, `memory_platform/tests/test_store.py`, `memory_platform/tests/test_ingest_extract_switch.py`
+- **Archivos**: `memory_platform/config.py`, `memory_platform/store_ingest.py`, `memory_platform/models.py`, `memory_platform/tests/test_native.py`, `memory_platform/tests/test_store.py`, `memory_platform/tests/test_ingest_extract_switch.py`, `memory_platform/tests/test_api.py`, `memory_platform/tests/test_embeddings.py`, `memory_platform/tests/test_fts_language.py`, `memory_platform/tests/test_jobs.py`, `memory_platform/tests/test_metrics.py`, `memory_platform/tests/test_portal_collections.py`, `memory_platform/tests/test_privacy.py`, `memory_platform/tests/live_probe.py`, `memory_platform/worker.py`, `memory_platform/app.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t09 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
   - `docker build` anterior incluye el test nuevo `test_ingest_extract_switch` → `ok`
 
 **Criterios de aceptación**
-- [ ] Con la configuración por defecto, un evento `summary` con `generate: true` devuelve 202, no crea trabajo `extract` y el recibo contiene `extraction: "disabled"`
-- [ ] Con `MEMORY_EXTRACT_ENABLED=1` el comportamiento actual no cambia (trabajo `extract` creado)
-- [ ] `test_native.py` y `test_store.py` pasan con la extracción activada de forma explícita donde la usan
-- [ ] El recibo no pierde ningún campo existente (solo se añade)
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] Con la configuración por defecto, un evento `summary` con `generate: true` devuelve 202, no crea trabajo `extract` y el recibo contiene `extraction: "disabled"`
+- [x] Con `MEMORY_EXTRACT_ENABLED=1` el comportamiento actual no cambia (trabajo `extract` creado)
+- [x] `test_native.py` y `test_store.py` pasan con la extracción activada de forma explícita donde la usan
+- [x] El recibo no pierde ningún campo existente (solo se añade)
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Test nuevo en rojo (`generate: true` con la configuración por defecto)
-- [ ] Añadir el ajuste en `Settings` y el filtro de `destinations`
-- [ ] Añadir `extraction` al recibo
-- [ ] Ajustar los tests de `test_native.py` y `test_store.py`
-- [ ] `usage-meter start/close`
+- [x] Test nuevo en rojo (`generate: true` con la configuración por defecto)
+- [x] Añadir el ajuste en `Settings` y el filtro de `destinations`
+- [x] Añadir `extraction` al recibo
+- [x] Ajustar los tests de `test_native.py` y `test_store.py`
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-14/P-03; CLI 0.3.0 envía `generate: true` en resúmenes (`packages/kairos-cli/lib/capture.mjs:84`). Patrón: el trabajo `extract` se decide en `memory_platform/store_ingest.py:183`; ajustes de `Settings` en `memory_platform/config.py:219-272`. Contrato de herramientas MCP: no cambia (solo el recibo crece). Clase: cambio de comportamiento → primer oráculo: test en rojo que fija el comportamiento nuevo; los tests que asumían el anterior se ajustan en la misma tarea.
+**Notas**: Procedencia: spec CA-14/P-03; CLI 0.3.0 envía `generate: true` en resúmenes (`packages/kairos-cli/lib/capture.mjs:84`). Patrón: el trabajo `extract` se decide en `memory_platform/store_ingest.py:183`; ajustes de `Settings` en `memory_platform/config.py:219-272`. Contrato de herramientas MCP: no cambia (solo el recibo crece). Clase: cambio de comportamiento → primer oráculo: test en rojo que fija el comportamiento nuevo; los tests que asumían el anterior se ajustan en la misma tarea. Implementación (commit 0e994bd, junto con T-10..T-12: `config.py` y los tests compartidos se entrelazan): `Settings.extract_enabled` (`MEMORY_EXTRACT_ENABLED`, solo `0` o `1`, por defecto `0`; otro valor impide arrancar); `store_ingest.py` crea el trabajo `extract` solo con la extracción activada y añade `extraction: "disabled"` al recibo cuando un `generate: true` no se atiende (no en `delete`); `models.Receipt.extraction` opcional (ese modelo no sale en el OpenAPI: el contrato no cambia). Desviación: `Store` tiene la superficie congelada (`store_surface.json` fija la firma de `__init__` y los nombres de clase; añadir el argumento rompió `test_store_surface`), así que el interruptor es un atributo de instancia `store.extraction_enabled` que fijan `create_app` y `worker.serve()` y que, sin fijar, vale apagado; `store_surface.json` intacto. Los tests que asumían `extract` lo activan explícitamente: `create_core(extraction=True)` (parámetro nuevo de `test_store.create_core`, por defecto apagado) o `store.extraction_enabled = True` en 15 tests de test_api, test_embeddings, test_fts_language, test_jobs, test_metrics, test_native, test_portal_collections, test_privacy y test_store; ficheros fuera del `Archivos` original añadidos aquí. `live_probe.py` (sonda opt-in con modelo real) exige ahora `MEMORY_LLM_MODEL` y activa la extracción. Verificación: MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 525} (docker build --target test, rc 0, sobre el commit efe05d7); `test_ingest_extract_switch` (7 tests) incluido y ok. usage-meter close three-components/T-09: horas_ia 1.25 (medido), tokens 240 in / 98591 out, 118 respuestas, ventana win-271d361e4fb642f19628d7db5231b546; es la ventana de todo el bloque T-09..T-16.
+
+
+RED: `memory_platform/tests/test_ingest_extract_switch.py` falló con AttributeError: 'Settings' object has no attribute 'extract_enabled'; KeyError: 'extraction'; AssertionError: ['embed', 'extract'] != ['embed'] (fuentes de HEAD, 3 fallos y 5 errores de 11 junto con T-10) · 2026-11-12.
 
 ### T-10 — El worker no instancia el proveedor `extract` con la extracción apagada
 
 - **Descripción**: Con `MEMORY_EXTRACT_ENABLED=0`, el worker no crea el proveedor `extract` (solo `embed`) y no reclama trabajos `extract` heredados sin dejarlos en estado ambiguo. Ajustar `test_worker.py` y `test_review_regressions.py`. Fuente: CA-14, CA-18, S-04.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: El worker ya no crea el proveedor de extracción por defecto; un trabajo de extracción que ya estaba en cola no se pierde: queda fallido con el motivo `extraction_disabled` y se puede reintentar al activar la extracción.
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 3.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.45h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.45h (estimado) · real 0.10h (medido, ventana win-25cfb04d abierta a las 13:12Z; solape con T-09, no sumar)
 - **Supervisión**: est. 0.11h (≈25 % IA) · real —
 - **Previsión IA**: 125 k in / 11 k out tok · ⚠️ verificar €
 - **Dependencias**: T-09
 - **Tipo**: backend
-- **Archivos**: `memory_platform/worker.py`, `memory_platform/tests/test_worker.py`, `memory_platform/tests/test_review_regressions.py`
+- **Archivos**: `memory_platform/worker.py`, `memory_platform/tests/test_worker.py`, `memory_platform/tests/test_review_regressions.py`, `memory_platform/observability.py`, `memory_platform/tests/test_native_runtime.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t10 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
 
 **Criterios de aceptación**
-- [ ] `Worker` construido con la configuración por defecto no tiene el proveedor `extract` (test que inspecciona `providers`)
-- [ ] Con la extracción activada el comportamiento y los tests actuales no cambian
-- [ ] Un trabajo `extract` preexistente con la extracción apagada no llama a ningún proveedor y queda registrado con un motivo explícito (sin perderse)
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] `Worker` construido con la configuración por defecto no tiene el proveedor `extract` (test que inspecciona `providers`)
+- [x] Con la extracción activada el comportamiento y los tests actuales no cambian
+- [x] Un trabajo `extract` preexistente con la extracción apagada no llama a ningún proveedor y queda registrado con un motivo explícito (sin perderse)
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Test en rojo sobre `providers`
-- [ ] Condicionar la creación del proveedor
-- [ ] Definir y probar el trato del trabajo `extract` heredado (aditivo: no se borra)
-- [ ] Ajustar los tests existentes
-- [ ] `usage-meter start/close`
+- [x] Test en rojo sobre `providers`
+- [x] Condicionar la creación del proveedor
+- [x] Definir y probar el trato del trabajo `extract` heredado (aditivo: no se borra)
+- [x] Ajustar los tests existentes
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-14. Patrón: `memory_platform/worker.py:82` (proveedores por defecto), `:107-131` (despacho por destino). Migraciones: ninguna (no se elimina el trabajo `extract`, se desactiva; alcance de la spec). Clase: cambio de comportamiento → primer oráculo: test en rojo que fija el comportamiento nuevo; los tests que asumían el anterior se ajustan en la misma tarea.
+**Notas**: Procedencia: spec CA-14. Patrón: `memory_platform/worker.py:82` (proveedores por defecto), `:107-131` (despacho por destino). Migraciones: ninguna (no se elimina el trabajo `extract`, se desactiva; alcance de la spec). Clase: cambio de comportamiento → primer oráculo: test en rojo que fija el comportamiento nuevo; los tests que asumían el anterior se ajustan en la misma tarea. Implementación (commit 0e994bd): `Worker` construye `{embed}` y añade `extract` solo con `settings.extract_enabled`; un trabajo `extract` sin proveedor falla con `ProviderError('extraction_disabled')` (código nuevo en `observability.CODES`, no reintentable: `fail_job` lo deja `failed` con `error_code`, y `POST /v1/jobs/{id}/retry` lo devuelve a la cola al activar la extracción); no se borra nada y no hay migración. `test_native_runtime.test_default_worker_...` se ajusta (fuera del `Archivos` original). Verificación: MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 525} (docker build --target test, rc 0, sobre el commit efe05d7); `test_worker.ExtractionSwitchTests` (4 tests) ok. usage-meter close three-components/T-10: 0.10 h IA (medido; ventana abierta a las 13:12Z, solape con T-09: no sumar), win-25cfb04d62df470d80f21486e36eb628.
+
+
+RED: `memory_platform/tests/test_worker.py::ExtractionSwitchTests` falló con AssertionError: Expected 'Ollama' to not have been called. Called 1 times.; TypeError: Settings.__init__() got an unexpected keyword argument 'extract_enabled' (fuentes de HEAD) · 2026-11-12.
 
 ### T-11 — `MEMORY_CORPUS_ANSWER=off` por defecto con error `corpus_answer_disabled`
 
 - **Descripción**: Añadir `MEMORY_CORPUS_ANSWER` (por defecto `off`). Apagado, `corpus_answer` sigue en la lista de herramientas (34) y responde `corpus_answer_disabled` sin llamar a ningún proveedor; `corpus_answer_status` sigue leyendo respuestas ya guardadas. Fuente: CA-15, P-04 (decidida), D-4.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: `corpus_answer` viene apagada: sigue en la lista de las 34 herramientas pero responde `corpus_answer_disabled` sin llamar a ningún modelo, y `corpus_answer_status` sigue leyendo las respuestas ya guardadas.
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 3.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.39h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.39h (estimado) · real 0.10h (medido, ventana win-62f2662a abierta a las 13:12Z; solape con T-09, no sumar)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 107 k in / 9 k out tok · ⚠️ verificar €
 - **Dependencias**: T-10
 - **Tipo**: backend
-- **Archivos**: `memory_platform/config.py`, `memory_platform/corpus_answers.py`, `memory_platform/corpus_answer_tools.py`, `memory_platform/app.py`, `memory_platform/tests/test_corpus_answers.py`, `memory_platform/tests/test_corpus_gateway.py`
+- **Archivos**: `memory_platform/config.py`, `memory_platform/corpus_answers.py`, `memory_platform/corpus_answer_tools.py`, `memory_platform/app.py`, `memory_platform/tests/test_corpus_answers.py`, `memory_platform/tests/test_corpus_gateway.py`, `memory_platform/tests/test_corpus_answers.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t11 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
   - `python scripts/export-contracts.py && git diff --stat docs/contracts` → sin diff (34 herramientas intactas)
 
 **Criterios de aceptación**
-- [ ] Por defecto `corpus_answer` devuelve `corpus_answer_disabled` y el proveedor simulado recibe 0 llamadas
-- [ ] Con `MEMORY_CORPUS_ANSWER=on` y un modelo configurado, los 21 tests actuales de `test_corpus_answers.py` pasan
-- [ ] `corpus_answer_status` lee respuestas ya guardadas con el interruptor apagado
-- [ ] `docs/contracts/kairos-mcp.json` sigue con 34 herramientas (el contrato no cambia)
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] Por defecto `corpus_answer` devuelve `corpus_answer_disabled` y el proveedor simulado recibe 0 llamadas
+- [x] Con `MEMORY_CORPUS_ANSWER=on` y un modelo configurado, los 21 tests actuales de `test_corpus_answers.py` pasan
+- [x] `corpus_answer_status` lee respuestas ya guardadas con el interruptor apagado
+- [x] `docs/contracts/kairos-mcp.json` sigue con 34 herramientas (el contrato no cambia)
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Test en rojo del error y del proveedor sin llamadas
-- [ ] Interruptor en `Settings` y en el servicio
-- [ ] Activarlo en los tests existentes que lo necesitan
-- [ ] `usage-meter start/close`
+- [x] Test en rojo del error y del proveedor sin llamadas
+- [x] Interruptor en `Settings` y en el servicio
+- [x] Activarlo en los tests existentes que lo necesitan
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-15/P-04. Patrón: llamada a `/api/chat` en `memory_platform/corpus_answers.py:101-105`; herramientas en `memory_platform/corpus_answer_tools.py:15-37`; ruta HTTP `…/answers` en `memory_platform/app.py:274-283`. Clase: cambio de comportamiento → primer oráculo: test en rojo que fija el comportamiento nuevo; los tests que asumían el anterior se ajustan en la misma tarea.
+**Notas**: Procedencia: spec CA-15/P-04. Patrón: llamada a `/api/chat` en `memory_platform/corpus_answers.py:101-105`; herramientas en `memory_platform/corpus_answer_tools.py:15-37`; ruta HTTP `…/answers` en `memory_platform/app.py:274-283`. Clase: cambio de comportamiento → primer oráculo: test en rojo que fija el comportamiento nuevo; los tests que asumían el anterior se ajustan en la misma tarea. Implementación (commit 0e994bd): `Settings.corpus_answer_enabled` (`MEMORY_CORPUS_ANSWER`, `on`/`off`, por defecto `off`; otro valor impide arrancar) y comprobación al inicio de `CorpusAnswers.answer` (la ruta HTTP y la herramienta MCP comparten servicio, así que `app.py` y `corpus_answer_tools.py` no cambian para esto): `MemoryError('corpus_answer_disabled', ..., 403)` antes de reservar o llamar a un proveedor; el mensaje lleva el código para que el MCP (`safe` solo devuelve el mensaje) lo muestre. El 403 sigue el esquema de error `{"error": {"code", "message"}}`. Tests existentes: `settings()` de test_corpus_answers y el `Settings` de test_corpus_gateway activan el interruptor (los 21 tests de `test_corpus_answers.py` no cambian por lo demás). Verificación: MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 525} (docker build --target test, rc 0, sobre el commit efe05d7). Contrato: la exportación de `scripts/export-contracts.py` en la imagen de test (Python 3.11), comparada con `docs/contracts/` tras normalizar espacios, da `kairos-mcp.json` y `memory-platform.openapi.json` iguales y 34 herramientas; `git diff 31d288d --stat -- docs/contracts` vacío. usage-meter close three-components/T-11: 0.10 h IA (medido, win-62f2662aad96463b8246a8201ab651b0, solape: no sumar).
+
+
+RED: `memory_platform/tests/test_corpus_answers.py::CorpusAnswerSwitchTests` falló con AssertionError: MemoryError not raised; AssertionError: 200 != 403 en test_corpus_gateway (fuentes de HEAD) · 2026-11-12.
 
 ### T-12 — `MEMORY_LLM_MODEL` sin valor por defecto y validación al arrancar; retirar `beam:cloud`
 
 - **Descripción**: Quitar `beam:cloud` de `Settings`, de `docker-compose.yml` y de `docs/configuration.md`. `Settings.from_env()` falla con un mensaje que nombra `MEMORY_LLM_MODEL` si se activa `extract` o `corpus_answer` sin modelo. Fuente: CA-16, S-04, D-2.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: `MEMORY_LLM_MODEL` ya no tiene modelo por defecto: solo es obligatorio si se activa la extracción o las respuestas generadas, y sin él el arranque falla nombrando la variable.
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 2.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.26h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.26h (estimado) · real 0.10h (medido, ventana win-df73ad0f abierta a las 13:12Z; solape con T-09, no sumar)
 - **Supervisión**: est. 0.06h (≈25 % IA) · real —
 - **Previsión IA**: 71 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-11
@@ -422,58 +435,66 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t12 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
 
 **Criterios de aceptación**
-- [ ] `grep -n beam` no devuelve nada en `memory_platform/config.py`, `docker-compose.yml` ni `docs/configuration.md`
-- [ ] `Settings.from_env()` con `MEMORY_EXTRACT_ENABLED=1` o `MEMORY_CORPUS_ANSWER=on` y sin `MEMORY_LLM_MODEL` lanza un error cuyo texto contiene `MEMORY_LLM_MODEL`
-- [ ] Con ambos apagados, el arranque no exige modelo
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] `grep -n beam` no devuelve nada en `memory_platform/config.py`, `docker-compose.yml` ni `docs/configuration.md`
+- [x] `Settings.from_env()` con `MEMORY_EXTRACT_ENABLED=1` o `MEMORY_CORPUS_ANSWER=on` y sin `MEMORY_LLM_MODEL` lanza un error cuyo texto contiene `MEMORY_LLM_MODEL`
+- [x] Con ambos apagados, el arranque no exige modelo
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Tests en rojo de las tres combinaciones
-- [ ] Eliminar el valor por defecto y añadir la validación
-- [ ] Actualizar compose y manual
-- [ ] `usage-meter start/close`
+- [x] Tests en rojo de las tres combinaciones
+- [x] Eliminar el valor por defecto y añadir la validación
+- [x] Actualizar compose y manual
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-16/S-04. Patrón: valor por defecto en `memory_platform/config.py:219` y `:272`; `docker-compose.yml:9`; `docs/configuration.md:24`. Una instalación existente que aún dependa de `beam:cloud` debe fijar la variable: se anota en la nota de migración (T-55). Clase: cambio de comportamiento → primer oráculo: test en rojo que fija el comportamiento nuevo; los tests que asumían el anterior se ajustan en la misma tarea.
+**Notas**: Procedencia: spec CA-16/S-04. Patrón: valor por defecto en `memory_platform/config.py:219` y `:272`; `docker-compose.yml:9`; `docs/configuration.md:24`. Una instalación existente que aún dependa de `beam:cloud` debe fijar la variable: se anota en la nota de migración (T-55). Clase: cambio de comportamiento → primer oráculo: test en rojo que fija el comportamiento nuevo; los tests que asumían el anterior se ajustan en la misma tarea. Implementación (commit 0e994bd): `Settings.llm_model` por defecto vacío y `from_env` falla con `MEMORY_LLM_MODEL must name a model when MEMORY_EXTRACT_ENABLED=1 or MEMORY_CORPUS_ANSWER=on` (un valor en blanco cuenta como ausente); `docker-compose.yml` propaga `MEMORY_LLM_MODEL` vacío, `MEMORY_EXTRACT_ENABLED` (`0`) y `MEMORY_CORPUS_ANSWER` (`off`); `docs/configuration.md` sin el valor anterior. Verificación: `grep -n "beam" memory_platform/config.py docker-compose.yml docs/configuration.md` → sin salida (exit 1); MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 525} (docker build --target test, rc 0, sobre el commit efe05d7); `test_providers.ModelRequirementTests` (7 tests) ok. `test_providers` y `test_native_runtime` fijaban el valor retirado: ahora fijan el modelo que construyen. Pendiente para T-55: la nota de migración (una instalación que dependía del valor anterior debe fijar la variable); `test_no_file_ships_the_retired_default_model` vigila `config.py` y el Compose. usage-meter close three-components/T-12: 0.10 h IA (medido, win-df73ad0f3fa04488994ba6dd3a0fc47b, solape: no sumar).
+
+
+RED: `memory_platform/tests/test_providers.py::ModelRequirementTests` falló con AssertionError: ValueError not raised (extraccion, corpus, modelo en blanco); AssertionError: 'beam:cloud' != ''; 'beam' unexpectedly found en config.py (fuentes de HEAD) · 2026-11-12.
 
 ### T-13 — Proxy de Ollama con lista de permitidos y `OLLAMA_ALLOW_CHAT`
 
 - **Descripción**: Sustituir `location /` por una lista de permitidos: `/api/embed` y `/api/version` llegan al upstream; el resto responde 403 desde el proxy. `OLLAMA_ALLOW_CHAT=1` habilita además `/api/chat`. Probar con un upstream simulado en un proyecto Compose aislado. Fuente: CA-17, S-09, P-10 (decidida).
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: El proxy de Ollama solo deja pasar `/api/embed` y `/api/version`; el resto (descargar, borrar, crear, generar) recibe 403 desde el propio proxy, y `OLLAMA_ALLOW_CHAT=1` habilita además `/api/chat`.
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 3.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.39h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.39h (estimado) · real 0.10h (medido, ventana win-5a3a64c5 abierta a las 13:12Z; solape con T-09, no sumar)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 107 k in / 9 k out tok · ⚠️ verificar €
 - **Dependencias**: T-12
 - **Tipo**: devops
-- **Archivos**: `ollama-proxy/default.conf.template`, `docker-compose.yml`, `memory_platform/tests/test_ollama_proxy.py`
+- **Archivos**: `ollama-proxy/default.conf.template`, `docker-compose.yml`, `memory_platform/tests/test_ollama_proxy.py`, `memory_platform/Dockerfile`, `memory_platform/tests/ollama_proxy_probe.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `python -m unittest discover -s memory_platform/tests -p test_ollama_proxy.py` → `OK` (los casos que requieren Docker se ejecutan dentro del proyecto aislado `kairos-proxy-t13`)
   - `docker compose -p kairos-proxy-t13 down -v` → solo elimina recursos `kairos-proxy-t13_*`
 
 **Criterios de aceptación**
-- [ ] `/api/embed` y `/api/version` llegan al upstream simulado
-- [ ] `/api/pull`, `/api/delete`, `/api/create`, `/api/chat` y `/api/generate` responden 403 sin llegar al upstream
-- [ ] Con `OLLAMA_ALLOW_CHAT=1`, `/api/chat` llega
-- [ ] La prueba usa un proyecto Compose con nombre distinto de `knowledge-graphs` y redes y volúmenes renombrados; no toca recursos `knowledge-graphs-*`
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] `/api/embed` y `/api/version` llegan al upstream simulado
+- [x] `/api/pull`, `/api/delete`, `/api/create`, `/api/chat` y `/api/generate` responden 403 sin llegar al upstream
+- [x] Con `OLLAMA_ALLOW_CHAT=1`, `/api/chat` llega
+- [x] La prueba usa un proyecto Compose con nombre distinto de `knowledge-graphs` y redes y volúmenes renombrados; no toca recursos `knowledge-graphs-*`
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Escribir primero la prueba con upstream simulado (rojo: hoy todo pasa)
-- [ ] Reescribir la plantilla nginx con `OLLAMA_ALLOW_CHAT`
-- [ ] Verificar `nginx -t` de la plantilla renderizada
-- [ ] `usage-meter start/close`
+- [x] Escribir primero la prueba con upstream simulado (rojo: hoy todo pasa)
+- [x] Reescribir la plantilla nginx con `OLLAMA_ALLOW_CHAT`
+- [x] Verificar `nginx -t` de la plantilla renderizada
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-17/S-09/P-10. Patrón: `ollama-proxy/default.conf.template:15-25` (proxy completo), `docker-compose.yml:38-54` (servicio y redes). Cuidado: las redes y volúmenes tienen `name:` fijo (`docker-compose.yml:169-177`, riesgo R-09): el fichero override del proyecto aislado debe renombrarlos antes de `up`. Si la prueba con Docker no es posible en una máquina, el test estructural de `location` y `nginx -t` sigue siendo obligatorio. Clase: cambio de comportamiento → primer oráculo: test en rojo que fija el comportamiento nuevo; los tests que asumían el anterior se ajustan en la misma tarea.
+**Notas**: Procedencia: spec CA-17/S-09/P-10. Patrón: `ollama-proxy/default.conf.template:15-25` (proxy completo), `docker-compose.yml:38-54` (servicio y redes). Cuidado: las redes y volúmenes tienen `name:` fijo (`docker-compose.yml:169-177`, riesgo R-09): el fichero override del proyecto aislado debe renombrarlos antes de `up`. Si la prueba con Docker no es posible en una máquina, el test estructural de `location` y `nginx -t` sigue siendo obligatorio. Clase: cambio de comportamiento → primer oráculo: test en rojo que fija el comportamiento nuevo; los tests que asumían el anterior se ajustan en la misma tarea. Implementación (commit efdee1a junto con T-14): plantilla con `location = /api/embed` (POST), `= /api/version` (GET), `= /api/chat` (protegido por un `map` de `${OLLAMA_ALLOW_CHAT}`: solo el valor exacto `1` lo permite) y `location /` con 403; cada `proxy_pass` lleva la ruta fija de su regla (el upstream nunca recibe la ruta del cliente: `//api/embed`, `/api/embed/../pull`, `%2e%2e` no llegan como otra cosa). Una variable sin definir deja un `${...}` que nginx rechaza: falla cerrado; el Compose define `OLLAMA_ALLOW_CHAT: ${OLLAMA_ALLOW_CHAT:-0}`. Desviación: el test de la suite no puede usar Docker (la imagen de test no tiene daemon y la CI exige 0 omitidas), así que `test_ollama_proxy.py` (14 tests) comprueba plantilla, servicio Compose y las reglas de aislamiento de la sonda, y la parte con Docker es `memory_platform/tests/ollama_proxy_probe.py` (`python -m memory_platform.tests.ollama_proxy_probe`, patrón de `lifecycle_probe`/`live_probe`): proyecto Compose `kairos-proxy-t13` con redes y volúmenes renombrados por un override, upstream simulado que registra cada petición (imagen local `kairos-test:i2p2`) y peticiones crudas sin normalizar. `memory_platform/Dockerfile` copia `ollama-proxy/` a la imagen de test (si no, `test_ollama_proxy` no encuentra la plantilla en la CI). Verificación: sonda: `default (chat off): 23 requests, 6 reached the stub, 0 problems`; `nginx: configuration file /etc/nginx/nginx.conf test is successful`; `OLLAMA_ALLOW_CHAT=1: 4 requests, 1 reached the stub, 0 problems`; `PROXY_PROBE_RESULT {"project": "kairos-proxy-t13", "problems": []}`. La sonda ejecuta `docker compose -p kairos-proxy-t13 ... down -v --remove-orphans` al terminar; la lista de contenedores, redes y volúmenes quedó idéntica a la de antes (`docker ps -a`, `docker network ls`, `docker volume ls`), sin tocar nada `knowledge-graphs-*` ni el Ollama del host. usage-meter close three-components/T-13: 0.10 h IA (medido, win-5a3a64c5b9cf45e9bc294af29f30709c, solape: no sumar).
+
+
+RED: `memory_platform/tests/test_ollama_proxy.py` falló con KeyError: 'OLLAMA_ALLOW_CHAT'; KeyError: 'user'; AssertionError: 'return 403' not found (3 fallos y 4 errores de 14); la sonda contra la plantilla anterior: status 200, expected 403 en pull, delete, create, generate, chat y las evasiones · 2026-11-12.
 
 ### T-14 — Proxy de Ollama sin root
 
 - **Descripción**: Ejecutar el proxy de Ollama con un usuario sin privilegios (resto de S-09, incluido por P-10 decidida; partida +1 h sobre la evaluación). Fuente: S-09 segunda mitad, P-10.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: El proxy de Ollama ya no corre como root: usa el usuario sin privilegios `nginx`, sin capacidades y con el sistema de ficheros en solo lectura.
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 1.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real 0.10h (medido, ventana win-48eb447a abierta a las 13:12Z; solape con T-09, no sumar)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 36 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: T-13
@@ -485,76 +506,84 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
   - `python -m unittest discover -s memory_platform/tests -p test_ollama_proxy.py` → `OK`
 
 **Criterios de aceptación**
-- [ ] El contenedor del proxy corre con un UID distinto de 0 y escucha en un puerto no privilegiado o con capacidades mínimas
-- [ ] La prueba de T-13 sigue en verde
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] El contenedor del proxy corre con un UID distinto de 0 y escucha en un puerto no privilegiado o con capacidades mínimas
+- [x] La prueba de T-13 sigue en verde
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Comprobar la imagen base y el puerto 11434
-- [ ] Configurar `user:` o imagen sin root
-- [ ] Repetir la prueba aislada de T-13
-- [ ] `usage-meter start/close`
+- [x] Comprobar la imagen base y el puerto 11434
+- [x] Configurar `user:` o imagen sin root
+- [x] Repetir la prueba aislada de T-13
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: P-10 (proxy sin root dentro del alcance). Diferencia con la evaluación: la evaluación lo dejó opcional fuera del total (+1 h base); este plan lo incluye. Patrón: `docker-compose.yml:38-54`. Mismas reglas de aislamiento que T-13. Clase: cambio (oráculo: la prueba de T-13 en verde antes y después).
+**Notas**: Procedencia: P-10 (proxy sin root dentro del alcance). Diferencia con la evaluación: la evaluación lo dejó opcional fuera del total (+1 h base); este plan lo incluye. Patrón: `docker-compose.yml:38-54`. Mismas reglas de aislamiento que T-13. Clase: cambio (oráculo: la prueba de T-13 en verde antes y después). Implementación (commit efdee1a): el servicio `ollama` de `docker-compose.yml` lleva `user: '101:101'`, `read_only: true`, `cap_drop: [ALL]`, `no-new-privileges` y `tmpfs` (con `uid=101`) en `/etc/nginx/conf.d` (donde la imagen renderiza la plantilla), `/run`, `/var/cache/nginx` y `/tmp`; el puerto 11434 no es privilegiado. Desviación: no hizo falta `ollama-proxy/Dockerfile` (listado en `Archivos`): la imagen oficial fijada por digest funciona sin root con esos `tmpfs`, así que se conserva el digest y no se construye imagen nueva. Verificación: sonda tras el cambio: `proxy uid: 101` (el `docker compose exec ollama id -u` de la sonda corre en el proyecto aislado `kairos-proxy-t13`, con `--wait` sobre el healthcheck: el servicio queda sano sin root; el proyecto se llamó `kairos-proxy-t13` y no `kairos-proxy-t14` porque la sonda usa un solo proyecto para T-13 y T-14), `PROXY_PROBE_RESULT {"project": "kairos-proxy-t13", "problems": []}`; `test_ollama_proxy.ComposeServiceTests` ok. usage-meter close three-components/T-14: 0.10 h IA (medido, win-48eb447a3e6746289b15ca8f23dc11aa, solape: no sumar).
+
+
+RED: `memory_platform/tests/test_ollama_proxy.py::ComposeServiceTests` falló con KeyError: 'user'; la sonda con la plantilla de T-13 y sin user: imprimio proxy uid: 0 (the proxy runs as root) · 2026-11-12.
 
 ### T-15 — Suite completa sin modelo configurado y espía de `/api/chat` (CA-18)
 
 - **Descripción**: Probar que la suite pasa con `MEMORY_LLM_MODEL` sin definir y con un espía que falla ante cualquier llamada a `/api/chat`, y que el arranque de `memory-api` y `memory-worker` no la hace. Fuente: CA-18, D-2.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: La suite del servidor corre sin modelo de lenguaje configurado y con un espía que falla si algo llama a `/api/chat`; el recibo de la suite informa de las llamadas (siempre 0).
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 3.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.39h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.39h (estimado) · real 0.10h (medido, ventana win-4403e522 abierta a las 13:12Z; solape con T-09, no sumar)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 107 k in / 9 k out tok · ⚠️ verificar €
 - **Dependencias**: T-12, T-13
 - **Tipo**: test
-- **Archivos**: `memory_platform/tests/test_no_llm.py`, `memory_platform/tests/run_postgres.py`
+- **Archivos**: `memory_platform/tests/test_no_llm.py`, `memory_platform/tests/run_postgres.py`, `memory_platform/tests/llm_spy.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t15 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01 y espía con 0 llamadas
   - `docker build` anterior incluye `test_no_llm` → `ok`
 
 **Criterios de aceptación**
-- [ ] La suite backend pasa con `MEMORY_LLM_MODEL` sin definir y el espía instalado
-- [ ] El espía registra 0 llamadas a `/api/chat` durante la ingesta de un resumen con `generate: true`, el worker y `corpus_answer` apagado
-- [ ] El arranque de `create_app` y del `Worker` no abre conexión a `/api/chat`
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] La suite backend pasa con `MEMORY_LLM_MODEL` sin definir y el espía instalado
+- [x] El espía registra 0 llamadas a `/api/chat` durante la ingesta de un resumen con `generate: true`, el worker y `corpus_answer` apagado
+- [x] El arranque de `create_app` y del `Worker` no abre conexión a `/api/chat`
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Crear el espía (servidor HTTP local que marca fallo ante `/api/chat`)
-- [ ] Ejecutar la suite entera con el espía activo
-- [ ] `usage-meter start/close`
+- [x] Crear el espía (servidor HTTP local que marca fallo ante `/api/chat`)
+- [x] Ejecutar la suite entera con el espía activo
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-18. Patrón: arnés `memory_platform/tests/run_postgres.py:30-35` (variables del entorno del test). El arranque en el proyecto aislado se repite en T-71. Clase: capacidad nueva (verificación negativa); oráculo: el espía falla si se llama.
+**Notas**: Procedencia: spec CA-18. Patrón: arnés `memory_platform/tests/run_postgres.py:30-35` (variables del entorno del test). El arranque en el proyecto aislado se repite en T-71. Clase: capacidad nueva (verificación negativa); oráculo: el espía falla si se llama. Implementación (commit 7b98316): `llm_spy.py` (servidor HTTP de loopback: `/api/embed` devuelve un vector fijo, `/api/chat` y `/api/generate` responden 500 y se cuentan); `run_postgres.py` ejecuta la suite entera sin `MEMORY_LLM_MODEL`, `MEMORY_EXTRACT_ENABLED` ni `MEMORY_CORPUS_ANSWER`, con `MEMORY_OLLAMA_URL` apuntando al espía, añade `llm_chat_calls` al `MEMORY_TEST_RESULT` y falla si no es 0 (fichero con EOL mixto conservado: líneas insertadas en CRLF); `test_no_llm.py` (6 tests): el espía falla ante `/api/chat` (el oráculo funciona), el entorno por defecto no pide modelo, `create_app` y `Worker` no abren conexión, un resumen con `generate: true` se ingiere (202, `extraction: disabled`) y lo indexa el worker real contra el espía (≥1 `/api/embed`, 0 chat), un trabajo `extract` heredado queda `failed` con `extraction_disabled`, y `corpus_answer` da 403 sin chat. Limitación: la mayoría de tests construyen `Settings` con la URL por defecto, no con el entorno, así que el espía global solo vigila lo que lee `MEMORY_OLLAMA_URL` (los tests de proveedor usan `MockTransport`); la garantía fuerte son los tests de `test_no_llm`. El arranque de `memory-api`/`memory-worker` en el proyecto aislado se repite en T-71. Verificación: MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 525} (docker build --target test, rc 0, sobre el commit efe05d7); `test_no_llm` incluido y ok. `KAIROS_MIN_TESTS` (483) no se sube: `scripts/tests/test_ci_workflow.py` fija '483' en 27 mutantes y subirlo sin tocar ese test lo rompe; la suite tiene ahora 525. Comprobaciones adicionales: `docker build --target lifecycle-test` → rc 0 (`KAIROS_LIFECYCLE_RESULT ... "passed": true`) y `npm test` en `packages/kairos-cli` → 90 pass, 0 fail. usage-meter close three-components/T-15: 0.10 h IA (medido, win-4403e522988e474fb318ef808483d94a, solape: no sumar).
+
+
+RED: `memory_platform/tests/test_no_llm.py` falló con AssertionError: 'beam:cloud' != ''; KeyError: 'extraction'; AssertionError: 200 != 403 (corpus_answer llego al proveedor) (3 fallos y 2 errores de 6, fuentes de HEAD) · 2026-11-12.
 
 ### T-16 — Documentar la configuración sin modelo de lenguaje
 
 - **Descripción**: Documentar `MEMORY_EXTRACT_ENABLED`, `MEMORY_CORPUS_ANSWER`, `MEMORY_LLM_MODEL` (sin valor por defecto), `OLLAMA_ALLOW_CHAT` y el trato de `generate: true`. Fuente: CA-32, C-04.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: La documentación describe el servidor sin modelo de lenguaje: las variables `MEMORY_EXTRACT_ENABLED`, `MEMORY_CORPUS_ANSWER`, `MEMORY_LLM_MODEL` y `OLLAMA_ALLOW_CHAT`, el trato de `generate: true`, el proxy cerrado y su sonda.
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 2.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.26h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.26h (estimado) · real 0.10h (medido, ventana win-fbfba66a abierta a las 13:12Z; solape con T-09, no sumar)
 - **Supervisión**: est. 0.06h (≈25 % IA) · real —
 - **Previsión IA**: 71 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-15
 - **Tipo**: docs
-- **Archivos**: `docs/configuration.md`, `docs/corpus-generated-answers.md`, `docs/operations.md`, `CHANGELOG.md`, `CHANGELOG.es.md`
+- **Archivos**: `docs/configuration.md`, `docs/corpus-generated-answers.md`, `docs/operations.md`, `CHANGELOG.md`, `CHANGELOG.es.md`, `README.md`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `grep -c "MEMORY_EXTRACT_ENABLED\|MEMORY_CORPUS_ANSWER\|OLLAMA_ALLOW_CHAT" docs/configuration.md` → ≥ 3
   - lectura: valores por defecto coinciden con `memory_platform/config.py`
 
 **Criterios de aceptación**
-- [ ] Cada variable nueva aparece en `docs/configuration.md` con su valor por defecto real
-- [ ] `docs/corpus-generated-answers.md` explica que `corpus_answer` está apagado por defecto y el error `corpus_answer_disabled`
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] Cada variable nueva aparece en `docs/configuration.md` con su valor por defecto real
+- [x] `docs/corpus-generated-answers.md` explica que `corpus_answer` está apagado por defecto y el error `corpus_answer_disabled`
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Redactar según `docs-style.md`
-- [ ] Comprobar cada valor contra `config.py`
-- [ ] `usage-meter start/close`
+- [x] Redactar según `docs-style.md`
+- [x] Comprobar cada valor contra `config.py`
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-32. Patrón: tablas de `docs/configuration.md`. Clase: documentación (oráculo: lectura contra el código).
+**Notas**: Procedencia: spec CA-32. Patrón: tablas de `docs/configuration.md`. Clase: documentación (oráculo: lectura contra el código). Implementación (commit efe05d7): `docs/configuration.md` (tabla de `.env` con las cuatro variables y sus valores por defecto reales, tabla de procesos y sección «Servidor sin modelo de lenguaje» con `generate: true`, trabajos heredados y nota de migración sin citar el valor retirado), `docs/corpus-generated-answers.md` (sección «Off by default» con `corpus_answer_disabled`), `docs/operations.md` (sección «Servidor sin modelo de lenguaje y proxy de Ollama» con la sonda y `--force-recreate`; la tabla de CI pasa a 525 pruebas), `CHANGELOG.md` y `CHANGELOG.es.md` (sección de la iniciativa) y `README.md` (525 pruebas). Verificación: `grep -c "MEMORY_EXTRACT_ENABLED\|MEMORY_CORPUS_ANSWER\|OLLAMA_ALLOW_CHAT" docs/configuration.md` → 11 (≥ 3); lectura: `MEMORY_EXTRACT_ENABLED` `0`, `MEMORY_CORPUS_ANSWER` `off`, `MEMORY_LLM_MODEL` sin valor y `OLLAMA_ALLOW_CHAT` `0` coinciden con `config.py` y `docker-compose.yml`; `grep -n beam` sigue sin salida. TDD n/a: documentación. usage-meter close three-components/T-16: 0.10 h IA (medido, win-fbfba66a2c7146afb9eb8ae834b143f5, solape: no sumar).
 
 ### T-17 — Revisión adversarial de la Fase 2
 
