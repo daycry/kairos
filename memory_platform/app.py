@@ -197,6 +197,10 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
     def policy(project_id: str, actor=Depends(identity)):
         return store.get_policy(actor, project_id)
 
+    @app.get('/v1/projects/{project_id}/capture-policy', operation_id='kairos_capture_policy', response_model=m.CapturePolicy)
+    def capture_policy(project_id: str, actor=Depends(identity)):
+        return store.capture_policy(actor, project_id)
+
     @app.put('/v1/projects/{project_id}/policy', operation_id='memory_put_policy')
     def put_policy(project_id: str, payload: m.Policy, actor=Depends(identity)):
         return store.set_policy(actor, project_id, payload)

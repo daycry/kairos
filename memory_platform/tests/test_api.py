@@ -245,7 +245,8 @@ class ParityEndpointTests(unittest.TestCase):
     """C-02: every MCP tool has a `/v1` endpoint. Each endpoint is checked for an allowed caller, a reader without the permission (403) and a project that is not the caller's."""
     def setUp(self):
         self.store, self.admin, self.pid = create_core()
-        self.client = TestClient(create_app(Settings(self.store.dsn), store=self.store))
+        origin = 'http://localhost:8790'
+        self.client = TestClient(create_app(Settings(self.store.dsn, allowed_origins=[origin]), store=self.store, auth=Auth(self.store, [origin])), base_url=origin)
         self.client.__enter__()
         self.writer = self.headers(['read', 'write'])
         self.reader = self.headers(['read'])
@@ -260,6 +261,15 @@ class ParityEndpointTests(unittest.TestCase):
     def headers(self, scopes, projects=None):
         key = self.store.create_key(self.admin, {'name': 'parity', 'project_ids': projects or [self.pid], 'scopes': scopes})
         return {'Authorization': 'Bearer ' + key['token']}
+
+    def tool(self, headers, name, arguments):
+        """The same operation through the internal MCP endpoint, with the same credential: what the REST endpoint must equal."""
+        import json
+        response = self.client.post('/mcp/', headers={**headers, 'Accept': 'application/json, text/event-stream'}, json={
+            'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call', 'params': {'name': name, 'arguments': arguments}})
+        result = response.json()['result']
+        self.assertFalse(result.get('isError'), result)
+        return result['structuredContent'] if isinstance(result.get('structuredContent'), dict) else json.loads(result['content'][0]['text'])
 
     def add(self, **changes):
         value = event(self.pid, generate=False, payload={'title': 'Fencing note', 'content': 'Use fencing before projection', 'category': 'decision', 'source': {'uri': 'fixture://parity'}}, **changes)
@@ -281,6 +291,24 @@ class ParityEndpointTests(unittest.TestCase):
         self.assertEqual(self.client.post(self.prefix + '/corpora', json={'name': 'bad', 'date_start': 'yesterday'}, headers=self.writer).status_code, 422)
         self.assertEqual(self.client.post(self.prefix + '/corpora', json=body, headers=self.reader).status_code, 403)
         self.assertEqual(self.client.post(self.prefix + '/corpora', json=body, headers=self.foreign).status_code, 404)
+
+    def test_capture_policy_endpoint_returns_what_the_tool_returns(self):
+        url = self.prefix + '/capture-policy'
+        for headers, allowed in ((self.writer, True), (self.reader, False)):
+            response = self.client.get(url, headers=headers)
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json(), {'project_id': self.pid, 'capture_mode': 'summary', 'capture_allowed': allowed})
+            self.assertEqual(response.json(), self.tool(headers, 'capture_policy', {'project_id': self.pid}))
+        self.store.set_policy(self.admin, self.pid, {'capture_mode': 'off', 'temporal_projection': False})
+        self.assertEqual(self.client.get(url, headers=self.writer).json(), self.tool(self.writer, 'capture_policy', {'project_id': self.pid}))
+        self.assertFalse(self.client.get(url, headers=self.writer).json()['capture_allowed'])
+        self.assertEqual(self.client.get(url, headers=self.foreign).status_code, 404)
+        self.assertEqual(self.client.get(url).status_code, 401)
+        # a key that cannot even read the project gets no answer; the reader (read only) is allowed to read and told it cannot write
+        none = self.headers(['write'])
+        self.assertEqual(self.client.get(url, headers=none).status_code, 403)
+        # `GET .../policy` keeps its own shape
+        self.assertEqual(set(self.client.get(self.prefix + '/policy', headers=self.writer).json()), {'capture_mode', 'temporal_projection'})
 
 
 class DegradedSemanticHttpTests(unittest.TestCase):

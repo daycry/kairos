@@ -39,13 +39,13 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Integración continua (C-01) | 8 | 8 | 100% | 0 / 18.0h | 0 / 2.3h | 0 / 0.6h | 0 / 578 k |
 | Fase 2 — Servidor sin modelo de lenguaje (C-04) | 9 | 9 | 100% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
-| Fase 3 — Paridad REST /v1 (C-02) | 1 | 10 | 10% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
+| Fase 3 — Paridad REST /v1 (C-02) | 2 | 10 | 20% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 0 | 8 | 0% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 0 | 15 | 0% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **18** | **74** | **24.3%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **19** | **74** | **25.7%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -660,31 +660,35 @@ RED: `memory_platform/tests/test_api.py::ParityEndpointTests::test_build_corpus_
 ### T-19 — Endpoint `/v1` de `capture_policy`
 
 - **Descripción**: Crear un endpoint nuevo (`GET …/capture-policy`, ruta distinta de `…/policy`) que devuelve lo que devuelve `Store.capture_policy`. Fuente: CA-05; hallazgo de paridad «Falta».
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: Nuevo `GET /v1/projects/{id}/capture-policy`: responde si la clave puede capturar en el proyecto y con qué modo de captura, igual que la herramienta `capture_policy`; `GET …/policy` no cambia.
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 2.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.29h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.29h (estimado) · real 0.05h (medido, ventana win-e2c0d4fa, 15:15Z-15:20Z)
 - **Supervisión**: est. 0.07h (≈25 % IA) · real —
 - **Previsión IA**: 80 k in / 7 k out tok · ⚠️ verificar €
 - **Dependencias**: T-18
 - **Tipo**: backend
-- **Archivos**: `memory_platform/app.py`, `memory_platform/models.py`, `memory_platform/tests/test_api.py`
+- **Archivos**: `memory_platform/app.py`, `memory_platform/models.py`, `memory_platform/tests/test_api.py`, `docs/contracts/memory-platform.openapi.json`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t19 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
 
 **Criterios de aceptación**
-- [ ] El endpoint devuelve el mismo contenido que la herramienta `capture_policy` para el mismo proyecto y credencial
-- [ ] Test de acceso permitido, lector sin permiso (403) y proyecto ajeno
-- [ ] `GET …/policy` no cambia
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] El endpoint devuelve el mismo contenido que la herramienta `capture_policy` para el mismo proyecto y credencial
+- [x] Test de acceso permitido, lector sin permiso (403) y proyecto ajeno
+- [x] `GET …/policy` no cambia
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Test en rojo (404 hoy)
-- [ ] Añadir ruta, modelo de respuesta y permiso
-- [ ] `usage-meter start/close`
+- [x] Test en rojo (404 hoy)
+- [x] Añadir ruta, modelo de respuesta y permiso
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-05. Patrón: `Store.capture_policy` en `memory_platform/store_auth.py:126-137`; `GET …/policy` ya existe y devuelve `get_policy` (`store_auth.py:121-124`): no se toca. Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde.
+**Notas**: Procedencia: spec CA-05. Patrón: `Store.capture_policy` en `memory_platform/store_auth.py:126-137`; `GET …/policy` ya existe y devuelve `get_policy` (`store_auth.py:121-124`): no se toca. Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde. Implementación: ruta `GET /v1/projects/{project_id}/capture-policy` (`kairos_capture_policy`) que devuelve `Store.capture_policy` tal cual, con el modelo de respuesta `CapturePolicy` (`project_id`, `capture_mode`, `capture_allowed`) en `models.py`; `GET …/policy` (`get_policy`) intacto. Test `test_capture_policy_endpoint_returns_what_the_tool_returns` (en `ParityEndpointTests`): escritor y lector con el mismo contenido que la herramienta por el MCP interno, política `off`, clave de otro proyecto 404, sin credencial 401, clave sin lectura 403 y `…/policy` con su forma propia. Contrato: OpenAPI +68 líneas y 0 quitadas (ruta y esquema `CapturePolicy`); `docs/contracts/memory-platform.openapi.json` añadido a `Archivos` (lo regenera el exportador). Decisión de diseño: el lector recibe 200 con `capture_allowed: false` (igual que la herramienta: lee, no puede escribir); el 403 lo recibe una clave sin permiso de lectura. Verificación: MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 531} (docker build --target test, rc 0, kairos-test:t19). usage-meter close three-components/T-19: 0.05 h IA (medido, win-e2c0d4fac4e241fcb699e8e97f74db95).
+
+
+RED: `memory_platform/tests/test_api.py::ParityEndpointTests::test_capture_policy_endpoint_returns_what_the_tool_returns` falló con AssertionError: 404 != 200 ({"detail":"Not Found"}: la ruta capture-policy no existe) contra las fuentes de HEAD · 2026-11-12.
 
 ### T-20 — Endpoint `/v1` de reconciliación de `event_status` por proyecto
 

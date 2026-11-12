@@ -28,6 +28,11 @@ class Login(Model):
     username: Annotated[str, Field(max_length=128)]
     password: Annotated[str, Field(max_length=1024)]
 
+class CapturePolicy(Model):
+    project_id: str
+    capture_mode: Literal['off', 'summary', 'full']
+    capture_allowed: bool
+
 class WorkStateChange(Model):
     list: Annotated[str, Field(min_length=1, max_length=200)]
     fields: Annotated[dict[str, Any], Field(min_length=1, max_length=32)]

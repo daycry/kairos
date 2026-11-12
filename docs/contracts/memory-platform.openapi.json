@@ -41,6 +41,35 @@
         "title": "AutomaticCapture",
         "type": "object"
       },
+      "CapturePolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "capture_allowed": {
+            "title": "Capture Allowed",
+            "type": "boolean"
+          },
+          "capture_mode": {
+            "enum": [
+              "off",
+              "summary",
+              "full"
+            ],
+            "title": "Capture Mode",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "capture_mode",
+          "capture_allowed"
+        ],
+        "title": "CapturePolicy",
+        "type": "object"
+      },
       "Context": {
         "additionalProperties": false,
         "properties": {
@@ -2605,6 +2634,45 @@
           }
         },
         "summary": "Project"
+      }
+    },
+    "/v1/projects/{project_id}/capture-policy": {
+      "get": {
+        "operationId": "kairos_capture_policy",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapturePolicy"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Capture Policy"
       }
     },
     "/v1/projects/{project_id}/corpora": {
