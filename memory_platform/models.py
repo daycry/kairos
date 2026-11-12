@@ -50,6 +50,9 @@ class CorpusSelection(Model):
     date_end: Annotated[str, Field(max_length=100)] | None = None
     limit: Annotated[int, Field(ge=1, le=500)] = 500
 
+class ObservationIds(Model):
+    ids: Annotated[list[Annotated[str, Field(min_length=1, max_length=200)]], Field(min_length=1, max_length=100)]
+
 class CorpusPrime(Model):
     fresh: bool = False
 

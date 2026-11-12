@@ -2,6 +2,7 @@ import asyncio
 import time
 import unittest
 import hashlib
+import uuid
 from unittest.mock import Mock, AsyncMock
 from fastapi.testclient import TestClient
 from memory_platform.app import create_app
@@ -269,10 +270,13 @@ class ParityEndpointTests(unittest.TestCase):
             'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call', 'params': {'name': name, 'arguments': arguments}})
         result = response.json()['result']
         self.assertFalse(result.get('isError'), result)
-        return result['structuredContent'] if isinstance(result.get('structuredContent'), dict) else json.loads(result['content'][0]['text'])
+        structured = result.get('structuredContent')
+        if isinstance(structured, dict) and set(structured) == {'result'} and isinstance(structured['result'], str):
+            return json.loads(structured['result'])  # the tools declared `-> str` wrap their JSON text
+        return structured if isinstance(structured, dict) else json.loads(result['content'][0]['text'])
 
     def add(self, **changes):
-        value = event(self.pid, generate=False, payload={'title': 'Fencing note', 'content': 'Use fencing before projection', 'category': 'decision', 'source': {'uri': 'fixture://parity'}}, **changes)
+        value = event(self.pid, **{'generate': False, 'payload': {'title': 'Fencing note', 'content': 'Use fencing before projection', 'category': 'decision', 'source': {'uri': 'fixture://parity'}}, **changes})
         self.store.ingest_event(self.admin, value)
         return value
 
@@ -335,6 +339,47 @@ class ParityEndpointTests(unittest.TestCase):
         self.assertEqual(self.client.get(url, headers=self.reader).status_code, 403)
         self.assertEqual(self.client.get(url, headers=self.foreign).status_code, 404)
         self.assertEqual(self.client.get(self.prefix + '/events/not-a-uuid/status', headers=self.writer).status_code, 422)
+
+    def test_observation_reads_return_what_the_three_tools_return_and_the_portal_listing_is_untouched(self):
+        fencing = self.add(item_id=str(uuid.uuid4()), occurred_at='2026-11-02T10:00:00Z')
+        other = self.add(item_id=str(uuid.uuid4()), occurred_at='2026-11-03T10:00:00Z', payload={'title': 'Index choice', 'content': 'Prefer a partial index for archived rows', 'source': {'uri': 'fixture://parity'}})
+        base = self.prefix + '/observations'
+        # get_observations: selected ids
+        got = self.client.post(base + '/get', json={'ids': [fencing['item_id'], other['item_id']]}, headers=self.reader)
+        self.assertEqual(got.status_code, 200, got.text)
+        self.assertEqual({item['id'] for item in got.json()['items']}, {fencing['item_id'], other['item_id']})
+        self.assertEqual(got.json(), self.tool(self.reader, 'get_observations', {'projectId': self.pid, 'ids': [fencing['item_id'], other['item_id']]}))
+        # observation_search: lexical, bounded
+        found = self.client.get(base + '/search', params={'query': 'fencing', 'limit': 5}, headers=self.reader)
+        self.assertEqual(found.status_code, 200, found.text)
+        self.assertEqual([item['id'] for item in found.json()['items']], [fencing['item_id']])
+        self.assertEqual(found.json(), self.tool(self.reader, 'observation_search', {'projectId': self.pid, 'query': 'fencing', 'limit': 5}))
+        # observation_context: the evidence plus its text and the untrusted-data warning
+        context = self.client.get(base + '/context', params={'query': 'index'}, headers=self.reader)
+        self.assertEqual(context.status_code, 200, context.text)
+        self.assertIn('[' + other['item_id'] + ']', context.json()['context'])
+        self.assertIn('untrusted', context.json()['warning'])
+        self.assertEqual(context.json(), self.tool(self.reader, 'observation_context', {'projectId': self.pid, 'query': 'index'}))
+        # the limits of each tool
+        self.assertEqual(self.client.get(base + '/search', params={'query': 'x', 'limit': 101}, headers=self.reader).status_code, 422)
+        self.assertEqual(self.client.get(base + '/context', params={'limit': 201}, headers=self.reader).status_code, 422)
+        self.assertEqual(self.client.post(base + '/get', json={'ids': []}, headers=self.reader).status_code, 422)
+        self.assertEqual(self.client.post(base + '/get', json={'ids': ['a'] * 101}, headers=self.reader).status_code, 422)
+        # a key without read permission is refused, another project's key finds no project
+        nothing = self.headers(['write'])
+        for headers, status in ((nothing, 403), (self.foreign, 404)):
+            self.assertEqual(self.client.post(base + '/get', json={'ids': [fencing['item_id']]}, headers=headers).status_code, status)
+            self.assertEqual(self.client.get(base + '/search', params={'query': 'fencing'}, headers=headers).status_code, status)
+            self.assertEqual(self.client.get(base + '/context', headers=headers).status_code, status)
+        self.assertEqual(self.client.get(base + '/search', params={'query': 'fencing'}).status_code, 401)
+        # no leak between projects: the other project's observation is invisible to the first project's endpoints
+        mine = self.store.create_project(self.admin, {'id': 'third-' + self.pid[5:], 'title': 'Third'}) and 'third-' + self.pid[5:]
+        self.assertEqual(self.client.get('/v1/projects/' + mine + '/observations/search', params={'query': 'fencing'}, headers=self.headers(['read'], [mine])).json()['items'], [])
+        # non-regression: `GET /v1/observations` still serves the portal listing, with its own shape
+        listing = self.client.get('/v1/observations', params={'project_id': self.pid}, headers=self.reader)
+        self.assertEqual(listing.status_code, 200, listing.text)
+        self.assertEqual(set(listing.json()), {'items', 'next_cursor', 'has_more', 'filters', 'ordering', 'rule_policy'})  # the shape of HEAD
+        self.assertNotIn('mode', listing.json())
 
 
 class DegradedSemanticHttpTests(unittest.TestCase):

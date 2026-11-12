@@ -39,13 +39,13 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Integración continua (C-01) | 8 | 8 | 100% | 0 / 18.0h | 0 / 2.3h | 0 / 0.6h | 0 / 578 k |
 | Fase 2 — Servidor sin modelo de lenguaje (C-04) | 9 | 9 | 100% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
-| Fase 3 — Paridad REST /v1 (C-02) | 3 | 10 | 30% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
+| Fase 3 — Paridad REST /v1 (C-02) | 4 | 10 | 40% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 0 | 8 | 0% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 0 | 15 | 0% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **20** | **74** | **27.0%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **21** | **74** | **28.4%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -726,31 +726,35 @@ RED: `memory_platform/tests/test_api.py::ParityEndpointTests::test_event_status_
 ### T-21 — Endpoints `/v1` de lectura de observaciones (`get_observations`, `observation_search`, `observation_context`)
 
 - **Descripción**: Crear tres endpoints nuevos con la semántica de `AgentStore.observations`, en rutas distintas de `GET /v1/observations` (listado del portal). Fuente: CA-05; hallazgo «Falta (3)».
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: Tres lecturas nuevas bajo `/v1/projects/{id}/observations/` (`get`, `search`, `context`) devuelven lo mismo que las herramientas `get_observations`, `observation_search` y `observation_context`; `GET /v1/observations` sigue sirviendo el listado del portal.
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 4.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.58h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.58h (estimado) · real 0.10h (medido, ventana win-f438c3ad, 15:26Z-15:35Z)
 - **Supervisión**: est. 0.14h (≈25 % IA) · real —
 - **Previsión IA**: 160 k in / 14 k out tok · ⚠️ verificar €
 - **Dependencias**: T-20
 - **Tipo**: backend
-- **Archivos**: `memory_platform/app.py`, `memory_platform/models.py`, `memory_platform/tests/test_api.py`, `memory_platform/tests/test_agent_tools.py`
+- **Archivos**: `memory_platform/app.py`, `memory_platform/models.py`, `memory_platform/tests/test_api.py`, `memory_platform/tests/test_agent_tools.py`, `docs/contracts/memory-platform.openapi.json`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t21 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
 
 **Criterios de aceptación**
-- [ ] Los tres endpoints devuelven lo mismo que su herramienta para igual credencial y argumentos
-- [ ] `GET /v1/observations` conserva su semántica y respuesta (test de no regresión)
-- [ ] Cada endpoint tiene test de acceso permitido, lector sin permiso (403) y proyecto ajeno
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] Los tres endpoints devuelven lo mismo que su herramienta para igual credencial y argumentos
+- [x] `GET /v1/observations` conserva su semántica y respuesta (test de no regresión)
+- [x] Cada endpoint tiene test de acceso permitido, lector sin permiso (403) y proyecto ajeno
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Test en rojo de los tres + de no regresión del listado
-- [ ] Añadir rutas, modelos y permisos
-- [ ] `usage-meter start/close`
+- [x] Test en rojo de los tres + de no regresión del listado
+- [x] Añadir rutas, modelos y permisos
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-05. Patrón: `AgentStore.observations` en `memory_platform/agent_store.py:355`; el listado del portal en `memory_platform/app.py:353-355` (`PortalStore.page`) no se toca; `observation_context` en `memory_platform/agent_tools.py:127` (aviso ya existente). Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde.
+**Notas**: Procedencia: spec CA-05. Patrón: `AgentStore.observations` en `memory_platform/agent_store.py:355`; el listado del portal en `memory_platform/app.py:353-355` (`PortalStore.page`) no se toca; `observation_context` en `memory_platform/agent_tools.py:127` (aviso ya existente). Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde. Implementación: `POST /v1/projects/{project_id}/observations/get` (cuerpo `ObservationIds`: 1 a 100 ids de hasta 200 caracteres; `kairos_get_observations`), `GET …/observations/search?query=&limit=` (1 a 100, por defecto 20; `kairos_observation_search`) y `GET …/observations/context?query=&limit=` (1 a 200, por defecto 10; añade `context` y el `warning` de dato no fiable, igual que la herramienta; `kairos_observation_context`). Los tres llaman a `AgentStore.observations` con los mismos argumentos que las herramientas y están bajo el proyecto, sin tocar `GET /v1/observations` (portal): el test fija la forma de ese listado (`items`, `next_cursor`, `has_more`, `filters`, `ordering`, `rule_policy`, sin `mode`). El contenido es el de la herramienta; el presupuesto de bytes (`render`) lo sigue aplicando la herramienta MCP, no el endpoint (lo aplicará kairos-mcp en la Fase 5). `test_agent_tools.py` no hizo falta tocarlo (la semántica de `AgentStore.observations` no cambia): el test está en `test_api.ParityEndpointTests`. Test `test_observation_reads_return_what_the_three_tools_return_and_the_portal_listing_is_untouched`: igualdad con la herramienta por el MCP interno para las tres, límites (422), clave sin permiso de lectura 403, de otro proyecto 404, sin credencial 401, sin fuga entre proyectos y no regresión del listado. Contrato: OpenAPI aditivo (0 líneas quitadas), `openapi.json` añadido a `Archivos`. Verificación: MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 533} (docker build --target test, rc 0, kairos-test:t21). usage-meter close three-components/T-21: 0.10 h IA (medido, win-f438c3ad06fa4da0a8f6ee7838bb700f).
+
+
+RED: `memory_platform/tests/test_api.py::ParityEndpointTests::test_observation_reads_return_what_the_three_tools_return_and_the_portal_listing_is_untouched` falló con AssertionError: 404 != 200 ({"detail":"Not Found"}: las rutas observations/get, search y context no existen) contra las fuentes de HEAD · 2026-11-12.
 
 ### T-22 — Endpoint `/v1` de `query_corpus`
 
