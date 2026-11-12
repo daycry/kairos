@@ -67,8 +67,8 @@ class LanguageSearchTests(unittest.TestCase):
         self.assertNotIn(hidden['item_id'], [i['item_id'] for i in found])
 
     def test_native_facts_find_a_query_without_accent(self):
-        self.store.extraction_enabled = True  # this test needs the `extract` job: explicit opt-in to MEMORY_EXTRACT_ENABLED
         """CA-23 (native facts): before the change `configuracion` did not match `configuración`."""
+        self.store.extraction_enabled = True  # this test needs the `extract` job: explicit opt-in to MEMORY_EXTRACT_ENABLED
         content = 'El servidor guarda la configuración de las canciones'
         original = event(self.pid, payload={'title': 'Servidor', 'content': content, 'source': {'uri': 'fixture://fts'}})
         accepted = self.store.ingest_event(self.actor, original)
@@ -82,8 +82,8 @@ class LanguageSearchTests(unittest.TestCase):
         self.assertEqual(self.store.search_native_facts(self.actor, [self.pid], 'zzzunrelated'), [])
 
     def test_derived_and_event_items_store_both_language_vectors(self):
-        self.store.extraction_enabled = True  # this test needs the `extract` job: explicit opt-in to MEMORY_EXTRACT_ENABLED
         """Both insert paths (events and extraction-derived items) write the language vectors themselves."""
+        self.store.extraction_enabled = True  # this test needs the `extract` job: explicit opt-in to MEMORY_EXTRACT_ENABLED
         content = 'El servidor guarda la configuración de las canciones'
         accepted = self.store.ingest_event(self.actor, event(self.pid, payload={'title': 'Servidor', 'content': content, 'source': {'uri': 'fixture://fts'}}))
         with self.store.transaction() as c:

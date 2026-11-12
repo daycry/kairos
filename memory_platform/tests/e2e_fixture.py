@@ -24,6 +24,9 @@ async def synthetic_corpus_answer(self, messages, sources, limits):
 
 def start(dsn):
     store = Store(dsn)
+    # Seeding needs the `extract` job of the pending item below (it is made `failed`, as the portal shows it): explicit opt-in to
+    # MEMORY_EXTRACT_ENABLED, which is off by default; it goes back off once seeded (the running portal does not extract).
+    store.extraction_enabled = True
     store.migrate()
     admin = store.bootstrap_user('fixture-admin', PASSWORD)
     for pid, title in [('project-a','Proyecto Alfa'),('project-b','Privado Beta'),('capture-off','Captura apagada')]:
@@ -38,6 +41,7 @@ def start(dsn):
     job = store.ingest_event(admin,event('project-a',payload={'title':'Trabajo pendiente real','content':'Uso de leases con fencing','category':'Operación'}))
     with store.transaction() as c:
         c.execute("UPDATE memory.jobs SET state='failed',error_code='synthetic_unavailable' WHERE id=%s",(job['jobs'][0],))
+    store.extraction_enabled = False
     app = FastAPI()
     class PublicPages(StaticFiles):
         async def get_response(self, path, scope):
@@ -46,7 +50,7 @@ def start(dsn):
             return await super().get_response(aliases.get(path, path), scope)
     app.mount('/memory-api',create_app(Settings(dsn,allowed_origins=(BASE,),cookie_secure=False),store=store))
     app.mount('/',PublicPages(directory=os.environ.get('KAIROS_E2E_WEB_ROOT', '/web'),html=True))
-    server = uvicorn.Server(uvicorn.Config(app,host='127.0.0.1',port=8898,log_level='error'))
+    server = uvicorn.Server(uvicorn.Config(app,host='127.0.0.1',port=8898,log_level='error',log_config=None))
     server.fixture_corpus_patch = patch('memory_platform.corpus_answers.NativeCorpusProvider.answer', new=synthetic_corpus_answer)
     server.fixture_corpus_patch.start()
     threading.Thread(target=server.run,daemon=True).start()
