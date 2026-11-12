@@ -210,3 +210,19 @@ BEGIN
     INSERT INTO memory.schema_versions(version) VALUES (10) ON CONFLICT DO NOTHING;
 END
 $chunks$;
+
+-- jobs-failed-index (schema version 11)
+-- Partial index for the `failed` jobs by destination and error code that GET /metrics counts at every scrape (kairos_jobs_failed): without
+-- it that count reads every historical `failed` row. Additive and tiny (only the failed jobs); nothing existing is touched and a previous
+-- release ignores it. The block is skipped once version 11 is registered and the index exists, so a repeated `admin migrate` takes no
+-- lock on `memory.jobs`; the first run takes SHARE on it (writes to jobs wait) only while the index is built, until the COMMIT of the whole migration.
+SET LOCAL lock_timeout = '5s';
+DO $failedjobs$
+BEGIN
+    IF EXISTS (SELECT 1 FROM memory.schema_versions WHERE version = 11) AND to_regclass('memory.memory_jobs_failed_code') IS NOT NULL THEN
+        RETURN;
+    END IF;
+    CREATE INDEX IF NOT EXISTS memory_jobs_failed_code ON memory.jobs(destination, error_code) WHERE state = 'failed';
+    INSERT INTO memory.schema_versions(version) VALUES (11) ON CONFLICT DO NOTHING;
+END
+$failedjobs$;

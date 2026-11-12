@@ -70,8 +70,8 @@ class FtsMigrationTests(unittest.TestCase):
         with self.psycopg.connect(self.admin_dsn) as c:
             for extension in ('unaccent', 'pg_trgm'):
                 self.assertEqual(c.execute('SELECT extnamespace::regnamespace::text FROM pg_extension WHERE extname=%s', (extension,)).fetchone()[0], 'public')
-            self.assertEqual({row[0] for row in c.execute('SELECT version FROM memory.schema_versions').fetchall()}, set(range(1, 11)),
-                             'versions 1..10 exactly: 9 (FTS) follows 8 (pgvector) and 10 (fragments) follows it, without colliding with 5, 6 and 7')
+            self.assertEqual({row[0] for row in c.execute('SELECT version FROM memory.schema_versions').fetchall()}, set(range(1, 12)),
+                             'versions 1..11 exactly: 9 (FTS) follows 8 (pgvector), 10 (fragments) and 11 (failed jobs index) follow it, without colliding with 5, 6 and 7')
             for table in ('documents', 'memory_items'):
                 for column in ('search_vector_es', 'search_vector_en'):
                     self.assertEqual(c.execute(f'SELECT count(*) FROM memory.{table} WHERE {column} IS NULL').fetchone()[0], 0, (table, column))

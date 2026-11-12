@@ -27,6 +27,7 @@ FIELDS = ('request_id', 'layer', 'duration_ms', 'exc_type', 'code', 'status', 'm
 MAX_FIELD = 200
 FOREIGN_LOGGERS = ('uvicorn.error',)
 QUIET_LOGGERS = ('httpx', 'httpcore')
+FOREIGN_FLOOR = logging.INFO  # third-party loggers (mcp, uvicorn, asyncio, psycopg...) never emit below this level, whatever MEMORY_LOG_LEVEL says (CWE-532)
 _MARK = '_kairos_json_handler'
 _REMOVED = []
 _REMOVED_BY = []
@@ -72,6 +73,17 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(entry, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
 
 
+class ForeignFloor(logging.Filter):
+    """Drops the records of loggers that are not `kairos` and are below INFO.
+
+    `MEMORY_LOG_LEVEL=DEBUG` opens the root logger, and at DEBUG third-party libraries dump what they handle (the MCP SDK logs the arguments
+    of the tool calls, that is, the queries): the redaction rules would only be a second barrier. Only the `kairos` logger, whose events carry
+    a closed vocabulary of fields, may go below INFO."""
+
+    def filter(self, record):
+        return record.levelno >= FOREIGN_FLOOR or record.name == 'kairos' or record.name.startswith('kairos.')
+
+
 def _resolve_level(level):
     name = (level if level is not None else os.environ.get('MEMORY_LOG_LEVEL', 'INFO'))
     resolved = name if isinstance(name, int) else getattr(logging, str(name).strip().upper(), None)
@@ -89,6 +101,7 @@ def _install(stream, level):
         return ours[0]
     handler = logging.StreamHandler(stream if stream is not None else sys.stderr)
     handler.setFormatter(JsonFormatter())
+    handler.addFilter(ForeignFloor())
     setattr(handler, _MARK, True)
     root.addHandler(handler)
     return handler
@@ -97,7 +110,8 @@ def _install(stream, level):
 def configure_logging(stream=None, level=None):
     """Make the root logger emit JSON only: one handler, every logger (kairos, uvicorn, httpx, mcp, asyncio, psycopg) propagates to it.
 
-    Idempotent. Level: argument, else MEMORY_LOG_LEVEL, else INFO. httpx/httpcore stay at WARNING so that every request is not logged."""
+    Idempotent. Level: argument, else MEMORY_LOG_LEVEL, else INFO; it applies to `kairos` only: records of other loggers below INFO are dropped by `ForeignFloor`
+    (N1, CWE-532). httpx/httpcore stay at WARNING so that every request is not logged."""
     remove_logging()
     resolved = _resolve_level(level)
     root = logging.getLogger()
@@ -172,7 +186,8 @@ LAYERS = ('episodic', 'documental', 'temporal', 'semantic')
 PROVIDERS = ('extract', 'embed')
 DESTINATIONS = ('extract', 'embed')
 STATES = ('pending', 'running', 'succeeded', 'failed', 'unknown')
-QUEUE_STATES = ('pending', 'running', 'failed', 'unknown')  # `succeeded` is the terminal bulk of the table: never counted at scrape time
+QUEUE_STATES = ('pending', 'running', 'failed', 'unknown')  # the series of `kairos_jobs_queue_depth`; only the non-terminal ones (`pending`, `running`, `unknown`: the worker retries them) are read by the queue query; `succeeded` and `failed` are terminal and accumulate, so the `failed` series is the sum of the failed-by-code read (partial index)
+QUEUE_LIVE_STATES = ('pending', 'running', 'unknown')
 CALLERS = ('query', 'worker')
 OUTCOMES = ('completed', 'failed', 'lost')
 CODES = frozenset({'provider_rate_limited', 'provider_rejected', 'provider_unavailable', 'provider_transport', 'provider_invalid_json',
@@ -254,42 +269,58 @@ def reset_queue_cache():
     _QUEUE_CACHE['at'] = None
 
 
+def _read(store, sql, event):
+    """Rows of one scrape query in its OWN transaction and short `statement_timeout`, or None (logged, never raised) when it failed:
+    a slow or failing query cannot take the other one down with it."""
+    try:
+        with store.transaction() as connection:
+            connection.execute('SET LOCAL statement_timeout = %d' % int(QUEUE_STATEMENT_TIMEOUT_MS))
+            return connection.execute(sql).fetchall()
+    except Exception as exc:
+        log_failure(event, exc, 'warning')
+        return None
+
+
 def refresh_queue_depth(store):
     """Set `kairos_jobs_queue_depth` and `kairos_jobs_failed` from memory.jobs as they are now, at most every QUEUE_CACHE_SECONDS.
 
-    Only non-terminal states are counted (index `memory_job_queue(state, available_at)`), under a short `statement_timeout`. A database failure
-    leaves the previous values, sets `kairos_jobs_queue_scrape_success` to 0 and is logged, never raised; the failed read is cached too."""
+    Two independent reads, each in its own transaction under a short `statement_timeout`: the counts of the non-terminal states (`pending`, `running`, `unknown`; never the
+    terminal rows `succeeded` or `failed`: index `memory_job_queue(state, available_at)`) and the failed jobs by destination and code (partial index `memory_jobs_failed_code`, version 11),
+    whose total by destination is also the `failed` series of `kairos_jobs_queue_depth`.
+    A read that fails leaves the previous values of ITS series and is logged; the other series is still refreshed. Either failure sets
+    `kairos_jobs_queue_scrape_success` to 0 and makes the call return False; nothing is ever raised. The failed read is cached too."""
     now = time.monotonic()
     if _QUEUE_CACHE['at'] is not None and now-_QUEUE_CACHE['at'] < QUEUE_CACHE_SECONDS:
         return _QUEUE_CACHE['ok']
     _QUEUE_CACHE['at'], _QUEUE_CACHE['ok'] = now, False
-    try:
-        with store.transaction() as connection:
-            connection.execute('SET LOCAL statement_timeout = %d' % int(QUEUE_STATEMENT_TIMEOUT_MS))
-            rows = connection.execute("SELECT state, destination, count(*) AS n FROM memory.jobs WHERE state IN ('pending','running','failed','unknown') GROUP BY state, destination").fetchall()
-            failed = connection.execute("SELECT destination, error_code, count(*) AS n FROM memory.jobs WHERE state='failed' GROUP BY destination, error_code").fetchall()
-    except Exception as exc:
-        QUEUE_SCRAPE_SUCCESS.set(0)
-        log_failure('metrics_queue_unavailable', exc, 'warning')
-        return False
-    counts = {(state, destination): 0 for state in QUEUE_STATES for destination in DESTINATIONS}
-    counts[(OTHER, OTHER)] = 0
-    for row in rows:
-        key = (closed(row['state'], QUEUE_STATES), closed(row['destination'], DESTINATIONS))
-        if OTHER in key:
-            key = (OTHER, OTHER)
-        counts[key] = counts.get(key, 0)+int(row['n'])
-    for (state, destination), value in counts.items():
-        QUEUE_DEPTH.labels(state, destination).set(value)
-    by_code = {(destination, code): 0 for destination in DESTINATIONS+(OTHER,) for code in tuple(sorted(JOB_CODES))+(OTHER,)}
-    for row in failed:
-        key = (closed(row['destination'], DESTINATIONS), closed(row['error_code'], JOB_CODES))
-        by_code[key] = by_code.get(key, 0)+int(row['n'])
-    for (destination, code), value in by_code.items():
-        JOBS_FAILED.labels(destination, code).set(value)
-    QUEUE_SCRAPE_SUCCESS.set(1)
-    _QUEUE_CACHE['ok'] = True
-    return True
+    rows = _read(store, "SELECT state, destination, count(*) AS n FROM memory.jobs WHERE state IN ('pending','running','unknown') GROUP BY state, destination", 'metrics_queue_unavailable')
+    failed = _read(store, "SELECT destination, error_code, count(*) AS n FROM memory.jobs WHERE state='failed' GROUP BY destination, error_code", 'metrics_failed_unavailable')
+    if rows is not None:
+        counts = {(state, destination): 0 for state in QUEUE_STATES for destination in DESTINATIONS}
+        counts[(OTHER, OTHER)] = 0
+        for row in rows:
+            key = (closed(row['state'], QUEUE_LIVE_STATES), closed(row['destination'], DESTINATIONS))
+            if OTHER in key:
+                key = (OTHER, OTHER)
+            counts[key] = counts.get(key, 0)+int(row['n'])
+        for (state, destination), value in counts.items():
+            if state != 'failed':
+                QUEUE_DEPTH.labels(state, destination).set(value)
+    if failed is not None:
+        failed_depth = {destination: 0 for destination in DESTINATIONS+(OTHER,)}  # `other` lives in `kairos_jobs_failed`; the queue series `other` is for the live read
+        by_code = {(destination, code): 0 for destination in DESTINATIONS+(OTHER,) for code in tuple(sorted(JOB_CODES))+(OTHER,)}
+        for row in failed:
+            key = (closed(row['destination'], DESTINATIONS), closed(row['error_code'], JOB_CODES))
+            by_code[key] = by_code.get(key, 0)+int(row['n'])
+            failed_depth[key[0]] += int(row['n'])
+        for (destination, code), value in by_code.items():
+            JOBS_FAILED.labels(destination, code).set(value)
+        for destination in DESTINATIONS:
+            QUEUE_DEPTH.labels('failed', destination).set(failed_depth[destination])
+    ok = rows is not None and failed is not None
+    QUEUE_SCRAPE_SUCCESS.set(1 if ok else 0)
+    _QUEUE_CACHE['ok'] = ok
+    return ok
 
 
 def render_metrics():

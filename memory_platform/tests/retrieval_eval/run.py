@@ -1,7 +1,12 @@
 """Retrieval quality evaluation: loads the synthetic dataset and measures every retrieval layer.
 
-Safety: it only talks to the isolated harness database (local ``memory_test``) and uses the offline
+Safety: it only talks to the isolated harness database (local ``memory_test``) and, by default, uses the offline
 embedding provider. It never reads configured user services or the deployed database.
+
+Real embeddings (T-36): MEMORY_RETRIEVAL_EVAL_PROVIDER=ollama plus MEMORY_RETRIEVAL_EVAL_OLLAMA_URL=<endpoint of a disposable Ollama created for the
+evaluation>. Only these two variables are read (never MEMORY_OLLAMA_URL), and the deployed Ollama (the `ollama` proxy, `knowledge-graphs-*`
+containers, host.docker.internal, loopback and bridge gateways in any spelling) is refused by ``check_ollama_url``. It is a deny list that does
+not resolve DNS: the LAN address of the host or a name that resolves to it still passes, so point it only at a disposable container by name. Only embeddings are used: no LLM, no extraction.
 
 Usage (inside the harness): python -m memory_platform.tests.retrieval_eval.run [--report out.json]
 Normally invoked by ``memory_platform.tests.run_postgres`` with MEMORY_RETRIEVAL_EVAL=1.
@@ -12,11 +17,14 @@ import argparse
 import asyncio
 import hashlib
 import json
+import ipaddress
 import os
+import socket
 import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from memory_platform.config import Settings
 
@@ -29,6 +37,9 @@ DSN_KEYS = frozenset({'host', 'port', 'dbname', 'user'})
 LOOPBACK = ('127.0.0.1', 'localhost', '::1')
 PINNED_HOSTADDR = '127.0.0.1'
 LIBPQ_REDIRECT_ENV = ('PGHOSTADDR', 'PGHOST', 'PGPORT', 'PGDATABASE', 'PGSERVICE', 'PGSERVICEFILE', 'PGSYSCONFDIR')
+PROVIDER_ENV, OLLAMA_URL_ENV = 'MEMORY_RETRIEVAL_EVAL_PROVIDER', 'MEMORY_RETRIEVAL_EVAL_OLLAMA_URL'
+DEPLOYED_OLLAMA_HOSTS = ('ollama', 'host.docker.internal', 'gateway.docker.internal')  # the compose proxy and the host's Ollama (by name): the deployed installation
+FAKE_LABEL = 'fake-hashed-words-and-char-ngrams'
 STRUCTURAL_KEYS = ('query_backends', 'dataset', 'dataset_sha256', 'product_database_accessed', 'embedding_provider', 'model', 'limit', 'layers')
 
 
@@ -162,6 +173,69 @@ def connect_dsn(dsn):
     """The DSN actually used to connect: the validated one with the numeric address pinned to loopback."""
     from psycopg.conninfo import make_conninfo
     return make_conninfo(dsn, hostaddr=PINNED_HOSTADDR)
+
+
+def host_address(host):
+    """The IP a host spells (dotted, short `127.1`, integer `2130706433`, hex/octal parts as `inet_aton` reads them, IPv6, `::ffff:` mapped), or None for a name."""
+    try:
+        return ipaddress.ip_address(host.split('%', 1)[0])
+    except ValueError:
+        pass
+    try:
+        return ipaddress.IPv4Address(socket.inet_aton(host))
+    except (OSError, ValueError):
+        return None
+
+
+def refused_address(address):
+    """Loopback, unspecified, link-local (the host or the container itself) and the gateway of a Docker bridge network (a private IPv4 ending in `.1`: it is
+    the host, and with it the deployed Ollama on 11434). Any other private address is a container of an isolated network, which is what the evaluation needs."""
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        address = address.ipv4_mapped
+    if address.is_loopback or address.is_unspecified or address.is_link_local or address.is_multicast or address.is_reserved:
+        return True
+    return isinstance(address, ipaddress.IPv4Address) and address.is_private and int(address) & 0xFF == 1
+
+
+def check_ollama_url(url):
+    """The endpoint of the disposable Ollama of the evaluation, or SystemExit.
+
+    Plain ``http`` without credentials, query or path; never the deployed installation: not the compose proxy (`ollama`), not ``host.docker.internal`` or
+    ``gateway.docker.internal``, not a ``knowledge-graphs*`` container, not the host itself (any loopback, unspecified or link-local address, in any spelling, on any port)
+    and not the conventional gateway of a Docker bridge network (`172.17.0.1`: the host). The host is lower-cased and loses its trailing dot, and IPs are interpreted
+    (`127.1`, `2130706433`, `::ffff:127.0.0.1`), never compared as text. What is accepted is the name of a container of an isolated network (`kairos-rq8-ollama`).
+    """
+    refuse = SystemExit('retrieval-eval refuses this Ollama endpoint: %s must be the plain http endpoint of a disposable Ollama created for the evaluation, '
+                        'never the deployed one (no `ollama` proxy, host.docker.internal, gateway.docker.internal, knowledge-graphs-* container, loopback or bridge gateway address).' % OLLAMA_URL_ENV)
+    try:
+        parts = urlsplit(url or '')
+        host, port = (parts.hostname or '').lower().rstrip('.'), parts.port
+    except ValueError:
+        raise refuse from None
+    if parts.scheme != 'http' or not host or parts.username or parts.password or parts.query or parts.fragment or parts.path not in ('', '/'):
+        raise refuse
+    if host in DEPLOYED_OLLAMA_HOSTS or host.startswith('knowledge-graphs') or host == 'localhost' or host.endswith('.localhost'):
+        raise refuse
+    address = host_address(host)
+    if address is not None and refused_address(address):
+        raise refuse
+    if address is None and ':' in host:  # an IPv6 form that ipaddress does not read is not worth guessing at
+        raise refuse
+    return url.rstrip('/')
+
+
+def make_provider(dsn):
+    """(embeddings provider, report label, settings). Simulated unless MEMORY_RETRIEVAL_EVAL_PROVIDER=ollama; never falls back silently."""
+    from memory_platform.tests.retrieval_eval.fake_embeddings import FakeEmbeddings
+    choice = os.environ.get(PROVIDER_ENV, 'fake').strip().lower()
+    if choice == 'fake':
+        settings = Settings(dsn, request_timeout=60.0, embedding_query_timeout=30.0)
+        return FakeEmbeddings(settings), FAKE_LABEL, settings
+    if choice != 'ollama':
+        raise SystemExit('retrieval-eval: %s must be `fake` or `ollama`' % PROVIDER_ENV)
+    from memory_platform.providers import Embeddings
+    settings = Settings(dsn, request_timeout=60.0, embedding_query_timeout=30.0, ollama_url=check_ollama_url(os.environ.get(OLLAMA_URL_ENV)))
+    return Embeddings(settings), 'ollama:' + settings.embedding_model, settings
 
 
 def load_dataset(path):
@@ -317,11 +391,9 @@ def tune(spec, dsn=None, test_dsn=None, dataset=None):
 def build_report(dsn, test_dsn, dataset_path):
     check_dsn(dsn, test_dsn)
     dsn = connect_dsn(dsn)
-    from memory_platform.tests.retrieval_eval.fake_embeddings import FakeEmbeddings
     records, digest = load_dataset(dataset_path)
+    provider, label, settings = make_provider(dsn)
     store, actor, project = _setup(dsn)
-    settings = Settings(dsn, request_timeout=60.0, embedding_query_timeout=30.0)
-    provider = FakeEmbeddings(settings)
     ids, texts = _load_corpus(store, actor, project, records)
 
     async def go():
@@ -329,7 +401,7 @@ def build_report(dsn, test_dsn, dataset_path):
         return await _measure(store, actor, project, ids, [r for r in records if r['type'] == 'question'], provider, settings)
     layers, query_backends = asyncio.run(go())
     return {'dataset': Path(dataset_path).stem, 'dataset_sha256': digest, 'product_database_accessed': False,
-            'embedding_provider': 'fake-hashed-words-and-char-ngrams', 'model': settings.embedding_model, 'limit': LIMIT,
+            'embedding_provider': label, 'model': settings.embedding_model, 'limit': LIMIT,
             'generated_at': datetime.now(timezone.utc).isoformat(timespec='seconds'), 'layers': layers, 'query_backends': query_backends}
 
 

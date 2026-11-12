@@ -69,8 +69,8 @@ class ChunkSchemaTests(unittest.TestCase):
         store.migrate()
         self.assertEqual(content_manifest(store)['sha256'], before)
         with self.psycopg.connect(self.admin_dsn) as c:
-            self.assertEqual({row[0] for row in c.execute('SELECT version FROM memory.schema_versions').fetchall()}, set(range(1, 11)),
-                             'version 10 must follow 9 (FTS) without colliding with 5, 6, 7 and 8')
+            self.assertEqual({row[0] for row in c.execute('SELECT version FROM memory.schema_versions').fetchall()}, set(range(1, 12)),
+                             'versions 10 (fragments) and 11 (failed jobs index) must follow 9 (FTS) without colliding with 5, 6, 7 and 8')
             self.assertEqual(c.execute('SELECT md5(string_agg(md5(vector::text),$$,$$ ORDER BY item_id)) FROM memory.embeddings').fetchone()[0], vectors_before)
             columns = {row[0]: row[1] for row in c.execute("SELECT column_name,data_type FROM information_schema.columns WHERE table_schema='memory' AND table_name='embedding_chunks'").fetchall()}
             self.assertEqual(set(columns), {'project_id', 'item_id', 'resource_type', 'version', 'canonical_hash', 'model', 'ordinal', 'char_start', 'char_end', 'embedding', 'dims', 'created_at'})

@@ -1,0 +1,96 @@
+{
+  "after_state": {
+    "embed_jobs_succeeded": 72,
+    "embedding_chunks_rows": 144,
+    "embeddings_chunked_false": 0,
+    "embeddings_rows": 72,
+    "second_backfill_chunks": {
+      "derived": 0,
+      "enqueued": 0,
+      "remaining": 0,
+      "stale_marked": 0
+    }
+  },
+  "compose_project": "kairos-rq8",
+  "content_manifest": {
+    "documents": 20,
+    "equal": true,
+    "projects": [
+      "custom-agents",
+      "euipo"
+    ],
+    "sha256_after_deploy": "46a6705d611b9585e408e9f38a27f8fd1e21f86fdbea14f4ce6f12021b172c43",
+    "sha256_before_migrating_previous_code": "46a6705d611b9585e408e9f38a27f8fd1e21f86fdbea14f4ce6f12021b172c43"
+  },
+  "date": "2026-11-11",
+  "deploy": {
+    "backfill": {
+      "batches": 2,
+      "derived": 60,
+      "embedding_filled": 0,
+      "enqueued": 12,
+      "failed": 0,
+      "pending": 12,
+      "remaining": 0,
+      "stale_marked": 0,
+      "status": "backfilled"
+    },
+    "backup": {
+      "bytes": 383035,
+      "path": "/backups/kairos-before-20261111T224532324465Z.dump",
+      "status": "backed_up"
+    },
+    "capture_policy_changed": false,
+    "data_removed": false,
+    "documents": 20,
+    "migrate_timeout_seconds": 3600,
+    "phases": [
+      "engine",
+      "configuration",
+      "build",
+      "database",
+      "inspect",
+      "backup",
+      "migrate",
+      "bootstrap",
+      "backfill",
+      "start",
+      "verify"
+    ],
+    "projects": 2,
+    "status": "complete",
+    "worker_stopped_before_backfill": true
+  },
+  "deploy_command": "python scripts/deploy-memory.py --apply --project-name kairos-rq8 --secret-dir <scratchpad>/secrets --api-port 18791 --web-port 15174",
+  "host_ports": {
+    "api": 18791,
+    "web": 15174
+  },
+  "isolation": "own project name, volumes (kairos-rq8_*), networks, image tags (rehearsal-kairos-rq8-*), ports, .private/rehearsal-kairos-rq8 and synthetic secrets in the scratchpad; OLLAMA_UPSTREAM pointed at a disposable Ollama (kairos-rq8-ollama); no knowledge-graphs-* container, volume or network and no .env/.private of the installation was used",
+  "previous_state": "code of 1d43523 (the released code: memory_platform and docker-compose.yml identical to the deployed release) on the official PostgreSQL image without pgvector, schema 7, bootstrapped (2 projects) and seeded through its own write paths with the synthetic evaluation corpus (20 documents, 52 notes); 72 embed jobs completed by the previous worker against the disposable Ollama (768-dimension vectors)",
+  "queue_drain": {
+    "final_metrics_lines_nonzero_or_present": [
+      "kairos_jobs_queue_scrape_success 1.0"
+    ],
+    "internal_metrics_url": "http://127.0.0.1:18791/metrics (host loopback, no proxy headers)",
+    "kairos_jobs_failed_total": 0,
+    "kairos_jobs_queue_depth_pending_running_total": 0,
+    "poll": [
+      "23:47:00 pending+running=9",
+      "23:47:16 pending+running=7",
+      "23:47:32 pending+running=6",
+      "23:47:48 pending+running=5",
+      "23:48:04 pending+running=4",
+      "23:48:20 pending+running=2",
+      "23:48:36 pending+running=1",
+      "23:48:51 pending+running=0"
+    ]
+  },
+  "task": "T-38 (adjusted): complete activation rehearsal in an isolated Compose project; the real deployment is Iniciativa 5 of docs/roadmap/2026-11-10-platform-audit/plan.md",
+  "verification": {
+    "documents_verified": 20,
+    "mcp_tools": 34,
+    "projects": 2,
+    "transport": "MCP HTTP"
+  }
+}

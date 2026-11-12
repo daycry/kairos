@@ -4,7 +4,7 @@
 
 ![Pantalla de acceso de Kairos](docs/assets/screenshots/acceso.jpg)
 
-Última actualización: 2026-11-09.
+Última actualización: 2026-11-11.
 
 ---
 
@@ -46,7 +46,8 @@ Kairos no reentrena modelos: «aprender» significa conservar una experiencia qu
 |---|---|---|
 | Servidor (API, trabajador, web, PostgreSQL) | ✅ Desplegado y verificado el 2026-11-09 | 34 herramientas MCP, 2 proyectos y 21 documentos comprobados tras el despliegue |
 | Clientes nativos (Claude Code, Codex, OpenCode) | ✅ Aceptados el 2026-11-06 | Lectura, contexto y captura técnica de resúmenes, en las versiones registradas |
-| Funciones ampliadas (observaciones, equipo, corpus, análisis local) | ✅ Implementadas y probadas | Backend 177/177, web 65/65, UI en Chromium 20/20 |
+| Funciones ampliadas (observaciones, equipo, corpus, análisis local) | ✅ Implementadas y probadas | Backend 480/480 (suite actual, PostgreSQL aislado), web 65/65, UI en Chromium 20/20 |
+| Calidad de recuperación (pgvector, búsqueda léxica es/en, fragmentos, degradación, logs y métricas) | ✅ Implementada y probada en entornos aislados · ⏳ **sin desplegar** | La instalación local sigue en la versión del 2026-11-09; el despliegue real requiere autorización y se ensayó en un proyecto Compose aislado |
 | Paquete `@daycry/kairos` 0.2.0 | ⏳ Preparado, sin publicar | El tarball revisado pasa `release:check`; la publicación en npm está pendiente |
 
 El detalle y las evidencias de cada iniciativa están en [`docs/roadmap/`](docs/roadmap/).
@@ -68,7 +69,7 @@ flowchart LR
 1. El agente llama a una herramienta MCP. El puente local la convierte en una petición HTTP autenticada con una clave privada.
 2. La API comprueba permisos por proyecto (`read`, `write`, `publish`, `validate`, `admin`) y la política de captura, y guarda la operación junto con sus trabajos.
 3. El trabajador procesa los trabajos de forma asíncrona: extracción, embeddings y relaciones, usando el servidor de modelos.
-4. Las búsquedas combinan tres capas: **episódica** (experiencias), **documental** (fuentes aprobadas) y **temporal** (hechos y relaciones con evidencia).
+4. Las búsquedas combinan tres capas: **episódica** (experiencias), **documental** (fuentes aprobadas) y **temporal** (hechos y relaciones con evidencia), más una recuperación **semántica** por embeddings (pgvector, con los textos largos troceados en fragmentos). La búsqueda léxica entiende español e inglés sin tildes y completa con títulos parecidos; si falla solo la parte semántica, la respuesta léxica sigue siendo válida (`degraded`).
 
 Más detalle en [arquitectura](docs/architecture.md).
 
@@ -223,6 +224,7 @@ Contratos: [`docs/contracts/kairos-mcp.json`](docs/contracts/kairos-mcp.json) y 
 | Diagnosticar un despliegue (solo lectura) | `python scripts/diagnose-deployment.py` |
 | Administración de la base | `python scripts/memory-admin.py {migrate,bootstrap,inspect,content-manifest,backup,restore-check}` |
 | Estado de los servicios | `docker compose ps` |
+| Logs y métricas | `docker compose logs memory-api` (JSON de una línea con `request_id`); `GET /metrics` solo desde la red interna (`MEMORY_METRICS`) |
 | Trabajos fallidos | Panel → **Operaciones** → *Reintentar pendientes* |
 
 **Problema frecuente:** si el despliegue se para en `start` y el contenedor `ollama` aparece `unhealthy` con `502 Bad Gateway`, el servidor Ollama del equipo no está en marcha. Arráncalo, comprueba `http://127.0.0.1:11434/api/version` y repite `--apply`. La copia y la migración ya aplicadas no se repiten de forma destructiva.
@@ -233,7 +235,8 @@ Copias, restauración aislada, claves e incidencias: [operación y recuperación
 
 | Ámbito | Cómo se verifica |
 |---|---|
-| Backend | Suite completa contra PostgreSQL aislado (177 pruebas) |
+| Backend | Suite completa contra PostgreSQL aislado (480 pruebas) |
+| Calidad de recuperación | Puerta `retrieval-eval` (recall@5, MRR y no regresión por subconjunto sobre un conjunto sintético congelado), con embeddings simulados en la suite y con un Ollama desechable en la medida con el modelo real |
 | Web | Pruebas unitarias (65), TypeScript y build de producción con Vite |
 | Interfaz | Navegación real en Chromium con Playwright (20 escenarios), escritorio y móvil |
 | Manuales | Generación sin conexión y comprobación en dos anchos de pantalla |
@@ -249,6 +252,7 @@ Las pruebas nunca se ejecutan contra la base de datos desplegada. Las evidencias
 - El contenido recuperado puede ser incorrecto o contener instrucciones maliciosas; los agentes deben tratarlo como datos.
 - El análisis local de código es léxico y acotado; no sube el repositorio ni ejecuta código del proyecto.
 - El paquete npm aún no está publicado; hasta entonces la instalación de clientes usa el tarball local.
+- Las mejoras de recuperación (pgvector, fragmentos, búsqueda léxica por idioma, métricas) no se han desplegado en la instalación local: hasta entonces esta responde con el comportamiento anterior. Los textos largos tardan en indexarse por fragmentos y el contenido ya existente se rellena con `admin backfill-chunks` (lo ejecuta el despliegue).
 
 ## Documentación
 

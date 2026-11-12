@@ -2,7 +2,9 @@
 
 Run inside the harness container only (python -m memory_platform.tests.retrieval_eval.stale_measure): the DSN guard and the pinned loopback address of the retrieval
 evaluation apply, and the script works in a database of its own that it creates and drops. STALE resources, each with ONE old version still flagged
-`chunked=false` and a current version already chunked; 8-dimension synthetic vectors (the probe does not depend on the width; no HNSW involved).
+`chunked=false` and a current version already chunked. By default 8-dimension synthetic vectors under a model without index (the probe does not depend on the width; no HNSW involved).
+With STALE_MODEL=nomic-embed-text STALE_DIMS=768 the rows go through the REAL partial HNSW index of `memory.embeddings` (and of `memory.embedding_chunks`): flagging a stale row
+updates `chunked`, which prevents a HOT update, so every flagged row inserts a new entry in that graph; that is the cost the `backfill` phase pays (`stale_marked`).
 Result: `STALE_COST_RESULT {json}`."""
 import json
 import os
@@ -20,13 +22,14 @@ from memory_platform.store_vectors import CURRENT_RESOURCE, UNCHUNKED_ONLY_LIMIT
 from memory_platform.tests.retrieval_eval.run import check_dsn, connect_dsn
 
 STALE = int(os.environ.get('STALE_ROWS', '40000'))
-MODEL = 'stale-model'
+MODEL = os.environ.get('STALE_MODEL', 'stale-model')
+DIMS = int(os.environ.get('STALE_DIMS', '8'))
 PROBE = ('SELECT e.project_id,e.item_id,e.resource_type FROM memory.embeddings e WHERE e.project_id=ANY(%s) AND e.model=%s AND e.dims=%s AND NOT e.chunked AND '
          + CURRENT_RESOURCE + ' LIMIT %s')
 
 
 def explain(c):
-    params = (['p1'], MODEL, 8, None, None, None, None, None, None, None, None, UNCHUNKED_ONLY_LIMIT + 1)
+    params = (['p1'], MODEL, DIMS, None, None, None, None, None, None, None, None, UNCHUNKED_ONLY_LIMIT + 1)
     lines = [row[0] for row in c.execute('EXPLAIN (ANALYZE, BUFFERS) ' + PROBE, params).fetchall()]
     text = '\n'.join(lines)
     return {'execution_ms': float(re.search(r'Execution Time: ([\d.]+) ms', text).group(1)),
@@ -44,7 +47,7 @@ class Measure(unittest.TestCase):
         with psycopg.connect(base, autocommit=True) as admin:
             admin.execute(f'CREATE DATABASE {name}')
         dsn = make_conninfo(base, dbname=name)
-        report = {'stale_versions_one_per_resource': STALE, 'postgres': 'isolated container build', 'dimensions': 8}
+        report = {'stale_versions_one_per_resource': STALE, 'postgres': 'isolated container build', 'dimensions': DIMS, 'model': MODEL}
         try:
             store = Store(dsn, embedding_enabled=True)
             store.migrate()
@@ -55,18 +58,18 @@ class Measure(unittest.TestCase):
                 c.execute('INSERT INTO memory.actors(id,username,password_hash,is_admin) VALUES(%s,%s,%s,true)', (actor_id, 'stale', hash_password('fixture-password-123')))
                 c.execute(f"""INSERT INTO memory.documents(project_id,id,version,canonical_hash,body)
                               SELECT 'p1','d'||n,2,repeat('b',64),jsonb_build_object('title','Documento '||n,'content','contenido '||n) FROM generate_series(1,{STALE}) n""")
-                vector = 'ARRAY(SELECT random()+0.01 FROM generate_series(1,8))'
+                vector = f'ARRAY(SELECT random()+0.01 FROM generate_series(1,{DIMS}))'
                 c.execute(f"""INSERT INTO memory.embeddings(project_id,item_id,resource_type,version,canonical_hash,model,vector,chunked)
                               SELECT 'p1','d'||n,'document',1,repeat('a',64),%s,{vector},false FROM generate_series(1,{STALE}) n""", (MODEL,))
                 c.execute(f"""INSERT INTO memory.embeddings(project_id,item_id,resource_type,version,canonical_hash,model,vector,chunked)
                               SELECT 'p1','d'||n,'document',2,repeat('b',64),%s,{vector},true FROM generate_series(1,{STALE}) n""", (MODEL,))
                 c.execute(f"""INSERT INTO memory.embedding_chunks(project_id,item_id,resource_type,version,canonical_hash,model,ordinal,char_start,char_end,embedding)
-                              SELECT 'p1','d'||n,'document',2,repeat('b',64),%s,0,0,12,ARRAY(SELECT random()+0.01 FROM generate_series(1,8))::vector FROM generate_series(1,{STALE}) n""", (MODEL,))
+                              SELECT 'p1','d'||n,'document',2,repeat('b',64),%s,0,0,12,ARRAY(SELECT random()+0.01 FROM generate_series(1,{DIMS}))::vector FROM generate_series(1,{STALE}) n""", (MODEL,))
             with psycopg.connect(dsn, autocommit=True) as c:
                 for table in ('embeddings', 'documents', 'embedding_chunks'):
                     c.execute('VACUUM ANALYZE memory.' + table)
             actor = {'id': actor_id, 'credential_type': 'bootstrap'}
-            queries = [[(n * 7 + i) % 11 + 1.0 for i in range(8)] for n in range(30)]
+            queries = [[(n * 7 + i) % 11 + 1.0 for i in range(DIMS)] for n in range(30)]
 
             def measure(label):
                 with psycopg.connect(dsn) as c:

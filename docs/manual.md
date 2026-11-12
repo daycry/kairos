@@ -121,6 +121,14 @@ Una tarjeta muestra título, proyecto, capa, estado de validación, versión, ex
 
 La búsqueda combina la recuperación del servidor y, cuando se solicita y está disponible, la recuperación semántica. Un resultado vacío no demuestra ausencia de conocimiento: revisa el proyecto, las capas, los filtros y las operaciones pendientes. Busca también palabras que aparezcan en la fuente.
 
+Qué puedes esperar de la búsqueda tras las últimas mejoras del servidor (cuando la instalación las tiene desplegadas):
+
+- **Español e inglés, con o sin tildes.** `configuración` y `configuracion`, o una forma conjugada o en plural, encuentran lo mismo. No hace falta escribir la consulta en el idioma del documento.
+- **Errores tipográficos e identificadores.** Si la búsqueda exacta devuelve pocos resultados, el servidor completa con títulos parecidos (por ejemplo `ERR4471` encuentra `ERR-4471`). Esos aciertos aparecen **después** de los exactos y el cliente puede distinguirlos (`lexical_match: "trigram"`); compruébalos antes de fiarte de ellos.
+- **Documentos y notas largos.** Un dato que está al final de un documento largo ya se puede encontrar por significado: el servidor indexa el texto completo por fragmentos y el extracto muestra el fragmento que coincide. Un documento recién publicado o un contenido antiguo todavía sin trocear se responde con su resumen inicial hasta que el trabajador termina de indexarlo; mira **Operaciones** si tarda.
+- **Si falla solo la parte semántica,** la respuesta léxica sigue siendo válida: el servidor lo indica (`degraded`) y no es un error de tu consulta. Repite más tarde si necesitas la recuperación por significado.
+- **Recuperación más fiable no significa verdad.** Lo validado se prefiere ligeramente a lo no validado, pero un resultado mucho mejor posicionado y sin validar puede ir antes: revisa siempre el estado de validación y la evidencia.
+
 La acción de preparar contexto devuelve una selección acotada con procedencia y avisos. Su objetivo es facilitar el siguiente trabajo del agente. Sigue siendo una selección, no una garantía de que todo el conocimiento relevante esté incluido. Si aparece un aviso de resultados parciales, comprueba qué capa no respondió antes de tomarlo como una respuesta completa.
 
 ## Leer una ficha y evaluar su fiabilidad
@@ -251,7 +259,7 @@ No envíes cada mensaje como una nota. Deduplica experiencias repetidas y versio
 |---|---|
 | No aparece un proyecto | Cuenta y permisos, catálogo cargado, filtro de proyectos; pedir acceso al administrador |
 | No aparece una categoría | Metadatos de los elementos del proyecto y actualización del catálogo |
-| La búsqueda no encuentra un documento recibido | Trabajos, proyecto, capas, texto, categoría, retirada o versión vigente |
+| La búsqueda no encuentra un documento recibido | Trabajos, proyecto, capas, texto, categoría, retirada o versión vigente. Un texto muy largo tarda en indexarse por fragmentos: mira su trabajo en **Operaciones** |
 | Un contador no coincide con el mapa | Son totales diferentes; leer la sección de contadores |
 | Una bolita no abre contenido | Comprobar si es una entidad sin referencia; usar evidencia o vista de lista |
 | La captura está rechazada | Política del proyecto, tipo de evento y permiso de escritura |

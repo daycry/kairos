@@ -36,8 +36,8 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 5 — Troceado para embeddings (C-06 · P2) | 7 | 7 | 100.0% | 0 / 28h | 1,43 / 4h | 0 / 1h | 0 / 1200k |
 | Fase 6 — Híbrida con degradación y CLI (C-04 · P3) | 4 | 4 | 100.0% | 0 / 12h | 0 / 1,6h | 0 / 0,4h | 0 / 470k |
 | Fase 7 — Observabilidad (C-07 · P12) — en paralelo desde T-06 | 4 | 4 | 100.0% | 0 / 18h | 0,49 / 2,6h | 0 / 0,64h | 0 / 770k |
-| Fase 8 — Integración, revisión y activación | 0 | 5 | 0% | 0 / 26h | 0 / 4,31h | 0 / 1,06h | 0 / 1280k |
-| **TOTAL** | **33** | **38** | **86.8%** | **0 / 173h** | **7,13 / 26,03h** | **0 / 6,5h** | **0 / 7780k** |
+| Fase 8 — Integración, revisión y activación | 5 | 5 | 100.0% | 0 / 26h | 0 / 4,31h | 0 / 1,06h | 0 / 1280k |
+| **TOTAL** | **38** | **38** | **100.0%** | **0 / 173h** | **7,13 / 26,03h** | **0 / 6,5h** | **0 / 7780k** |
 
 > Las horas de este ledger son **base** (sin el margen del 20 %); con margen: humanas 207,6 h, IA 31,2 h. Las horas IA y los tokens son estimaciones (ratio 300.000 tok/h no calibrado).
 
@@ -1246,96 +1246,152 @@ RED: `memory_platform/tests/test_metrics.py MetricsRouteTests y DeploymentTests 
 
 ## Fase 8 — Integración, revisión y activación
 
-**Estado**: borrador · **Estimado**: 26h base (31.2h con margen) · **Real**: — · **Coste est.**: 1.560 € · **Tokens est.**: 1200k in / 80k out
+**Estado**: completado · **Estimado**: 26h base (31.2h con margen) · **Real**: — · **Coste est.**: 1.560 € · **Tokens est.**: 1200k in / 80k out
 
 ### T-34 — Manuales: pgvector, FTS por idioma, troceado y métricas
 
-- **Descripción**: Completar `docs/architecture.md`, `docs/configuration.md` y `docs/operations.md` con FTS es/en y trigram, troceado (`MEMORY_CHUNK_*`), métricas y logs (`MEMORY_METRICS`), la puerta `retrieval-eval` y el relleno del despliegue. Regenerar el manual con capturas si el script lo hace.
-- **Changelog**:
-- **Estado**: borrador
+- **Descripción**: Completar `docs/architecture.md`, `docs/configuration.md` y `docs/operations.md` con FTS es/en y trigram, troceado (`MEMORY_CHUNK_*`), métricas y logs (`MEMORY_METRICS`), la puerta `retrieval-eval` y el relleno del despliegue. Regenerar el manual con capturas si el script lo hace. **Ajuste aprobado por el usuario** (`docs/roadmap/2026-11-10-platform-audit/plan.md`, Iniciativa 1; O-11, O-12 de `audit.md`; el plan director solo recoge O-11, O-12, T-36 y T-38): además documenta las variables que faltaban (`MEMORY_CHUNK_*`, `MEMORY_EMBED_BATCH*`, `MEMORY_VECTOR_INDEXES`, `MEMORY_FUSION_*`, `MEMORY_METRICS`, `MEMORY_LOG_LEVEL`) y las propaga en `docker-compose.yml`; refleja las fases 3 a 7 en `README.md`, `architecture.md`, `integration.md` y `manual.md`; separa en `operations.md` el runbook del historial y las mediciones (O-12); y salda las deudas R2 (tope real de un trabajo de embeddings con `worker_deadline`) y R3 (`semantic_budget_ms` estricto rechaza `500.0`), de la tabla de deuda de la revisión de la Fase 6 (intento 3), y N1 (CWE-532: con `MEMORY_LOG_LEVEL=DEBUG` los loggers que no son `kairos` se limitan a INFO, con test), de la tabla de deuda de la revisión de la Fase 7 (intento 2): ninguna de las tres está en el plan director.
+- **Changelog**: Los manuales describen la búsqueda por idioma, los fragmentos de textos largos, los logs y métricas y todas las variables (el Compose ya las propaga); DEBUG no vuelca consultas de librerías.
+- **Estado**: completado
+- **Cerrada**: 2026-11-11
 - **Tiempo humano**: est. 3h · real —
-- **Tiempo IA (ejec.)**: est. 0,5h · real —
+- **Tiempo IA (ejec.)**: est. 0,5h · real 1,4h (estimado: ajustes aprobados O-11/O-12/R2/R3/N1 incluidos)
 - **Supervisión**: est. 0,12h (≈25 % IA) · real —
 - **Previsión IA**: 140k in / 10k out tok · ⚠️ verificar €
 - **Dependencias**: T-12, T-18, T-25, T-28, T-29, T-33
 - **Tipo**: docs
-- **Archivos**: `docs/architecture.md`, `docs/configuration.md`, `docs/operations.md`, `docs/manual.md`, `docs/README.md`, `README.md`
+- **Archivos**: `docs/architecture.md`, `docs/configuration.md`, `docs/operations.md`, `docs/manual.md`, `docs/README.md`, `README.md`, `docs/integration.md`, `docker-compose.yml`, `memory_platform/observability.py`, `memory_platform/tests/test_observability.py`
+- **Nota de alcance**: `docs/integration.md` (R3 y fases 3 a 7), `docker-compose.yml` (propagar las variables, O-11), `memory_platform/observability.py` y `memory_platform/tests/test_observability.py` (N1) se añaden al `Archivos` original por el ajuste aprobado.
 - **Cubre (tests)**: —
 - **Verificación**:
   - `python scripts/build-handbook.py` → sin errores y sin enlaces rotos
   - `grep -nE "pgvector|unaccent|pg_trgm|embedding_chunks|MEMORY_METRICS|MEMORY_CHUNK_CHARS|retrieval-eval" docs/architecture.md docs/configuration.md docs/operations.md` → al menos una coincidencia por término en el manual correspondiente
+  - Evidencia (2026-11-11): `python scripts/build-handbook.py --output <scratchpad>/handbook` → `Kairos handbook generated: 24 verified files.` (exit 0; `markdown-it-py==4.2.0` en un venv del scratchpad). Comprobación de enlaces internos del HTML generado (14 páginas, todos los `href` a páginas, anclas, JSON y capturas): 0 enlaces internos rotos; se corrigieron 6 anclas con acento (`#búsqueda-vectorial-pgvector`, `#observabilidad-logs-y-métricas`) que no existían en el HTML. Quedan 9 `href` que no son internos (4 URL externas y 5 `roadmap/…json` del repositorio que las iniciativas anteriores enlazan y el manual no publica): preexistentes y fuera de esta tarea.
+  - Evidencia (2026-11-11), cuentas por término (arquitectura/configuración/operación): pgvector 1/3/11, unaccent 1/0/1, pg_trgm 1/0/2, embedding_chunks 1/0/2, MEMORY_METRICS 1/2/1, MEMORY_CHUNK_CHARS 1/3/2, retrieval-eval 1/1/3 → cada término consta en al menos un manual.
+  - Evidencia (2026-11-11), Compose: `grep -c "MEMORY_(CHUNK_CHARS|CHUNK_OVERLAP|CHUNK_MAX|EMBED_BATCH|VECTOR_INDEXES|FUSION_K|FUSION_VALIDATED_BONUS|FUSION_WEIGHTS|METRICS|LOG_LEVEL):" docker-compose.yml` → 10 variables en `x-memory-environment` y las 10 en la tabla de `docs/configuration.md`; `docker compose config` del proyecto de ensayo `kairos-rq8` las resuelve (ver T-38).
+  - Evidencia (2026-11-11), N1: `FormatTests.test_n1_debug_opens_kairos_only_third_party_loggers_stay_at_info_or_above` y `test_n1_the_floor_is_independent_of_the_configured_level` en verde (suite: ver T-35).
 
 **Criterios de aceptación**
-- [ ] CA-36: los manuales afectados describen pgvector, FTS por idioma, troceado y métricas
-- [ ] Todas las variables nuevas (`MEMORY_VECTOR_INDEXES`, `MEMORY_CHUNK_*`, `MEMORY_METRICS`) constan en `docs/configuration.md`
+- [x] CA-36: los manuales afectados describen pgvector, FTS por idioma, troceado y métricas
+- [x] Todas las variables nuevas (`MEMORY_VECTOR_INDEXES`, `MEMORY_CHUNK_*`, `MEMORY_METRICS`) constan en `docs/configuration.md`
+- [x] O-11: `MEMORY_CHUNK_*`, `MEMORY_EMBED_BATCH*`, `MEMORY_VECTOR_INDEXES`, `MEMORY_FUSION_*`, `MEMORY_METRICS` y `MEMORY_LOG_LEVEL` constan en `docs/configuration.md` y se propagan desde `docker-compose.yml`
+- [x] Las fases 3 a 7 constan en `README.md`, `docs/architecture.md`, `docs/integration.md` y `docs/manual.md`
+- [x] O-12: `docs/operations.md` separa el runbook («Historial y mediciones de referencia» al final)
+- [x] R2: `docs/operations.md` y `docs/configuration.md` dan el tope real de un trabajo de embeddings (`worker_deadline`: 1.030 s por defecto, 3.730 s con el máximo), no «900 s + 10 s»
+- [x] R3: `docs/integration.md` documenta que `semantic_budget_ms` es estricto y rechaza `500.0`
+- [x] N1: con `MEMORY_LOG_LEVEL=DEBUG` los loggers que no son `kairos` no emiten por debajo de INFO (filtro `ForeignFloor`, con test) y está documentado
 
 **Subtareas**
-- [ ] Redactar y revisar cada manual
-- [ ] Regenerar el manual con el script
+- [x] Redactar y revisar cada manual
+- [x] Regenerar el manual con el script
 
 **Notas**: Procedencia: spec CA-36. Clase: documentación. Patrón: estructura de manuales existente y script `scripts/build-handbook.py`.
 
+
+RED: `memory_platform/tests/test_observability.py FormatTests.test_n1_debug_opens_kairos_only_third_party_loggers_stay_at_info_or_above (N1, CWE-532)` falló con AssertionError: 'SYNTHETIC-QUERY-TEXT-0001' unexpectedly found: con MEMORY_LOG_LEVEL=DEBUG los loggers mcp/uvicorn/asyncio/psycopg volcaban 'Calling tool search with arguments' con la consulta · 2026-11-11.
+
 ### T-35 — Contrato regenerado y puertas transversales (CA-33, CA-34)
 
-- **Descripción**: Regenerar `docs/contracts` y automatizar en una puerta el diff aditivo del contrato (34 herramientas) y el `grep` de migraciones sin operaciones destructivas. Resultado: dos comprobaciones repetibles al cierre.
-- **Changelog**:
-- **Estado**: borrador
+- **Descripción**: Regenerar `docs/contracts` y automatizar en una puerta el diff aditivo del contrato (34 herramientas) y el `grep` de migraciones sin operaciones destructivas. Resultado: dos comprobaciones repetibles al cierre. **Deuda N2 incorporada (tabla de deuda de la revisión de la Fase 7, intento 2; no está en el plan director)**: las consultas del scrape de `/metrics` (`observability.py`) leían todas las filas `failed` históricas sin un índice que cubriera `destination`/`error_code` y, al ir en la misma transacción, si superaban los 2 s se perdía también la profundidad de cola. Se separan en dos transacciones independientes, se añade el índice parcial aditivo `memory_jobs_failed_code (destination, error_code) WHERE state='failed'` (esquema versión 11, `CREATE INDEX IF NOT EXISTS`, bloque omitido si ya está) y se corrige el texto «solo estados no terminales».
+- **Changelog**: La lectura de /metrics ya no pierde la profundidad de la cola si falla la de trabajos fallidos, que usa un índice parcial aditivo nuevo; el contrato y las migraciones se comprueban en la suite.
+- **Estado**: completado
+- **Cerrada**: 2026-11-11
 - **Tiempo humano**: est. 2h · real —
-- **Tiempo IA (ejec.)**: est. 0,33h · real —
+- **Tiempo IA (ejec.)**: est. 0,33h · real 0,9h (estimado: incluye N2)
 - **Supervisión**: est. 0,08h (≈25 % IA) · real —
 - **Previsión IA**: 90k in / 5k out tok · ⚠️ verificar €
 - **Dependencias**: T-25, T-26, T-33
 - **Tipo**: test
-- **Archivos**: `scripts/export-contracts.py`, `docs/contracts/kairos-mcp.json`, `docs/contracts/memory-platform.openapi.json`, `memory_platform/tests/test_contract_additive.py`, `memory_platform/tests/test_migrations_additive.py`
+- **Archivos**: `scripts/export-contracts.py`, `docs/contracts/kairos-mcp.json`, `docs/contracts/memory-platform.openapi.json`, `memory_platform/tests/test_contract_additive.py`, `memory_platform/tests/test_migrations_additive.py`, `memory_platform/observability.py`, `memory_platform/schema.sql`, `memory_platform/tests/test_metrics.py`, `memory_platform/tests/test_chunk_schema.py`, `memory_platform/tests/test_fts_migration.py`, `memory_platform/tests/test_pgvector_migration.py`, `docs/operations.md`, `docs/roadmap/2026-11-09-retrieval-quality/testing/n2-measure.json`, `docs/roadmap/2026-11-09-retrieval-quality/testing/n2-measure.py`, `docs/roadmap/2026-11-09-retrieval-quality/testing/n2-measure-fix1.json` (medición tras la corrección del gap 1 de la revisión de la Fase 8; SHA-256 `3d98dc4a30e2bd828f5b468e039d1e53d668d8a4efe17f04be9fce0c4139f12d`)
+- **Nota de alcance**: por la deuda N2 se añaden `observability.py`, `schema.sql` (versión 11), `test_metrics.py`, los tres tests que enumeran las versiones de esquema (`test_chunk_schema`, `test_fts_migration`, `test_pgvector_migration`: `range(1, 12)`), `docs/operations.md` (texto del scrape y medida) y los informes de medida (que el orquestador copia a `testing/`).
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:rq .` → la salida contiene `MEMORY_TEST_RESULT` con `"passed": true`, `failures: 0`, `errors: 0`, `skipped: 0` (incluye `test_contract_additive` y `test_migrations_additive`)
   - `python scripts/export-contracts.py && git diff --stat docs/contracts` → sin cambios adicionales respecto de lo ya commiteado en T-25/T-26
+  - Evidencia (2026-11-11), suite completa (`docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:rq8 .`, exit 0): `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 480}` (467 pruebas previas + 13 nuevas: 5 de `test_migrations_additive`, 2 de N1, 2 de N2 y 4 de selección de proveedor de T-36). Incluye `test_contract_additive` (8 pruebas, 34 herramientas) y `test_migrations_additive` (5: la regla detecta `DROP`, `TRUNCATE`, `DELETE`, `RENAME` y `ALTER … TYPE`; `schema.sql` y los módulos que emiten DDL no los contienen; las versiones 8 a 11 se registran con `ON CONFLICT DO NOTHING`; la versión 11 crea un índice parcial, idempotente y utilizable por la consulta de `/metrics`).
+  - Evidencia (2026-11-11), contrato: `python scripts/export-contracts.py` en un venv de Python 3.13 con `memory_platform/requirements.txt` (la misma versión que generó los ficheros commiteados, EOL CRLF por `write_text` en Windows) → `Native HTTP and MCP contracts exported without connecting to services.` y `git status --short docs/contracts` vacío (sin cambios). Nota: el mismo script en la imagen de pruebas (Python 3.12) reescribe las descripciones con otra sangría y LF; por eso la comprobación se hace con 3.13.
+  - Evidencia (2026-11-11), N2, volumen sintético en la base aislada del build de pruebas (300.000 `failed` + 200.000 `succeeded` + 50 `pending`; `testing/n2-measure.json`, `n2-measure.py`): consulta de `failed` por destino y código 127,5 ms sin índice (lectura de tabla, 11.905 búferes) frente a 50,1 ms con `memory_jobs_failed_code` (245 búferes; índice de 2,0 MB sobre una tabla de 191 MB); consulta de profundidad de cola 152 ms sin índice y 97 ms con él; `refresh_queue_depth` completo 374 ms sin índice y 172 ms con él, `scrape_success` 1 en ambos. Ninguna se acerca a los 2 s; por extrapolación lineal, sin índice se alcanzarían hacia los varios millones de filas fallidas. Con un `statement_timeout` de 1 ms ambas consultas fallan, `scrape_success` pasa a 0 y se conservan los últimos valores (el fallo de una sola consulta lo cubre `test_n2_a_failing_failed_jobs_read_does_not_cost_the_queue_depth`).
+  - Evidencia (2026-11-12), correcciones de la revisión (Fase 8, intento 1), Gap 1: la consulta de profundidad de cola ya no lee `failed` (`WHERE state IN ('pending','running','unknown')`; `unknown` es no terminal: `store_jobs.py:92` lo reintenta) y la serie `failed` de `kairos_jobs_queue_depth` sale de la lectura de `failed` por código (índice parcial). N2 repetida en una base aislada del build de pruebas (`n2-measure.py` con la consulta nueva, contenedor `kairos-rq8fix-n2` sin red, borrado al terminar; mismo volumen: 300.000 `failed`, 200.000 `succeeded`, 50 `pending`, tabla de 191 MB): consulta de cola **0,16 ms** con el índice parcial y 0,08 ms sin él (antes 96,7 y 152 ms; plan `HashAggregate`, 8 búferes: ya no lee la tabla), consulta de `failed` 41,4 ms con índice frente a 82,3 ms sin él, `refresh_queue_depth` completo **46,0 ms** con índice y 86,1 ms sin él (antes 171,8 y 374 ms), `scrape_success` 1 en ambos; con `statement_timeout` de 1 ms ambas lecturas fallan (`scrape_success` 0, se conservan los últimos valores) y el aislamiento entre las dos lo cubre `test_n2_a_failing_failed_jobs_read_does_not_cost_the_queue_depth`. `CREATE INDEX` no concurrente de la versión 11 sobre esa tabla: **384 ms**. La versión nueva de `n2-measure.py` (consulta de cola corregida y tiempo de `CREATE INDEX`) se copió a `testing/n2-measure.py`, y el resultado a `testing/n2-measure-fix1.json`. `testing/n2-measure.json` conserva las cifras de la consulta anterior y ya no se reproduce con el script actual.
+  - Evidencia (2026-11-12), Gap 3: `test_migrations_additive` detecta ahora el DDL destructivo en literales SQL (`EXECUTE 'DROP …'`, `format('DROP …')`), `DELETE FROM`/`TRUNCATE` en las cadenas de los módulos Python (con `ast`) y los `ALTER TABLE` de varias cláusulas (`DROP COLUMN`, `ALTER COLUMN … TYPE`, `RENAME`, `SET NOT NULL` en cualquier posición); el `schema.sql` real sigue pasando. Lista blanca explícita y comentada (`ALLOWED_DELETES`): los dos `DELETE FROM memory.agent_corpus_entries|queries WHERE corpus_id=%s` de `agent_store.py:235,312`, que reemplazan en tiempo de ejecución las filas de un solo corpus y no son un paso de migración.
+  - Evidencia (2026-11-12), Gap 4: `docs/operations.md` documenta la ventana de bloqueo del índice de la versión 11 (sin `CONCURRENTLY`, dentro de la transacción de `migrate`, `SHARE` sobre `memory.jobs`, `lock_timeout` de 5 s; `CREATE INDEX` medido en 0,38 s con 500.000 trabajos).
+  - Evidencia (2026-11-12), suite completa tras las correcciones (`docker build --progress=plain --target test -f memory_platform/Dockerfile -t kairos-test:rq8fix .`, exit 0): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 483}`; puerta offline (`docker run --rm --network=none -e MEMORY_RETRIEVAL_EVAL=1 kairos-test:rq8fix python -m memory_platform.tests.run_postgres`, exit 0): `gate.passed: true`, `failures: []`. `schema.sql` y `docker-compose.yml` no se tocaron en estas correcciones; el contrato no cambia.
 
 **Criterios de aceptación**
-- [ ] CA-33: 34 herramientas y diff solo aditivo
-- [ ] CA-34: ninguna migración nueva contiene `DROP`, `TRUNCATE`, `DELETE` ni `ALTER … TYPE` (test de `grep`)
+- [x] CA-33: 34 herramientas y diff solo aditivo
+- [x] CA-34: ninguna migración nueva contiene `DROP`, `TRUNCATE`, `DELETE` ni `ALTER … TYPE` (test de `grep`)
+- [x] N2: las dos consultas del scrape van en transacciones separadas; el fallo de una no anula la otra (test en rojo y luego en verde)
+- [x] N2: índice parcial aditivo `memory_jobs_failed_code` en la versión 11 (pasa `test_migrations_additive`) y medida con 300.000 filas `failed` en la base aislada
+- [x] N2: el texto «solo estados no terminales» está corregido (código y `docs/operations.md`)
 
 **Subtareas**
-- [ ] Escribir test de migraciones aditivas
-- [ ] Regenerar y confirmar contratos
+- [x] Escribir test de migraciones aditivas
+- [x] Regenerar y confirmar contratos
+- [x] N2: separar las consultas, índice aditivo y medida
 
 **Notas**: Procedencia: spec CA-33, CA-34. Clase: verificación transversal. Patrón: `scripts/export-contracts.py`.
 
+
+RED: `memory_platform/tests/test_metrics.py RegistryTests.test_n2_a_failing_failed_jobs_read_does_not_cost_the_queue_depth (N2)` falló con AssertionError: 1.0 != 5: con las dos consultas del scrape en la misma transaccion, el fallo de la consulta de failed anulaba tambien la profundidad de cola · 2026-11-11.
+
+RED: `memory_platform/tests/test_metrics.py RegistryTests.test_gap1_the_failed_depth_comes_from_the_failed_by_code_read_and_the_queue_sql_has_no_failed (Gap 1, revisión Fase 8)` falló con AssertionError: 'failed' unexpectedly found in "select state, destination, count(*) as n from memory.jobs where state in ('pending','running','failed','unknown') …" (y `test_the_scrape_query_is_bounded_and_skips_the_terminal_bulk`: el filtro esperado `IN ('pending','running','unknown')` no estaba; `test_the_queue_depth_is_read_from_the_jobs_table_at_scrape_time`: 0.0 != 2 para la serie `failed` leída de la consulta de `failed` por código): la consulta de cola leía todas las filas `failed` históricas · 2026-11-12.
+
+RED: `memory_platform/tests/test_migrations_additive.py StaticTests.test_gap3_it_detects_what_used_to_slip_through (Gap 3, revisión Fase 8)`: la regla anterior (`DESTRUCTIVE` sobre el texto sin literales) no detectaba `EXECUTE 'DROP TABLE …'` en un `DO`, `ALTER TABLE … ADD COLUMN …, ALTER COLUMN state TYPE text` ni `ADD COLUMN …, ALTER COLUMN … SET NOT NULL` (comprobado con la regex antigua: no coincide en ninguno de los tres) y la rama Python solo miraba cadenas que empezaban por CREATE/ALTER/DROP/TRUNCATE (nunca `DELETE FROM`) · 2026-11-12.
+
 ### T-36 — Ejecución real con Ollama local y puerta final de calidad
 
-- **Descripción**: Ejecutar `retrieval-eval` con el Ollama local (`nomic-embed-text`) y el dataset sintético en una base aislada (autorizado en P-06; nunca contra la base desplegada) y registrar el resultado final frente a umbrales y línea base. Resultado: calidad del modelo real medida, no solo la mecánica.
-- **Changelog**:
-- **Estado**: borrador
+- **Descripción**: Ejecutar `retrieval-eval` con el Ollama local (`nomic-embed-text`) y el dataset sintético en una base aislada (autorizado en P-06; nunca contra la base desplegada) y registrar el resultado final frente a umbrales y línea base. Resultado: calidad del modelo real medida, no solo la mecánica. **Ajuste aprobado por el usuario** (`docs/roadmap/2026-11-10-platform-audit/plan.md`, Iniciativa 1): se mide solo embeddings (el servidor no tendrá modelo de lenguaje) con un Ollama aislado y desechable (`kairos-rq8-ollama`, volumen propio; **nunca** el contenedor desplegado `knowledge-graphs-ollama-1` del puerto 11434), y además de la puerta se mide el plazo de documentos largos (troceado + `embed_many`) y el coste de marcar filas antiguas con el índice HNSW real (deuda de la Fase 5: puede superar los 1.800 s del `backfill`).
+- **Changelog**: Se midió el modelo de embeddings real (recall@5 1,00, MRR 0,99), los documentos largos y el marcado de filas antiguas; el arnés admite un Ollama desechable y rechaza el desplegado.
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 2h · real —
-- **Tiempo IA (ejec.)**: est. 0,33h · real —
+- **Tiempo IA (ejec.)**: est. 0,33h · real 1,2h (estimado: mediciones largas con Ollama en CPU, ~23 min de puerta + 12 min de documentos largos + 20 min de marcado HNSW)
 - **Supervisión**: est. 0,08h (≈25 % IA) · real —
 - **Previsión IA**: 90k in / 5k out tok · ⚠️ verificar €
 - **Dependencias**: T-27, T-23
 - **Tipo**: test
-- **Archivos**: `memory_platform/tests/retrieval_eval/run.py`, `docs/roadmap/2026-11-09-retrieval-quality/testing/final-eval-fake.json`, `docs/roadmap/2026-11-09-retrieval-quality/testing/final-eval-ollama.json`
+- **Archivos**: `memory_platform/tests/retrieval_eval/run.py`, `docs/roadmap/2026-11-09-retrieval-quality/testing/final-eval-fake.json`, `docs/roadmap/2026-11-09-retrieval-quality/testing/final-eval-ollama.json`, `memory_platform/tests/retrieval_eval/test_metrics.py`, `memory_platform/tests/retrieval_eval/stale_measure.py`, `memory_platform/tests/retrieval_eval/long_doc_measure.py`, `docs/operations.md`, `docs/roadmap/2026-11-09-retrieval-quality/testing/long-doc-ollama.json`, `docs/roadmap/2026-11-09-retrieval-quality/testing/stale-hnsw-20000.json`, `docs/roadmap/2026-11-09-retrieval-quality/testing/stale-hnsw-60000.json`
+- **Nota de alcance**: se añaden `test_metrics.py` (4 pruebas del selector de proveedor y del rechazo del Ollama desplegado), `stale_measure.py` (parámetros `STALE_MODEL`/`STALE_DIMS` para medir con el HNSW real), `long_doc_measure.py` (plazo de documentos largos, fichero nuevo), `docs/operations.md` (runbook de la puerta y cifras) y los informes de medida; el orquestador copia los informes a `testing/` (el hook reserva esa carpeta a `qa`).
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target retrieval-eval -f memory_platform/Dockerfile .` → pasa con el proveedor simulado (`final-eval-fake.json`)
   - `MEMORY_EMBEDDING_PROVIDER=ollama python -m memory_platform.tests.retrieval_eval.run --report testing/final-eval-ollama.json` en el harness aislado contra Ollama local → informe con recall@5 `fused` ≥ 0,80 y MRR ≥ 0,60 (el nombre exacto del selector de proveedor se fija en T-02)
+  - Evidencia (2026-11-11), `docker build --progress=plain --target retrieval-eval -f memory_platform/Dockerfile -t kairos-eval:rq8 .` → exit 0 (`done-0`): la puerta con el proveedor simulado pasa dentro del build.
+  - **Selector fijado (2026-11-11)**: `MEMORY_RETRIEVAL_EVAL_PROVIDER=ollama` y `MEMORY_RETRIEVAL_EVAL_OLLAMA_URL=<endpoint de un Ollama desechable>` (no `MEMORY_EMBEDDING_PROVIDER`, que no existe; ni `MEMORY_OLLAMA_URL`, que el arnés no lee). `check_ollama_url` rechaza el proxy `ollama`, `host.docker.internal`, `knowledge-graphs*` y `127.0.0.1:11434` (4 pruebas en `ProviderSelectionTests`, en rojo antes: `ImportError … make_provider`).
+  - Evidencia (2026-11-11), puerta offline sobre la imagen final (`docker run --rm --network=none -e MEMORY_RETRIEVAL_EVAL=1 kairos-test:rq8 python -m memory_platform.tests.run_postgres`, exit 0): `gate.passed: true`, sin fallos, `deterministic: true`, `network_observation: only the loopback interface exists`; fused recall@5 1,00, MRR 0,9715; `es`, `en`, `typo_id`, `long` recall@5 1,00. Informe: ruta prevista `docs/roadmap/2026-11-09-retrieval-quality/testing/final-eval-fake.json`, SHA-256 `19b387bd590649ad71d05f41350065a830d2d1b276b86498e3c05dcdbfcb8db7` (el orquestador lo copia desde el scratchpad `rq8/`).
+  - Evidencia (2026-11-11), puerta con Ollama real (`docker run --network kairos-rq8-net -e MEMORY_RETRIEVAL_EVAL=1 -e MEMORY_RETRIEVAL_EVAL_PROVIDER=ollama -e MEMORY_RETRIEVAL_EVAL_OLLAMA_URL=http://kairos-rq8-ollama:11434 … run_postgres`, Ollama 0.31.1 desechable, `nomic-embed-text`, solo embeddings, base efímera del arnés, 2 ejecuciones, ~23 min): dataset `dataset-v1` SHA-256 `1bba8d997c6dcc8e11f2ddceba2a78e8c38c0bd7cafd4aa458dd1547ad4be6f6`, `product_database_accessed: false`, `deterministic: true`. **fused: recall@5 1,00 (≥ 0,80), recall@1 0,986, MRR 0,993 (≥ 0,60)**; línea base 0,50 / 0,340. Recall@5 fused por subconjunto, base → ahora: `es` 0,333 → 1,00 (+66,7 pts), `typo_id` 0,583 → 1,00 (+41,7), `long` 0,50 → 1,00 (+50,0), `en` 0,625 → 1,00; ninguna regresión (CA-35: pérdida máxima 0 pts, permitido 2). Semántica sola: recall@5 1,00, MRR 0,991. **`gate.passed: false` por una sola comprobación: `ca18:long`** (MRR fused 0,9583 < 1,00 de la capa semántica en el subconjunto `long`: una de 12 preguntas ve su documento en 2.ª posición porque un documento solo léxico suma rango de dos capas); el resto de comprobaciones (umbrales, ganancias, CA-35, CA-18 global y en `es`/`en`/`typo_id`) pasan. No se tocó la fusión ni ningún umbral. Informe: ruta prevista `docs/roadmap/2026-11-09-retrieval-quality/testing/final-eval-ollama.json`, SHA-256 `5cd13f02d7fc608e296dfc9af4e6f1545fb81dc5666d2b32e85fe1975abc8877`.
+  - Evidencia (2026-11-11), plazo de documentos largos (`python -m memory_platform.tests.retrieval_eval.long_doc_measure`, mismo Ollama): 8.000 caracteres 10 fragmentos/2 lotes 28 s; 20.000 → 24/4 → 55 s; 50.000 → 61/8 → 126 s; 100.000 → 121/16 → 235 s; 200.000 y 320.000 → tope de 200 fragmentos, 201 entradas, 26 lotes → 326 s y 414 s (36 % y 46 % de los 900 s de las peticiones; `worker_deadline` 910/1.030 s). 12,5 a 15,9 s por lote de 8 frente a 60 s de plazo por lote. Informe: ruta prevista `docs/roadmap/2026-11-09-retrieval-quality/testing/long-doc-ollama.json`, SHA-256 `fb81a832eb76fae45020f7d63e0d139d8044a21c80741e0ed7701de67fbc9edb`.
+  - Evidencia (2026-11-11), marcado de filas antiguas con el HNSW real (`STALE_MODEL=nomic-embed-text STALE_DIMS=768 STALE_ROWS=<n> … stale_measure`, base aislada sin red): 20.000 filas marcadas en 59,6 s (2,98 ms/fila) y 60.000 en 93,4 s (1,56 ms/fila); sonda sin fragmentos 56,8 ms → 0,1 ms y 150,8 ms → 0,04 ms; peor coste observado 3 ms/fila → los 1.800 s del `backfill` se alcanzarían hacia las 600.000 filas antiguas (reanudable e idempotente). Informes: `docs/roadmap/2026-11-09-retrieval-quality/testing/stale-hnsw-20000.json` (SHA-256 `33ffef4a371302eeac1a3ff854d110757441b7e38e6524e216440f3e18e6ea38`) y `docs/roadmap/2026-11-09-retrieval-quality/testing/stale-hnsw-60000.json` (`51eeec1747537ca62d77855b40c343a58ba0affb3a01b48be87d4257593f87af`).
+  - Evidencia (2026-11-12), Gap 2 (revisión Fase 8): `check_ollama_url` normaliza el host (minúsculas, sin punto final), interpreta las IP con `ipaddress` y `socket.inet_aton` (`127.1`, `2130706433`, hex y octal, `::ffff:` mapeadas) y rechaza loopback (cualquier puerto), `0.0.0.0`/`::`, enlace local, `localhost` y `*.localhost`, `host.docker.internal`, `gateway.docker.internal`, `ollama`, `knowledge-graphs*` y, por decisión propia, las pasarelas de red puente de Docker (IPv4 privada acabada en `.1`, p. ej. `172.17.0.1`: es el equipo y con él el Ollama desplegado; las direcciones `.2` y siguientes son contenedores de una red aislada y se aceptan, como `kairos-rq8-ollama:11434`). Cambio de comportamiento: `127.0.0.1:11535` y `localhost:11535` dejan de aceptarse (antes solo el 11434); el flujo documentado usa el nombre de un contenedor. Prueba `test_gap2_every_spelling_of_the_host_or_the_deployed_services_is_refused` con los casos de la tabla de revisión y sus variantes.
+  - Evidencia (2026-11-12), decisión del usuario sobre CA-18 con el modelo real: se acepta como deuda (ver el criterio CA-35); `docs/operations.md` (evaluación con Ollama) lo dice. No cambia ningún umbral ni la fusión.
+  - Evidencia (2026-11-11), limpieza: `docker rm -f kairos-rq8-ollama`, `docker volume rm kairos-rq8-ollama`, `docker network rm kairos-rq8-net`; `docker ps -a/volume ls/network ls --filter name=rq8` → vacío. El Ollama desplegado (`knowledge-graphs-ollama-1`, 11434) no se usó ni se tocó.
 
 **Criterios de aceptación**
-- [ ] CA-35: la puerta pasa con los umbrales (P-06) y ningún subconjunto empeora más de 2 puntos de recall@5 frente a `baseline.json`; +15 pts de recall@5 en idioma, errores y documento largo
-- [ ] El informe real registra `product_database_accessed: false` y solo datos sintéticos
-- [ ] Si el Ollama local no está disponible se informa del bloqueo con el hash del dataset; no se sustituye por el proveedor simulado
+- [x] CA-35: la puerta pasa con los umbrales (P-06) y ningún subconjunto empeora más de 2 puntos de recall@5 frente a `baseline.json`; +15 pts de recall@5 en idioma, errores y documento largo — cumplido con una **excepción explícita decidida por el usuario (2026-11-12, registrada en la tabla de revisión de la Fase 8)**: los umbrales de recall/MRR (1,00 y 0,993), la no regresión (0 pts) y las ganancias (+41,7 a +66,7 pts) se cumplen con el modelo real; el único fallo de la puerta real (`ca18:long`, MRR fused 0,958 frente a 1,00 de la capa semántica en ese subconjunto) se acepta como deuda, CA-18 y la puerta offline no cambian (pasa con `gate.passed: true`) y el ajuste de la fusión contra el modelo real pasa a la Iniciativa 5. No se ha modificado ningún umbral ni la fusión
+- [x] El informe real registra `product_database_accessed: false` y solo datos sintéticos
+- [x] Si el Ollama local no está disponible se informa del bloqueo con el hash del dataset; no se sustituye por el proveedor simulado (n/a: el Ollama desechable estuvo disponible; hash `1bba8d99…`)
+- [x] Plazo de documentos largos medido con el modelo real (troceado + `embed_many`) frente a `worker_deadline`
+- [x] Coste de marcar filas antiguas medido con el índice HNSW real
+- [x] Solo embeddings, con un Ollama desechable; ningún contenedor, volumen ni red `knowledge-graphs-*` ni el puerto 11434 usados; contenedores y volúmenes `kairos-rq8-*` eliminados
 
 **Subtareas**
-- [ ] Verificar disponibilidad de Ollama local
-- [ ] Ejecutar la puerta real en base aislada
-- [ ] Guardar informes y resumen
+- [x] Verificar disponibilidad de Ollama local — con un Ollama desechable en un contenedor propio (`ollama pull nomic-embed-text`), no el desplegado
+- [x] Ejecutar la puerta real en base aislada
+- [x] Guardar informes y resumen (scratchpad `rq8/`, rutas finales y SHA-256 arriba)
+- [x] Medir plazo de documentos largos y marcado con HNSW real
 
 **Notas**: Procedencia: spec CA-35, decisión P-06. Clase: verificación. Patrón: sondas con proveedor real en `memory_platform/tests/live_probe.py` y target `live-probe` (`memory_platform/Dockerfile:34-37`).
+
+
+RED: `memory_platform/tests/retrieval_eval/test_metrics.py ProviderSelectionTests (seleccion del proveedor Ollama y rechazo del Ollama desplegado)` falló con ImportError: cannot import name 'make_provider' / 'check_ollama_url' from memory_platform.tests.retrieval_eval.run: el arnes solo sabia usar el proveedor simulado · 2026-11-11.
+
+RED: `memory_platform/tests/retrieval_eval/test_metrics.py ProviderSelectionTests.test_gap2_every_spelling_of_the_host_or_the_deployed_services_is_refused (Gap 2, revisión Fase 8)` falló con AssertionError: SystemExit not raised : http://0.0.0.0:11434 (la lista de exclusión comparaba texto) · 2026-11-12.
 
 ### T-37 — Revisión de dos lentes y correcciones
 
 - **Descripción**: Revisión por dos lentes (A: correctitud y contrato; B: seguridad, privacidad, rendimiento y operación) de todo lo integrado, con correcciones hasta cerrar los hallazgos Critical/Important. Resultado: informe de revisión y suite verde final.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Revisión final de la búsqueda mejorada: sin problemas críticos ni importantes abiertos, contrato MCP intacto y suite completa en verde.
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 16h · real —
 - **Tiempo IA (ejec.)**: est. 2,65h · real —
 - **Supervisión**: est. 0,66h (≈25 % IA) · real —
@@ -1348,49 +1404,60 @@ RED: `memory_platform/tests/test_metrics.py MetricsRouteTests y DeploymentTests 
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:rq .` → la salida contiene `MEMORY_TEST_RESULT` con `"passed": true`, `failures: 0`, `errors: 0`, `skipped: 0`
   - `docker build --target retrieval-eval -f memory_platform/Dockerfile .` → pasa con el proveedor simulado
   - `python $SHAREDKIT/scope-check.py docs/roadmap/2026-11-09-retrieval-quality` → exit 0
+  - Evidencia (2026-11-12, árbol final tras el intento 2): `docker build --target test -f memory_platform/Dockerfile -t kairos-test:rq8final .` exit 0, `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 483}` (PostgreSQL 17.11 aislada); puerta offline equivalente a la etapa `retrieval-eval` (`docker run --rm --network=none -e MEMORY_RETRIEVAL_EVAL=1 kairos-test:rq8final python -m memory_platform.tests.run_postgres`) exit 0, `gate.passed: true`, `failures: []`, fused recall@5 1,0 y MRR 0,971528; `scope-check --base cae1e13` exit 0. Revisión: 4 lentes (A, B, C, D), 2 intentos; informe `review.md`. TDD n/a: tarea de revisión; las correcciones llevan su RED en T-35 y T-36.
 
 **Criterios de aceptación**
-- [ ] CA-36: la suite backend completa pasa con 0 fallos y 0 omitidos
-- [ ] Sin hallazgos Critical/Important abiertos en `review.md`
-- [ ] Ninguna fuga de datos en métricas/logs (revisión de R-08) y ninguna ruta del producto desplegado tocada
+- [x] CA-36: la suite backend completa pasa con 0 fallos y 0 omitidos
+- [x] Sin hallazgos Critical/Important abiertos en `review.md`
+- [x] Ninguna fuga de datos en métricas/logs (revisión de R-08) y ninguna ruta del producto desplegado tocada
 
 **Subtareas**
-- [ ] Lente A
-- [ ] Lente B
-- [ ] Aplicar correcciones y repetir la suite
+- [x] Lente A
+- [x] Lente B
+- [x] Aplicar correcciones y repetir la suite
 
 **Notas**: Procedencia: líneas transversales de la evaluación (revisión: partida grande, LES-001/LES-009). Clase: revisión. Reserva las 16 h de revisión de la evaluación.
 
-### T-38 — Despliegue real con relleno y verificación (requiere autorización expresa)
+### T-38 — Ensayo completo de activación en un proyecto Compose aislado (el despliegue real pasa a la Iniciativa 5)
 
-- **Descripción**: Con la autorización expresa del usuario en ese momento (la base desplegada solo se toca por esta tarea), ejecutar `scripts/deploy-memory.py --apply` con la imagen nueva, el relleno de vectores y fragmentos y la verificación de la fase `verify`. Resultado: producción con pgvector, FTS por idioma y fragmentos, con el manifiesto de contenido comparado antes y después.
-- **Changelog**:
-- **Estado**: borrador
+- **Descripción**: **Ajustada por decisión del usuario** (`docs/roadmap/2026-11-10-platform-audit/plan.md`, Iniciativa 1, fila T-38: «No se despliega en la instalación local. Se sustituye por un ensayo completo en proyecto Compose aislado; el despliegue real es la Iniciativa 5»). En lugar de desplegar en la instalación local, ensayar la activación completa con `scripts/deploy-memory.py --apply --project-name <proyecto de ensayo>` (proyecto Compose, volúmenes, redes, imágenes, puertos y `.private/rehearsal-<proyecto>` propios; sin leer el `.env` instalado): partir de la versión anterior con datos sintéticos, migrar, rellenar vectores y fragmentos, verificar, comprobar `kairos_jobs_queue_depth` a 0 por `/metrics` interno y el manifiesto de contenido igual antes y después, y destruir el proyecto de ensayo y solo sus volúmenes. Resultado: evidencia de la activación sin tocar la base desplegada ni ningún contenedor, volumen o red `knowledge-graphs-*`. La descripción original (despliegue real con autorización expresa) pasa a la Iniciativa 5 del plan director.
+- **Changelog**: La activación (migración, relleno de vectores y fragmentos, verificación) se ensayó entera en un proyecto aislado, con contenido idéntico y cola a 0; el despliegue real pasa a la Iniciativa 5.
+- **Estado**: completado
+- **Cerrada**: 2026-11-11
 - **Tiempo humano**: est. 3h · real —
-- **Tiempo IA (ejec.)**: est. 0,5h · real —
+- **Tiempo IA (ejec.)**: est. 0,5h · real 0,6h (estimado: preparación del estado previo, despliegue de ensayo y verificación)
 - **Supervisión**: est. 0,12h (≈25 % IA) · real —
 - **Previsión IA**: 140k in / 10k out tok · ⚠️ verificar €
 - **Dependencias**: T-37
 - **Tipo**: devops
-- **Archivos**: `scripts/deploy-memory.py`, `docs/roadmap/2026-11-09-retrieval-quality/testing/activation.json`
+- **Archivos**: `scripts/deploy-memory.py`, `docs/roadmap/2026-11-09-retrieval-quality/testing/rehearsal-final.json`
+- **Nota de alcance**: `activation.json` (despliegue real) se sustituye por `rehearsal-final.json` (ensayo aislado); `scripts/deploy-memory.py` no se modificó (ya soportaba proyectos de ensayo).
 - **Cubre (tests)**: —
 - **Verificación**:
-  - `python scripts/deploy-memory.py` (sin `--apply`) → el plan lista las 10 fases y el relleno; `--apply` solo tras la autorización del usuario
-  - `python scripts/deploy-memory.py --apply` → `status: ok`, `content_manifest().sha256` igual antes y después, `backups` con la copia previa
-  - `python scripts/diagnose-deployment.py` → sin hallazgos críticos y 34 herramientas MCP disponibles
+  - `python scripts/deploy-memory.py --project-name <ensayo> --api-port <p> --web-port <p>` (sin `--apply`) → el plan lista las fases, incluido el relleno (`backfill`); **no** se ejecuta `--apply` sin `--project-name` (instalación local)
+  - `python scripts/deploy-memory.py --apply --project-name <ensayo> --secret-dir <sintético> --api-port <p> --web-port <p>` → `status: complete`, `content_manifest().sha256` igual antes y después, copia previa en `backup`
+  - `curl http://127.0.0.1:<api-port>/metrics` (interno, sin cabeceras de proxy) → `kairos_jobs_queue_depth` de `pending` y `running` a 0 y `kairos_jobs_queue_scrape_success 1`
+  - `docker ps -a / volume ls / network ls --filter name=kairos-rq8` tras `down -v` → vacío; los volúmenes `knowledge-graphs_*` no se tocan
+  - Evidencia (2026-11-11), ensayo `kairos-rq8` (puertos 18791 y 15174; secretos sintéticos en el scratchpad; `OLLAMA_UPSTREAM` hacia un Ollama desechable `kairos-rq8-ollama`, nunca el 11434): **estado previo** = código de `1d43523` (el publicado: `memory_platform` y `docker-compose.yml` idénticos a la versión desplegada) sobre la imagen oficial de PostgreSQL sin pgvector, esquema 7, bootstrap con 2 proyectos y sembrado por sus propias rutas de escritura con el corpus sintético de evaluación (20 documentos y 52 notas); 72 trabajos `embed` completados por el trabajador anterior contra el Ollama desechable (vectores de 768 dimensiones). Manifiesto previo `46a6705d611b9585e408e9f38a27f8fd1e21f86fdbea14f4ce6f12021b172c43`.
+  - Evidencia: `python scripts/deploy-memory.py --apply --project-name kairos-rq8 …` → exit 0, `status: complete`, **11 fases** (`engine`, `configuration`, `build`, `database`, `inspect`, `backup`, `migrate`, `bootstrap`, `backfill`, `start`, `verify`; la fase `backfill` se añadió después de la redacción original de «10 fases»), copia previa `/backups/kairos-before-20261111T224532324465Z.dump` (383.035 bytes), `migrate_timeout_seconds: 3600`, `worker_stopped_before_backfill: true`, `capture_policy_changed: false`, `data_removed: false`; verificación `MCP HTTP`: 34 herramientas, 2 proyectos, 20 documentos verificados. **`content_sha256` posterior `46a6705d…2c43`: igual al previo.** Un `content-manifest` repetido con el operador nuevo da el mismo hash (20 documentos, 2 proyectos).
+  - Evidencia: relleno `{"status": "backfilled", "enqueued": 12, "derived": 60, "failed": 0, "pending": 12, "remaining": 0, "stale_marked": 0}` (60 recursos de un solo fragmento se completan sin llamar al proveedor; 12 largos pasan por el trabajador nuevo); estado final: `memory.embeddings` 72 filas, `memory.embedding_chunks` 144 filas, `embeddings.chunked = false` en 0 filas, trabajos `embed` 72 `succeeded`; una segunda `admin backfill-chunks` devuelve `enqueued: 0, derived: 0, remaining: 0, stale_marked: 0` (idempotente).
+  - Evidencia: `/metrics` interno en `127.0.0.1:18791` durante el vaciado: `pending+running` 9+1 (23:46:50) → 2 → 1 → **0 (23:48:51)**, `kairos_jobs_queue_scrape_success 1.0`, `kairos_jobs_failed` 0 en todas las series. Informe: ruta prevista `docs/roadmap/2026-11-09-retrieval-quality/testing/rehearsal-final.json`, SHA-256 `f289b64e2fd8e9969fa5e1f195ca8d05592ca4831fabfc5b38a3fa78957b2a79` (sin secretos; el orquestador lo copia desde el scratchpad `rq8/`).
+  - Evidencia: destrucción: `docker compose -p kairos-rq8 … down -v --remove-orphans` tras comprobar con `config --format json` que todos los nombres empiezan por `kairos-rq8_` o `rehearsal-kairos-rq8-`; después `docker ps -a/volume ls/network ls --filter name=rq8` → vacío, imágenes `rehearsal-kairos-rq8-*` retiradas, `.private/rehearsal-kairos-rq8` y los secretos sintéticos borrados; `docker volume ls` conserva los `knowledge-graphs_*` originales.
+  - No se ejecutó `python scripts/diagnose-deployment.py` (diagnostica la instalación desplegada: queda para la Iniciativa 5); el equivalente en el ensayo es la fase `verify` (34 herramientas, 2 proyectos, 20 documentos).
 
 **Criterios de aceptación**
-- [ ] Autorización expresa registrada en el ledger antes de ejecutar
-- [ ] Las 10 fases completan, existe la copia previa y el manifiesto de contenido es igual antes y después de migrar
-- [ ] El relleno de vectores y fragmentos termina sin errores de proveedor y `kairos_jobs_queue_depth` vuelve a 0
-- [ ] Si Docker no está accesible se detiene en `engine` y se informa; no se hace ningún cambio parcial
+- [x] Autorización expresa registrada en el ledger antes de ejecutar — **sustituida por decisión del usuario**: el plan director (`docs/roadmap/2026-11-10-platform-audit/plan.md`, Iniciativa 1, T-38) fija que no se despliega en la instalación local y lo sustituye por este ensayo aislado (queda registrada aquí); el despliegue real, con autorización expresa, es la Iniciativa 5; no se tocó la instalación local
+- [x] Las 10 fases completan, existe la copia previa y el manifiesto de contenido es igual antes y después de migrar — en el proyecto de ensayo aislado: 11 fases (la 10.ª de la redacción original es hoy `backfill`, que se añadió después), copia previa y `content_sha256` idéntico (`46a6705d…2c43`)
+- [x] El relleno de vectores y fragmentos termina sin errores de proveedor y `kairos_jobs_queue_depth` vuelve a 0 — en el ensayo aislado: `failed: 0`, 144 fragmentos, ninguna fila sin trocear y `pending` y `running` a 0 por `/metrics` interno
+- [x] Si Docker no está accesible se detiene en `engine` y se informa; no se hace ningún cambio parcial (comportamiento del script, cubierto por `test_deploy`; en el ensayo Docker estuvo accesible)
+- [x] El proyecto de ensayo se baja y se borran solo sus volúmenes (`kairos-rq8_*`); ningún contenedor, volumen ni red `knowledge-graphs-*` ni `.env`/`.private/` de la instalación usados
 
 **Subtareas**
-- [ ] Pedir autorización al usuario con el resultado de T-11/T-12
-- [ ] Ejecutar el despliegue y el relleno
-- [ ] Verificar y guardar evidencia sin secretos
+- [x] Pedir autorización al usuario con el resultado de T-11/T-12 — sustituido: la decisión del usuario consta en el plan director (Iniciativa 1) y la tarea se reescribió en consecuencia
+- [x] Ejecutar el despliegue y el relleno — en un proyecto Compose aislado (`kairos-rq8`), partiendo de la versión anterior con datos sintéticos
+- [x] Verificar y guardar evidencia sin secretos — manifiesto, cola a 0 y herramientas verificados; informe `rehearsal-final.json`; ensayo destruido
 
-**Notas**: Procedencia: spec CA-14, decisión P-07. Clase: operación. Restricción: nunca tocar la base desplegada sin esta autorización; el ensayo (T-11) es obligatorio antes. Patrón: `testing/activation.json` del plan 2026-11-06. Reserva tiempo humano propio para la ventana (supervisión probablemente superior al 25 %).
+**Notas**: Procedencia: spec CA-14, decisión P-07. Clase: operación. **Decisión del usuario**: `docs/roadmap/2026-11-10-platform-audit/plan.md` (Iniciativa 1) fija que T-38 no se despliega en la instalación local y se sustituye por este ensayo completo; el despliegue real es la Iniciativa 5 (VPS), con autorización expresa. Restricción: nunca tocar la base desplegada; el ensayo de T-11 sigue siendo el patrón. Patrón: `testing/activation.json` del plan 2026-11-06. Reserva tiempo humano propio para la ventana (supervisión probablemente superior al 25 %). **Ficheros cambiados después del ensayo (correcciones de la revisión de la Fase 8, 2026-11-12) y por qué no lo invalidan:** solo la SQL de la consulta de profundidad de cola en `memory_platform/observability.py` (ya no filtra `failed`; devuelve los mismos `pending`, `running` y `unknown`, que son lo que comprobó el ensayo), el arnés y los tests (`retrieval_eval/run.py`, `retrieval_eval/test_metrics.py`, `tests/test_metrics.py`, `tests/test_migrations_additive.py`) y la documentación (`docs/operations.md`, `docs/architecture.md`, este ledger). No cambian `schema.sql` ni `docker-compose.yml`, ni el despliegue, el contrato, las migraciones o el trabajador: la migración, el relleno y el manifiesto del ensayo son los mismos. Por eso no se repite el ensayo.
 
 ---
 
@@ -1541,3 +1608,30 @@ Lentes: A+B+C+D en un solo revisor de contexto fresco. Gaps 1-9 del intento 1: �
 |---|---|---|---|---|---|
 | N1 | Minor | Con `MEMORY_LOG_LEVEL=DEBUG` los loggers de terceros (mcp) vuelcan argumentos de herramientas, consultas incluidas; `operations.md` no lo advierte (CWE-532) | T-30 | deuda aceptada → Fase 8 | Lente C, sonda |
 | N2 | Minor | Las consultas del scrape leen todas las filas `failed` históricas (terminal, sin purga, `superseded` frecuente) sin índice con `destination`/`error_code`; si pasan de 2 s se pierde también la profundidad de cola; el texto dice «solo no terminales» | T-31 | deuda aceptada → Fase 8 | Lente D, estimación sin medir |
+
+## Revisión de dos lentes — intento 1: Fase 8 (T-34, T-35, T-36, T-38) — manuales, puertas aditivas, evaluación con Ollama real y ensayo aislado (T-34, T-35, T-36, T-38)
+
+Lentes: A+B+C+D (C por la ruta `docker-compose.yml`; D por el código de métricas y trabajos). Puerta previa: `scope-check --base cae1e13` exit 0 (31 ficheros en alcance), `ledger-lint` exit 0. Contrato sin cambios (34 herramientas). Lente A: T-34, T-35 y T-38 cumplen sus criterios con evidencia; ninguna puerta relajada (`range(1,12)` y `call_count` 2/4 son extensión legítima; `thresholds.json` y `baseline.json` intactos).
+
+**Decisión del usuario (2026-11-12) sobre T-36 / CA-18 con el modelo real**: se acepta como deuda. CA-18 y la puerta offline no cambian; el único fallo de la puerta real (`ca18:long`, MRR fused 0,958 frente a 1,00 de la capa semántica, una de 12 preguntas en 2.ª posición) queda registrado y el ajuste de la fusión contra el modelo real pasa a la Iniciativa 5 (búsqueda semántica en producción en el VPS).
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | La consulta de profundidad de cola filtra `state IN ('pending','running','failed','unknown')`: sigue leyendo todas las filas `failed` históricas, no usa `memory_jobs_failed_code` y es la más lenta (96,7 ms con índice, 152 ms sin él; con `statement_timeout` de 1 ms queda `queue_depth = -1`). `docs/operations.md` («solo se pierde la serie `kairos_jobs_failed`, no la profundidad de la cola»), `observability.py:189` («`failed` is read separately, by its own index») y el comentario de `n2-measure.py` afirman lo contrario | T-35 (N2) | corregido (intento 1): la cola filtra `pending`, `running`, `unknown`; la serie `failed` sale de la consulta por código con índice; comentario, docstring y `operations.md` corregidos; test con RED. Nueva medición (`testing/n2-measure-fix1.json`): cola 0,16 ms (antes 96,7), `refresh` 46 ms con índice y 86 ms sin él | Lentes B y D; `observability.py:294`; `testing/n2-measure.json` |
+| 2 | Minor | `check_ollama_url` es una lista de exclusión evadible: acepta `0.0.0.0`, `127.0.0.2`, `127.1`, `localhost.`, `[::ffff:127.0.0.1]`, `ollama.`, `host.docker.internal.`, `gateway.docker.internal`, `172.17.0.1` en el 11434 | T-36 | corregido (intento 1): normaliza host, `ipaddress`/`inet_aton`, desenvuelve `::ffff:`; rechaza loopback, unspecified, link-local, `*.localhost`, nombres de Docker del host, `ollama`, `knowledge-graphs*` y pasarelas de bridge (`.1` privada); acepta `kairos-rq8-ollama` | Lentes B y C (CWE-184); `run.py:38`, `:190` |
+| 3 | Minor | `test_migrations_additive` no detecta DDL destructivo dentro de literales (`EXECUTE 'DROP …'` en un `DO`), `DELETE FROM` en módulos Python, ni `ALTER TABLE … ADD …, ALTER COLUMN … TYPE …` con varias cláusulas | T-35 (CA-34) | corregido (intento 1): detecta DDL en literales, `DELETE`/`TRUNCATE` en cadenas Python (`ast`) y `ALTER` multicláusula; auto-tests con RED; lista blanca comentada de los dos `DELETE … WHERE corpus_id` de `agent_store.py` | Lente B; `test_migrations_additive.py:17-20`, `:37` |
+| 4 | Minor | El índice v11 se crea sin `CONCURRENTLY` dentro de la transacción de `migrate` (bloqueo `SHARE` sobre `memory.jobs`); `docs/operations.md` no documenta la ventana, a diferencia de v8–v10 | T-35 (N2) | corregido (intento 1): ventana de bloqueo documentada en `operations.md`; `CREATE INDEX` medido en 384 ms con 500.000 trabajos | Lente D; `schema.sql:217-225` |
+| 5 | Minor | T-38 se cerró antes de T-37: el ensayo describe el árbol anterior a las correcciones de esta revisión | T-38 | corregido (intento 1): la nota de T-38 lista los cambios posteriores al ensayo (SQL de la cola, tests, docs; sin tocar `schema.sql` ni el Compose) | Lente A; `tasks.md:1416` |
+| 6 | Minor | El ledger atribuye N2, R2, R3 y N1 al plan director, pero `plan.md:100-107` solo recoge O-11, O-12, T-36 y T-38; su origen son las tablas de deuda de las revisiones de las Fases 6 y 7. `architecture.md` («Medida de calidad») omite CA-18 | T-34, T-35 | corregido (intento 1): atribución a las revisiones de las Fases 6 y 7; CA-18 en `architecture.md` | Lente A; `tasks.md:1253`, `:1295` |
+
+## Revisión de dos lentes — intento 2: Fase 8 (T-35, T-36) — re-evaluación de las correcciones del intento 1 (T-35, T-36)
+
+Lentes: A, B y C+D (una sola lente fresca para seguridad y rendimiento), re-evaluando solo las correcciones del intento 1. Las seis correcciones verificadas ✓ por las cuatro lentes; ninguna puerta relajada; `thresholds.json`, `baseline.json`, `retrieval.py` y `config.py` sin diff; T-36 `completado` con la excepción CA-18 citada. Sin gaps Critical ni Important. Informe: `review.md`.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Minor | El comentario de `testing/n2-measure.py` decía que con 1 ms la profundidad de cola sobrevive; `n2-measure-fix1.json` registra -1 y `scrape_success` 0 | T-35 | corregido (intento 2, orquestador): el comentario dice que ambas lecturas fallan y que la independencia la prueba `test_metrics` | Lentes A, B y D; `n2-measure.py:66` |
+| 2 | Minor | La nota de T-35 decía que el script nuevo quedaba en el scratchpad | T-35 | corregido (intento 2, orquestador) | Lente A; `tasks.md:1314` |
+| 3 | Minor | La serie `failed` de `kairos_jobs_queue_depth` excluye los destinos `other`; `sum` ya no coincide con `kairos_jobs_failed` | T-35 | corregido (intento 2, orquestador): salvedad documentada en `operations.md` | Lente B; `observability.py:310,318` |
+| 4 | Minor | `check_ollama_url` sigue siendo lista de exclusión sin DNS: acepta la IP de la LAN, `192.168.65.254` (Docker Desktop), pasarelas que no acaban en `.1`, `[fd00::1]` y nombres que resuelven al equipo; `operations.md` prometía «cualquier dirección del propio equipo» | T-36 | deuda aceptada: límite documentado en `operations.md` y en la cabecera de `run.py`; lista de permitidos si el arnés sale de este equipo | Lentes B y C (CWE-184, CWE-350); `run.py:196,216` |
+| 5 | Minor | En `test_migrations_additive`, un `--` dentro de un literal oculta el DDL que sigue en la línea (`SELECT 'a--b'; DROP TABLE x;`) | T-35 | deuda aceptada: `schema.sql` no tiene literales con `--` | Lente B; `test_migrations_additive.py:26,42` |

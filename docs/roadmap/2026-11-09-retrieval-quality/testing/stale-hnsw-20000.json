@@ -1,0 +1,70 @@
+{
+ "after_backfill": {
+  "embeddings_rows": 40000,
+  "probe_explain": {
+   "execution_ms": 0.105,
+   "plan_top": [
+    "Limit  (cost=0.12..30.55 rows=1 width=18) (actual time=0.023..0.025 rows=0 loops=1)",
+    "Buffers: shared hit=1",
+    "->  Index Scan using memory_embeddings_unchunked on embeddings e  (cost=0.12..30.55 rows=1 width=18) (actual time=0.021..0.022 rows=0 loops=1)",
+    "Index Cond: ((project_id = ANY ('{p1}'::text[])) AND (model = 'nomic-embed-text'::text) AND (dims = '768'::smallint))",
+    "Filter: (((resource_type = 'item'::text) AND (ANY ((project_id = (hashed SubPlan 2).col1) AND (item_id = (hashed SubPlan 2).col2) AND (version = (hashed SubPlan",
+    "Buffers: shared hit=1"
+   ],
+   "planning_ms": 1.077,
+   "shared_buffers": "shared hit=1",
+   "uses_partial_index": true
+  },
+  "queries": 30,
+  "queries_truncated": 0,
+  "rows_in_partial_index_unchunked": 0,
+  "search_ms_avg": 72.9
+ },
+ "backfill": {
+  "batches": 0,
+  "derived": 0,
+  "embedding_filled": 0,
+  "enqueued": 0,
+  "failed": 0,
+  "pending": 0,
+  "remaining": 0,
+  "seconds": 59.55,
+  "stale_marked": 20000
+ },
+ "backfill_repeat": {
+  "batches": 0,
+  "derived": 0,
+  "embedding_filled": 0,
+  "enqueued": 0,
+  "failed": 0,
+  "pending": 0,
+  "remaining": 0,
+  "seconds": 1.467,
+  "stale_marked": 0
+ },
+ "before_backfill": {
+  "embeddings_rows": 40000,
+  "probe_explain": {
+   "execution_ms": 56.796,
+   "plan_top": [
+    "Limit  (cost=0.29..24823.97 rows=501 width=18) (actual time=50.606..50.610 rows=0 loops=1)",
+    "Buffers: shared hit=1337",
+    "->  Index Scan using memory_embeddings_unchunked on embeddings e  (cost=0.29..495037.09 rows=9991 width=18) (actual time=50.500..50.504 rows=0 loops=1)",
+    "Index Cond: ((project_id = ANY ('{p1}'::text[])) AND (model = 'nomic-embed-text'::text) AND (dims = '768'::smallint))",
+    "Filter: (((resource_type = 'item'::text) AND (ANY ((project_id = (hashed SubPlan 2).col1) AND (item_id = (hashed SubPlan 2).col2) AND (version = (hashed SubPlan",
+    "Rows Removed by Filter: 20000"
+   ],
+   "planning_ms": 1.417,
+   "shared_buffers": "shared hit=1337",
+   "uses_partial_index": true
+  },
+  "queries": 30,
+  "queries_truncated": 0,
+  "rows_in_partial_index_unchunked": 20000,
+  "search_ms_avg": 174.4
+ },
+ "dimensions": 768,
+ "model": "nomic-embed-text",
+ "postgres": "isolated container build",
+ "stale_versions_one_per_resource": 20000
+}

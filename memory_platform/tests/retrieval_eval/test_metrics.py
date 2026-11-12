@@ -206,5 +206,65 @@ class MetricTests(unittest.TestCase):
         self.assertEqual((parts['hostaddr'], parts['host'], parts['port'], parts['dbname']), ('127.0.0.1', 'localhost', '55432', 'memory_test'))
 
 
+class ProviderSelectionTests(unittest.TestCase):
+    """T-36: the gate can run with a real Ollama, but only one that the operator names for the evaluation and never the deployed one."""
+
+    def test_the_default_provider_is_the_simulated_one(self):
+        from memory_platform.config import Settings
+        from memory_platform.tests.retrieval_eval.fake_embeddings import FakeEmbeddings
+        from memory_platform.tests.retrieval_eval.run import make_provider
+        with mock.patch.dict('os.environ', {}, clear=True):
+            provider, label, settings = make_provider('postgresql://postgres@127.0.0.1:55432/memory_test')
+        self.assertIsInstance(provider, FakeEmbeddings)
+        self.assertEqual(label, 'fake-hashed-words-and-char-ngrams')
+        self.assertIsInstance(settings, Settings)
+
+    def test_ollama_needs_its_own_endpoint_variable_and_an_explicit_choice(self):
+        from memory_platform.tests.retrieval_eval.run import make_provider
+        dsn = 'postgresql://postgres@127.0.0.1:55432/memory_test'
+        with mock.patch.dict('os.environ', {'MEMORY_RETRIEVAL_EVAL_PROVIDER': 'ollama'}, clear=True):
+            with self.assertRaises(SystemExit):
+                make_provider(dsn)  # no endpoint: it never falls back to MEMORY_OLLAMA_URL or the simulated provider
+        with mock.patch.dict('os.environ', {'MEMORY_RETRIEVAL_EVAL_PROVIDER': 'ollama', 'MEMORY_OLLAMA_URL': 'http://kairos-rq8-ollama:11434'}, clear=True):
+            with self.assertRaises(SystemExit):
+                make_provider(dsn)  # MEMORY_OLLAMA_URL is the service's variable: not read here
+        with mock.patch.dict('os.environ', {'MEMORY_RETRIEVAL_EVAL_PROVIDER': 'unknown'}, clear=True):
+            with self.assertRaises(SystemExit):
+                make_provider(dsn)
+
+    def test_ollama_is_built_with_the_named_endpoint_and_labelled(self):
+        from memory_platform.providers import Embeddings
+        from memory_platform.tests.retrieval_eval.run import make_provider
+        env = {'MEMORY_RETRIEVAL_EVAL_PROVIDER': 'ollama', 'MEMORY_RETRIEVAL_EVAL_OLLAMA_URL': 'http://kairos-rq8-ollama:11434/'}
+        with mock.patch.dict('os.environ', env, clear=True):
+            provider, label, settings = make_provider('postgresql://postgres@127.0.0.1:55432/memory_test')
+        self.assertIsInstance(provider, Embeddings)
+        self.assertEqual(settings.ollama_url, 'http://kairos-rq8-ollama:11434')
+        self.assertEqual(label, 'ollama:nomic-embed-text')
+
+    def test_the_deployed_ollama_and_anything_unsafe_is_refused(self):
+        from memory_platform.tests.retrieval_eval.run import check_ollama_url
+        for url in ('http://127.0.0.1:11434', 'http://localhost:11434/', 'http://[::1]:11434', 'http://ollama:11434', 'http://ollama', 'http://host.docker.internal:11434',
+                    'http://host.docker.internal:11535', 'http://knowledge-graphs-ollama-1:11434', 'http://Knowledge-Graphs-Ollama-1:11434',
+                    'https://kairos-rq8-ollama:11434', 'http://user:pw@kairos-rq8-ollama:11434', 'http://kairos-rq8-ollama:11434/api?x=1', 'ftp://x', '', None,
+                    'http://kairos-rq8-ollama:11434/#frag', 'http://127.0.0.1:11434/api'):
+            with self.assertRaises(SystemExit, msg=url):
+                check_ollama_url(url)
+        for url in ('http://kairos-rq8-ollama:11434', 'http://my-eval-ollama:11434', 'http://kairos-rq8-ollama.:11434', 'http://172.17.0.2:11434', 'http://10.20.0.5:11434'):
+            self.assertEqual(check_ollama_url(url), url.rstrip('/'))
+
+    def test_gap2_every_spelling_of_the_host_or_the_deployed_services_is_refused(self):
+        """Gap 2 (CWE-184): the exclusion list was bypassable by spelling; hosts are normalised and IPs interpreted, not compared as text."""
+        from memory_platform.tests.retrieval_eval.run import check_ollama_url
+        for url in ('http://0.0.0.0:11434', 'http://127.0.0.2:11434', 'http://127.1:11434', 'http://2130706433:11434', 'http://0x7f.0.0.1:11434', 'http://0177.0.0.1:11434',
+                    'http://localhost.:11434', 'http://LOCALHOST.:11434', 'http://foo.localhost:11434', 'http://[::ffff:127.0.0.1]:11434', 'http://[::ffff:7f00:1]:11434',
+                    'http://[::]:11434', 'http://[::1]:11535', 'http://127.0.0.1:11535', 'http://localhost:11535/', 'http://169.254.169.254:11434', 'http://[fe80::1]:11434',
+                    'http://ollama.:11434', 'http://OLLAMA:11434', 'http://host.docker.internal.:11434', 'http://gateway.docker.internal:11434',
+                    'http://Gateway.Docker.Internal.:11434', 'http://knowledge-graphs-ollama-1.:11434', 'http://172.17.0.1:11434', 'http://192.168.1.1:11434',
+                    'http://10.0.0.1:11434', 'http://[::ffff:172.17.0.1]:11434', 'http://172.17.0.1.:11434'):
+            with self.assertRaises(SystemExit, msg=url):
+                check_ollama_url(url)
+
+
 if __name__ == '__main__':
     unittest.main()

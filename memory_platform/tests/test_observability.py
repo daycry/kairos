@@ -107,6 +107,31 @@ class FormatTests(LogCase):
         for leaked in (SECRET, 'postgresql://', 'Traceback', 'second line', 'HTTP Request'):
             self.assertNotIn(leaked, text)
 
+    def test_n1_debug_opens_kairos_only_third_party_loggers_stay_at_info_or_above(self):
+        """N1 (CWE-532): MEMORY_LOG_LEVEL=DEBUG must not make the MCP SDK (or any library) dump the arguments of a tool call, i.e. the queries."""
+        stream = io.StringIO()
+        observability.configure_logging(stream, level='DEBUG')
+        self.addCleanup(observability.remove_logging)
+        for name in ('mcp.server.lowlevel.server', 'mcp', 'uvicorn.error', 'asyncio', 'psycopg', 'some.library', 'kairosish'):
+            logging.getLogger(name).debug('Calling tool search with arguments {"q": "%s"}', QUERY)
+        logging.getLogger('mcp.server.lowlevel.server').info('Processing request of type CallToolRequest')
+        logging.getLogger('some.library').warning('visible warning')
+        observability.log_event('kairos_debug_event', 'debug', layer='semantic')
+        logging.getLogger('kairos.worker').debug('child of kairos is ours')
+        text = stream.getvalue()
+        self.assertNotIn(QUERY, text)
+        self.assertNotIn('arguments', text)
+        events = [(entry['event'], entry['level']) for entry in self.events(stream)]
+        self.assertEqual(events, [('mcp.server.lowlevel.server', 'info'), ('some.library', 'warning'), ('kairos_debug_event', 'debug'), ('kairos.worker', 'debug')])
+
+    def test_n1_the_floor_is_independent_of_the_configured_level(self):
+        for level in ('DEBUG', 'INFO', 'WARNING'):
+            stream = io.StringIO()
+            observability.configure_logging(stream, level=level)
+            logging.getLogger('mcp.server').debug('args ' + QUERY)
+            self.assertNotIn(QUERY, stream.getvalue(), level)
+            observability.remove_logging()
+
     def test_the_root_logger_keeps_only_the_json_handler_even_after_fastmcp_is_created(self):
         fake_app()  # FastMCP installs its text handler on the root when nobody did it before
         stream = self.capture()

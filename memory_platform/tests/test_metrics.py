@@ -34,7 +34,7 @@ def no_cache(case):
 
 
 def jobs_store(states=(), failed=()):
-    """A store whose connection answers the two scrape queries (non-terminal counts, failed by code) and remembers what it was asked."""
+    """A store whose connection answers the two scrape queries (counts by state, failed by code) and remembers what it was asked."""
     connection, asked = MagicMock(), []
 
     def execute(sql, *args):
@@ -73,8 +73,8 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(sample('kairos_provider_errors_total', provider='other', code='other') >= 1, True)
 
     def test_the_queue_depth_is_read_from_the_jobs_table_at_scrape_time(self):
-        store, asked = jobs_store([{'state': 'pending', 'destination': 'embed', 'n': 7}, {'state': 'failed', 'destination': 'extract', 'n': 2},
-                                   {'state': 'weird-state', 'destination': 'project-x', 'n': 1}])
+        store, asked = jobs_store([{'state': 'pending', 'destination': 'embed', 'n': 7}, {'state': 'weird-state', 'destination': 'project-x', 'n': 1}],
+                                  [{'destination': 'extract', 'error_code': 'provider_rejected', 'n': 1}, {'destination': 'extract', 'error_code': 'provider_timeout', 'n': 1}])
         observability.refresh_queue_depth(store)
         self.assertEqual(sample('kairos_jobs_queue_depth', state='pending', destination='embed'), 7)
         self.assertEqual(sample('kairos_jobs_queue_depth', state='failed', destination='extract'), 2)
@@ -90,9 +90,21 @@ class RegistryTests(unittest.TestCase):
         observability.refresh_queue_depth(store)
         self.assertRegex(asked[0], r'(?i)^SET LOCAL statement_timeout\s*=\s*\d+$')
         counts = [sql for sql in asked if 'GROUP BY state' in sql][0]
-        self.assertIn("state IN ('pending','running','failed','unknown')", counts)
+        self.assertIn("state IN ('pending','running','unknown')", counts)
         self.assertNotIn('succeeded', counts)
+        self.assertNotIn('failed', counts)  # Gap 1: the queue read never touches the historical failed rows; their count comes from the indexed failed-by-code read
         self.assertIn("WHERE state='failed'", [sql for sql in asked if 'error_code' in sql][0])
+
+    def test_gap1_the_failed_depth_comes_from_the_failed_by_code_read_and_the_queue_sql_has_no_failed(self):
+        store, asked = jobs_store([{'state': 'pending', 'destination': 'embed', 'n': 3}],
+                                  [{'destination': 'embed', 'error_code': 'provider_timeout', 'n': 4}, {'destination': 'embed', 'error_code': None, 'n': 1},
+                                   {'destination': 'project-x', 'error_code': 'provider_timeout', 'n': 2}])
+        observability.refresh_queue_depth(store)
+        queue_sql = [sql for sql in asked if 'GROUP BY state' in sql][0]
+        self.assertNotIn('failed', queue_sql.lower())
+        self.assertEqual(sample('kairos_jobs_queue_depth', state='failed', destination='embed'), 5)
+        self.assertEqual(sample('kairos_jobs_queue_depth', state='failed', destination='extract'), 0)
+        self.assertEqual(sample('kairos_jobs_failed', destination='other', code='provider_timeout'), 2)  # a failed row of an unknown destination is still visible by code
 
     def test_a_loop_of_scrapes_reads_the_database_once_per_window(self):
         store, asked = jobs_store([{'state': 'pending', 'destination': 'embed', 'n': 4}])
@@ -100,10 +112,10 @@ class RegistryTests(unittest.TestCase):
             observability.reset_queue_cache()
             for _ in range(5):
                 self.assertTrue(observability.refresh_queue_depth(store))
-            self.assertEqual(store.transaction.call_count, 1)
+            self.assertEqual(store.transaction.call_count, 2)  # the two reads (live states, failed by code), each in its own transaction
             observability._QUEUE_CACHE['at'] -= 11  # the window is over
             observability.refresh_queue_depth(store)
-        self.assertEqual(store.transaction.call_count, 2)
+        self.assertEqual(store.transaction.call_count, 4)
         self.assertEqual(sample('kairos_jobs_queue_depth', state='pending', destination='embed'), 4)
 
     def test_failed_jobs_are_derived_from_the_table_by_closed_code(self):
@@ -132,6 +144,43 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(sample('kairos_jobs_queue_depth', state='pending', destination='embed'), 9)  # the last good value stays, flagged by the gauge
         self.assertTrue(observability.refresh_queue_depth(store))
         self.assertEqual(sample('kairos_jobs_queue_scrape_success'), 1)
+
+    def test_n2_a_failing_failed_jobs_read_does_not_cost_the_queue_depth(self):
+        """N2: the two scrape queries run in separate transactions; the slow `failed` one (statement_timeout) cannot take the queue depth with it."""
+        def store_failing(marker):
+            connection, asked = MagicMock(), []
+
+            def execute(sql, *args):
+                asked.append(sql)
+                if marker in sql:
+                    raise RuntimeError('canceling statement due to statement timeout')
+                result = MagicMock()
+                result.fetchall.return_value = [{'state': 'pending', 'destination': 'embed', 'n': 5}] if 'GROUP BY state' in sql else [{'destination': 'embed', 'error_code': 'provider_timeout', 'n': 2}]
+                return result
+            connection.execute.side_effect = execute
+            store = MagicMock()
+            store.transaction.return_value.__enter__.return_value = connection
+            return store
+        good, _asked = jobs_store([{'state': 'pending', 'destination': 'embed', 'n': 1}], [{'destination': 'embed', 'error_code': 'provider_timeout', 'n': 1}])
+        observability.refresh_queue_depth(good)
+        observability.reset_queue_cache()
+        self.assertFalse(observability.refresh_queue_depth(store_failing('error_code')))
+        self.assertEqual(sample('kairos_jobs_queue_depth', state='pending', destination='embed'), 5)  # the queue depth is fresh
+        self.assertEqual(sample('kairos_jobs_failed', destination='embed', code='provider_timeout'), 1)  # the failed series keeps its last good value
+        self.assertEqual(sample('kairos_jobs_queue_scrape_success'), 0)
+        observability.reset_queue_cache()
+        self.assertFalse(observability.refresh_queue_depth(store_failing('GROUP BY state')))
+        self.assertEqual(sample('kairos_jobs_failed', destination='embed', code='provider_timeout'), 2)  # and the other way round
+        self.assertEqual(sample('kairos_jobs_queue_depth', state='pending', destination='embed'), 5)
+        observability.reset_queue_cache()
+        self.assertTrue(observability.refresh_queue_depth(store_failing('never-matches')))
+        self.assertEqual(sample('kairos_jobs_queue_scrape_success'), 1)
+
+    def test_n2_each_read_runs_in_its_own_bounded_transaction(self):
+        store, asked = jobs_store()
+        observability.refresh_queue_depth(store)
+        self.assertEqual(store.transaction.call_count, 2)
+        self.assertEqual(len([sql for sql in asked if sql.upper().startswith('SET LOCAL STATEMENT_TIMEOUT')]), 2)
 
     def test_the_queue_depth_follows_real_jobs(self):
         from memory_platform.tests.test_store import create_core, event

@@ -1,6 +1,6 @@
 # Cómo está construido Kairos
 
-Última actualización: 2026-11-09.
+Última actualización: 2026-11-11.
 
 ## Componentes y recorrido de una operación
 
@@ -22,7 +22,9 @@ El puente MCP convierte mensajes stdio en peticiones HTTP autenticadas. El servi
 |---|---|---|
 | `memory_platform` | API, autenticación, modelos, persistencia, recuperación y procesamiento | [paquete](../memory_platform/__init__.py) |
 | `memory_platform/mcp.py`, `agent_tools.py`, `extended_tools.py` y `corpus_answer_tools.py` | Frontera única de 34 herramientas para agentes | [MCP](../memory_platform/mcp.py) |
-| `memory_platform/admin.py` | Migración, usuario inicial, inspección, copias y restauración de comprobación | [administración](../memory_platform/admin.py) |
+| `memory_platform/store.py` y `store_*.py` | `Store` es una fachada sobre mixins por dominio (autenticación, ingesta, documentos, grafo, trabajos y vectores); el código que usa `Store` no cambió | [fachada](../memory_platform/store.py) |
+| `memory_platform/observability.py` | Logs JSON con redacción y métricas Prometheus de valores cerrados | [observabilidad](../memory_platform/observability.py) |
+| `memory_platform/admin.py` | Migración, usuario inicial, inspección, copias, relleno de fragmentos y restauración de comprobación | [administración](../memory_platform/admin.py) |
 | `web` | Web pública, acceso y panel privado, filtros, listas y mapa | [portal](../web/src/memory-portal.ts) |
 | `packages/kairos-cli` | Instalación de configuración y puente MCP local | [manifiesto](../packages/kairos-cli/package.json) |
 | `docker-compose.yml` | Servicios, redes y almacenamiento persistente | [Compose](../docker-compose.yml) |
@@ -41,9 +43,17 @@ Los modelos configurados en la instalación existente son `beam:cloud` para gene
 | Documental | Fuentes publicadas con aprobación y hash | Conocimiento gestionado con procedencia |
 | Temporal | Hechos y relaciones con evidencia | Representación derivada que debe contrastarse con su fuente |
 
-La capa semántica usa PostgreSQL con pgvector (imagen propia, ver [operación](operations.md#imagen-postgresql)). Cada embedding se guarda en `memory.embeddings` en dos columnas: `vector` (`double precision[]`, la original, que permite volver atrás) y `embedding` (tipo `vector` de pgvector, con su dimensión en `dims`). Para el modelo y la dimensión configurados (por defecto `nomic-embed-text` de 768) la consulta usa un índice HNSW parcial con escaneo iterativo; cualquier otro modelo o dimensión usa una ruta exacta en SQL. Ambas rutas aplican los mismos filtros de permisos, proyecto, versión vigente y hash, y la recomprobación final de autorización. Los detalles y parámetros están en [configuración](configuration.md#búsqueda-vectorial-pgvector).
+La capa semántica usa PostgreSQL con pgvector (imagen propia, ver [operación](operations.md#imagen-postgresql)). Cada embedding se guarda en `memory.embeddings` en dos columnas: `vector` (`double precision[]`, la original, que permite volver atrás) y `embedding` (tipo `vector` de pgvector, con su dimensión en `dims`). Para el modelo y la dimensión configurados (por defecto `nomic-embed-text` de 768) la consulta usa un índice HNSW parcial con escaneo iterativo; cualquier otro modelo o dimensión usa una ruta exacta en SQL. Ambas rutas aplican los mismos filtros de permisos, proyecto, versión vigente y hash, y la recomprobación final de autorización. Los detalles y parámetros están en [configuración](configuration.md#busqueda-vectorial-pgvector).
 
 La búsqueda consulta las capas léxicas y la semántica en paralelo, cada una con su propio plazo, y las combina por fusión de rangos recíprocos con una bonificación ajustable para lo validado. La respuesta indica en `backends.semantic.status` (`ok`, `partial`, `unavailable` u `off`) qué ocurrió con cada capa. Si solo falla la semántica, la respuesta léxica sigue siendo válida y lleva el campo opcional `degraded` (`layer`, `reason`); `partial` conserva su significado y `matched_chunk` aparece en los aciertos semánticos que responde un fragmento. `candidates_truncated` indica que se alcanzó el tope de candidatos de la ruta exacta o `max_scan_tuples` de la HNSW. El detalle de cada campo está en [integración](integration.md#estado-de-cada-capa-backends-partial-y-degraded). El contexto automático del CLI pide la capa semántica desde la versión 0.3.0.
+
+## Búsqueda léxica, fragmentos y medida de calidad
+
+- **Léxica por idioma y trigramas.** PostgreSQL guarda además de la configuración `simple` vectores de texto en español e inglés sobre texto sin tildes (extensión `unaccent`) y una búsqueda aproximada por similitud de títulos (extensión `pg_trgm`) que completa una respuesta corta con aciertos señalados como `lexical_match: "trigram"`. Es aditivo: los vectores y los índices anteriores se conservan. Detalle, coste de migración y retroceso en [operación](operations.md#busqueda-lexica-por-idioma-y-trigramas).
+- **Fragmentos para embeddings.** Un texto largo ya no se corta a sus primeros 8.000 caracteres: el trabajador lo trocea (1.500 caracteres con 200 de solape, `MEMORY_CHUNK_CHARS` y relacionadas), embebe los fragmentos por lotes y guarda todos o ninguno en la tabla `memory.embedding_chunks`, con un índice HNSW parcial por modelo y dimensión. La búsqueda devuelve un acierto por elemento con su mejor fragmento (`matched_chunk`). `memory.embeddings` conserva el vector del elemento, de modo que el código anterior sigue funcionando. Un relleno idempotente (`admin backfill-chunks`) trocea el contenido ya existente. Ver [troceado](operations.md#troceado-de-documentos-y-notas-largas).
+- **Degradación.** Si solo falla la capa semántica la respuesta léxica sigue siendo válida (`degraded`); el presupuesto opcional `semantic_budget_ms` la acota por petición.
+- **Observabilidad.** `memory-api` y `memory-worker` escriben logs JSON de una línea con `request_id` y vocabulario cerrado de campos (nunca consultas, contenido ni credenciales), y `memory-api` sirve `GET /metrics` solo en la red interna (`MEMORY_METRICS`). Ver [observabilidad](operations.md#observabilidad-logs-y-metricas).
+- **Medida de calidad (`retrieval-eval`).** Una puerta aparte de la suite (`docker build --target retrieval-eval`) mide recall@1/5/10 y MRR de cada capa y de la fusión sobre un conjunto sintético congelado, con un proveedor de embeddings simulado y determinista, y exige umbrales (recall@5 ≥ 0,80, MRR ≥ 0,60, ninguna pérdida de más de 2 puntos frente a la línea base y, por conjunto y por subconjunto, un MRR de la fusión no inferior al de la mejor capa individual: CA-18). Mide la tubería de recuperación, no la calidad del modelo real; la medida con el modelo real es un paso explícito aparte, en una base aislada y nunca contra la desplegada.
 
 La política de cada proyecto determina qué nuevos eventos se admiten y si se conservan hechos y relaciones. Una memoria generada no recibe automáticamente el estado validado. La eliminación lógica y las versiones evitan recuperar elementos retirados como si siguieran vigentes.
 
