@@ -385,6 +385,47 @@ class ParityEndpointTests(unittest.TestCase):
         self.assertEqual(set(listing.json()), {'items', 'next_cursor', 'has_more', 'filters', 'ordering', 'rule_policy'})  # the shape of HEAD
         self.assertNotIn('mode', listing.json())
 
+    def test_extreme_valid_dates_are_invalid_input_through_the_endpoint_and_the_tool(self):
+        # `0001-01-01T00:00:00+01:00` and `9999-12-31T23:59:59-01:00` are valid ISO dates whose conversion to UTC overflows the datetime range
+        for key, tool_key in (('date_start', 'dateStart'), ('date_end', 'dateEnd')):
+            for value in ('0001-01-01T00:00:00+01:00', '9999-12-31T23:59:59-01:00'):
+                response = self.client.post(self.prefix + '/corpora', json={'name': 'extreme', key: value}, headers=self.writer)
+                self.assertEqual(response.status_code, 422, (key, value, response.text))
+                self.assertEqual(response.json()['error']['message'], 'Invalid ISO date filter')
+                called = self.client.post('/mcp/', headers={**self.writer, 'Accept': 'application/json, text/event-stream'}, json={
+                    'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call', 'params': {'name': 'build_corpus', 'arguments': {'project': self.pid, 'name': 'extreme', tool_key: value}}})
+                result = called.json()['result']
+                self.assertTrue(result.get('isError'), (tool_key, value, result))
+                self.assertIn('Invalid ISO date filter', result['content'][0]['text'])
+
+    def test_a_corpus_name_with_a_slash_is_reached_by_every_route_with_a_name_like_the_tool(self):
+        self.add(item_id=str(uuid.uuid4()))
+        name, project = 'team/search', self.pid
+        corpus = self.prefix + '/corpora'
+        self.assertEqual(self.client.post(corpus, json={'name': name}, headers=self.writer).status_code, 200)
+        base = corpus + '/team%2Fsearch'
+        primed = self.client.post(base + '/prime', json={}, headers=self.writer)
+        self.assertEqual(primed.status_code, 200, primed.text)
+        self.assertEqual(primed.json()['name'], name)
+        answer = self.client.post(base + '/query', json={'question': 'fencing', 'limit': 5}, headers=self.writer)
+        self.assertEqual(answer.status_code, 200, answer.text)
+        self.assertEqual(answer.json(), self.tool(self.writer, 'query_corpus', {'project': project, 'name': name, 'question': 'fencing', 'limit': 5}))
+        rebuilt = self.client.post(base + '/rebuild', json={'expected_version': primed.json()['version']}, headers=self.writer)
+        self.assertEqual(rebuilt.status_code, 200, rebuilt.text)
+        self.assertEqual(rebuilt.json()['name'], name)
+        # the answer routes refuse (generation is off) with the tool's message, not with a 404 for a route that does not exist
+        def refusal(arguments, tool):
+            called = self.client.post('/mcp/', headers={**self.writer, 'Accept': 'application/json, text/event-stream'}, json={
+                'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call', 'params': {'name': tool, 'arguments': arguments}})
+            return called.json()['result']['content'][0]['text'].split(': ', 1)[1]
+        asked = {'question': 'What?', 'request_id': 'r1', 'expected_session_id': 'x', 'expected_generation': 1}
+        refused = self.client.post(base + '/answers', json=asked, headers=self.writer)
+        self.assertEqual(refused.json()['error']['message'], refusal({'project': project, 'name': name, **asked}, 'corpus_answer'))
+        status = self.client.get(base + '/answers/never-asked', headers=self.writer)
+        self.assertEqual(status.json()['error']['message'], refusal({'project': project, 'name': name, 'request_id': 'never-asked'}, 'corpus_answer_status'))
+        # an unknown name with a slash is still a 404 of the corpus, and a name that ends like a suffix does not capture another route
+        self.assertEqual(self.client.post(corpus + '/no%2Fsuch/query', json={'question': 'x'}, headers=self.writer).status_code, 404)
+
     def test_query_corpus_returns_what_the_tool_returns_without_a_language_model(self):
         self.add(item_id=str(uuid.uuid4()))
         corpus = self.prefix + '/corpora'

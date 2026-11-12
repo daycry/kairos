@@ -293,29 +293,31 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
                                              types=payload.types, concepts=payload.concepts, files=payload.files,
                                              date_start=payload.date_start, date_end=payload.date_end, limit=payload.limit)
 
-    @app.post('/v1/projects/{project_id}/corpora/{name}/prime', operation_id='kairos_prime_corpus')
+    # `{name:path}`: a corpus name may contain `/` (the tools accept it), and the client sends it as `%2F`, which the server decodes before routing. The
+    # four suffixes (`prime`, `query`, `rebuild`, `answers`) end the path, so they cannot capture one another; OpenAPI still shows `{name}`.
+    @app.post('/v1/projects/{project_id}/corpora/{name:path}/prime', operation_id='kairos_prime_corpus')
     def prime_corpus(project_id: str, name: str, payload: m.CorpusPrime, actor=Depends(identity)):
         from .agent_store import AgentStore
         return AgentStore(store).prime_corpus(actor, project_id, name, fresh=payload.fresh)
 
-    @app.post('/v1/projects/{project_id}/corpora/{name}/query', operation_id='kairos_query_corpus')
+    @app.post('/v1/projects/{project_id}/corpora/{name:path}/query', operation_id='kairos_query_corpus')
     def query_corpus(project_id: str, name: str, payload: m.CorpusQuery, actor=Depends(identity)):
         # Lexical evidence from a primed corpus (the `query_corpus` tool): no provider, no model.
         from .agent_store import AgentStore
         return AgentStore(store).query_corpus(actor, project_id, name, payload.question, payload.limit)
 
-    @app.post('/v1/projects/{project_id}/corpora/{name}/rebuild', operation_id='kairos_rebuild_corpus')
+    @app.post('/v1/projects/{project_id}/corpora/{name:path}/rebuild', operation_id='kairos_rebuild_corpus')
     def rebuild_corpus(project_id: str, name: str, payload: m.CorpusRebuild, actor=Depends(identity)):
         from .agent_store import AgentStore
         return AgentStore(store).rebuild_corpus(actor, project_id, name, payload.force, payload.expected_version)
 
-    @app.post('/v1/projects/{project_id}/corpora/{name}/answers', operation_id='kairos_corpus_answer')
+    @app.post('/v1/projects/{project_id}/corpora/{name:path}/answers', operation_id='kairos_corpus_answer')
     async def corpus_answer(project_id: str, name: str, payload: m.CorpusAnswerRequest, actor=Depends(identity)):
         from .corpus_answers import CorpusAnswers
         return await CorpusAnswers(store, settings).answer(actor, project_id, name, payload.question, payload.request_id,
                                                           payload.expected_session_id, payload.expected_generation)
 
-    @app.get('/v1/projects/{project_id}/corpora/{name}/answers/{request_id}', operation_id='kairos_corpus_answer_status')
+    @app.get('/v1/projects/{project_id}/corpora/{name:path}/answers/{request_id}', operation_id='kairos_corpus_answer_status')
     def corpus_answer_status(project_id: str, name: str, request_id: str, actor=Depends(identity)):
         from .corpus_answers import CorpusAnswers
         return CorpusAnswers(store, settings).status(actor, project_id, name, request_id)

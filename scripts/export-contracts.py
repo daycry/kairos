@@ -9,56 +9,104 @@ sys.path.insert(0, str(ROOT))
 
 P = '/v1/projects/{project_id}'
 C = P + '/corpora'
+
+
+def path(name):
+    return {'in': 'path', 'name': name}
+
+
+def query(name, **extra):
+    return {'in': 'query', 'name': name, **extra}
+
+
+def body(name=None, **extra):
+    """A body field by name; without a name the argument IS the whole JSON body (`remember`'s `event`, `publish_document`'s `document`)."""
+    return {'in': 'body', **({'name': name} if name else {}), **extra}
+
+
+def same(where, *names, **extra):
+    """Arguments that keep their name in the request (`limit` is `limit` in the query or in the body)."""
+    return {name: {'in': where, 'name': name, **extra} for name in names}
+
+
+PROJECT = {'project': path('project_id')}
+CORPUS = {**PROJECT, 'name': path('name')}
+CSV = {'transform': 'csv-list'}
 # Where each of the 34 MCP tools lives in the REST API (C-02, CA-04): the `x-kairos-endpoint` key added to every tool of the exported
-# contract, so that a client of `/v1` (kairos-mcp) needs no knowledge of the server code. `'local'` is a tool answered without the server.
-# The tool arguments map onto the path parameters by meaning (`project`, `projectId` and `project_id` are the project), onto the body
-# or the query by name; a tool that is a variant of its endpoint says so in the entry (`reprime_corpus` is `prime` with `fresh`).
+# contract, so that a client of `/v1` (kairos-mcp) translates a call mechanically and needs no knowledge of the server code. `'local'` is a
+# tool answered without the server. NOTHING IS ASSIGNED BY NAME: `args` lists EVERY argument of the tool's input schema and says where it goes
+# (`in`: `path`, `query` or `body`) and under which REST name (`name`; `project`, `projectId` and `project_id` are the `{project_id}` of the
+# path, `includeClosed` is `include_closed`, `jobId` is `{job_id}`). An `in: body` argument without a `name` is the whole request body. `fixed`
+# are values the tool always sends (`reprime_corpus` is `prime` with `fresh: true`). `transform` is a value conversion (`csv-list`: a string
+# is split on commas, trimmed, empties dropped and duplicates removed; a list passes as it is). The rules of the translation itself (omitted
+# arguments, booleans, a POST always carrying a JSON object, the URL encoding of path values) are in `TRANSLATION`, put once in the contract.
 ENDPOINTS = {
-    'projects': ('GET', '/v1/projects'),
-    'remember': ('POST', '/v1/events'),
-    'capture_policy': ('GET', P + '/capture-policy'),
-    # With `project_id` the reconciliation is one call; without it the receipt (`GET /v1/events/{event_id}`) and each of its jobs.
-    'event_status': ('GET', P + '/events/{event_id}/status',
-                     {'without_project_id': {'method': 'GET', 'path': '/v1/events/{event_id}',
-                                             'jobs': {'method': 'GET', 'path': '/v1/jobs/{job_id}'}}}),
-    'publish_document': ('POST', P + '/documents'),
-    'document_status': ('GET', P + '/documents/{document_id}'),
-    'document_manifest': ('GET', P + '/manifest'),
-    'revoke_document': ('DELETE', P + '/documents/{document_id}'),
-    'search': ('POST', '/v1/search'),
-    'details': ('POST', '/v1/details'),
-    'context': ('POST', '/v1/context'),
-    'timeline': ('POST', '/v1/timeline'),
-    'work_state_write': ('POST', P + '/work-state'),
-    'work_state_read': ('GET', P + '/work-state'),
-    'build_corpus': ('POST', C),
-    'list_corpora': ('GET', C),
-    'rebuild_corpus': ('POST', C + '/{name}/rebuild'),
-    'prime_corpus': ('POST', C + '/{name}/prime'),
-    'reprime_corpus': ('POST', C + '/{name}/prime', {'body': {'fresh': True}}),
-    'query_corpus': ('POST', C + '/{name}/query'),
-    'get_observations': ('POST', P + '/observations/get'),
-    'observation_search': ('GET', P + '/observations/search'),
-    'observation_context': ('GET', P + '/observations/context'),
-    'observation_generation_status': ('GET', '/v1/jobs/{job_id}'),
+    'projects': ('GET', '/v1/projects', {}),
+    'remember': ('POST', '/v1/events', {'event': body()}),
+    'capture_policy': ('GET', P + '/capture-policy', {'project_id': path('project_id')}),
+    # With `project_id` the reconciliation is one call; without it the tool reads the receipt and each of its jobs and composes the answer
+    # (`mcp.py`): `without_project_id` says how, with `complete` as the rule the tool applies (a superseded receipt is never complete).
+    'event_status': ('GET', P + '/events/{event_id}/status', {'event_id': path('event_id'), 'project_id': path('project_id')},
+                     {'without_project_id': {
+                         'receipt': {'method': 'GET', 'path': '/v1/events/{event_id}', 'args': {'event_id': path('event_id')}},
+                         'jobs': {'for_each': 'receipt.jobs', 'method': 'GET', 'path': '/v1/jobs/{job_id}'},
+                         'result': {'receipt': {'from': 'receipt'}, 'jobs': {'from': 'jobs'},
+                                    'complete': {'all_of': [{'path': 'receipt.status', 'is_not': 'superseded'},
+                                                            {'each': 'jobs', 'path': 'state', 'is': 'succeeded'}]}}}}),
+    'publish_document': ('POST', P + '/documents', {'project_id': path('project_id'), 'document': body()}),
+    'document_status': ('GET', P + '/documents/{document_id}', {'project_id': path('project_id'), 'document_id': path('document_id')}),
+    'document_manifest': ('GET', P + '/manifest', {'project_id': path('project_id'), **same('query', 'limit', 'cursor')}),
+    'revoke_document': ('DELETE', P + '/documents/{document_id}', {'project_id': path('project_id'), 'document_id': path('document_id'), 'version': query('version')}),
+    'search': ('POST', '/v1/search', same('body', 'project_ids', 'q', 'layers', 'limit', 'semantic', 'semantic_budget_ms')),
+    'details': ('POST', '/v1/details', same('body', 'refs', 'max_chars')),
+    'context': ('POST', '/v1/context', same('body', 'project_ids', 'q', 'layers', 'limit', 'max_chars', 'semantic', 'match_mode', 'exclude_categories', 'semantic_budget_ms')),
+    'timeline': ('POST', '/v1/timeline', same('body', 'project_ids', 'anchor_ref', 'before', 'after', 'limit')),
+    'work_state_write': ('POST', P + '/work-state', {**PROJECT, **same('body', 'list', 'fields', 'request_id', 'expected_version')}),
+    'work_state_read': ('GET', P + '/work-state', {**PROJECT, 'list': query('list'), 'includeClosed': query('include_closed')}),
+    'build_corpus': ('POST', C, {**PROJECT, **same('body', 'name', 'description', 'query', 'limit'), **same('body', 'types', 'concepts', 'files', **CSV),
+                                 'dateStart': body('date_start'), 'dateEnd': body('date_end')}),
+    'list_corpora': ('GET', C, PROJECT),
+    # The endpoint requires `expected_version` (>= 1, a field the published schema already marks `required`, which cannot be relaxed
+    # additively); the tool makes it optional. So a call without it first reads the corpus' current version (`when_absent`): the same guard
+    # the endpoint wants, with the version the tool would have compared against. `expected_version: 0` is not translatable (the tool answers a
+    # conflict because no corpus has version 0, the endpoint refuses the value with 422): both refuse.
+    'rebuild_corpus': ('POST', C + '/{name}/rebuild', {**CORPUS, **same('body', 'force'), 'expected_version': body('expected_version', when_absent={
+        'read': {'method': 'GET', 'path': C, 'args': {'project': path('project_id')}},
+        'pick': {'from': 'items', 'where': {'name': {'arg': 'name'}}, 'take': 'version'}})}),
+    'prime_corpus': ('POST', C + '/{name}/prime', CORPUS),
+    'reprime_corpus': ('POST', C + '/{name}/prime', CORPUS, {'fixed': [{'in': 'body', 'name': 'fresh', 'value': True}]}),
+    'query_corpus': ('POST', C + '/{name}/query', {**CORPUS, **same('body', 'question', 'limit')}),
+    'get_observations': ('POST', P + '/observations/get', {'projectId': path('project_id'), 'ids': body('ids')}),
+    'observation_search': ('GET', P + '/observations/search', {'projectId': path('project_id'), **same('query', 'query', 'limit')}),
+    'observation_context': ('GET', P + '/observations/context', {'projectId': path('project_id'), **same('query', 'query', 'limit')}),
+    'observation_generation_status': ('GET', '/v1/jobs/{job_id}', {'jobId': path('job_id')}),
     'important_workflow': 'local',
-    'observation_add': ('POST', '/v1/observations'),
-    'observation_record_event': ('POST', '/v1/observations/events'),
-    'get_tool_uses': ('GET', '/v1/tool-uses'),
-    'team_work_write': ('POST', P + '/team-work'),
-    'team_work_read': ('GET', P + '/team-work'),
-    'team_search': ('GET', P + '/team-search'),
-    'team_brief': ('GET', P + '/team-brief'),
-    'corpus_answer': ('POST', C + '/{name}/answers'),
-    'corpus_answer_status': ('GET', C + '/{name}/answers/{request_id}'),
+    'observation_add': ('POST', '/v1/observations', {'event': body()}),
+    'observation_record_event': ('POST', '/v1/observations/events', {'event': body()}),
+    'get_tool_uses': ('GET', '/v1/tool-uses', {'project': query('project_id'), **same('query', 'session_id', 'tool', 'limit', 'cursor')}),
+    'team_work_write': ('POST', P + '/team-work', {**PROJECT, **same('body', 'list', 'fields', 'request_id', 'expected_version')}),
+    'team_work_read': ('GET', P + '/team-work', {**PROJECT, **same('query', 'list', 'include_closed')}),
+    'team_search': ('GET', P + '/team-search', {**PROJECT, **same('query', 'query', 'limit')}),
+    'team_brief': ('GET', P + '/team-brief', {**PROJECT, **same('query', 'limit')}),
+    'corpus_answer': ('POST', C + '/{name}/answers', {**CORPUS, **same('body', 'question', 'request_id', 'expected_session_id', 'expected_generation')}),
+    'corpus_answer_status': ('GET', C + '/{name}/answers/{request_id}', {**CORPUS, 'request_id': path('request_id')}),
 }
+TRANSLATION = [
+    'A tool call becomes one HTTP request to `method` + `path` (the first request; `event_status` without `project_id` follows `without_project_id`).',
+    'Each tool argument that is present and not null is placed by its entry in `args`: `in: path` replaces `{name}` in the path with the value URL-encoded in full (a `/` becomes `%2F`), `in: query` adds a query parameter, `in: body` adds a JSON body field; an `in: body` entry without `name` makes the value the whole body.',
+    'An absent or null argument is omitted: the server applies its default. A boolean query value is written `true` or `false`; a list query value repeats the parameter.',
+    '`transform: csv-list` turns a string into a list (split on commas, trimmed, empties dropped, duplicates removed) and passes a list as it is.',
+    '`when_absent` fills an argument the call left out: `read` is one request (same rules, over the arguments of the call), `pick` takes `take` from the item of its `from` list whose fields equal `where` (`{arg: x}` is the value of the tool argument `x`).',
+    '`fixed` entries are always added (`in: body`, `name`, `value`). A POST or PUT always carries a JSON object body, `{}` when no field is set.',
+    'The response of the endpoint is the result of the tool; an error status carries `{"error": {"code", "message"}}`.',
+]
 
 
 def endpoint(name):
     value = ENDPOINTS[name]
     if value == 'local':
         return value
-    return {'method': value[0], 'path': value[1], **(value[2] if len(value) > 2 else {})}
+    return {'method': value[0], 'path': value[1], 'args': value[2], **(value[3] if len(value) > 3 else {})}
 
 
 def contracts():
@@ -78,7 +126,7 @@ def contracts():
         schemas.setdefault(name, schema)
     return {'memory-platform.openapi.json': openapi,
             'kairos-mcp.json': {'name': 'Kairos', 'transport': 'streamable-http',
-                                'path': '/mcp/', 'tools': [{**tool.model_dump(mode='json', exclude_none=True), 'x-kairos-endpoint': endpoint(tool.name)} for tool in tools],
+                                'path': '/mcp/', 'x-kairos-translation': TRANSLATION, 'tools': [{**tool.model_dump(mode='json', exclude_none=True), 'x-kairos-endpoint': endpoint(tool.name)} for tool in tools],
                                 'result_schemas': {'search': SearchResult.model_json_schema()}}}
 
 

@@ -145,7 +145,7 @@ def corpus_filters(query='', types='', concepts='', files='', date_start=None, d
                 if parsed.tzinfo is None:
                     parsed = parsed.replace(tzinfo=timezone.utc)
                 result[key] = parsed.astimezone(timezone.utc).isoformat()
-            except ValueError:
+            except (ValueError, OverflowError):  # an extreme valid date (year 1 or 9999 with an offset) overflows the UTC conversion: invalid input, not a server fault
                 invalid('Invalid ISO date filter')
     if result['date_start'] and result['date_end'] and result['date_start'] > result['date_end']:
         invalid('dateStart must precede dateEnd')

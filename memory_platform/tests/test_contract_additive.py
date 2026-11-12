@@ -188,10 +188,10 @@ class ContractAdditiveTests(unittest.TestCase):
         self.assertEqual(local, ['important_workflow'])
         # the seven endpoints C-02 created are the ones their tools declare
         declared = {tool['name']: tool[ENDPOINT_KEY] for tool in tools}
-        self.assertEqual(declared['capture_policy'], {'method': 'GET', 'path': '/v1/projects/{project_id}/capture-policy'})
+        self.assertEqual({key: declared['capture_policy'][key] for key in ('method', 'path')}, {'method': 'GET', 'path': '/v1/projects/{project_id}/capture-policy'})
         self.assertEqual(declared['query_corpus']['path'], '/v1/projects/{project_id}/corpora/{name}/query')
         self.assertEqual(declared['team_search']['path'], '/v1/projects/{project_id}/team-search')
-        self.assertEqual(declared['get_observations'], {'method': 'POST', 'path': '/v1/projects/{project_id}/observations/get'})
+        self.assertEqual({key: declared['get_observations'][key] for key in ('method', 'path')}, {'method': 'POST', 'path': '/v1/projects/{project_id}/observations/get'})
         # the existing operations are not renamed: the declared endpoints never point at the portal listing
         self.assertNotEqual(declared['observation_search']['path'], '/v1/observations')
 

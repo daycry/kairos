@@ -1,21 +1,30 @@
 """CA-06: each of the 34 MCP tools and its `/v1` endpoint return the same content for the same credential and arguments.
 
 A scenario is seeded once in an isolated PostgreSQL (observations, an event with a job, documents, a primed corpus, team and
-private work). For every tool the test calls the internal MCP endpoint and then the endpoint the contract declares in
-`x-kairos-endpoint`, with one writer key, and compares what comes back. The comparison is the content: the MCP byte budget
-(`render`) and the additive fields of the untrusted-data envelope (S-05, C-03) are the only differences allowed, and neither is
-produced yet. Operations that write are idempotent by design (a retry returns the same receipt), so the second call is the
-endpoint's, over the state the tool left; `reprime_corpus`, which opens a new session each time, ignores the session fields.
+private work, a tool-use summary, a saved answer). For every tool the test calls the internal MCP endpoint and then the request
+that the `x-kairos-endpoint` of the exported contract says that call becomes, with one writer key, and compares what comes back.
+The request is NOT written by hand: `translate` is a small generic translator that builds it from the MCP arguments of the case and
+from the contract alone (where each argument goes, under which name, the fixed values, the composition of `event_status` without a
+project). So the contract is only as good as what this test can do with it, which is what a client of `/v1` (kairos-mcp) will have.
 
-The table `CASES` is checked against the tools the server lists and against the exported contract: a tool without a case, a case
-without a tool or an endpoint that is not the declared one fails the run (the removal of an endpoint turns its case red).
+The comparison is the content: the MCP byte budget (`render`) and the additive fields of the untrusted-data envelope (S-05, C-03) are
+the only differences allowed, and neither is produced yet. Operations that write are idempotent by design (a retry returns the same
+receipt), so the second call is the endpoint's, over the state the tool left; `reprime_corpus`, which opens a new session each time,
+ignores the session fields.
+
+The `CASES` list is checked against the tools the server lists and against the exported contract: a tool without a case, a case without
+a tool or a tool whose contract entry does not name every argument fails the run (the removal of an endpoint turns its case red). Each
+rule of the contract is exercised by an argument that needs it, and a contract that assigned those arguments by name fails (see
+the `test_*` mutation tests of the class).
 """
+import copy
 import hashlib
 import importlib.util
 import json
 from pathlib import Path
 import re
 import unittest
+from urllib.parse import quote
 import uuid
 
 from fastapi.testclient import TestClient
@@ -23,6 +32,8 @@ from fastapi.testclient import TestClient
 from memory_platform.app import create_app
 from memory_platform.auth import Auth
 from memory_platform.config import Settings
+from memory_platform.extended_store import ExtendedStore
+from memory_platform.store import digest
 from memory_platform.tests.llm_spy import ChatSpy
 from memory_platform.tests.test_store import create_core, event
 
@@ -46,6 +57,59 @@ def drop(value, keys):
     return value
 
 
+def csv_list(value):
+    """`transform: csv-list`: a string is split on commas, trimmed, empties dropped and duplicates removed; a list passes as it is."""
+    if isinstance(value, list):
+        return value
+    return list(dict.fromkeys(part.strip() for part in value.split(',') if part.strip()))
+
+
+def translate(rule, arguments):
+    """One REST request, `(method, path, keywords)`, from an `x-kairos-endpoint` (or one of its `without_project_id` steps) and MCP arguments.
+
+    It reads only the contract: an argument that has no rule is an error (a tool argument the contract forgot), and so is a `{placeholder}`
+    left in the path.
+    """
+    unknown = set(arguments) - set(rule['args'])
+    assert not unknown, ('arguments without a rule in the contract', sorted(unknown))
+    path, params, fields, whole = rule['path'], {}, {}, None
+    for argument, value in arguments.items():
+        if value is None:
+            continue  # an absent or null argument is omitted: the server applies its default
+        where = rule['args'][argument]
+        if where.get('transform') == 'csv-list':
+            value = csv_list(value)
+        if where['in'] == 'path':
+            path = path.replace('{' + where['name'] + '}', quote(str(value), safe=''))
+        elif where['in'] == 'query':
+            params[where['name']] = ('true' if value else 'false') if isinstance(value, bool) else value
+        elif 'name' in where:
+            fields[where['name']] = value
+        else:
+            whole = value
+    for fixed in rule.get('fixed', []):
+        fields[fixed['name']] = fixed['value']
+    assert not re.search(r'\{[a-z_]+\}', path), ('unresolved placeholder', path)
+    kwargs = {'params': params} if params else {}
+    if rule['method'] in ('POST', 'PUT'):
+        kwargs['json'] = fields if whole is None else whole  # a POST always carries a JSON object body, `{}` when no field is set
+    return rule['method'], path, kwargs
+
+
+def lookup(value, dotted):
+    for key in dotted.split('.'):
+        value = value[key]
+    return value
+
+
+def holds(condition, scope):
+    """The `complete` rule of `without_project_id`: `path` is / is not a value, or `each` item of a list has `path` equal to `is`."""
+    if 'each' in condition:
+        return all(lookup(item, condition['path']) == condition['is'] for item in scope[condition['each']])
+    value = lookup(scope, condition['path'])
+    return value == condition['is'] if 'is' in condition else value != condition['is_not']
+
+
 class Scenario:
     """The seeded project and the credential every case uses."""
 
@@ -66,21 +130,46 @@ class Scenario:
                                 payload={'title': 'Index choice', 'content': 'Prefer a partial index for archived rows', 'category': 'decision', 'source': {'uri': 'fixture://parity'}})
         self.job_event = self.ingest(item_id=str(uuid.uuid4()), occurred_at='2026-11-04T10:00:00Z', generate=True)
         self.job_id = self.rest('POST', '/v1/events', json=self.job_event)[1]['jobs'][0]
+        # a receipt that is `superseded` (the store of this version never writes that status: the receipt is set as the tool reads it)
+        self.superseded_event = self.ingest(item_id=str(uuid.uuid4()), occurred_at='2026-11-05T10:00:00Z', generate=False)
+        with self.store.transaction() as c:
+            c.execute("UPDATE memory.events SET receipt=jsonb_set(receipt,'{status}','\"superseded\"') WHERE id=%s", (self.superseded_event['event_id'],))
+        # a PostToolUse summary, so that `get_tool_uses` has content to compare
+        payload = {'title': 'Technical tool summary', 'content': json.dumps({'tool': 'Read', 'status': 'success', 'detail': 'private body omitted'}), 'category': 'agent-activity'}
+        self.tool_use = event(self.pid, generate=False, payload=payload)
+        self.tool_use['capture'] = {'mode': 'summary', 'hook_event': 'PostToolUse', 'fingerprint': digest(
+            {'project': self.pid, 'runtime': self.tool_use['agent_id'], 'session': self.tool_use['session_id'], 'event': 'PostToolUse', 'payload': payload})}
+        ExtendedStore(self.store).observation_add(self.admin, self.tool_use)
         self.ref = self.search_ref()
         # documents: one to read and one to withdraw
         self.document = self.document_body('Canonical approved fixture')
         self.revocable = self.document_body('A document that will be withdrawn')
         for value in (self.document, self.revocable):
             assert self.rest('POST', self.prefix + '/documents', json=value)[0] == 202
-        # a primed corpus, private work and shared work
+        # primed corpora, private work (one open task and one closed) and shared work
         assert self.rest('POST', self.prefix + '/corpora', json={'name': 'c1', 'query': 'fencing'})[0] == 200
         assert self.rest('POST', self.prefix + '/corpora/c1/prime', json={})[0] == 200
         assert self.rest('POST', self.prefix + '/corpora', json={'name': 'c-rebuild', 'query': 'index'})[0] == 200  # a filter the other cases never change
+        assert self.rest('POST', self.prefix + '/corpora', json={'name': 'team/search', 'query': 'fencing'})[0] == 200  # a name with a `/`, sent as `%2F`
+        assert self.rest('POST', self.prefix + '/corpora/team%2Fsearch/prime', json={})[0] == 200
         for name in ('c-reprime-tool', 'c-reprime-rest'):
             assert self.rest('POST', self.prefix + '/corpora', json={'name': name, 'query': 'fencing'})[0] == 200
             assert self.rest('POST', self.prefix + '/corpora/' + name + '/prime', json={})[0] == 200
         assert self.rest('POST', self.prefix + '/team-work', json={'list': 'release', 'fields': {'task': 'Rotate the fencing token', 'status': 'todo'}, 'request_id': 'seed-team'})[0] == 200
         assert self.rest('POST', self.prefix + '/work-state', json={'list': 'plan', 'fields': {'task': 'Review fencing', 'status': 'doing'}, 'request_id': 'seed-plan'})[0] == 200
+        assert self.rest('POST', self.prefix + '/work-state', json={'list': 'plan', 'fields': {'task': 'Ship fencing', 'status': 'done'}, 'request_id': 'seed-closed'})[0] == 200
+        self.seed_saved_answer()
+
+    def seed_saved_answer(self):
+        """An answer already stored for the primed corpus `c1`, as a completed provider call would leave it (generation is off here: no model is called)."""
+        from memory_platform.corpus_answers import migrate_corpus_answers
+        with self.store.transaction() as c:
+            migrate_corpus_answers(c)
+            corpus = c.execute("SELECT * FROM memory.agent_corpora WHERE project_id=%s AND name='c1'", (self.pid,)).fetchone()
+            c.execute("""INSERT INTO memory.corpus_answers(corpus_id,project_id,actor_id,request_id,request_hash,session_id,generation,generation_hash,state,question,model,
+                         reservation,input_tokens,output_tokens,result,expires_at,finished_at)
+                         VALUES(%s,%s,%s,'saved-answer','h',%s,%s,%s,'completed','What is fencing?','fixture-model',9216,10,5,%s::jsonb,clock_timestamp()+interval '1 hour',clock_timestamp())""",
+                      (corpus['id'], self.pid, corpus['actor_id'], corpus['session_id'], corpus['version'], corpus['canonical_hash'], json.dumps({'answer': 'Fencing guards a token.', 'citations': []})))
 
     def close(self):
         self.client.__exit__(None, None, None)
@@ -105,6 +194,51 @@ class Scenario:
         body = response.json() if response.content else None
         return response.status_code, body
 
+    def view(self, status, body):
+        return ('error', body['error']['message']) if status >= 400 else ('ok', body)
+
+    def endpoint(self, rule, arguments):
+        """What the contract says a call of the tool becomes, performed: one request, or the composition of `event_status` without a project."""
+        if 'without_project_id' in rule and arguments.get('project_id') is None:
+            return self.composed(rule['without_project_id'], arguments)
+        method, path, kwargs = translate(rule, self.filled(rule, arguments))
+        return self.view(*self.rest(method, path, **kwargs))
+
+    def filled(self, rule, arguments):
+        """The arguments with the ones the call left out and the contract says how to obtain (`when_absent`): one read, then a pick from its answer."""
+        arguments = dict(arguments)
+        for argument, where in rule['args'].items():
+            if 'when_absent' in where and arguments.get(argument) is None:
+                how = where['when_absent']
+                method, path, kwargs = translate(how['read'], {key: value for key, value in arguments.items() if key in how['read']['args']})
+                status, read = self.rest(method, path, **kwargs)
+                assert status < 400, (argument, read)
+                wanted = {key: arguments[value['arg']] for key, value in how['pick']['where'].items()}
+                found = [item for item in read[how['pick']['from']] if all(item[key] == value for key, value in wanted.items())]
+                assert len(found) == 1, (argument, wanted, found)
+                arguments[argument] = found[0][how['pick']['take']]
+        return arguments
+
+    def composed(self, rule, arguments):
+        method, path, kwargs = translate(rule['receipt'], arguments)
+        status, receipt = self.rest(method, path, **kwargs)
+        if status >= 400:
+            return self.view(status, receipt)
+        scope = {'receipt': receipt, 'jobs': []}
+        for job_id in lookup(scope, rule['jobs']['for_each']):
+            status, job = self.rest(rule['jobs']['method'], rule['jobs']['path'].replace('{job_id}', quote(job_id, safe='')))
+            if status >= 400:
+                return self.view(status, job)
+            scope['jobs'].append(job)
+        result = {}
+        for key, how in rule['result'].items():
+            result[key] = scope[how['from']] if 'from' in how else all(holds(condition, scope) for condition in how['all_of'])
+        return 'ok', result
+
+    def tool_listing(self):
+        response = self.client.post('/mcp/', headers={**self.headers, 'Accept': 'application/json, text/event-stream'}, json={'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list'})
+        return {tool['name']: tool for tool in response.json()['result']['tools']}
+
     def tool(self, name, arguments):
         response = self.client.post('/mcp/', headers={**self.headers, 'Accept': 'application/json, text/event-stream'}, json={
             'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call', 'params': {'name': name, 'arguments': arguments}})
@@ -121,55 +255,71 @@ class Scenario:
 
 
 def cases(s):
-    """tool name -> (MCP arguments, (method, path, request keywords)[, options]). Built after the scenario so the ids are real."""
-    P, prefix = s.pid, s.prefix
+    """The list of `(label, tool, MCP arguments, options)`. Built after the scenario so the ids are real; each tool has at least one case.
+
+    Options: `ignore` (field names that are identity, not content), `rest_arguments` (the arguments of the endpoint call when it must act
+    on a twin of what the tool acted on), `error` (both sides refuse), `contains`/`absent` (text that must/must not be in the content),
+    `items` (the content has a non-empty list under that key).
+    """
+    P = s.pid
     remember = event(P, generate=False, item_id=str(uuid.uuid4()))
     added = event(P, generate=False, item_id=str(uuid.uuid4()))
     revision = event(P, generate=False, item_id=added['item_id'], version=2, payload={'title': 'Fencing note', 'content': 'Revised: also take a lease', 'category': 'decision', 'source': {'uri': 'fixture://parity'}})
     ids = [s.obs1['item_id'], s.obs2['item_id']]
-    return {
-        'projects': ({}, ('GET', '/v1/projects', {})),
-        'remember': ({'event': remember}, ('POST', '/v1/events', {'json': remember})),
-        'capture_policy': ({'project_id': P}, ('GET', prefix + '/capture-policy', {})),
-        'event_status': ({'event_id': s.job_event['event_id'], 'project_id': P}, ('GET', prefix + '/events/' + s.job_event['event_id'] + '/status', {})),
-        'publish_document': ({'project_id': P, 'document': s.document}, ('POST', prefix + '/documents', {'json': s.document})),
-        'document_status': ({'project_id': P, 'document_id': s.document['document_id']}, ('GET', prefix + '/documents/' + s.document['document_id'], {})),
-        'document_manifest': ({'project_id': P, 'limit': 50}, ('GET', prefix + '/manifest', {'params': {'limit': 50}})),
-        'revoke_document': ({'project_id': P, 'document_id': s.revocable['document_id'], 'version': 2},
-                            ('DELETE', prefix + '/documents/' + s.revocable['document_id'], {'params': {'version': 2}})),
-        'search': ({'project_ids': [P], 'q': 'fencing', 'semantic': False}, ('POST', '/v1/search', {'json': {'project_ids': [P], 'q': 'fencing', 'semantic': False}})),
-        'details': ({'refs': [s.ref], 'max_chars': 16000}, ('POST', '/v1/details', {'json': {'refs': [s.ref], 'max_chars': 16000}})),
-        'context': ({'project_ids': [P], 'q': 'fencing', 'semantic': False}, ('POST', '/v1/context', {'json': {'project_ids': [P], 'q': 'fencing', 'semantic': False}})),
-        'timeline': ({'project_ids': [P], 'anchor_ref': s.ref}, ('POST', '/v1/timeline', {'json': {'project_ids': [P], 'anchor_ref': s.ref}})),
-        'work_state_write': ({'project': P, 'list': 'plan', 'fields': {'task': 'Review fencing', 'status': 'doing'}, 'request_id': 'seed-plan'},
-                             ('POST', prefix + '/work-state', {'json': {'list': 'plan', 'fields': {'task': 'Review fencing', 'status': 'doing'}, 'request_id': 'seed-plan'}})),
-        'work_state_read': ({'project': P, 'list': 'plan', 'includeClosed': True}, ('GET', prefix + '/work-state', {'params': {'list': 'plan', 'include_closed': True}})),
-        'build_corpus': ({'project': P, 'name': 'c-dates', 'query': 'fencing', 'dateStart': '2026-11-01', 'dateEnd': '2026-11-30'},
-                         ('POST', prefix + '/corpora', {'json': {'name': 'c-dates', 'query': 'fencing', 'date_start': '2026-11-01', 'date_end': '2026-11-30'}})),
-        'list_corpora': ({'project': P}, ('GET', prefix + '/corpora', {})),
-        'rebuild_corpus': ({'project': P, 'name': 'c-rebuild', 'expected_version': 1}, ('POST', prefix + '/corpora/c-rebuild/rebuild', {'json': {'expected_version': 1}})),
-        'prime_corpus': ({'project': P, 'name': 'c1'}, ('POST', prefix + '/corpora/c1/prime', {'json': {}})),
+    work = {'list': 'release', 'fields': {'task': 'Rotate the fencing token', 'status': 'todo'}, 'request_id': 'seed-team'}
+    asked = {'question': 'What is fencing?', 'request_id': 'a1', 'expected_session_id': 'x', 'expected_generation': 1}
+    return [
+        ('projects', 'projects', {}, {}),
+        ('remember', 'remember', {'event': remember}, {}),
+        ('capture_policy', 'capture_policy', {'project_id': P}, {}),
+        ('event_status', 'event_status', {'event_id': s.job_event['event_id'], 'project_id': P}, {}),
+        # without a project the tool reads the receipt and each job and composes the answer; a superseded receipt is never complete
+        ('event_status_without_project', 'event_status', {'event_id': s.job_event['event_id']}, {}),
+        ('event_status_superseded', 'event_status', {'event_id': s.superseded_event['event_id']}, {'contains': '"complete": false'}),
+        ('publish_document', 'publish_document', {'project_id': P, 'document': s.document}, {}),
+        ('document_status', 'document_status', {'project_id': P, 'document_id': s.document['document_id']}, {}),
+        ('document_manifest', 'document_manifest', {'project_id': P, 'limit': 50}, {}),
+        ('revoke_document', 'revoke_document', {'project_id': P, 'document_id': s.revocable['document_id'], 'version': 2}, {}),
+        ('search', 'search', {'project_ids': [P], 'q': 'fencing', 'semantic': False}, {}),
+        ('details', 'details', {'refs': [s.ref], 'max_chars': 16000}, {}),
+        ('context', 'context', {'project_ids': [P], 'q': 'fencing', 'semantic': False}, {}),
+        ('timeline', 'timeline', {'project_ids': [P], 'anchor_ref': s.ref}, {}),
+        ('work_state_write', 'work_state_write', {'project': P, 'list': 'plan', 'fields': {'task': 'Review fencing', 'status': 'doing'}, 'request_id': 'seed-plan'}, {}),
+        # `includeClosed` is `include_closed`: with it the closed task is read, without it it is not
+        ('work_state_read', 'work_state_read', {'project': P, 'list': 'plan', 'includeClosed': True}, {'contains': 'Ship fencing'}),
+        ('work_state_read_open', 'work_state_read', {'project': P, 'list': 'plan'}, {'absent': 'Ship fencing', 'contains': 'Review fencing'}),
+        # `dateStart`/`dateEnd` are `date_start`/`date_end`; `types` is a string of the tool that the endpoint takes as a list
+        ('build_corpus', 'build_corpus', {'project': P, 'name': 'c-dates', 'query': 'fencing', 'dateStart': '2026-11-01', 'dateEnd': '2026-11-30'}, {}),
+        ('build_corpus_types_text', 'build_corpus', {'project': P, 'name': 'c-types', 'query': 'fencing', 'types': 'decision, ,decision'}, {}),
+        ('list_corpora', 'list_corpora', {'project': P}, {}),
+        # `expected_version` is optional in the tool, required by the endpoint: the contract says to read the current version when it is left out
+        ('rebuild_corpus', 'rebuild_corpus', {'project': P, 'name': 'c-rebuild'}, {}),
+        ('rebuild_corpus_guarded', 'rebuild_corpus', {'project': P, 'name': 'c-rebuild', 'expected_version': 1}, {}),
+        ('rebuild_corpus_slash', 'rebuild_corpus', {'project': P, 'name': 'team/search'}, {}),
+        ('prime_corpus', 'prime_corpus', {'project': P, 'name': 'c1'}, {}),
         # a new session each time: the tool and the endpoint act on twin corpora, and the identity fields (name, id, session) are not content
-        'reprime_corpus': ({'project': P, 'name': 'c-reprime-tool'}, ('POST', prefix + '/corpora/c-reprime-rest/prime', {'json': {'fresh': True}}, {'ignore': {'id', 'name', 'session_id'}})),
-        'query_corpus': ({'project': P, 'name': 'c1', 'question': 'fencing', 'limit': 5}, ('POST', prefix + '/corpora/c1/query', {'json': {'question': 'fencing', 'limit': 5}})),
-        'get_observations': ({'projectId': P, 'ids': ids}, ('POST', prefix + '/observations/get', {'json': {'ids': ids}})),
-        'observation_search': ({'projectId': P, 'query': 'fencing', 'limit': 5}, ('GET', prefix + '/observations/search', {'params': {'query': 'fencing', 'limit': 5}})),
-        'observation_context': ({'projectId': P, 'query': 'index', 'limit': 5}, ('GET', prefix + '/observations/context', {'params': {'query': 'index', 'limit': 5}})),
-        'observation_generation_status': ({'jobId': s.job_id}, ('GET', '/v1/jobs/' + s.job_id, {})),
-        'important_workflow': ({}, None),  # local: answered by the MCP itself, no endpoint
-        'observation_add': ({'event': added}, ('POST', '/v1/observations', {'json': added})),
-        'observation_record_event': ({'event': revision}, ('POST', '/v1/observations/events', {'json': revision})),
-        'get_tool_uses': ({'project': P, 'limit': 20}, ('GET', '/v1/tool-uses', {'params': {'project_id': P, 'limit': 20}})),
-        'team_work_write': ({'project': P, 'list': 'release', 'fields': {'task': 'Rotate the fencing token', 'status': 'todo'}, 'request_id': 'seed-team'},
-                            ('POST', prefix + '/team-work', {'json': {'list': 'release', 'fields': {'task': 'Rotate the fencing token', 'status': 'todo'}, 'request_id': 'seed-team'}})),
-        'team_work_read': ({'project': P, 'list': 'release'}, ('GET', prefix + '/team-work', {'params': {'list': 'release'}})),
-        'team_search': ({'project': P, 'query': 'fencing', 'limit': 5}, ('GET', prefix + '/team-search', {'params': {'query': 'fencing', 'limit': 5}})),
-        'team_brief': ({'project': P, 'limit': 5}, ('GET', prefix + '/team-brief', {'params': {'limit': 5}})),
+        ('reprime_corpus', 'reprime_corpus', {'project': P, 'name': 'c-reprime-tool'}, {'rest_arguments': {'project': P, 'name': 'c-reprime-rest'}, 'ignore': {'id', 'name', 'session_id'}}),
+        ('query_corpus', 'query_corpus', {'project': P, 'name': 'c1', 'question': 'fencing', 'limit': 5}, {}),
+        ('query_corpus_slash', 'query_corpus', {'project': P, 'name': 'team/search', 'question': 'fencing', 'limit': 5}, {}),
+        ('get_observations', 'get_observations', {'projectId': P, 'ids': ids}, {}),
+        ('observation_search', 'observation_search', {'projectId': P, 'query': 'fencing', 'limit': 5}, {}),
+        ('observation_context', 'observation_context', {'projectId': P, 'query': 'index', 'limit': 5}, {}),
+        ('observation_generation_status', 'observation_generation_status', {'jobId': s.job_id}, {}),
+        ('important_workflow', 'important_workflow', {}, {}),  # local: answered by the MCP itself, no endpoint
+        ('observation_add', 'observation_add', {'event': added}, {}),
+        ('observation_record_event', 'observation_record_event', {'event': revision}, {}),
+        # `project` is the `project_id` of the query here (not of the path); the seeded PostToolUse summary is content
+        ('get_tool_uses', 'get_tool_uses', {'project': P, 'limit': 20}, {'items': 'items'}),
+        ('get_tool_uses_filtered', 'get_tool_uses', {'project': P, 'tool': 'Read', 'limit': 5}, {'items': 'items'}),
+        ('team_work_write', 'team_work_write', {'project': P, **work}, {}),
+        ('team_work_read', 'team_work_read', {'project': P, 'list': 'release'}, {}),
+        ('team_search', 'team_search', {'project': P, 'query': 'fencing', 'limit': 5}, {}),
+        ('team_brief', 'team_brief', {'project': P, 'limit': 5}, {}),
         # generation is off by default: both refuse with the same message and call no model
-        'corpus_answer': ({'project': P, 'name': 'c1', 'question': 'What is fencing?', 'request_id': 'a1', 'expected_session_id': 'x', 'expected_generation': 1},
-                          ('POST', prefix + '/corpora/c1/answers', {'json': {'question': 'What is fencing?', 'request_id': 'a1', 'expected_session_id': 'x', 'expected_generation': 1}})),
-        'corpus_answer_status': ({'project': P, 'name': 'c1', 'request_id': 'never-asked'}, ('GET', prefix + '/corpora/c1/answers/never-asked', {})),
-    }
+        ('corpus_answer', 'corpus_answer', {'project': P, 'name': 'c1', **asked}, {'error': True}),
+        ('corpus_answer_status', 'corpus_answer_status', {'project': P, 'name': 'c1', 'request_id': 'never-asked'}, {'error': True}),
+        ('corpus_answer_status_saved', 'corpus_answer_status', {'project': P, 'name': 'c1', 'request_id': 'saved-answer'}, {'contains': 'Fencing guards a token.'}),
+    ]
 
 
 class ToolEndpointParityTests(unittest.TestCase):
@@ -184,77 +334,138 @@ class ToolEndpointParityTests(unittest.TestCase):
         cls.scenario.close()
         assert cls.scenario.spy.chat_calls == [], 'an endpoint or tool reached the language model'
 
-    def rest_view(self, status, body):
-        if status >= 400:
-            return 'error', body['error']['message']
-        return 'ok', body
-
-    def listed_tools(self):
-        response = self.scenario.client.post('/mcp/', headers={**self.scenario.headers, 'Accept': 'application/json, text/event-stream'},
-                                             json={'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list'})
-        return [tool['name'] for tool in response.json()['result']['tools']]
-
-    def test_the_table_covers_exactly_the_thirty_four_tools_of_the_server_and_the_contract(self):
-        listed = self.listed_tools()
-        self.assertEqual(len(listed), 34)
-        self.assertEqual(sorted(self.table), sorted(listed))
-        self.assertEqual(sorted(self.declared), sorted(listed))
-
-    def template(self, path):
-        """The case path with its real ids put back as the placeholders of the declared path."""
+    def check(self, label, rule=None, **override):
+        """One case: the tool, and the request its contract entry translates to, compared. `rule` replaces the declared entry and `override` some
+        arguments (mutations: a corpus build is not repeatable over a state that changed, so each run gets its own corpus name)."""
         s = self.scenario
-        for real, placeholder in ((s.pid, '{project_id}'), (s.job_event['event_id'], '{event_id}'), (s.document['document_id'], '{document_id}'),
-                                  (s.revocable['document_id'], '{document_id}'), (s.job_id, '{job_id}')):
-            path = path.replace(real, placeholder)
-        path = re.sub(r'(/corpora/)[^/]+', lambda found: found.group(1) + '{name}', path)
-        return re.sub(r'(/answers/)[^/]+$', lambda found: found.group(1) + '{request_id}', path)
-
-    def test_each_case_calls_the_endpoint_the_contract_declares(self):
-        for name, (_, request) in self.table.items():
-            declared = self.declared[name]
-            if request is None:
-                self.assertEqual(declared, 'local', name)
-                continue
-            self.assertEqual((declared['method'], declared['path']), (request[0], self.template(request[1])), name)
-
-
-REFUSING = {'corpus_answer', 'corpus_answer_status'}
-
-
-def make_case(name):
-    def run(self):
-        s = self.scenario
-        arguments, request = self.table[name]
+        _, name, arguments, options = next(case for case in self.table if case[0] == label)
+        arguments = {**arguments, **override}
+        rule = self.declared[name] if rule is None else rule
         tool_status, tool_value = s.tool(name, arguments)
-        if request is None:
+        if rule == 'local':
             self.assertEqual(tool_status, 'ok', tool_value)
             self.assertIsInstance(tool_value, (str, dict))
             return
-        method, path, kwargs, *options = request
-        ignore = options[0]['ignore'] if options else set()
-        status, body = s.rest(method, path, **kwargs)
-        endpoint_status, endpoint_value = self.rest_view(status, body)
-        self.assertEqual(endpoint_status, tool_status, (name, tool_value, endpoint_value))
-        # only the two answer tools are expected to refuse (generation is off); every other case compares real, non-empty content
-        self.assertEqual(tool_status, 'error' if name in REFUSING else 'ok', (name, tool_value))
-        self.assertTrue(tool_value, name)
-        self.assertEqual(drop(endpoint_value, ignore), drop(tool_value, ignore), name)
-        if name == 'event_status':
-            # without a project the tool composes the receipt and its jobs: the same two reads over `/v1`
-            _, without = s.tool(name, {'event_id': s.job_event['event_id']})
-            receipt = s.rest('GET', '/v1/events/' + s.job_event['event_id'])[1]
-            jobs = [s.rest('GET', '/v1/jobs/' + job)[1] for job in receipt['jobs']]
-            self.assertEqual(without, {'receipt': receipt, 'jobs': jobs, 'complete': all(job['state'] == 'succeeded' for job in jobs)})
-    run.__name__ = 'test_parity_' + name
+        endpoint_status, endpoint_value = s.endpoint(rule, options.get('rest_arguments', arguments))
+        self.assertEqual(endpoint_status, tool_status, (label, tool_value, endpoint_value))
+        self.assertEqual(tool_status, 'error' if options.get('error') else 'ok', (label, tool_value))
+        self.assertTrue(tool_value, label)
+        ignore = options.get('ignore', set())
+        self.assertEqual(drop(endpoint_value, ignore), drop(tool_value, ignore), label)
+        text = json.dumps(tool_value, indent=1)
+        if 'contains' in options:
+            self.assertIn(options['contains'], text, label)
+        if 'absent' in options:
+            self.assertNotIn(options['absent'], text, label)
+        if 'items' in options:
+            self.assertTrue(tool_value[options['items']], (label, 'the comparison would be of an empty list'))
+
+    def test_the_table_covers_exactly_the_thirty_four_tools_of_the_server_and_the_contract(self):
+        listed = self.scenario.tool_listing()
+        self.assertEqual(len(listed), 34)
+        self.assertEqual(sorted({case[1] for case in self.table}), sorted(listed))
+        self.assertEqual(sorted(self.declared), sorted(listed))
+        labels = [case[0] for case in self.table]
+        self.assertEqual(len(labels), len(set(labels)))
+
+    def test_the_contract_names_every_argument_of_every_tool_and_what_the_endpoint_reads(self):
+        """The contract is enough to translate any call: each input property has a rule, and each rule names a real part of a real operation."""
+        listed = self.scenario.tool_listing()
+        openapi = self.scenario.client.app.openapi()
+
+        def resolve(schema):
+            return openapi['components']['schemas'][schema['$ref'].rsplit('/', 1)[1]] if '$ref' in schema else schema
+
+        def operation(rule):
+            found = openapi['paths'].get(rule['path'], {}).get(rule['method'].lower())
+            self.assertIsNotNone(found, ('no such operation', rule['method'], rule['path']))
+            return found
+
+        for name, rule in self.declared.items():
+            if rule == 'local':
+                self.assertEqual(name, 'important_workflow')
+                continue
+            self.assertEqual(set(rule['args']), set(listed[name]['inputSchema'].get('properties', {})), name)
+            found = operation(rule)
+            placeholders = set(re.findall(r'\{([a-z_]+)\}', rule['path']))
+            self.assertEqual({r['name'] for r in rule['args'].values() if r['in'] == 'path'}, placeholders, name)
+            query = {r['name'] for r in rule['args'].values() if r['in'] == 'query'}
+            self.assertLessEqual(query, {p['name'] for p in found.get('parameters', []) if p['in'] == 'query'}, name)
+            body = [r for r in rule['args'].values() if r['in'] == 'body'] + [dict(f) for f in rule.get('fixed', [])]
+            if rule['method'] == 'GET' or rule['method'] == 'DELETE':
+                self.assertEqual(body, [], name)
+            elif body:
+                schema = resolve(found['requestBody']['content']['application/json']['schema'])
+                named = {r['name'] for r in body if 'name' in r}
+                self.assertLessEqual(named, set(schema.get('properties', {})), name)
+                self.assertTrue(len(named) == len(body) or len(body) == 1, (name, 'a whole body cannot be mixed with fields'))
+            for fixed in rule.get('fixed', []):
+                self.assertIn('value', fixed, name)
+            for where in rule['args'].values():
+                if 'when_absent' in where:
+                    read = where['when_absent']['read']
+                    self.assertIsNotNone(openapi['paths'].get(read['path'], {}).get(read['method'].lower()), name)
+                    self.assertEqual(set(read['args']), {'project'}, name)
+            if 'without_project_id' in rule:
+                step = rule['without_project_id']['receipt']
+                self.assertIsNotNone(openapi['paths'].get(step['path'], {}).get(step['method'].lower()), name)
+                self.assertIsNotNone(openapi['paths'].get(rule['without_project_id']['jobs']['path'], {}).get('get'), name)
+
+    def mutated(self, label, edit, fresh=False):
+        """A contract that assigns arguments by name, or leaves out a rule, fails the comparison: the cases do not pass by coincidence."""
+        name = next(case[1] for case in self.table if case[0] == label)
+        rule = copy.deepcopy(self.declared[name])
+        edit(rule)
+        names = (lambda: {'name': 'c-mut-' + uuid.uuid4().hex[:10]}) if fresh else dict
+        self.check(label, **names())  # unchanged, it passes
+        with self.assertRaises(AssertionError):
+            self.check(label, rule, **names())
+
+    def test_include_closed_by_name_is_ignored_by_the_endpoint(self):
+        self.mutated('work_state_read', lambda rule: rule['args']['includeClosed'].update(name='includeClosed'))
+
+    def test_the_date_arguments_by_name_are_refused_by_the_endpoint(self):
+        self.mutated('build_corpus', lambda rule: rule['args']['dateStart'].update(name='dateStart'), fresh=True)
+
+    def test_types_as_text_without_the_transform_is_refused_by_the_endpoint(self):
+        self.mutated('build_corpus_types_text', lambda rule: rule['args']['types'].pop('transform'), fresh=True)
+
+    def test_the_project_of_get_tool_uses_by_name_is_refused_by_the_endpoint(self):
+        self.mutated('get_tool_uses', lambda rule: rule['args']['project'].update({'in': 'query', 'name': 'project'}))
+
+    def test_a_complete_rule_that_forgets_the_superseded_receipt_disagrees_with_the_tool(self):
+        self.mutated('event_status_superseded', lambda rule: rule['without_project_id']['result']['complete']['all_of'].pop(0))
+
+    def test_a_rebuild_without_the_version_the_contract_reads_is_refused_by_the_endpoint(self):
+        self.mutated('rebuild_corpus', lambda rule: rule['args']['expected_version'].pop('when_absent'))
+
+    def test_an_argument_the_contract_forgot_is_an_error(self):
+        rule = copy.deepcopy(self.declared['work_state_read'])
+        del rule['args']['includeClosed']
+        with self.assertRaises(AssertionError):
+            self.check('work_state_read', rule)
+
+
+def make_case(label):
+    def run(self):
+        self.check(label)
+    run.__name__ = 'test_parity_' + label
     return run
 
 
-for _name in ('projects', 'remember', 'capture_policy', 'event_status', 'publish_document', 'document_status', 'document_manifest', 'revoke_document',
-              'search', 'details', 'context', 'timeline', 'work_state_write', 'work_state_read', 'build_corpus', 'list_corpora', 'rebuild_corpus',
-              'prime_corpus', 'reprime_corpus', 'query_corpus', 'get_observations', 'observation_search', 'observation_context',
-              'observation_generation_status', 'important_workflow', 'observation_add', 'observation_record_event', 'get_tool_uses',
-              'team_work_write', 'team_work_read', 'team_search', 'team_brief', 'corpus_answer', 'corpus_answer_status'):
-    setattr(ToolEndpointParityTests, 'test_parity_' + _name, make_case(_name))
+def _label_names():
+    """The labels are fixed text: the methods are generated from them without a database (the table itself needs the ids)."""
+    return ('projects', 'remember', 'capture_policy', 'event_status', 'event_status_without_project', 'event_status_superseded', 'publish_document',
+            'document_status', 'document_manifest', 'revoke_document', 'search', 'details', 'context', 'timeline', 'work_state_write', 'work_state_read',
+            'work_state_read_open', 'build_corpus', 'build_corpus_types_text', 'list_corpora', 'rebuild_corpus', 'rebuild_corpus_guarded',
+            'rebuild_corpus_slash', 'prime_corpus', 'reprime_corpus', 'query_corpus', 'query_corpus_slash', 'get_observations',
+            'observation_search', 'observation_context', 'observation_generation_status', 'important_workflow', 'observation_add',
+            'observation_record_event', 'get_tool_uses', 'get_tool_uses_filtered', 'team_work_write', 'team_work_read', 'team_search', 'team_brief',
+            'corpus_answer', 'corpus_answer_status', 'corpus_answer_status_saved')
+
+
+for _label in _label_names():
+    setattr(ToolEndpointParityTests, 'test_parity_' + _label, make_case(_label))
 
 
 if __name__ == '__main__':

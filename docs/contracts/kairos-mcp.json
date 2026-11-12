@@ -316,6 +316,7 @@
       },
       "name": "projects",
       "x-kairos-endpoint": {
+        "args": {},
         "method": "GET",
         "path": "/v1/projects"
       }
@@ -716,6 +717,11 @@
       },
       "name": "remember",
       "x-kairos-endpoint": {
+        "args": {
+          "event": {
+            "in": "body"
+          }
+        },
         "method": "POST",
         "path": "/v1/events"
       }
@@ -743,6 +749,12 @@
       },
       "name": "capture_policy",
       "x-kairos-endpoint": {
+        "args": {
+          "project_id": {
+            "in": "path",
+            "name": "project_id"
+          }
+        },
         "method": "GET",
         "path": "/v1/projects/{project_id}/capture-policy"
       }
@@ -783,15 +795,55 @@
       },
       "name": "event_status",
       "x-kairos-endpoint": {
+        "args": {
+          "event_id": {
+            "in": "path",
+            "name": "event_id"
+          },
+          "project_id": {
+            "in": "path",
+            "name": "project_id"
+          }
+        },
         "method": "GET",
         "path": "/v1/projects/{project_id}/events/{event_id}/status",
         "without_project_id": {
           "jobs": {
+            "for_each": "receipt.jobs",
             "method": "GET",
             "path": "/v1/jobs/{job_id}"
           },
-          "method": "GET",
-          "path": "/v1/events/{event_id}"
+          "receipt": {
+            "args": {
+              "event_id": {
+                "in": "path",
+                "name": "event_id"
+              }
+            },
+            "method": "GET",
+            "path": "/v1/events/{event_id}"
+          },
+          "result": {
+            "complete": {
+              "all_of": [
+                {
+                  "is_not": "superseded",
+                  "path": "receipt.status"
+                },
+                {
+                  "each": "jobs",
+                  "is": "succeeded",
+                  "path": "state"
+                }
+              ]
+            },
+            "jobs": {
+              "from": "jobs"
+            },
+            "receipt": {
+              "from": "receipt"
+            }
+          }
         }
       }
     },
@@ -968,6 +1020,15 @@
       },
       "name": "publish_document",
       "x-kairos-endpoint": {
+        "args": {
+          "document": {
+            "in": "body"
+          },
+          "project_id": {
+            "in": "path",
+            "name": "project_id"
+          }
+        },
         "method": "POST",
         "path": "/v1/projects/{project_id}/documents"
       }
@@ -1001,6 +1062,16 @@
       },
       "name": "document_status",
       "x-kairos-endpoint": {
+        "args": {
+          "document_id": {
+            "in": "path",
+            "name": "document_id"
+          },
+          "project_id": {
+            "in": "path",
+            "name": "project_id"
+          }
+        },
         "method": "GET",
         "path": "/v1/projects/{project_id}/documents/{document_id}"
       }
@@ -1048,6 +1119,20 @@
       },
       "name": "document_manifest",
       "x-kairos-endpoint": {
+        "args": {
+          "cursor": {
+            "in": "query",
+            "name": "cursor"
+          },
+          "limit": {
+            "in": "query",
+            "name": "limit"
+          },
+          "project_id": {
+            "in": "path",
+            "name": "project_id"
+          }
+        },
         "method": "GET",
         "path": "/v1/projects/{project_id}/manifest"
       }
@@ -1088,6 +1173,20 @@
       },
       "name": "revoke_document",
       "x-kairos-endpoint": {
+        "args": {
+          "document_id": {
+            "in": "path",
+            "name": "document_id"
+          },
+          "project_id": {
+            "in": "path",
+            "name": "project_id"
+          },
+          "version": {
+            "in": "query",
+            "name": "version"
+          }
+        },
         "method": "DELETE",
         "path": "/v1/projects/{project_id}/documents/{document_id}"
       }
@@ -1159,6 +1258,32 @@
       },
       "name": "search",
       "x-kairos-endpoint": {
+        "args": {
+          "layers": {
+            "in": "body",
+            "name": "layers"
+          },
+          "limit": {
+            "in": "body",
+            "name": "limit"
+          },
+          "project_ids": {
+            "in": "body",
+            "name": "project_ids"
+          },
+          "q": {
+            "in": "body",
+            "name": "q"
+          },
+          "semantic": {
+            "in": "body",
+            "name": "semantic"
+          },
+          "semantic_budget_ms": {
+            "in": "body",
+            "name": "semantic_budget_ms"
+          }
+        },
         "method": "POST",
         "path": "/v1/search"
       }
@@ -1193,6 +1318,16 @@
       },
       "name": "details",
       "x-kairos-endpoint": {
+        "args": {
+          "max_chars": {
+            "in": "body",
+            "name": "max_chars"
+          },
+          "refs": {
+            "in": "body",
+            "name": "refs"
+          }
+        },
         "method": "POST",
         "path": "/v1/details"
       }
@@ -1289,6 +1424,44 @@
       },
       "name": "context",
       "x-kairos-endpoint": {
+        "args": {
+          "exclude_categories": {
+            "in": "body",
+            "name": "exclude_categories"
+          },
+          "layers": {
+            "in": "body",
+            "name": "layers"
+          },
+          "limit": {
+            "in": "body",
+            "name": "limit"
+          },
+          "match_mode": {
+            "in": "body",
+            "name": "match_mode"
+          },
+          "max_chars": {
+            "in": "body",
+            "name": "max_chars"
+          },
+          "project_ids": {
+            "in": "body",
+            "name": "project_ids"
+          },
+          "q": {
+            "in": "body",
+            "name": "q"
+          },
+          "semantic": {
+            "in": "body",
+            "name": "semantic"
+          },
+          "semantic_budget_ms": {
+            "in": "body",
+            "name": "semantic_budget_ms"
+          }
+        },
         "method": "POST",
         "path": "/v1/context"
       }
@@ -1359,6 +1532,28 @@
       },
       "name": "timeline",
       "x-kairos-endpoint": {
+        "args": {
+          "after": {
+            "in": "body",
+            "name": "after"
+          },
+          "anchor_ref": {
+            "in": "body",
+            "name": "anchor_ref"
+          },
+          "before": {
+            "in": "body",
+            "name": "before"
+          },
+          "limit": {
+            "in": "body",
+            "name": "limit"
+          },
+          "project_ids": {
+            "in": "body",
+            "name": "project_ids"
+          }
+        },
         "method": "POST",
         "path": "/v1/timeline"
       }
@@ -1433,6 +1628,28 @@
         "type": "object"
       },
       "x-kairos-endpoint": {
+        "args": {
+          "expected_version": {
+            "in": "body",
+            "name": "expected_version"
+          },
+          "fields": {
+            "in": "body",
+            "name": "fields"
+          },
+          "list": {
+            "in": "body",
+            "name": "list"
+          },
+          "project": {
+            "in": "path",
+            "name": "project_id"
+          },
+          "request_id": {
+            "in": "body",
+            "name": "request_id"
+          }
+        },
         "method": "POST",
         "path": "/v1/projects/{project_id}/work-state"
       }
@@ -1492,6 +1709,20 @@
         "type": "object"
       },
       "x-kairos-endpoint": {
+        "args": {
+          "includeClosed": {
+            "in": "query",
+            "name": "include_closed"
+          },
+          "list": {
+            "in": "query",
+            "name": "list"
+          },
+          "project": {
+            "in": "path",
+            "name": "project_id"
+          }
+        },
         "method": "GET",
         "path": "/v1/projects/{project_id}/work-state"
       }
@@ -1625,6 +1856,51 @@
         "type": "object"
       },
       "x-kairos-endpoint": {
+        "args": {
+          "concepts": {
+            "in": "body",
+            "name": "concepts",
+            "transform": "csv-list"
+          },
+          "dateEnd": {
+            "in": "body",
+            "name": "date_end"
+          },
+          "dateStart": {
+            "in": "body",
+            "name": "date_start"
+          },
+          "description": {
+            "in": "body",
+            "name": "description"
+          },
+          "files": {
+            "in": "body",
+            "name": "files",
+            "transform": "csv-list"
+          },
+          "limit": {
+            "in": "body",
+            "name": "limit"
+          },
+          "name": {
+            "in": "body",
+            "name": "name"
+          },
+          "project": {
+            "in": "path",
+            "name": "project_id"
+          },
+          "query": {
+            "in": "body",
+            "name": "query"
+          },
+          "types": {
+            "in": "body",
+            "name": "types",
+            "transform": "csv-list"
+          }
+        },
         "method": "POST",
         "path": "/v1/projects/{project_id}/corpora"
       }
@@ -1665,6 +1941,12 @@
         "type": "object"
       },
       "x-kairos-endpoint": {
+        "args": {
+          "project": {
+            "in": "path",
+            "name": "project_id"
+          }
+        },
         "method": "GET",
         "path": "/v1/projects/{project_id}/corpora"
       }
@@ -1731,6 +2013,45 @@
         "type": "object"
       },
       "x-kairos-endpoint": {
+        "args": {
+          "expected_version": {
+            "in": "body",
+            "name": "expected_version",
+            "when_absent": {
+              "pick": {
+                "from": "items",
+                "take": "version",
+                "where": {
+                  "name": {
+                    "arg": "name"
+                  }
+                }
+              },
+              "read": {
+                "args": {
+                  "project": {
+                    "in": "path",
+                    "name": "project_id"
+                  }
+                },
+                "method": "GET",
+                "path": "/v1/projects/{project_id}/corpora"
+              }
+            }
+          },
+          "force": {
+            "in": "body",
+            "name": "force"
+          },
+          "name": {
+            "in": "path",
+            "name": "name"
+          },
+          "project": {
+            "in": "path",
+            "name": "project_id"
+          }
+        },
         "method": "POST",
         "path": "/v1/projects/{project_id}/corpora/{name}/rebuild"
       }
@@ -1778,6 +2099,16 @@
         "type": "object"
       },
       "x-kairos-endpoint": {
+        "args": {
+          "name": {
+            "in": "path",
+            "name": "name"
+          },
+          "project": {
+            "in": "path",
+            "name": "project_id"
+          }
+        },
         "method": "POST",
         "path": "/v1/projects/{project_id}/corpora/{name}/prime"
       }
@@ -1825,9 +2156,23 @@
         "type": "object"
       },
       "x-kairos-endpoint": {
-        "body": {
-          "fresh": true
+        "args": {
+          "name": {
+            "in": "path",
+            "name": "name"
+          },
+          "project": {
+            "in": "path",
+            "name": "project_id"
+          }
         },
+        "fixed": [
+          {
+            "in": "body",
+            "name": "fresh",
+            "value": true
+          }
+        ],
         "method": "POST",
         "path": "/v1/projects/{project_id}/corpora/{name}/prime"
       }
@@ -1887,6 +2232,24 @@
         "type": "object"
       },
       "x-kairos-endpoint": {
+        "args": {
+          "limit": {
+            "in": "body",
+            "name": "limit"
+          },
+          "name": {
+            "in": "path",
+            "name": "name"
+          },
+          "project": {
+            "in": "path",
+            "name": "project_id"
+          },
+          "question": {
+            "in": "body",
+            "name": "question"
+          }
+        },
         "method": "POST",
         "path": "/v1/projects/{project_id}/corpora/{name}/query"
       }
@@ -1937,6 +2300,16 @@
         "type": "object"
       },
       "x-kairos-endpoint": {
+        "args": {
+          "ids": {
+            "in": "body",
+            "name": "ids"
+          },
+          "projectId": {
+            "in": "path",
+            "name": "project_id"
+          }
+        },
         "method": "POST",
         "path": "/v1/projects/{project_id}/observations/get"
       }
@@ -1989,6 +2362,20 @@
         "type": "object"
       },
       "x-kairos-endpoint": {
+        "args": {
+          "limit": {
+            "in": "query",
+            "name": "limit"
+          },
+          "projectId": {
+            "in": "path",
+            "name": "project_id"
+          },
+          "query": {
+            "in": "query",
+            "name": "query"
+          }
+        },
         "method": "GET",
         "path": "/v1/projects/{project_id}/observations/search"
       }
@@ -2041,6 +2428,20 @@
         "type": "object"
       },
       "x-kairos-endpoint": {
+        "args": {
+          "limit": {
+            "in": "query",
+            "name": "limit"
+          },
+          "projectId": {
+            "in": "path",
+            "name": "project_id"
+          },
+          "query": {
+            "in": "query",
+            "name": "query"
+          }
+        },
         "method": "GET",
         "path": "/v1/projects/{project_id}/observations/context"
       }
@@ -2082,6 +2483,12 @@
         "type": "object"
       },
       "x-kairos-endpoint": {
+        "args": {
+          "jobId": {
+            "in": "path",
+            "name": "job_id"
+          }
+        },
         "method": "GET",
         "path": "/v1/jobs/{job_id}"
       }
@@ -2523,6 +2930,11 @@
         "type": "object"
       },
       "x-kairos-endpoint": {
+        "args": {
+          "event": {
+            "in": "body"
+          }
+        },
         "method": "POST",
         "path": "/v1/observations"
       }
@@ -2936,6 +3348,11 @@
         "type": "object"
       },
       "x-kairos-endpoint": {
+        "args": {
+          "event": {
+            "in": "body"
+          }
+        },
         "method": "POST",
         "path": "/v1/observations/events"
       }
@@ -3023,6 +3440,28 @@
         "type": "object"
       },
       "x-kairos-endpoint": {
+        "args": {
+          "cursor": {
+            "in": "query",
+            "name": "cursor"
+          },
+          "limit": {
+            "in": "query",
+            "name": "limit"
+          },
+          "project": {
+            "in": "query",
+            "name": "project_id"
+          },
+          "session_id": {
+            "in": "query",
+            "name": "session_id"
+          },
+          "tool": {
+            "in": "query",
+            "name": "tool"
+          }
+        },
         "method": "GET",
         "path": "/v1/tool-uses"
       }
@@ -3098,6 +3537,28 @@
         "type": "object"
       },
       "x-kairos-endpoint": {
+        "args": {
+          "expected_version": {
+            "in": "body",
+            "name": "expected_version"
+          },
+          "fields": {
+            "in": "body",
+            "name": "fields"
+          },
+          "list": {
+            "in": "body",
+            "name": "list"
+          },
+          "project": {
+            "in": "path",
+            "name": "project_id"
+          },
+          "request_id": {
+            "in": "body",
+            "name": "request_id"
+          }
+        },
         "method": "POST",
         "path": "/v1/projects/{project_id}/team-work"
       }
@@ -3157,6 +3618,20 @@
         "type": "object"
       },
       "x-kairos-endpoint": {
+        "args": {
+          "include_closed": {
+            "in": "query",
+            "name": "include_closed"
+          },
+          "list": {
+            "in": "query",
+            "name": "list"
+          },
+          "project": {
+            "in": "path",
+            "name": "project_id"
+          }
+        },
         "method": "GET",
         "path": "/v1/projects/{project_id}/team-work"
       }
@@ -3209,6 +3684,20 @@
         "type": "object"
       },
       "x-kairos-endpoint": {
+        "args": {
+          "limit": {
+            "in": "query",
+            "name": "limit"
+          },
+          "project": {
+            "in": "path",
+            "name": "project_id"
+          },
+          "query": {
+            "in": "query",
+            "name": "query"
+          }
+        },
         "method": "GET",
         "path": "/v1/projects/{project_id}/team-search"
       }
@@ -3256,6 +3745,16 @@
         "type": "object"
       },
       "x-kairos-endpoint": {
+        "args": {
+          "limit": {
+            "in": "query",
+            "name": "limit"
+          },
+          "project": {
+            "in": "path",
+            "name": "project_id"
+          }
+        },
         "method": "GET",
         "path": "/v1/projects/{project_id}/team-brief"
       }
@@ -3331,6 +3830,32 @@
         "type": "object"
       },
       "x-kairos-endpoint": {
+        "args": {
+          "expected_generation": {
+            "in": "body",
+            "name": "expected_generation"
+          },
+          "expected_session_id": {
+            "in": "body",
+            "name": "expected_session_id"
+          },
+          "name": {
+            "in": "path",
+            "name": "name"
+          },
+          "project": {
+            "in": "path",
+            "name": "project_id"
+          },
+          "question": {
+            "in": "body",
+            "name": "question"
+          },
+          "request_id": {
+            "in": "body",
+            "name": "request_id"
+          }
+        },
         "method": "POST",
         "path": "/v1/projects/{project_id}/corpora/{name}/answers"
       }
@@ -3385,10 +3910,33 @@
         "type": "object"
       },
       "x-kairos-endpoint": {
+        "args": {
+          "name": {
+            "in": "path",
+            "name": "name"
+          },
+          "project": {
+            "in": "path",
+            "name": "project_id"
+          },
+          "request_id": {
+            "in": "path",
+            "name": "request_id"
+          }
+        },
         "method": "GET",
         "path": "/v1/projects/{project_id}/corpora/{name}/answers/{request_id}"
       }
     }
   ],
-  "transport": "streamable-http"
+  "transport": "streamable-http",
+  "x-kairos-translation": [
+    "A tool call becomes one HTTP request to `method` + `path` (the first request; `event_status` without `project_id` follows `without_project_id`).",
+    "Each tool argument that is present and not null is placed by its entry in `args`: `in: path` replaces `{name}` in the path with the value URL-encoded in full (a `/` becomes `%2F`), `in: query` adds a query parameter, `in: body` adds a JSON body field; an `in: body` entry without `name` makes the value the whole body.",
+    "An absent or null argument is omitted: the server applies its default. A boolean query value is written `true` or `false`; a list query value repeats the parameter.",
+    "`transform: csv-list` turns a string into a list (split on commas, trimmed, empties dropped, duplicates removed) and passes a list as it is.",
+    "`when_absent` fills an argument the call left out: `read` is one request (same rules, over the arguments of the call), `pick` takes `take` from the item of its `from` list whose fields equal `where` (`{arg: x}` is the value of the tool argument `x`).",
+    "`fixed` entries are always added (`in: body`, `name`, `value`). A POST or PUT always carries a JSON object body, `{}` when no field is set.",
+    "The response of the endpoint is the result of the tool; an error status carries `{\"error\": {\"code\", \"message\"}}`."
+  ]
 }
