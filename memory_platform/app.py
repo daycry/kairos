@@ -309,6 +309,16 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
     def event_receipt(event_id: str, actor=Depends(identity)):
         return store.get_event_receipt(actor, event_id)
 
+    @app.get('/v1/projects/{project_id}/events/{event_id}/status', operation_id='kairos_event_status')
+    def event_status(project_id: str, event_id: uuid.UUID, actor=Depends(identity)):
+        # The reconciliation of the `event_status` tool with a project (`mcp.py`), as one call: the receipt and its jobs, or an explicit absence.
+        receipt = store.reconcile_capture(actor, project_id, str(event_id))
+        if receipt is None:
+            return {'found': False, 'event_id': str(event_id), 'project_id': project_id}
+        jobs = [store.get_job(actor, job_id) for job_id in receipt['jobs']]
+        return {'receipt': receipt, 'jobs': jobs,
+                'complete': receipt['status'] != 'superseded' and all(job['state'] == 'succeeded' for job in jobs)}
+
     @app.get('/v1/jobs/{job_id}', operation_id='memory_job')
     def job(job_id: str, actor=Depends(identity)):
         return store.get_job(actor, job_id)

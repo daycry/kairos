@@ -39,13 +39,13 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Integración continua (C-01) | 8 | 8 | 100% | 0 / 18.0h | 0 / 2.3h | 0 / 0.6h | 0 / 578 k |
 | Fase 2 — Servidor sin modelo de lenguaje (C-04) | 9 | 9 | 100% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
-| Fase 3 — Paridad REST /v1 (C-02) | 2 | 10 | 20% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
+| Fase 3 — Paridad REST /v1 (C-02) | 3 | 10 | 30% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 0 | 8 | 0% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 0 | 15 | 0% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **19** | **74** | **25.7%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **20** | **74** | **27.0%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -693,31 +693,35 @@ RED: `memory_platform/tests/test_api.py::ParityEndpointTests::test_capture_polic
 ### T-20 — Endpoint `/v1` de reconciliación de `event_status` por proyecto
 
 - **Descripción**: Crear el endpoint que ejecuta `reconcile_capture` para un `project_id` y evita el N+1 de la herramienta compuesta. Fuente: CA-05; hallazgo «Parcial» de `event_status`; R-05.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: Nuevo `GET /v1/projects/{id}/events/{event_id}/status`: reconcilia un evento por proyecto en una sola llamada (recibo, trabajos y `complete`, o `found: false`), igual que `event_status` con `project_id`.
+- **Estado**: completado
+- **Cerrada**: 2026-11-12
 - **Tiempo humano**: est. 2.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.36h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.36h (estimado) · real 0.04h (medido, ventana win-41e2d9a8, 15:20Z-15:26Z)
 - **Supervisión**: est. 0.09h (≈25 % IA) · real —
 - **Previsión IA**: 100 k in / 9 k out tok · ⚠️ verificar €
 - **Dependencias**: T-19
 - **Tipo**: backend
-- **Archivos**: `memory_platform/app.py`, `memory_platform/models.py`, `memory_platform/tests/test_api.py`
+- **Archivos**: `memory_platform/app.py`, `memory_platform/models.py`, `memory_platform/tests/test_api.py`, `docs/contracts/memory-platform.openapi.json`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t20 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
 
 **Criterios de aceptación**
-- [ ] El endpoint devuelve la misma reconciliación que `event_status` con `project_id`
-- [ ] Test de acceso permitido, 403 y proyecto ajeno
-- [ ] `GET /v1/events/{id}` y `GET /v1/jobs/{id}` no cambian
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] El endpoint devuelve la misma reconciliación que `event_status` con `project_id`
+- [x] Test de acceso permitido, 403 y proyecto ajeno
+- [x] `GET /v1/events/{id}` y `GET /v1/jobs/{id}` no cambian
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Test en rojo
-- [ ] Añadir ruta y respuesta
-- [ ] `usage-meter start/close`
+- [x] Test en rojo
+- [x] Añadir ruta y respuesta
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-05, R-05. Patrón: composición actual en `memory_platform/mcp.py:98-115`; `reconcile_capture` en `memory_platform/store_documents.py:258`; rutas `…/events` y `…/jobs` en `memory_platform/app.py:305`. Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde.
+**Notas**: Procedencia: spec CA-05, R-05. Patrón: composición actual en `memory_platform/mcp.py:98-115`; `reconcile_capture` en `memory_platform/store_documents.py:258`; rutas `…/events` y `…/jobs` en `memory_platform/app.py:305`. Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde. Implementación: ruta `GET /v1/projects/{project_id}/events/{event_id}/status` (`kairos_event_status`; `event_id` es un UUID, otro valor da 422) que llama a `Store.reconcile_capture` (lectura y escritura exigidas) y, si hay recibo, lee sus trabajos con `Store.get_job` y devuelve `{receipt, jobs, complete}`; sin recibo, `{found: false, event_id, project_id}` con 200, como la herramienta. La composición (8 líneas) está en `app.py` y no en `Store` porque `store_surface.json` está congelado; la igualdad con `mcp.py` la fija el test (y T-25). Evita el N+1 del cliente (un recibo más un GET por trabajo). `GET /v1/events/{id}` y `GET /v1/jobs/{id}` intactos (el test los compara con las partes de la respuesta). `models.py` no cambia (la respuesta tiene dos formas y se deja como objeto libre). Test `test_event_status_by_project_reconciles_like_the_tool_in_one_call`: mismo contenido que la herramienta con recibo y con ausencia, lector 403, otro proyecto 404, UUID inválido 422 (extracción activada en el test para que el recibo lleve un trabajo). Contrato: OpenAPI +47 líneas, 0 quitadas; `openapi.json` añadido a `Archivos`. Verificación: MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 532} (docker build --target test, rc 0, kairos-test:t20). usage-meter close three-components/T-20: 0.04 h IA (medido, win-41e2d9a8f3f949f592077766671bf259).
+
+
+RED: `memory_platform/tests/test_api.py::ParityEndpointTests::test_event_status_by_project_reconciles_like_the_tool_in_one_call` falló con AssertionError: 404 != 200 ({"detail":"Not Found"}: la ruta events/{id}/status no existe) contra las fuentes de HEAD · 2026-11-12.
 
 ### T-21 — Endpoints `/v1` de lectura de observaciones (`get_observations`, `observation_search`, `observation_context`)
 

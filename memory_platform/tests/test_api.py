@@ -310,6 +310,32 @@ class ParityEndpointTests(unittest.TestCase):
         # `GET .../policy` keeps its own shape
         self.assertEqual(set(self.client.get(self.prefix + '/policy', headers=self.writer).json()), {'capture_mode', 'temporal_projection'})
 
+    def test_event_status_by_project_reconciles_like_the_tool_in_one_call(self):
+        import uuid
+        self.store.extraction_enabled = True  # the receipt then carries a job to reconcile (explicit opt-in to MEMORY_EXTRACT_ENABLED)
+        value = event(self.pid)
+        self.assertEqual(self.client.post('/v1/events', json=value, headers=self.writer).status_code, 202)
+        url = self.prefix + '/events/' + value['event_id'] + '/status'
+        found = self.client.get(url, headers=self.writer)
+        self.assertEqual(found.status_code, 200, found.text)
+        body = found.json()
+        self.assertEqual(body['receipt']['event_id'], value['event_id'])
+        self.assertTrue(body['jobs'] and isinstance(body['complete'], bool))
+        self.assertEqual(body, self.tool(self.writer, 'event_status', {'event_id': value['event_id'], 'project_id': self.pid}))
+        # the two reads it composes are unchanged
+        self.assertEqual(self.client.get('/v1/events/' + value['event_id'], headers=self.writer).json(), body['receipt'])
+        self.assertEqual(self.client.get('/v1/jobs/' + body['receipt']['jobs'][0], headers=self.writer).json(), body['jobs'][0])
+        # explicit absence is a 200 with found=false, as in the tool
+        missing = str(uuid.uuid4())
+        absent = self.client.get(self.prefix + '/events/' + missing + '/status', headers=self.writer)
+        self.assertEqual(absent.status_code, 200, absent.text)
+        self.assertEqual(absent.json(), {'found': False, 'event_id': missing, 'project_id': self.pid})
+        self.assertEqual(absent.json(), self.tool(self.writer, 'event_status', {'event_id': missing, 'project_id': self.pid}))
+        # reconciling needs read AND write: a reader and another project's key are refused
+        self.assertEqual(self.client.get(url, headers=self.reader).status_code, 403)
+        self.assertEqual(self.client.get(url, headers=self.foreign).status_code, 404)
+        self.assertEqual(self.client.get(self.prefix + '/events/not-a-uuid/status', headers=self.writer).status_code, 422)
+
 
 class DegradedSemanticHttpTests(unittest.TestCase):
     """CA-16 and CA-17 over HTTP with the real retrieval: a failing embeddings provider degrades, it does not fail."""
