@@ -193,6 +193,30 @@ class AuxiliaryJobsTests(unittest.TestCase):
         self.assertIn('docker build --target test -f memory_platform/Dockerfile.web', block)
 
 
+class McpJobTests(unittest.TestCase):
+    """T-36: kairos-mcp has its own job: the image without a database driver is built and its tests run inside it."""
+
+    def setUp(self):
+        self.jobs = jobs(read())
+
+    def test_mcp_job_builds_the_component_image_and_runs_its_tests(self):
+        self.assertIn('mcp', self.jobs)
+        block = self.jobs['mcp']
+        self.assertIn('docker build -f mcp/Dockerfile -t kairos-mcp:ci mcp/', block)
+        self.assertIn('python -m unittest discover -s tests', block)
+        self.assertRegex(block, r'runs-on:\s*ubuntu-latest')
+
+    def test_mcp_job_proves_the_image_has_no_database_driver(self):
+        block = self.jobs['mcp']
+        self.assertIn('pip list', block)
+        self.assertIn('psycopg', block)
+
+    def test_mcp_job_needs_no_service_secret_or_network_beyond_the_build(self):
+        block = self.jobs['mcp']
+        for forbidden in ('docker compose', 'curl ', 'MEMORY_DSN', 'MEMORY_TEST_DSN', 'memory_platform'):
+            self.assertNotIn(forbidden, block)
+
+
 class PipeFailureTests(unittest.TestCase):
     """A piped build must fail the step: GitHub's default `bash -e` has no pipefail, so `docker build | tee` would stay green."""
 
@@ -240,8 +264,8 @@ class ContractsJobTests(unittest.TestCase):
 
 
 GATE_STEP = 'The suite really ran and nothing was skipped'
-MIN_FLOOR = 483  # baseline of T-01; raise it when the suite grows, never lower it
-GOOD = 'MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 483}'
+MIN_FLOOR = 639  # the suite as it stood when kairos-mcp started (T-01 began at 483); raise it when the suite grows, never lower it
+GOOD = 'MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": %d}' % MIN_FLOOR
 
 
 def find_bash():
@@ -332,25 +356,25 @@ def effective_minimum(text, job_block, step_lines):
     return int(value), problems
 
 
-def log_line(tests=483, failures=0, errors=0, skipped=0, passed='true'):
+def log_line(tests=MIN_FLOOR, failures=0, errors=0, skipped=0, passed='true'):
     return 'MEMORY_TEST_RESULT {"errors": %s, "failures": %s, "passed": %s, "skipped": %s, "tests": %s}' % (errors, failures, passed, skipped, tests)
 
 
 # (name, simulated build log, must the step succeed)
 GATE_CASES = (
-    ('baseline 483, nothing wrong', 'noise\n' + GOOD + '\nmore noise\n', True),
+    ('baseline, nothing wrong', 'noise\n' + GOOD + '\nmore noise\n', True),
     ('more tests than the baseline', log_line(tests=900) + '\n', True),
-    ('482 tests', log_line(tests=482) + '\n', False),
+    ('one below the minimum', log_line(tests=MIN_FLOOR - 1) + '\n', False),
     ('1 failure', log_line(failures=1) + '\n', False),
     ('1 error', log_line(errors=1) + '\n', False),
     ('1 skipped', log_line(skipped=1) + '\n', False),
     ('passed false', log_line(passed='false') + '\n', False),
-    ('no result line', 'Ran 483 tests\nOK\n', False),
+    ('no result line', 'Ran %d tests\nOK\n' % MIN_FLOOR, False),
     ('empty log', '', False),
     ('tests not numeric', log_line(tests='"many"') + '\n', False),
     ('tests null', log_line(tests='null') + '\n', False),
     ('tests missing', 'MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0}\n', False),
-    ('a good line followed by a bad one', GOOD + '\n' + log_line(tests=482) + '\n', False),
+    ('a good line followed by a bad one', GOOD + '\n' + log_line(tests=MIN_FLOOR - 1) + '\n', False),
 )
 
 
@@ -440,9 +464,9 @@ MUTANTS = (
     ('weaken skipped to any value', lambda t: t.replace('"skipped": 0', '"skipped"')),
     ('first result line instead of the last', lambda t: t.replace('| tail -1)', '| head -1)')),
     ('set +e before the checks', lambda t: t.replace('        run: |\n          line="$(grep', '        run: |\n          set +e\n          line="$(grep', 1)),
-    ('KAIROS_MIN_TESTS 0 at workflow level', lambda t: t.replace("KAIROS_MIN_TESTS: '483'", "KAIROS_MIN_TESTS: '0'")),
-    ('KAIROS_MIN_TESTS 482 at workflow level', lambda t: t.replace("KAIROS_MIN_TESTS: '483'", "KAIROS_MIN_TESTS: '482'")),
-    ('KAIROS_MIN_TESTS not a number', lambda t: t.replace("KAIROS_MIN_TESTS: '483'", "KAIROS_MIN_TESTS: 'lots'")),
+    ('KAIROS_MIN_TESTS 0 at workflow level', lambda t: re.sub(r"KAIROS_MIN_TESTS: '\d+'", "KAIROS_MIN_TESTS: '0'", t)),
+    ('KAIROS_MIN_TESTS one below the floor at workflow level', lambda t: re.sub(r"KAIROS_MIN_TESTS: '\d+'", "KAIROS_MIN_TESTS: '%d'" % (MIN_FLOOR - 1), t)),
+    ('KAIROS_MIN_TESTS not a number', lambda t: re.sub(r"KAIROS_MIN_TESTS: '\d+'", "KAIROS_MIN_TESTS: 'lots'", t)),
     ('KAIROS_MIN_TESTS 0 in the job env', lambda t: t.replace('    timeout-minutes: 45\n', "    timeout-minutes: 45\n    env:\n      KAIROS_MIN_TESTS: '0'\n", 1)),
     ('KAIROS_MIN_TESTS 0 in the step env', after_step_name("        env:\n          KAIROS_MIN_TESTS: '0'\n")),
     ('KAIROS_MIN_TESTS 0 in an inline env', after_step_name('        env: {KAIROS_MIN_TESTS: 0}\n')),
@@ -496,9 +520,9 @@ class SuiteGateStepTests(unittest.TestCase):
 
     def test_the_synthetic_cases_cover_the_required_failures(self):
         names = [name for name, _, _ in GATE_CASES]
-        for required in ('482 tests', '1 failure', '1 error', '1 skipped', 'no result line', 'tests not numeric'):
+        for required in ('one below the minimum', '1 failure', '1 error', '1 skipped', 'no result line', 'tests not numeric'):
             self.assertIn(required, names)
-        self.assertEqual([name for name, _, ok in GATE_CASES if ok][0], 'baseline 483, nothing wrong')
+        self.assertEqual([name for name, _, ok in GATE_CASES if ok][0], 'baseline, nothing wrong')
 
     def test_every_mutant_of_the_workflow_is_detected(self):
         self.need_bash()

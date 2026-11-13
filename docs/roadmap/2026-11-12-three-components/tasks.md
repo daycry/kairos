@@ -41,11 +41,11 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 2 — Servidor sin modelo de lenguaje (C-04) | 9 | 9 | 100% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
 | Fase 3 — Paridad REST /v1 (C-02) | 10 | 10 | 100% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
-| Fase 5 — kairos-mcp (C-03) | 0 | 15 | 0% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
+| Fase 5 — kairos-mcp (C-03) | 1 | 15 | 6.7% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **35** | **74** | **47.3%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **36** | **74** | **48.6%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1248,10 +1248,11 @@ RED: los casos de límites son cobertura de una capacidad ya implementada en T-3
 ### T-36 — Andamiaje del paquete `mcp/` (`kairos_mcp`), Dockerfile sin base de datos y `health`
 
 - **Descripción**: Crear el paquete `mcp/` con servidor ASGI, `GET /health/live`, versión 0.4.0 (P-07), `requirements.txt` sin `psycopg` y Dockerfile propio con usuario sin privilegios; añadir el trabajo `mcp` a la CI. Fuente: CA-08, CA-24 (parte), spec §Arquitectura.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: Hay un componente nuevo, kairos-mcp (0.4.0), con su propia imagen sin base de datos ni secretos y un sondeo de vida en /health/live; la CI lo construye y prueba.
+- **Estado**: completado
+- **Cerrada**: 2026-11-13
 - **Tiempo humano**: est. 3.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.46h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.46h (estimado) · real 0.25h (medido)
 - **Supervisión**: est. 0.12h (≈25 % IA) · real —
 - **Previsión IA**: 126 k in / 12 k out tok · ⚠️ verificar €
 - **Dependencias**: T-35
@@ -1262,21 +1263,24 @@ RED: los casos de límites son cobertura de una capacidad ya implementada en T-3
   - `docker build -f mcp/Dockerfile -t kairos-mcp:t36 mcp/` → exit 0
   - `docker build -f mcp/Dockerfile -t kairos-mcp:t36 mcp/ && docker run --rm kairos-mcp:t36 python -m unittest discover -s tests` → `OK`
   - `docker build -f mcp/Dockerfile -t kairos-mcp:t36 mcp/ && docker run --rm kairos-mcp:t36 pip list` no contiene `psycopg`
+  - Evidencia (2026-11-13): build `kairos-mcp:t36` exit 0; `docker run --rm kairos-mcp:t36 python -m unittest discover -s tests` -> Ran 5 tests, OK; `pip list | grep -c psycopg` -> 0; scripts/tests/test_ci_workflow.py 42 tests OK (job mcp, minimo 639).
 
 **Criterios de aceptación**
-- [ ] `mcp/` no instala `psycopg` ni lleva variables `MEMORY_DSN*` ni secretos
-- [ ] `GET /health/live` responde 200 en el test
-- [ ] El trabajo `mcp` existe en el workflow y el test estructural lo comprueba
-- [ ] La imagen se construye con `docker build -f mcp/Dockerfile -t kairos-mcp:t36 mcp/`
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] `mcp/` no instala `psycopg` ni lleva variables `MEMORY_DSN*` ni secretos
+- [x] `GET /health/live` responde 200 en el test
+- [x] El trabajo `mcp` existe en el workflow y el test estructural lo comprueba
+- [x] La imagen se construye con `docker build -f mcp/Dockerfile -t kairos-mcp:t36 mcp/`
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Test de `health` en rojo
-- [ ] Crear paquete, requisitos y Dockerfile
-- [ ] Añadir el trabajo `mcp` a la CI y al test estructural
-- [ ] `usage-meter start/close`
+- [x] Test de `health` en rojo
+- [x] Crear paquete, requisitos y Dockerfile
+- [x] Añadir el trabajo `mcp` a la CI y al test estructural
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-08/CA-09. Patrón de Dockerfile y usuario 10001: `memory_platform/Dockerfile:1-10`; SDK `mcp==1.27.1` en `memory_platform/requirements.txt:6`. El contexto de la imagen es `mcp/` y no puede copiar código de `memory_platform` (CA-08). Clase: capacidad nueva.
+**Notas**: Procedencia: spec CA-08/CA-09. Patrón de Dockerfile y usuario 10001: `memory_platform/Dockerfile:1-10`; SDK `mcp==1.27.1` en `memory_platform/requirements.txt:6`. El contexto de la imagen es `mcp/` y no puede copiar código de `memory_platform` (CA-08). Clase: capacidad nueva. Desviaciones: el contenedor usa CMD (no ENTRYPOINT) para que la Verificacion `docker run ... python -m unittest` funcione; la imagen copia su Dockerfile y tests/ (los tests de aislamiento lo leen); puerto 8791. KAIROS_MIN_TESTS sube de 483 a 639 (suite real) y test_ci_workflow.py se parametriza con MIN_FLOOR (archivo anadido a Archivos con esta nota); `mcp/.dockerignore` y `mcp/contract/.keep` (placeholder hasta T-38) son nuevos. usage-meter three-components/T-36: 0.25 h IA (medido, win-9fb9fd9dc5d7457195dba6d7d14d8191).
+
+RED: `mcp/tests/test_health.py` falló con 4 errores: ModuleNotFoundError kairos_mcp.app y FileNotFoundError mcp/Dockerfile y mcp/VERSION · 2026-11-13.
 
 ### T-37 — Cliente HTTP hacia `/v1`: credencial, errores, plazos y registro sin secretos
 
