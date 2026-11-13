@@ -41,11 +41,11 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 2 — Servidor sin modelo de lenguaje (C-04) | 9 | 9 | 100% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
 | Fase 3 — Paridad REST /v1 (C-02) | 10 | 10 | 100% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
-| Fase 5 — kairos-mcp (C-03) | 1 | 15 | 6.7% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
+| Fase 5 — kairos-mcp (C-03) | 2 | 15 | 13.3% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **36** | **74** | **48.6%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **37** | **74** | **50.0%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1257,7 +1257,7 @@ RED: los casos de límites son cobertura de una capacidad ya implementada en T-3
 - **Previsión IA**: 126 k in / 12 k out tok · ⚠️ verificar €
 - **Dependencias**: T-35
 - **Tipo**: mcp
-- **Archivos**: `mcp/kairos_mcp/__init__.py`, `mcp/kairos_mcp/app.py`, `mcp/requirements.txt`, `mcp/Dockerfile`, `mcp/VERSION`, `mcp/tests/test_health.py`, `.github/workflows/ci.yml`
+- **Archivos**: `mcp/kairos_mcp/__init__.py`, `mcp/kairos_mcp/app.py`, `mcp/requirements.txt`, `mcp/Dockerfile`, `mcp/VERSION`, `mcp/tests/test_health.py`, `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `mcp/.dockerignore`, `mcp/contract/.keep`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build -f mcp/Dockerfile -t kairos-mcp:t36 mcp/` → exit 0
@@ -1285,33 +1285,38 @@ RED: `mcp/tests/test_health.py` falló con 4 errores: ModuleNotFoundError kairos
 ### T-37 — Cliente HTTP hacia `/v1`: credencial, errores, plazos y registro sin secretos
 
 - **Descripción**: Cliente `httpx` con conexión persistente: reenvía `Authorization: Bearer` tal cual, traduce `{error:{code,message}}` a `ValueError(message)`, devuelve `Memory service temporarily unavailable` ante 5xx, plazo o caída, aplica `KAIROS_API_TIMEOUT` (30 s) y nunca guarda ni registra la credencial. Sin cabecera o con esquema distinto de `Bearer`, 401 sin llamar a `/v1`. Fuente: CA-12, P-08 (decidida), R-05.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: kairos-mcp reenvía la credencial Bearer de quien llama a /v1, traduce sus errores al mismo mensaje que el MCP interno, responde Memory service temporarily unavailable ante caídas, plazos y 5xx, y no deja la credencial en los logs.
+- **Estado**: completado
+- **Cerrada**: 2026-11-13
 - **Tiempo humano**: est. 5.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.77h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.77h (estimado) · real 0.15h (medido)
 - **Supervisión**: est. 0.19h (≈25 % IA) · real —
 - **Previsión IA**: 211 k in / 20 k out tok · ⚠️ verificar €
 - **Dependencias**: T-36
 - **Tipo**: mcp
-- **Archivos**: `mcp/kairos_mcp/client.py`, `mcp/kairos_mcp/errors.py`, `mcp/tests/test_client.py`, `mcp/tests/stub_api.py`
+- **Archivos**: `mcp/kairos_mcp/client.py`, `mcp/kairos_mcp/errors.py`, `mcp/tests/test_client.py`, `mcp/tests/stub_api.py`, `mcp/kairos_mcp/auth.py`, `mcp/kairos_mcp/config.py`, `mcp/kairos_mcp/logs.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker run --rm kairos-mcp:t37 python -m unittest discover -s tests` → `OK` (tras `docker build -f mcp/Dockerfile -t kairos-mcp:t37 mcp/`)
+  - Evidencia (2026-11-13): `docker build -f mcp/Dockerfile -t kairos-mcp:t37 mcp/` y `docker run --rm kairos-mcp:t37 python -m unittest discover -s tests` -> Ran 24 tests, OK (el token sintetico aparece 0 veces en los logs con todos los loggers en DEBUG).
 
 **Criterios de aceptación**
-- [ ] 4xx con `{error:{code,message}}` falla con `message` igual que el MCP interno
-- [ ] 5xx, plazo agotado y caída dan `Memory service temporarily unavailable`
-- [ ] Sin `Authorization` o con esquema distinto de `Bearer`: 401 con el cuerpo de hoy y 0 llamadas a `/v1`
-- [ ] El token sintético aparece 0 veces en los logs durante los tests
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] 4xx con `{error:{code,message}}` falla con `message` igual que el MCP interno
+- [x] 5xx, plazo agotado y caída dan `Memory service temporarily unavailable`
+- [x] Sin `Authorization` o con esquema distinto de `Bearer`: 401 con el cuerpo de hoy y 0 llamadas a `/v1`
+- [x] El token sintético aparece 0 veces en los logs durante los tests
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Escribir `stub_api.py` (servidor `/v1` simulado) y los tests en rojo
-- [ ] Implementar el cliente
-- [ ] Test que busca el token sintético en los logs capturados
-- [ ] `usage-meter start/close`
+- [x] Escribir `stub_api.py` (servidor `/v1` simulado) y los tests en rojo
+- [x] Implementar el cliente
+- [x] Test que busca el token sintético en los logs capturados
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-12/P-08. Patrón de errores y mensaje: `memory_platform/mcp.py:48-55`; 401 en `memory_platform/mcp.py:194-207`. Latencia: R-05. Clase: capacidad nueva.
+**Notas**: Procedencia: spec CA-12/P-08. Patrón de errores y mensaje: `memory_platform/mcp.py:48-55`; 401 en `memory_platform/mcp.py:194-207`. Latencia: R-05. Clase: capacidad nueva. Archivos anadidos con esta nota: `mcp/kairos_mcp/auth.py` (puerta Bearer 401 y credencial por peticion en un ContextVar), `mcp/kairos_mcp/config.py` (KAIROS_API_URL obligatoria, KAIROS_API_TIMEOUT 30 s por defecto, KAIROS_ALLOWED_ORIGINS opcional) y `mcp/kairos_mcp/logs.py` (JSON sin contenido). Decision: un 5xx que lleva un error de dominio del servidor distinto de `service_unavailable` (p. ej. `semantic_deadline_exceeded`, 503) conserva su mensaje, como el MCP interno; un 5xx sin envoltorio o generico da el mensaje generico. Las redirecciones no se siguen. Respuesta maxima 8 MiB. usage-meter three-components/T-37: 0.15 h IA (medido, win-2008c935f3a14dec984e29668d6bd7ac).
+
+
+RED: `mcp/tests/test_client.py` falló con 17 errores: ModuleNotFoundError kairos_mcp.client y kairos_mcp.auth · 2026-11-13.
 
 ### T-38 — Servidor MCP con `tools/list` generado desde `kairos-mcp.json` (P-05, CA-10)
 
