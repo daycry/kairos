@@ -243,13 +243,12 @@ class AgentStore:
             return {'project': project, 'items': [self._receipt(c, row) for row in values[:100]], 'truncated': len(values) > 100}
 
     def corpus_receipt(self, actor, project, name):
-        # One corpus by exact name (read authorization as `list_corpora`, or write: see below): what a client of `/v1` reads to learn the version a tool call
-        # that left `expected_version` out would have compared against. Unknown name or another actor's corpus: `NotFound`, like `rebuild_corpus` (no bound on the name here: the tool has none).
+        # One corpus by exact name, with the read authorization of `list_corpora`: what a client of `/v1` reads to learn the version a tool call that left
+        # `expected_version` out would have compared against. The name is validated like the tool's (`text`: blank, too long or NUL is 422), and every
+        # corpus operation needs `read` (`_corpus`), so a write-only key gets 403 here as it does on rebuild. Unknown name or another actor's corpus: `NotFound`.
+        text(name, 'name')
         with self.store.transaction() as c:
-            try:
-                self.store._require(c, actor, project, 'read')
-            except Forbidden:
-                self.store._require(c, actor, project, 'write')  # `rebuild_corpus` asks for write only: a key that may rebuild may read the version it compares
+            self.store._require(c, actor, project, 'read')
             row = c.execute('SELECT * FROM memory.agent_corpora WHERE project_id=%s AND actor_id=%s AND name=%s', (project, actor['id'], name)).fetchone()
             if not row:
                 raise NotFound()

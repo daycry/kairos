@@ -39,13 +39,13 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Integración continua (C-01) | 8 | 8 | 100% | 0 / 18.0h | 0 / 2.3h | 0 / 0.6h | 0 / 578 k |
 | Fase 2 — Servidor sin modelo de lenguaje (C-04) | 9 | 9 | 100% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
-| Fase 3 — Paridad REST /v1 (C-02) | 9 | 10 | 90% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
+| Fase 3 — Paridad REST /v1 (C-02) | 10 | 10 | 100% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 0 | 8 | 0% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 0 | 15 | 0% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **26** | **74** | **35.1%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **27** | **74** | **36.5%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -622,7 +622,7 @@ RED: `memory_platform/tests/test_no_llm.py` falló con AssertionError: 'beam:clo
 
 ## Fase 3 — Paridad REST /v1 (C-02)
 
-**Estado**: en-progreso · **Estimado**: 36.0h (30.0h base) · **Real**: — · **Coste est.**: 1.800 € · **Tokens est.**: 1282 k
+**Estado**: completado · **Estimado**: 36.0h (30.0h base) · **Real**: — · **Coste est.**: 1.800 € · **Tokens est.**: 1282 k
 
 ### T-18 — `POST …/corpora` acepta `date_start` y `date_end`
 
@@ -942,8 +942,9 @@ RED: `memory_platform/tests/test_contract_additive.py::ContractAdditiveTests::te
 ### T-27 — Revisión adversarial de la Fase 3
 
 - **Descripción**: Revisión adversarial: permisos de cada endpoint nuevo (lector, proyecto ajeno, clave sin permiso), fuga de datos entre proyectos, ruta nueva que pise una existente, diff aditivo trampa (campo `required` camuflado) y semántica distinta entre herramienta y endpoint. Fuente: retro, R-06.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: La paridad REST /v1 se revisó de forma adversarial en tres intentos (conformidad, defectos, permisos y el nginx del portal) sin hallazgos Critical ni Important abiertos.
+- **Estado**: completado
+- **Cerrada**: 2026-11-13
 - **Tiempo humano**: est. 10.0h (base) · real —
 - **Tiempo IA (ejec.)**: est. 1.37h (estimado) · real —
 - **Supervisión**: est. 0.34h (≈25 % IA) · real —
@@ -955,18 +956,19 @@ RED: `memory_platform/tests/test_contract_additive.py::ContractAdditiveTests::te
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t27 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
   - lectura: `review.md`, sección «Fase 3», sin hallazgos Critical/Important abiertos
+  - Evidencia (2026-11-13): `review.md` sección «Fase 3»; 3 intentos (A, B+D y C forzada; A y B; A+B y C). Intento 1: 1 Important (traducción de argumentos en `x-kairos-endpoint`) corregido en 16539ea. Intento 2: 1 Important (`rebuild_corpus` sin versión) corregido en 9030645. Intento 3: sin Critical/Important; tres Minor de seguridad (log con query string, lectura de corpus con clave de solo escritura, NUL → 503) los corrigió el orquestador en el commit de cierre. Suite tras el cierre: `MEMORY_TEST_RESULT` 609, 0 failures, 0 errors, 0 skipped, `llm_chat_calls` 0 (`kairos-test:i2p3close`, `docker run --network=none`). Contrato: 34 herramientas, solo `x-kairos-*`; OpenAPI solo añade rutas.
 
 **Criterios de aceptación**
-- [ ] `review.md` tiene la sección «Fase 3»
-- [ ] 0 hallazgos Critical o Important abiertos
-- [ ] Suite completa y diff aditivo en verde
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] `review.md` tiene la sección «Fase 3»
+- [x] 0 hallazgos Critical o Important abiertos
+- [x] Suite completa y diff aditivo en verde
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar — EXCEPCIÓN: los intentos de revisión no se midieron con usage-meter; los tokens de los revisores constan solo en la telemetría de los subagentes (estimado)
 
 **Subtareas**
-- [ ] Probar cada endpoint con las tres credenciales de prueba
-- [ ] Comparar rutas antes y después de la fase
-- [ ] Cerrar hallazgos
-- [ ] `usage-meter start/close` por intento
+- [x] Probar cada endpoint con las tres credenciales de prueba
+- [x] Comparar rutas antes y después de la fase
+- [x] Cerrar hallazgos
+- [x] `usage-meter start/close` por intento — EXCEPCIÓN: ver el criterio anterior
 
 **Notas**: Procedencia: retro. No escribe en `testing/`.
 
@@ -2523,3 +2525,19 @@ Veredicto: **1 Important abierto** → vuelve al implementador (intento 3 de 3, 
 | 4 | Minor | Faltaba el run de CI de las correcciones en el ledger | T-24, T-25 | corregido (este veredicto) | run 43263594083 |
 | 5 | Minor | El nginx del portal (`location /memory-api/`, `proxy_pass` con URI) decodifica `%2F` y resuelve `//` y `..`: nombres de corpus como `a/../b` llegan como `b` (solo dentro del mismo actor; por `/v1/` llegan intactos). Antes daban 404 | T-22 | corregido (9030645): `/memory-api/` reescribe `$request_uri` y pasa la URI sin normalizar; sonda `nginx_portal_probe.py` (15 casos) y test estático `test_nginx_portal.py` | Lente B: `memory_platform/nginx.conf`, `web/src/memory-api.ts:36`; probado con `kairos-web` y un eco |
 | 6 | Minor | El exportador con Python 3.11 (el de la imagen) genera `description` sin dedent y no coincide con el `kairos-mcp.json` comiteado (generado con 3.13): la regeneración no es reproducible en la imagen | T-24 | descartado (rebatido): el trabajo `contracts` de la CI fija Python 3.13 (`.github/workflows/ci.yml:128`) y regenera con `scripts/export-contracts.py` (`:135`); la regeneración es reproducible donde se comprueba. La imagen de test no regenera contratos | Lente A (fuera de lente) |
+
+## Revisión de dos lentes — intento 3: Fase 3 (paridad REST /v1) — correcciones del intento 2 (T-22, T-24, T-25)
+
+Veredicto: **sin Critical ni Important; la Fase 3 cierra en el intento 3 de 3**. Lentes: A+B en un revisor y C (el selector la activa por `memory_platform/nginx.conf`; D solo por la ruta del exportador, cubierta en A+B). A+B: la lectura por nombre resuelve el corte de 100, el NotFound y la carrera (las versiones solo crecen; `only_if_value_changed` separa el 409 real del de carrera); contrato idéntico a 33fd830 salvo `x-kairos-*`; OpenAPI solo añade `/corpus`; `scope-check --base 33fd830` exit 0; CI 43421685383 y 43422142841 en verde (5/5). C: 54 peticiones crudas contra el nginx fijado (1.31.6) con la conf nueva y la de 606c305: sin smuggling, sin inyección de cabeceras, sin traversal; `/metrics` cerrado en todas las grafías; `/v1/`, `/mcp` y `/health/ready` idénticas. Suite tras las correcciones del orquestador: 609, 0 skipped, `llm_chat_calls` 0.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Minor | La lectura previa de `rebuild_corpus` invierte el orden de errores de la herramienta: clave de solo lectura con nombre inexistente → REST 404, herramienta 403 | T-24 | deuda aceptada (los casos con éxito coinciden; afecta solo al código de error) | Lente A+B: `agent_store.py:249-255` frente a `:223,288` |
+| 2 | Minor | Nombre en blanco, de más de 200 bytes o con NUL en `GET …/corpus` → 404 o 503 en vez del 422 de la herramienta | T-24 | corregido (commit de cierre): `corpus_receipt` valida el nombre con `text()` como la herramienta; test con NUL, blanco y `'é'*150` → 422 | Lente A+B: `agent_store.py:253`, `app.py:117-120` |
+| 3 | Minor | `GET …/corpus` aceptaba una clave con solo `write`; ninguna otra operación de corpus lo permite (CWE-863) | T-24 | corregido (commit de cierre): exige `read`; test con clave `['write']` → 403 `forbidden` | Lente C: `agent_store.py:249-252` |
+| 4 | Minor | El access log `safe` guardaba la query string de `/memory-api/` (el `rewrite` mete `?args` en `$uri`) (CWE-532) | T-22 | corregido (commit de cierre): `map $request_uri $safe_path` sin query; test estático en `test_nginx_portal.py` | Lente C: `nginx.conf:7,48`, comprobado en el log |
+| 5 | Minor | `untranslatable` de `expected_version: 0` responde 409 sin llamar, aunque la herramienta daría 404/403/422 según corpus y permiso | T-24 | deuda aceptada (caso degenerado: la herramienta tampoco puede tener éxito) | Lente A+B: `export-contracts.py:81-83` |
+| 6 | Minor | `max:3` deja un caso (cuatro rebuilds que cambian el contenido entre lectura y POST) en que la herramienta tiene éxito y REST da 409; no documentado | T-24 | deuda aceptada (para kairos-mcp, T-41..T-44, que puede documentarlo o elevar el tope) | Lente A+B: `kairos-mcp.json` 2042-2047 |
+| 7 | Minor | Tests que prometen más de lo que comprueban: `…hides_other_actors` sin segundo actor; `perform` no lee `reread`/`only_if_value_changed`; el 409 real solo con servidor guionizado | T-25 | deuda aceptada (para T-47/T-48, la cadena completa MCP→REST) | Lente A+B: `test_tool_endpoint_parity.py:494-500,131-161` |
+| 8 | Minor | El ledger no recogía el run 43422142841 | T-24, T-25 | corregido (este veredicto) | `gh run view`: 5/5 en verde |
+| 9 | Minor | Rutas que antes se normalizaban (`/x/../memory-api/...`, `//memory-api/...`) ahora dan 400 | T-22 | aceptado: cambio funcional deliberado, sin impacto de seguridad; el portal no genera esas rutas | Lente C (fuera de lente) |

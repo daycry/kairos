@@ -499,6 +499,11 @@ class ToolEndpointParityTests(unittest.TestCase):
         self.assertEqual(s.rest('GET', s.prefix + '/corpus')[0], 422)
         self.assertEqual(s.client.get(s.prefix + '/corpus', params={'name': 'c1'}).status_code, 401)  # no credential
         self.assertEqual(s.client.get('/v1/projects/not-a-project/corpus', params={'name': 'c1'}, headers=s.headers).status_code, 404)
+        for bad in ('a\x00b', '   ', 'é' * 150):  # validated like the tool's name: 422, never a 503 from the database
+            self.assertEqual(s.rest('GET', s.prefix + '/corpus', params={'name': bad})[0], 422, repr(bad))
+        writer = s.store.create_key(s.admin, {'name': 'write only', 'project_ids': [s.pid], 'scopes': ['write']})
+        response = s.client.get(s.prefix + '/corpus', params={'name': 'team/search'}, headers={'Authorization': 'Bearer ' + writer['token']})
+        self.assertEqual((response.status_code, response.json()['error']['code']), (403, 'forbidden'))  # every corpus operation needs read
 
     def test_a_rebuild_that_lands_between_the_read_and_the_post_is_retried_like_the_tool_that_never_conflicts(self):
         s = self.scenario

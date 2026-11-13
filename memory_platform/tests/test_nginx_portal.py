@@ -31,6 +31,11 @@ class PortalNginxTests(unittest.TestCase):
         self.assertEqual(len(proxy), 1)
         self.assertNotRegex(proxy[0], r'proxy_pass http://[^$;]+/;', 'a proxy_pass with a literal URI normalizes the path')
 
+    def test_the_access_log_leaves_the_query_string_out(self):
+        self.assertIn("log_format safe '$request_method $safe_path $status';", CONF)
+        self.assertIn('map $request_uri $safe_path { ~^(?<path>[^?]*) $path;', CONF)
+        self.assertNotRegex(CONF, r"log_format[^;]*\$(uri|request_uri|args|query_string)[ ';]")
+
     def test_the_named_group_points_at_the_api(self):
         self.assertRegex(CONF, r'upstream memory_api \{ server memory-api:8790; \}')
 

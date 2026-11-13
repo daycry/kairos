@@ -49,3 +49,24 @@ Las cinco deudas del intento 3 exigen editar el workflow a propósito, y cualqui
 | 1 | Minor | Docstring desplazado en `test_fts_language.py`; trabajos `unknown` reintentados sin test | Corregidos |
 | 2 | Minor | El reintento con la función apagada no comparaba la huella de la petición; el test de acceso denegado no probaba un segundo actor real; la documentación no lo describía | Corregidos |
 | 3 | Minor | La huella incluye `MEMORY_LLM_MODEL`: si se vacía al apagar, el reintento da conflicto | Deuda aceptada; documentado, con `corpus_answer_status` como vía de lectura |
+
+## Fase 3 — Paridad REST /v1 (T-18 a T-26)
+
+- **Fecha**: 2026-11-13
+- **Lentes**: intento 1, A, B (con rendimiento) y C (forzada: endpoints nuevos con autorización); intento 2, A y B (con la seguridad del enrutado `{name:path}`); intento 3, A+B y C (activada por `nginx.conf`).
+- **Veredicto**: cerrada en el intento 3 de 3, sin hallazgos Critical ni Important abiertos.
+- **Evidencia**:
+  - Suite: 573 tests al implementar, 591 tras el intento 1, 608 tras el intento 2 y 609 al cerrar; 0 omitidos y 0 llamadas a `/api/chat`.
+  - CI en verde en los runs 43255304400, 43263594083, 43421685383 y 43422142841.
+  - Contrato MCP: 34 herramientas idénticas; solo se añaden `x-kairos-endpoint` (con la traducción de cada argumento) y `x-kairos-translation`. OpenAPI: solo rutas nuevas. La línea base de contratos de 23ced03 se conserva byte a byte.
+  - Seguridad: sin IDOR ni enumeración en los endpoints nuevos; el nginx del portal probado con 54 peticiones crudas, sin smuggling ni traversal, y `/metrics` cerrado.
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Important | `x-kairos-endpoint` no describía cómo se traducen los argumentos (`includeClosed` se ignoraba en silencio, fechas con 422); el test de paridad escribía la petición REST a mano | Corregido: reglas por argumento y traductor genérico en el test |
+| 1 | Minor | Fechas extremas con 503; paridad trivial de `get_tool_uses` y `corpus_answer_status`; nombres de corpus con `/` inalcanzables por REST | Corregidos |
+| 1 | Minor | Las lecturas REST de observaciones no tienen tope de bytes | Deuda planificada para kairos-mcp (T-41 a T-44) |
+| 2 | Important | `rebuild_corpus` sin versión leía de una lista cortada en 100, sin regla para el corpus inexistente ni para la carrera | Corregido: `GET …/corpus?name=` y regla de reintento |
+| 2 | Minor | Gramática de `event_status` sin proyecto y `expected_version: 0` sin documentar en el contrato; el nginx del portal normalizaba `a/../b` | Corregidos |
+| 3 | Minor | Log de nginx con la query string; lectura de corpus con clave de solo escritura; nombre con NUL → 503 | Corregidos al cerrar |
+| 3 | Minor | Orden de errores distinto en casos de error de `rebuild_corpus`; `expected_version: 0` responde 409 sin llamar; `max:3` de reintentos; tests con menos alcance del que dicen | Deuda aceptada (Fase 5, T-41 a T-48) |
