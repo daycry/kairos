@@ -54,6 +54,17 @@ class ProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls[0]['model'], 'fixture-model')
         self.assertIn('properties', calls[0]['format'])
 
+    async def test_extraction_never_offers_nor_keeps_structured(self):
+        # Gap 3 of the phase 4 review: `structured` belongs to the client and is validated on ingest; the model neither sees nor returns it.
+        import json
+        calls = []
+        def respond(request):
+            calls.append(json.loads(request.content))
+            return httpx.Response(200, json={'message': {'content': canonical({'title': 'x', 'content': 'x', 'structured': {'schema_version': 'observation.v1'}})}})
+        extracted = await Ollama(Settings('unused'), httpx.MockTransport(respond)).extract({'content': 'x'})
+        self.assertNotIn('structured', calls[0]['format']['properties'])
+        self.assertNotIn('structured', extracted['payload'])
+
     async def test_ollama_cannot_validate_knowledge(self):
         def respond(request):
             return httpx.Response(200, json={'message': {'content': canonical({'title': 'x', 'content': 'x', 'validation_status': 'validated'})}})
