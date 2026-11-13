@@ -4,5 +4,6 @@ uvicorn[standard]==0.46.0
 httpx==0.28.1
 psycopg[binary]==3.3.7
 mcp==1.27.1
+jsonschema==4.26.0
 PyYAML==6.0.3
 prometheus_client==0.23.1

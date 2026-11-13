@@ -6,6 +6,8 @@ COPY memory_platform/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt \
     && useradd --create-home --uid 10001 memory
 COPY --chown=10001:10001 memory_platform /app/memory_platform
+# JSON Schemas of structured observations (C-05): memory_platform/schemas.py reads them from docs/contracts next to the package.
+COPY --chown=10001:10001 docs/contracts/*.schema.json /app/docs/contracts/
 USER 10001:10001
 EXPOSE 8790
 ENTRYPOINT ["python", "-m", "memory_platform.app"]
@@ -38,6 +40,8 @@ COPY memory_platform/requirements.txt /tmp/memory-requirements.txt
 RUN pip install --no-cache-dir -r /tmp/memory-requirements.txt
 WORKDIR /app
 COPY --chown=postgres:postgres memory_platform /app/memory_platform
+COPY --chown=postgres:postgres docs/contracts/*.schema.json /app/docs/contracts/
+COPY --chown=postgres:postgres docs/contracts/examples /app/docs/contracts/examples
 COPY --chown=postgres:postgres scripts/memory-client.py /app/scripts/memory-client.py
 COPY --chown=postgres:postgres scripts/memory-admin.py /app/scripts/memory-admin.py
 COPY --chown=postgres:postgres scripts/deploy-memory.py /app/scripts/deploy-memory.py
