@@ -242,6 +242,19 @@ class AgentStore:
             values = c.execute('SELECT * FROM memory.agent_corpora WHERE project_id=%s AND actor_id=%s ORDER BY name LIMIT 101', (project, actor['id'])).fetchall()
             return {'project': project, 'items': [self._receipt(c, row) for row in values[:100]], 'truncated': len(values) > 100}
 
+    def corpus_receipt(self, actor, project, name):
+        # One corpus by exact name (read authorization as `list_corpora`, or write: see below): what a client of `/v1` reads to learn the version a tool call
+        # that left `expected_version` out would have compared against. Unknown name or another actor's corpus: `NotFound`, like `rebuild_corpus` (no bound on the name here: the tool has none).
+        with self.store.transaction() as c:
+            try:
+                self.store._require(c, actor, project, 'read')
+            except Forbidden:
+                self.store._require(c, actor, project, 'write')  # `rebuild_corpus` asks for write only: a key that may rebuild may read the version it compares
+            row = c.execute('SELECT * FROM memory.agent_corpora WHERE project_id=%s AND actor_id=%s AND name=%s', (project, actor['id'], name)).fetchone()
+            if not row:
+                raise NotFound()
+            return self._receipt(c, row)
+
     def build_corpus(self, actor, project, name, description='', **filters):
         text(name, 'name')
         text(description, 'description', 2000, True)

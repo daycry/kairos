@@ -49,7 +49,7 @@ ENDPOINTS = {
     'event_status': ('GET', P + '/events/{event_id}/status', {'event_id': path('event_id'), 'project_id': path('project_id')},
                      {'without_project_id': {
                          'receipt': {'method': 'GET', 'path': '/v1/events/{event_id}', 'args': {'event_id': path('event_id')}},
-                         'jobs': {'for_each': 'receipt.jobs', 'method': 'GET', 'path': '/v1/jobs/{job_id}'},
+                         'jobs': {'for_each': 'receipt.jobs', 'method': 'GET', 'path': '/v1/jobs/{job_id}', 'args': {'job_id': path('job_id')}},
                          'result': {'receipt': {'from': 'receipt'}, 'jobs': {'from': 'jobs'},
                                     'complete': {'all_of': [{'path': 'receipt.status', 'is_not': 'superseded'},
                                                             {'each': 'jobs', 'path': 'state', 'is': 'succeeded'}]}}}}),
@@ -67,12 +67,20 @@ ENDPOINTS = {
                                  'dateStart': body('date_start'), 'dateEnd': body('date_end')}),
     'list_corpora': ('GET', C, PROJECT),
     # The endpoint requires `expected_version` (>= 1, a field the published schema already marks `required`, which cannot be relaxed
-    # additively); the tool makes it optional. So a call without it first reads the corpus' current version (`when_absent`): the same guard
-    # the endpoint wants, with the version the tool would have compared against. `expected_version: 0` is not translatable (the tool answers a
-    # conflict because no corpus has version 0, the endpoint refuses the value with 422): both refuse.
+    # additively); the tool makes it optional and, without it, rebuilds whatever version the corpus has (it only takes the row lock). So a call
+    # without it (absent or null) reads the corpus by name (`GET .../corpus?name=`, not the list: that one stops at 100) and sends that version:
+    # the same guard the endpoint wants, with the version the tool would have compared against. An unknown name is the 404 of the tool: the
+    # error of the read is the answer of the call. A rebuild that lands between the read and the POST makes the POST answer 409; the tool has
+    # no such conflict, so the client reads again and, only if the version changed, sends again (`retry`); an unchanged version means the
+    # 409 is real (a rebuild that would remove more than half the corpus without `force`) and it is the answer. `untranslatable`: a value
+    # the endpoint cannot receive, answered by the client without a call.
     'rebuild_corpus': ('POST', C + '/{name}/rebuild', {**CORPUS, **same('body', 'force'), 'expected_version': body('expected_version', when_absent={
-        'read': {'method': 'GET', 'path': C, 'args': {'project': path('project_id')}},
-        'pick': {'from': 'items', 'where': {'name': {'arg': 'name'}}, 'take': 'version'}})}),
+        'read': {'method': 'GET', 'path': P + '/corpus', 'args': {'project': path('project_id'), 'name': query('name')}},
+        'take': 'version', 'on_read_error': 'answer',
+        'retry': {'on_status': 409, 'reread': True, 'only_if_value_changed': True, 'max': 3}})},
+        {'untranslatable': [{'argument': 'expected_version', 'value': 0,
+                             'reason': 'the endpoint refuses a version below 1 with 422, the tool answers a conflict because no corpus has version 0',
+                             'answer': {'status': 409, 'error': {'code': 'conflict', 'message': 'Corpus version changed'}}}]}),
     'prime_corpus': ('POST', C + '/{name}/prime', CORPUS),
     'reprime_corpus': ('POST', C + '/{name}/prime', CORPUS, {'fixed': [{'in': 'body', 'name': 'fresh', 'value': True}]}),
     'query_corpus': ('POST', C + '/{name}/query', {**CORPUS, **same('body', 'question', 'limit')}),
@@ -96,7 +104,9 @@ TRANSLATION = [
     'Each tool argument that is present and not null is placed by its entry in `args`: `in: path` replaces `{name}` in the path with the value URL-encoded in full (a `/` becomes `%2F`), `in: query` adds a query parameter, `in: body` adds a JSON body field; an `in: body` entry without `name` makes the value the whole body.',
     'An absent or null argument is omitted: the server applies its default. A boolean query value is written `true` or `false`; a list query value repeats the parameter.',
     '`transform: csv-list` turns a string into a list (split on commas, trimmed, empties dropped, duplicates removed) and passes a list as it is.',
-    '`when_absent` fills an argument the call left out: `read` is one request (same rules, over the arguments of the call), `pick` takes `take` from the item of its `from` list whose fields equal `where` (`{arg: x}` is the value of the tool argument `x`).',
+    '`when_absent` fills an argument that is absent or null (both count as omitted): `read` is one request (same rules, over the arguments of the call that it names in its `args`), `take` is the field of its JSON answer that becomes the argument. `on_read_error: answer` means a read that fails answers the call with that status and error. `retry` (`on_status`, `reread`, `only_if_value_changed`, `max`): if the request carrying a value obtained with `when_absent` answers that status, read again; if the value read differs from the one sent, send the request again with it (at most `max` more times), otherwise the answer is the real one.',
+    '`untranslatable` lists argument values that the endpoint cannot receive: the client does not call and answers with `answer` (`status` and `error`).',
+    '`without_project_id` (`event_status` without `project_id`) is a composition. Step `receipt` is one request as any entry. Step `jobs` is repeated: `for_each` is a dotted path into the scope (`receipt` is the answer of the first step), each element is the value of the argument its `args` names (`job_id`), and the answers form the list `jobs` (a failed request answers the call). `result` builds the answer: each key is `{from: receipt|jobs}` (that value as it is) or `{all_of: [condition, ...]}`, a boolean true when every condition holds; a condition is `{path, is}` (the value at the dotted `path` of the scope equals `is`), `{path, is_not}` (it differs) or `{each, path, is}` (every item of the list `each` has, at `path`, the value `is`; an empty list holds).',
     '`fixed` entries are always added (`in: body`, `name`, `value`). A POST or PUT always carries a JSON object body, `{}` when no field is set.',
     'The response of the endpoint is the result of the tool; an error status carries `{"error": {"code", "message"}}`.',
 ]

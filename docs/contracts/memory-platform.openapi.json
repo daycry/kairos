@@ -3080,6 +3080,52 @@
         "summary": "Rebuild Corpus"
       }
     },
+    "/v1/projects/{project_id}/corpus": {
+      "get": {
+        "operationId": "kairos_corpus",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Corpus"
+      }
+    },
     "/v1/projects/{project_id}/documents": {
       "post": {
         "operationId": "memory_publish_document",

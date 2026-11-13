@@ -5,7 +5,7 @@ private work, a tool-use summary, a saved answer). For every tool the test calls
 that the `x-kairos-endpoint` of the exported contract says that call becomes, with one writer key, and compares what comes back.
 The request is NOT written by hand: `translate` is a small generic translator that builds it from the MCP arguments of the case and
 from the contract alone (where each argument goes, under which name, the fixed values, the composition of `event_status` without a
-project). So the contract is only as good as what this test can do with it, which is what a client of `/v1` (kairos-mcp) will have.
+project, the read of a missing `expected_version` and its retry). So the contract is only as good as what this test can do with it, which is what a client of `/v1` (kairos-mcp) will have.
 
 The comparison is the content: the MCP byte budget (`render`) and the additive fields of the untrusted-data envelope (S-05, C-03) are
 the only differences allowed, and neither is produced yet. Operations that write are idempotent by design (a retry returns the same
@@ -110,6 +110,48 @@ def holds(condition, scope):
     return value == condition['is'] if 'is' in condition else value != condition['is_not']
 
 
+def read_missing(rule, arguments, rest):
+    """`when_absent`: the values of the arguments the call left out (absent or null), each one read as the contract says. `(values, None)`, or
+    `(None, (status, body))` when a read fails, which `on_read_error: answer` makes the answer of the call."""
+    values = {}
+    for argument, where in rule['args'].items():
+        if 'when_absent' in where and arguments.get(argument) is None:
+            how = where['when_absent']
+            method, path, kwargs = translate(how['read'], {key: value for key, value in arguments.items() if key in how['read']['args']})
+            status, read = rest(method, path, **kwargs)
+            if status >= 400:
+                assert how['on_read_error'] == 'answer', how
+                return None, (status, read)
+            values[argument] = read[how['take']]
+    return values, None
+
+
+def perform(rule, arguments, rest, between=None):
+    """What a client of `/v1` does with one call, from the contract alone: `untranslatable` values are answered without a call; `when_absent`
+    values are read and sent; a `retry` status with a value that changed since the read sends the request again. `between` is called after each
+    read and before the request (a test hook: the concurrent change). Returns `(status, body)`."""
+    for refused in rule.get('untranslatable', []):
+        value = arguments.get(refused['argument'])
+        if value is not None and value == refused['value'] and type(value) is type(refused['value']):
+            return refused['answer']['status'], {'error': refused['answer']['error']}
+    retry = next((where['when_absent'].get('retry') for where in rule['args'].values() if 'when_absent' in where), None)
+    sent = last = None
+    for _ in range(1 + (retry['max'] if retry else 0)):
+        values, failed = read_missing(rule, arguments, rest)
+        if failed:
+            return failed
+        if last is not None and values == sent:
+            return last  # nothing changed since the last request: the conflict is real
+        sent = values
+        if between:
+            between()
+        method, path, kwargs = translate(rule, {**arguments, **values})
+        last = rest(method, path, **kwargs)
+        if not values or retry is None or last[0] != retry['on_status']:
+            return last
+    return last
+
+
 class Scenario:
     """The seeded project and the credential every case uses."""
 
@@ -152,6 +194,7 @@ class Scenario:
         assert self.rest('POST', self.prefix + '/corpora', json={'name': 'c-rebuild', 'query': 'index'})[0] == 200  # a filter the other cases never change
         assert self.rest('POST', self.prefix + '/corpora', json={'name': 'team/search', 'query': 'fencing'})[0] == 200  # a name with a `/`, sent as `%2F`
         assert self.rest('POST', self.prefix + '/corpora/team%2Fsearch/prime', json={})[0] == 200
+        assert self.rest('POST', self.prefix + '/corpora', json={'name': 'zz-late', 'query': 'index'})[0] == 200  # sorts after any filler of the 100-corpus test
         for name in ('c-reprime-tool', 'c-reprime-rest'):
             assert self.rest('POST', self.prefix + '/corpora', json={'name': name, 'query': 'fencing'})[0] == 200
             assert self.rest('POST', self.prefix + '/corpora/' + name + '/prime', json={})[0] == 200
@@ -197,27 +240,11 @@ class Scenario:
     def view(self, status, body):
         return ('error', body['error']['message']) if status >= 400 else ('ok', body)
 
-    def endpoint(self, rule, arguments):
+    def endpoint(self, rule, arguments, between=None):
         """What the contract says a call of the tool becomes, performed: one request, or the composition of `event_status` without a project."""
         if 'without_project_id' in rule and arguments.get('project_id') is None:
             return self.composed(rule['without_project_id'], arguments)
-        method, path, kwargs = translate(rule, self.filled(rule, arguments))
-        return self.view(*self.rest(method, path, **kwargs))
-
-    def filled(self, rule, arguments):
-        """The arguments with the ones the call left out and the contract says how to obtain (`when_absent`): one read, then a pick from its answer."""
-        arguments = dict(arguments)
-        for argument, where in rule['args'].items():
-            if 'when_absent' in where and arguments.get(argument) is None:
-                how = where['when_absent']
-                method, path, kwargs = translate(how['read'], {key: value for key, value in arguments.items() if key in how['read']['args']})
-                status, read = self.rest(method, path, **kwargs)
-                assert status < 400, (argument, read)
-                wanted = {key: arguments[value['arg']] for key, value in how['pick']['where'].items()}
-                found = [item for item in read[how['pick']['from']] if all(item[key] == value for key, value in wanted.items())]
-                assert len(found) == 1, (argument, wanted, found)
-                arguments[argument] = found[0][how['pick']['take']]
-        return arguments
+        return self.view(*perform(rule, arguments, self.rest, between))
 
     def composed(self, rule, arguments):
         method, path, kwargs = translate(rule['receipt'], arguments)
@@ -226,7 +253,8 @@ class Scenario:
             return self.view(status, receipt)
         scope = {'receipt': receipt, 'jobs': []}
         for job_id in lookup(scope, rule['jobs']['for_each']):
-            status, job = self.rest(rule['jobs']['method'], rule['jobs']['path'].replace('{job_id}', quote(job_id, safe='')))
+            method, path, kwargs = translate(rule['jobs'], {'job_id': job_id})
+            status, job = self.rest(method, path, **kwargs)
             if status >= 400:
                 return self.view(status, job)
             scope['jobs'].append(job)
@@ -295,6 +323,11 @@ def cases(s):
         # `expected_version` is optional in the tool, required by the endpoint: the contract says to read the current version when it is left out
         ('rebuild_corpus', 'rebuild_corpus', {'project': P, 'name': 'c-rebuild'}, {}),
         ('rebuild_corpus_guarded', 'rebuild_corpus', {'project': P, 'name': 'c-rebuild', 'expected_version': 1}, {}),
+        # an explicit null is as absent as an omitted argument; a name the actor does not have is the tool's NotFound on both sides; 0 is not translatable
+        ('rebuild_corpus_null', 'rebuild_corpus', {'project': P, 'name': 'c-rebuild', 'expected_version': None}, {}),
+        ('rebuild_corpus_missing', 'rebuild_corpus', {'project': P, 'name': 'no-such-corpus'}, {'error': True, 'contains': 'not found'}),
+        ('rebuild_corpus_zero', 'rebuild_corpus', {'project': P, 'name': 'c-rebuild', 'expected_version': 0}, {'error': True, 'contains': 'Corpus version changed'}),
+        ('rebuild_corpus_late', 'rebuild_corpus', {'project': P, 'name': 'zz-late'}, {}),
         ('rebuild_corpus_slash', 'rebuild_corpus', {'project': P, 'name': 'team/search'}, {}),
         ('prime_corpus', 'prime_corpus', {'project': P, 'name': 'c1'}, {}),
         # a new session each time: the tool and the endpoint act on twin corpora, and the identity fields (name, id, session) are not content
@@ -405,11 +438,13 @@ class ToolEndpointParityTests(unittest.TestCase):
                 if 'when_absent' in where:
                     read = where['when_absent']['read']
                     self.assertIsNotNone(openapi['paths'].get(read['path'], {}).get(read['method'].lower()), name)
-                    self.assertEqual(set(read['args']), {'project'}, name)
+                    self.assertEqual(set(read['args']), {'project', 'name'}, name)
+                    self.assertEqual(where['when_absent']['take'], 'version', name)
             if 'without_project_id' in rule:
                 step = rule['without_project_id']['receipt']
                 self.assertIsNotNone(openapi['paths'].get(step['path'], {}).get(step['method'].lower()), name)
                 self.assertIsNotNone(openapi['paths'].get(rule['without_project_id']['jobs']['path'], {}).get('get'), name)
+                self.assertEqual(set(rule['without_project_id']['jobs']['args']), {'job_id'}, name)
 
     def mutated(self, label, edit, fresh=False):
         """A contract that assigns arguments by name, or leaves out a rule, fails the comparison: the cases do not pass by coincidence."""
@@ -439,11 +474,112 @@ class ToolEndpointParityTests(unittest.TestCase):
     def test_a_rebuild_without_the_version_the_contract_reads_is_refused_by_the_endpoint(self):
         self.mutated('rebuild_corpus', lambda rule: rule['args']['expected_version'].pop('when_absent'))
 
+    def test_a_rebuild_without_the_version_finds_a_corpus_beyond_the_first_hundred_of_the_list(self):
+        """The list stops at 100 corpora (sorted by name); the read by name does not. The fillers are inserted directly (the budget is 32) and removed."""
+        s = self.scenario
+        with s.store.transaction() as c:
+            actor = c.execute("SELECT actor_id FROM memory.agent_corpora WHERE project_id=%s AND name='zz-late'", (s.pid,)).fetchone()['actor_id']
+            for number in range(105):
+                c.execute("INSERT INTO memory.agent_corpora(id,project_id,actor_id,name,description,filters,version,canonical_hash) VALUES(%s,%s,%s,%s,'','{}'::jsonb,1,'x')",
+                          ('filler-' + uuid.uuid4().hex, s.pid, actor, 'a-filler-%03d' % number))
+        try:
+            listed = s.rest('GET', s.prefix + '/corpora')[1]
+            self.assertTrue(listed['truncated'])
+            self.assertNotIn('zz-late', [item['name'] for item in listed['items']])  # the corpus is NOT in the first page
+            self.check('rebuild_corpus_late')
+        finally:
+            with s.store.transaction() as c:
+                c.execute("DELETE FROM memory.agent_corpora WHERE project_id=%s AND name LIKE 'a-filler-%%'", (s.pid,))
+
+    def test_a_missing_name_is_the_tools_not_found_and_the_read_endpoint_hides_other_actors(self):
+        s = self.scenario
+        status, body = s.rest('GET', s.prefix + '/corpus', params={'name': 'no-such-corpus'})
+        self.assertEqual((status, body['error']['code']), (404, 'not_found'))
+        self.assertEqual(s.rest('GET', s.prefix + '/corpus', params={'name': 'team/search'})[1]['name'], 'team/search')  # any character, `/` included
+        self.assertEqual(s.rest('GET', s.prefix + '/corpus')[0], 422)
+        self.assertEqual(s.client.get(s.prefix + '/corpus', params={'name': 'c1'}).status_code, 401)  # no credential
+        self.assertEqual(s.client.get('/v1/projects/not-a-project/corpus', params={'name': 'c1'}, headers=s.headers).status_code, 404)
+
+    def test_a_rebuild_that_lands_between_the_read_and_the_post_is_retried_like_the_tool_that_never_conflicts(self):
+        s = self.scenario
+        name = 'c-race-' + uuid.uuid4().hex[:8]
+        self.assertEqual(s.rest('POST', s.prefix + '/corpora', json={'name': name, 'query': 'index'})[0], 200)
+        bumps = []
+
+        def concurrent():  # another rebuild changed the corpus after the read (once)
+            if not bumps:
+                bumps.append(1)
+                with s.store.transaction() as c:
+                    c.execute("UPDATE memory.agent_corpora SET version=version+1 WHERE project_id=%s AND name=%s", (s.pid, name))
+
+        rule = self.declared['rebuild_corpus']
+        status, value = s.endpoint(rule, {'project': s.pid, 'name': name}, concurrent)
+        self.assertEqual((bumps, status, value['version']), ([1], 'ok', 2))
+        tool_status, tool_value = s.tool('rebuild_corpus', {'project': s.pid, 'name': name})
+        self.assertEqual((tool_status, tool_value), ('ok', value))  # the tool, over the same state, answers the same receipt
+        # without the retry rule the same race is the 409 the tool does not have
+        bumps.clear()
+        without = copy.deepcopy(rule)
+        del without['args']['expected_version']['when_absent']['retry']
+        self.assertEqual(s.endpoint(without, {'project': s.pid, 'name': name}, concurrent)[0], 'error')
+
     def test_an_argument_the_contract_forgot_is_an_error(self):
         rule = copy.deepcopy(self.declared['work_state_read'])
         del rule['args']['includeClosed']
         with self.assertRaises(AssertionError):
             self.check('work_state_read', rule)
+
+
+class RetryRuleTests(unittest.TestCase):
+    """The `retry` rule of `rebuild_corpus` over a scripted server (no database): when it sends again, how many times, and when it stops."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.rule = declared_endpoints()['rebuild_corpus']
+
+    def run_rule(self, versions, posted, arguments=None):
+        reads, posts = [], []
+
+        def rest(method, path, **kwargs):
+            if method == 'GET':
+                reads.append(path)
+                if isinstance(versions, tuple):
+                    return versions
+                return 200, {'version': versions[min(len(reads), len(versions)) - 1]}
+            posts.append(kwargs['json'])
+            return posted(len(posts))
+
+        result = perform(self.rule, arguments or {'project': 'p', 'name': 'a/b'}, rest)
+        return result, reads, posts
+
+    def test_the_version_read_by_name_is_sent(self):
+        result, reads, posts = self.run_rule([4], lambda n: (200, {'version': 4}))
+        self.assertEqual((result, posts), ((200, {'version': 4}), [{'expected_version': 4}]))
+        self.assertEqual(reads, ['/v1/projects/p/corpus'])
+
+    def test_a_changed_version_is_sent_again_at_most_three_more_times(self):
+        result, reads, posts = self.run_rule([1, 2, 3, 4, 5, 6], lambda n: (409, {'error': {'message': 'Corpus version changed'}}))
+        self.assertEqual(result[0], 409)
+        self.assertEqual([post['expected_version'] for post in posts], [1, 2, 3, 4])
+        self.assertEqual(len(reads), 4)
+
+    def test_a_conflict_with_an_unchanged_version_is_the_answer_without_a_second_post(self):
+        result, reads, posts = self.run_rule([7], lambda n: (409, {'error': {'message': 'Rebuild would remove more than half the corpus'}}))
+        self.assertEqual((result[0], len(posts), len(reads)), (409, 1, 2))
+
+    def test_a_race_that_settles_is_a_success(self):
+        result, reads, posts = self.run_rule([1, 2], lambda n: (409, {}) if n == 1 else (200, {'version': 2}))
+        self.assertEqual((result, [post['expected_version'] for post in posts]), ((200, {'version': 2}), [1, 2]))
+
+    def test_a_failed_read_is_the_answer_and_nothing_is_posted(self):
+        result, reads, posts = self.run_rule((404, {'error': {'code': 'not_found'}}), lambda n: (200, {}))
+        self.assertEqual((result[0], posts), (404, []))
+
+    def test_a_given_version_is_sent_as_it_is_and_zero_is_answered_without_a_call(self):
+        result, reads, posts = self.run_rule([9], lambda n: (200, {}), {'project': 'p', 'name': 'c', 'expected_version': 3})
+        self.assertEqual((reads, posts), ([], [{'expected_version': 3}]))
+        result, reads, posts = self.run_rule([9], lambda n: (200, {}), {'project': 'p', 'name': 'c', 'expected_version': 0})
+        self.assertEqual((result[0], reads, posts), (409, [], []))
 
 
 def make_case(label):
@@ -458,7 +594,7 @@ def _label_names():
     return ('projects', 'remember', 'capture_policy', 'event_status', 'event_status_without_project', 'event_status_superseded', 'publish_document',
             'document_status', 'document_manifest', 'revoke_document', 'search', 'details', 'context', 'timeline', 'work_state_write', 'work_state_read',
             'work_state_read_open', 'build_corpus', 'build_corpus_types_text', 'list_corpora', 'rebuild_corpus', 'rebuild_corpus_guarded',
-            'rebuild_corpus_slash', 'prime_corpus', 'reprime_corpus', 'query_corpus', 'query_corpus_slash', 'get_observations',
+            'rebuild_corpus_null', 'rebuild_corpus_missing', 'rebuild_corpus_zero', 'rebuild_corpus_late', 'rebuild_corpus_slash', 'prime_corpus', 'reprime_corpus', 'query_corpus', 'query_corpus_slash', 'get_observations',
             'observation_search', 'observation_context', 'observation_generation_status', 'important_workflow', 'observation_add',
             'observation_record_event', 'get_tool_uses', 'get_tool_uses_filtered', 'team_work_write', 'team_work_read', 'team_search', 'team_brief',
             'corpus_answer', 'corpus_answer_status', 'corpus_answer_status_saved')

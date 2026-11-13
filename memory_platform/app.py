@@ -286,6 +286,12 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
         from .agent_store import AgentStore
         return AgentStore(store).list_corpora(actor, project_id)
 
+    @app.get('/v1/projects/{project_id}/corpus', operation_id='kairos_corpus')
+    def corpus(project_id: str, name: str = Query(), actor=Depends(identity)):
+        # One corpus by name, in the query (a name may hold any character, `/` included, with no routing ambiguity): its receipt, `version` among it.
+        from .agent_store import AgentStore
+        return AgentStore(store).corpus_receipt(actor, project_id, name)
+
     @app.post('/v1/projects/{project_id}/corpora', operation_id='kairos_build_corpus')
     def build_corpus(project_id: str, payload: m.CorpusSelection, actor=Depends(identity)):
         from .agent_store import AgentStore
