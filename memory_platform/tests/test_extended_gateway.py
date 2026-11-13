@@ -120,6 +120,42 @@ class StructuredObservationTests(unittest.TestCase):
                     if status == 422:
                         self.assertEqual(response.json()['error']['code'], 'invalid_observation', path.name)
 
+    def test_the_422_never_echoes_any_value_of_the_content(self):
+        sentinel = 'SENTINEL-c01d-do-not-echo'
+        bad = {**self.valid(), 'title': sentinel * 30, 'narrative': sentinel, 'concepts': [sentinel, sentinel],
+               'facts': [{'statement': sentinel, 'evidence_quote': sentinel, 'note': sentinel}], sentinel: sentinel}
+        data, response = self.post(bad)
+        self.assertEqual(response.status_code, 422)
+        self.assertNotIn(sentinel, response.text)
+        self.assertNotIn(sentinel, json.dumps(list(response.headers.items())))
+
+    def test_the_payload_the_cli_0_3_0_sends_is_accepted_without_schema_version(self):
+        # Shape of the event built in packages/kairos-cli/lib/capture.mjs (summary with generate: true, capture block, no structured).
+        sha = 'a' * 64
+        payload = {'title': 'Session summary', 'content': '{"summary":"done"}', 'category': 'agent-activity',
+                   'tags': ['runtime:claude', 'capture:summary'], 'source': {'uri': 'agent://claude/s1/' + sha, 'sha256': sha},
+                   'validation_status': 'observed'}
+        data = event(self.project, generate=True, agent_id='claude', event_type='summary', payload=payload)
+        data['capture'] = {'mode': 'summary', 'hook_event': 'Stop', 'fingerprint': digest(
+            {'project': self.project, 'runtime': 'claude', 'session': data['session_id'], 'event': 'Stop', 'payload': payload})}
+        response = self.http.post('/v1/observations', headers=self.headers, json=data)
+        self.assertEqual(response.status_code, 202, response.text)
+        self.assertNotIn('schema_version', json.dumps(data))
+
+    def test_a_secret_inside_the_structured_document_is_refused_like_one_in_the_content(self):
+        document = {**self.valid(), 'narrative': 'The key is sk-' + 'a' * 40 + ' and it worked.'}
+        data, response = self.post(document)
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertEqual(response.json()['error']['code'], 'sensitive_source_requires_review')
+
+    def test_a_maximal_valid_document_fits_the_event_limit_and_a_larger_event_is_still_refused(self):
+        maximal = self.named('valid-at-every-limit')
+        self.assertEqual(self.post(maximal)[1].status_code, 202)
+        data = event(self.project, generate=False)
+        data['payload'].update(content='x' * 100000, problem='y' * 10000, correction='z' * 10000, evidence=['e' * 4000] * 20, structured=maximal)
+        response = self.http.post('/v1/observations', headers=self.headers, json=data)
+        self.assertEqual(response.status_code, 413, response.text)  # the request-body limit answers before the 256 KiB event check
+
 
 class ValidatedEventTests(unittest.TestCase):
     """The validation step itself, without a database."""
