@@ -40,12 +40,12 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 1 — Integración continua (C-01) | 8 | 8 | 100% | 0 / 18.0h | 0 / 2.3h | 0 / 0.6h | 0 / 578 k |
 | Fase 2 — Servidor sin modelo de lenguaje (C-04) | 9 | 9 | 100% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
 | Fase 3 — Paridad REST /v1 (C-02) | 10 | 10 | 100% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
-| Fase 4 — Esquema de observación (C-05) | 0 | 8 | 0% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
+| Fase 4 — Esquema de observación (C-05) | 7 | 8 | 88% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 0 | 15 | 0% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **27** | **74** | **36.5%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **34** | **74** | **45.9%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -976,15 +976,16 @@ RED: `memory_platform/tests/test_contract_additive.py::ContractAdditiveTests::te
 
 ## Fase 4 — Esquema de observación (C-05)
 
-**Estado**: borrador · **Estimado**: 37.8h (31.5h base) · **Real**: — · **Coste est.**: 1.890 € · **Tokens est.**: 1193 k
+**Estado**: en-progreso · **Estimado**: 37.8h (31.5h base) · **Real**: — · **Coste est.**: 1.890 € · **Tokens est.**: 1193 k
 
 ### T-28 — Esquemas JSON `observation.v1` y `session-summary.v1`
 
 - **Descripción**: Diseñar los dos esquemas (JSON Schema 2020-12) con `schema_version`. Observación: tipo, título, hechos con cita literal, narrativa, conceptos, ficheros leídos y modificados. Resumen: petición, investigado, aprendido, hecho y siguiente. Fijar límites de longitud y `additionalProperties: false`. Fuente: CA-19, R-04.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: Se publican los esquemas JSON observation.v1 y session-summary.v1, con sus campos y límites de longitud, para estructurar observaciones y resúmenes de sesión.
+- **Estado**: completado
+- **Cerrada**: 2026-11-13
 - **Tiempo humano**: est. 4.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.48h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.48h (estimado) · real 0.54h (medido, ventana win-42c5948835094fc69f44558c748aa232, bloque T-28..T-34; JSON del cierre: `usage-meter close three-components/T-28`)
 - **Supervisión**: est. 0.12h (≈25 % IA) · real —
 - **Previsión IA**: 133 k in / 11 k out tok · ⚠️ verificar €
 - **Dependencias**: T-27
@@ -994,27 +995,29 @@ RED: `memory_platform/tests/test_contract_additive.py::ContractAdditiveTests::te
 - **Verificación**:
   - `python -c "import json;[json.load(open(f,encoding='utf-8')) for f in ('docs/contracts/observation.v1.schema.json','docs/contracts/session-summary.v1.schema.json')]"` → exit 0
   - lectura: los campos coinciden con CA-19
+  - Evidencia (2026-11-13): `python -c "import json;[json.load(open(f,encoding='utf-8')) for f in (...)]"` exit 0; `Draft202012Validator.check_schema` acepta ambos; lectura: observación con los siete campos de CA-19 (`type`, `title`, `facts` con `evidence_quote`, `narrative`, `concepts`, `files_read`, `files_modified`) más `schema_version`; resumen con `request`, `investigated`, `learned`, `completed`, `next_steps` más `schema_version`; todos los textos con `maxLength`.
 
 **Criterios de aceptación**
-- [ ] Ambos ficheros son JSON válido, declaran `$schema` 2020-12 y `schema_version`
-- [ ] La observación declara los siete campos pedidos y el resumen los cinco
-- [ ] Cada campo de texto tiene límite de longitud
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] Ambos ficheros son JSON válido, declaran `$schema` 2020-12 y `schema_version`
+- [x] La observación declara los siete campos pedidos y el resumen los cinco
+- [x] Cada campo de texto tiene límite de longitud
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Redactar los esquemas desde el plan director (Iniciativa 6) y el modelo de observación
-- [ ] Validar que son JSON Schema válidos con el validador independiente de T-29
-- [ ] `usage-meter start/close`
+- [x] Redactar los esquemas desde el plan director (Iniciativa 6) y el modelo de observación
+- [x] Validar que son JSON Schema válidos con el validador independiente de T-29
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-19, plan director §Iniciativa 2 y 6. Patrón: `Event` genérico con `payload` libre en `memory_platform/models.py:106-117` (los esquemas no lo sustituyen). Riesgo R-04: el diseño puede requerir una v2 en la Iniciativa 6; el versionado lo permite. Clase: capacidad nueva (el oráculo son los ejemplos de T-29).
+**Notas**: Procedencia: spec CA-19, plan director §Iniciativa 2 y 6. Patrón: `Event` genérico con `payload` libre en `memory_platform/models.py:106-117` (los esquemas no lo sustituyen). Riesgo R-04: el diseño puede requerir una v2 en la Iniciativa 6; el versionado lo permite. Clase: capacidad nueva (el oráculo son los ejemplos de T-29). Ventana de medición compartida con T-29..T-34 (trabajo en bloque): `win-42c5948835094fc69f44558c748aa232`, `usage-meter` start 2026-11-13T12:50:57Z, 0.54h medidas, tokens reales (entrada 164, salida 61075, cache_creacion 99598, cache_lectura 9384704). DECISIÓN DE DISEÑO (ambigüedad del plan, default más seguro): el documento viaja en `payload.structured` (campo opcional nuevo de `Payload`, aditivo), lleva su propio `schema_version` y éste elige el esquema (`observation.v1` o `session-summary.v1`); no se añade `schema_version` al `Event` para no tocar el contrato del evento. Nombres del resumen (`completed`, `next_steps`) tomados de «hecho» y «siguiente» de CA-19. Límites fijados (commit fbe6745) para que un documento máximo en ASCII (≈122 KB) quepa en el tope de 256 KiB del evento: `title` 200, `narrative` 20000, `facts` ≤20 (`statement` 500, `evidence_quote` 2000), `concepts` ≤20×100 únicos, ficheros ≤50×500 únicos, resumen 5×4000. Un documento con caracteres multibyte puede exceder el tope del evento: lo rechaza el límite general (413 `body_too_large`), no el esquema. Los esquemas se publican además en el manual (`scripts/build-handbook.py` copia `docs/contracts/*.json`).
 
 ### T-29 — Ejemplos válidos e inválidos y validador independiente (CA-21)
 
 - **Descripción**: Versionar ejemplos válidos e inválidos junto a los esquemas y validarlos con un validador independiente del servidor (un test en `scripts/tests` que no importa `memory_platform`). Fuente: CA-21.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: Cada esquema incluye ejemplos válidos e inválidos que se comprueban con un validador independiente del servidor.
+- **Estado**: completado
+- **Cerrada**: 2026-11-13
 - **Tiempo humano**: est. 3.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.36h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.36h (estimado) · real incluida en la ventana win-42c5948835094fc69f44558c748aa232 de T-28 (bloque T-28..T-34, medido; solape, no sumar)
 - **Supervisión**: est. 0.09h (≈25 % IA) · real —
 - **Previsión IA**: 100 k in / 9 k out tok · ⚠️ verificar €
 - **Dependencias**: T-28
@@ -1024,88 +1027,100 @@ RED: `memory_platform/tests/test_contract_additive.py::ContractAdditiveTests::te
 - **Verificación**:
   - `python -m unittest discover -s scripts/tests -p test_contract_examples.py` → `OK`
   - `grep -n "memory_platform" scripts/tests/test_contract_examples.py` → sin salida
+  - Evidencia (2026-11-13): `python -m unittest discover -s scripts/tests -p test_contract_examples.py` → `Ran 4 tests ... OK`; `grep -n "memory_platform" scripts/tests/test_contract_examples.py` → sin salida (exit 1). 30 ficheros de ejemplo: observación 4 válidos / 15 inválidos, resumen 3 válidos / 8 inválidos (campo faltante, sobrante, límite excedido, tipo erróneo y versión desconocida en ambos).
 
 **Criterios de aceptación**
-- [ ] Cada esquema tiene ≥ 3 ejemplos válidos y ≥ 5 inválidos (campo faltante, campo sobrante, límite excedido, tipo erróneo, versión desconocida)
-- [ ] El validador independiente acepta los válidos y rechaza los inválidos
-- [ ] El test no importa `memory_platform`
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] Cada esquema tiene ≥ 3 ejemplos válidos y ≥ 5 inválidos (campo faltante, campo sobrante, límite excedido, tipo erróneo, versión desconocida)
+- [x] El validador independiente acepta los válidos y rechaza los inválidos
+- [x] El test no importa `memory_platform`
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Escribir los ejemplos (rojo: aún no hay validador)
-- [ ] Escribir el test con el validador independiente
-- [ ] `usage-meter start/close`
+- [x] Escribir los ejemplos (rojo: aún no hay validador)
+- [x] Escribir el test con el validador independiente
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-21. El mismo conjunto se reutiliza en T-31 con el validador del servidor. Si no hay un validador JSON Schema disponible en la máquina de desarrollo, el validador independiente corre dentro de un contenedor desechable (sin red hacia servicios desplegados). Clase: capacidad nueva.
+**Notas**: Procedencia: spec CA-21. El mismo conjunto se reutiliza en T-31 con el validador del servidor. Si no hay un validador JSON Schema disponible en la máquina de desarrollo, el validador independiente corre dentro de un contenedor desechable (sin red hacia servicios desplegados). Clase: capacidad nueva. Ventana de medición: la de T-28 (bloque). Validador: `jsonschema` 4.26.0 (el mismo paquete que arrastra `mcp==1.27.1`; el test no importa el servidor). El test NO está en el CI (`ci.yml` solo ejecuta `test_ci_workflow.py` de `scripts/tests` y no se toca en esta fase): se ejecuta en local; el servidor reutiliza los mismos ejemplos en `test_extended_gateway.py` y `test_observation_schema.py`, que sí corren en el trabajo `server`. Si se quiere en el CI, añadir un paso al trabajo `contracts` (que ya instala `requirements.txt`).
+
+RED: `scripts/tests/test_contract_examples.py` (3 de 4 tests) falló con `FileNotFoundError: ... docs/contracts/observation.v1.schema.json` (esquemas apartados temporalmente, el validador no tenía contra qué comprobar) · 2026-11-13.
 
 ### T-30 — Dependencia fijada y módulo de validación de esquemas en el servidor
 
 - **Descripción**: Añadir un validador JSON Schema con versión exacta a `requirements.txt` y un módulo que carga los esquemas de `docs/contracts/` y devuelve el primer error con su ruta JSON, sin eco del contenido. Fuente: CA-20, CA-21; riesgo de superficie de dependencias (B-19).
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: El servidor incluye un módulo que valida documentos contra los esquemas y devuelve la ruta JSON del primer error sin reproducir el contenido.
+- **Estado**: completado
+- **Cerrada**: 2026-11-13
 - **Tiempo humano**: est. 3.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.36h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.36h (estimado) · real incluida en la ventana win-42c5948835094fc69f44558c748aa232 de T-28 (bloque T-28..T-34, medido; solape, no sumar)
 - **Supervisión**: est. 0.09h (≈25 % IA) · real —
 - **Previsión IA**: 100 k in / 9 k out tok · ⚠️ verificar €
 - **Dependencias**: T-29
 - **Tipo**: backend
-- **Archivos**: `memory_platform/requirements.txt`, `memory_platform/schemas.py`, `memory_platform/tests/test_observation_schema.py`
+- **Archivos**: `memory_platform/requirements.txt`, `memory_platform/schemas.py`, `memory_platform/tests/test_observation_schema.py`, `memory_platform/Dockerfile`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t30 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+  - Evidencia (2026-11-13): Build del estado de T-30 (dffb667 sin los cambios de T-31): `MEMORY_TEST_RESULT` tests 613, failures 0, errors 0, skipped 0, `"passed": true`, `llm_chat_calls` 0; `pip list` en la imagen: `jsonschema 4.26.0`, `mcp 1.27.1`. Estado final: Suite `docker build --target test -f memory_platform/Dockerfile -t kairos-test:i2p4 .` (rama feat/three-components tras bf3e5b8): `MEMORY_TEST_RESULT` tests 630, failures 0, errors 0, skipped 0, `"passed": true`, `llm_chat_calls` 0 (609 de partida + 21); puerta offline `docker run --rm --network=none -e MEMORY_RETRIEVAL_EVAL=1 ... run_postgres` exit 0, `RETRIEVAL_EVAL_RESULT` gate passed.
 
 **Criterios de aceptación**
-- [ ] La dependencia nueva está fijada con versión exacta
-- [ ] El módulo valida los ejemplos de T-29 con el mismo resultado que el validador independiente
-- [ ] El error devuelto contiene la ruta JSON y no contiene valores del contenido
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] La dependencia nueva está fijada con versión exacta
+- [x] El módulo valida los ejemplos de T-29 con el mismo resultado que el validador independiente
+- [x] El error devuelto contiene la ruta JSON y no contiene valores del contenido
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Test en rojo con los ejemplos
-- [ ] Añadir dependencia y módulo
-- [ ] Reconstruir la imagen de test y comprobar la suite
-- [ ] `usage-meter start/close`
+- [x] Test en rojo con los ejemplos
+- [x] Añadir dependencia y módulo
+- [x] Reconstruir la imagen de test y comprobar la suite
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-20/CA-21, evaluación C-05. Patrón: dependencias fijadas en `memory_platform/requirements.txt` (p. ej. `mcp==1.27.1` en la línea 6). Los esquemas deben estar disponibles dentro de la imagen: `Dockerfile` copia hoy solo `memory_platform` y algunos scripts (`memory_platform/Dockerfile:25-30`), así que se decide aquí cómo llegan (copiar `docs/contracts/*.schema.json` a la imagen). Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde.
+**Notas**: Procedencia: spec CA-20/CA-21, evaluación C-05. Patrón: dependencias fijadas en `memory_platform/requirements.txt` (p. ej. `mcp==1.27.1` en la línea 6). Los esquemas deben estar disponibles dentro de la imagen: `Dockerfile` copia hoy solo `memory_platform` y algunos scripts (`memory_platform/Dockerfile:25-30`), así que se decide aquí cómo llegan (copiar `docs/contracts/*.schema.json` a la imagen). Clase: capacidad nueva → primer oráculo: test en rojo que describe el comportamiento (se anota `RED:` con su salida) y después en verde. Ventana: la de T-28. Dependencia nueva: `jsonschema==4.26.0` en `requirements.txt`, fijada con versión exacta; ya estaba instalada de forma transitiva (`mcp==1.27.1` exige `jsonschema>=4.20`), así que la superficie de la imagen no cambia (misma versión resuelta antes y después; sus dependencias attrs, referencing, rpds-py y jsonschema-specifications ya estaban). Cómo llegan los esquemas a la imagen: `Dockerfile` copia `docs/contracts/*.schema.json` a `/app/docs/contracts/` en las etapas `api` y `test` y `docs/contracts/examples` en `test` (los ejemplos no van a la imagen de producción); `schemas.py` lee `MEMORY_SCHEMA_DIR` o `docs/contracts` junto al paquete. El módulo elige el primer error por ruta más corta y orden léxico, nombra la regla (`maxLength`, `required`...) y la ruta; para `required` añade el nombre del campo ausente (viene del esquema, no del contenido); para `additionalProperties` solo la ruta del padre (el nombre sobrante es contenido). Profundidad máxima 8.
+
+RED: `memory_platform/tests/test_observation_schema.py` falló con `ImportError: cannot import name 'schemas' from 'memory_platform'` (el módulo no existía) · 2026-11-13.
 
 ### T-31 — Validación en `POST /v1/observations` y `observation_record_event` con `invalid_observation`
 
 - **Descripción**: Cuando el evento declara `schema_version`, validarlo contra el esquema: 202 si valida y 422 `invalid_observation` (con la ruta del error y sin eco del contenido) si falta un campo, sobra uno o excede un límite. Sin `schema_version`, todo sigue igual (P-11). Fuente: CA-20, P-11 (decidida).
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: POST /v1/observations y observation_add validan payload.structured contra su esquema: 422 invalid_observation con la ruta del error; un evento sin structured se acepta como siempre.
+- **Estado**: completado
+- **Cerrada**: 2026-11-13
 - **Tiempo humano**: est. 4.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.48h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.48h (estimado) · real incluida en la ventana win-42c5948835094fc69f44558c748aa232 de T-28 (bloque T-28..T-34, medido; solape, no sumar)
 - **Supervisión**: est. 0.12h (≈25 % IA) · real —
 - **Previsión IA**: 133 k in / 11 k out tok · ⚠️ verificar €
 - **Dependencias**: T-30
 - **Tipo**: backend
-- **Archivos**: `memory_platform/extended_store.py`, `memory_platform/app.py`, `memory_platform/models.py`, `memory_platform/tests/test_extended_gateway.py`, `memory_platform/tests/test_api.py`
+- **Archivos**: `memory_platform/extended_store.py`, `memory_platform/app.py`, `memory_platform/models.py`, `memory_platform/tests/test_extended_gateway.py`, `memory_platform/tests/test_api.py`, `memory_platform/tests/test_contract_additive.py`, `docs/contracts/kairos-mcp.json`, `docs/contracts/memory-platform.openapi.json`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t31 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+  - Evidencia (2026-11-13): Suite `docker build --target test -f memory_platform/Dockerfile -t kairos-test:i2p4 .` (rama feat/three-components tras bf3e5b8): `MEMORY_TEST_RESULT` tests 630, failures 0, errors 0, skipped 0, `"passed": true`, `llm_chat_calls` 0 (609 de partida + 21); puerta offline `docker run --rm --network=none -e MEMORY_RETRIEVAL_EVAL=1 ... run_postgres` exit 0, `RETRIEVAL_EVAL_RESULT` gate passed. Los ejemplos válidos dan 202 y los inválidos 422 `invalid_observation` en `test_the_server_agrees_with_the_examples_the_independent_validator_checks` (mismo resultado que el validador independiente).
 
 **Criterios de aceptación**
-- [ ] Una observación `observation.v1` válida da 202; una inválida (falta campo, campo sobrante, límite excedido) da 422 `invalid_observation` con la ruta JSON y sin el contenido
-- [ ] Un evento sin `schema_version` se acepta como hoy (test de no regresión)
-- [ ] Una `schema_version` desconocida da 422 `invalid_observation`
-- [ ] Los ejemplos de T-29 dan el mismo resultado en el servidor y en el validador independiente
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] Una observación `observation.v1` válida da 202; una inválida (falta campo, campo sobrante, límite excedido) da 422 `invalid_observation` con la ruta JSON y sin el contenido
+- [x] Un evento sin `schema_version` se acepta como hoy (test de no regresión)
+- [x] Una `schema_version` desconocida da 422 `invalid_observation`
+- [x] Los ejemplos de T-29 dan el mismo resultado en el servidor y en el validador independiente
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Tests en rojo (válido, inválido, sin versión, versión desconocida)
-- [ ] Integrar la validación en la ingesta de observaciones
-- [ ] Mapear el error a 422 con el formato `{error:{code,message}}`
-- [ ] `usage-meter start/close`
+- [x] Tests en rojo (válido, inválido, sin versión, versión desconocida)
+- [x] Integrar la validación en la ingesta de observaciones
+- [x] Mapear el error a 422 con el formato `{error:{code,message}}`
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-20/P-11. Patrón: ingesta de observaciones en `memory_platform/extended_store.py` (`observation_add`, `observation_record_event`); formato de error `{error:{code,message}}` en `memory_platform/app.py` (manejador de errores) y `mcp.py:48-55`. El CLI 0.3.0 no envía `schema_version`: ruta antigua intacta. Clase: cambio de comportamiento → primer oráculo: test en rojo que fija el comportamiento nuevo; los tests que asumían el anterior se ajustan en la misma tarea.
+**Notas**: Procedencia: spec CA-20/P-11. Patrón: ingesta de observaciones en `memory_platform/extended_store.py` (`observation_add`, `observation_record_event`); formato de error `{error:{code,message}}` en `memory_platform/app.py` (manejador de errores) y `mcp.py:48-55`. El CLI 0.3.0 no envía `schema_version`: ruta antigua intacta. Clase: cambio de comportamiento → primer oráculo: test en rojo que fija el comportamiento nuevo; los tests que asumían el anterior se ajustan en la misma tarea. Ventana: la de T-28. Cambios fuera de `Archivos` (añadidos con nota): `memory_platform/tests/test_contract_additive.py` (nueva excepción acotada y explícita `without_structured`: el test exacto de las 34 herramientas solo admitía `semantic_budget_ms`; ahora admite además el `Payload.structured` opcional y un test nuevo comprueba que nunca es `required`), `docs/contracts/kairos-mcp.json` y `docs/contracts/memory-platform.openapi.json` (regenerados con `scripts/export-contracts.py`, Python 3.13: +42 líneas MCP en 3 herramientas con `Payload`, +13 OpenAPI, 0 líneas eliminadas; 34 herramientas). Efecto en integraciones: `Event.payload` admite el campo opcional `structured` (objeto o null; `null` equivale a ausente); ningún campo existente cambia. Error: el 422 de REST lleva `{error:{code:'invalid_observation',message}}`; por MCP solo llega el mensaje (así lo hace `mcp.py` con todos los errores de dominio). La validación corre en `validated_event`, es decir, en `observation_add` y `observation_record_event` (y sus rutas REST). Un secreto dentro de `structured` lo rechaza la comprobación de privacidad existente (`has_sensitive` recorre todo el payload).
+
+RED: `memory_platform/tests/test_extended_gateway.py::ValidatedEventTests` (2 tests) falló con `AttributeError: 'Payload' object has no attribute 'structured'` (cambios de `models.py`/`extended_store.py` revertidos) · 2026-11-13.
 
 ### T-32 — Decisión de migración aditiva para conceptos y ficheros (CA-22)
 
 - **Descripción**: Comprobar si el `payload` jsonb basta para filtrar por conceptos y ficheros. Si basta, cerrar la tarea sin migración con la medida como evidencia; si hace falta un índice, escribir una migración solo aditiva. Fuente: CA-22, CA-30; hipótesis de la spec.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: Filtrar observaciones por concepto o fichero no requiere migración: el payload jsonb basta a la escala medida y no se añade ningún índice.
+- **Estado**: completado
+- **Cerrada**: 2026-11-13
 - **Tiempo humano**: est. 3.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.36h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.36h (estimado) · real incluida en la ventana win-42c5948835094fc69f44558c748aa232 de T-28 (bloque T-28..T-34, medido; solape, no sumar)
 - **Supervisión**: est. 0.09h (≈25 % IA) · real —
 - **Previsión IA**: 100 k in / 9 k out tok · ⚠️ verificar €
 - **Dependencias**: T-31
@@ -1115,27 +1130,29 @@ RED: `memory_platform/tests/test_contract_additive.py::ContractAdditiveTests::te
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t32 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
   - `grep -niE "DROP|TRUNCATE|DELETE|ALTER .* TYPE" memory_platform/schema.sql` → sin coincidencias nuevas respecto de `23ced03` (`git diff 23ced03 -- memory_platform/schema.sql`)
+  - Evidencia (2026-11-13): Suite `docker build --target test -f memory_platform/Dockerfile -t kairos-test:i2p4 .` (rama feat/three-components tras bf3e5b8): `MEMORY_TEST_RESULT` tests 630, failures 0, errors 0, skipped 0, `"passed": true`, `llm_chat_calls` 0 (609 de partida + 21); puerta offline `docker run --rm --network=none -e MEMORY_RETRIEVAL_EVAL=1 ... run_postgres` exit 0, `RETRIEVAL_EVAL_RESULT` gate passed. `git diff 23ced03 -- memory_platform/schema.sql` → 0 líneas; el único acierto de `grep -niE "DROP|TRUNCATE|DELETE|ALTER .* TYPE" memory_platform/schema.sql` es la columna `deleted`, ya existente en `23ced03`.
 
 **Criterios de aceptación**
-- [ ] La decisión (con medida de plan de consulta sobre datos sintéticos) queda en `Notas`
-- [ ] Si hay migración, `test_migrations_additive.py` pasa y `content_manifest().sha256` es igual antes y después
-- [ ] Ninguna migración contiene `DROP`, `TRUNCATE`, `DELETE` ni `ALTER … TYPE`
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] La decisión (con medida de plan de consulta sobre datos sintéticos) queda en `Notas`
+- [x] Si hay migración, `test_migrations_additive.py` pasa y `content_manifest().sha256` es igual antes y después
+- [x] Ninguna migración contiene `DROP`, `TRUNCATE`, `DELETE` ni `ALTER … TYPE`
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Medir una consulta por concepto y por fichero sobre datos sintéticos
-- [ ] Decidir; si procede, escribir la migración aditiva con su test
-- [ ] `usage-meter start/close`
+- [x] Medir una consulta por concepto y por fichero sobre datos sintéticos
+- [x] Decidir; si procede, escribir la migración aditiva con su test
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-22, hipótesis del `payload` jsonb (`memory_platform/schema.sql:13`). Patrón: `memory_platform/tests/test_migrations_additive.py` y `test_pgvector_migration.py`. Restricción: migraciones solo aditivas; nunca contra la base desplegada, solo el PostgreSQL efímero del target `test`. Clase: capacidad nueva condicionada (puede cerrarse sin cambio).
+**Notas**: Procedencia: spec CA-22, hipótesis del `payload` jsonb (`memory_platform/schema.sql:13`). Patrón: `memory_platform/tests/test_migrations_additive.py` y `test_pgvector_migration.py`. Restricción: migraciones solo aditivas; nunca contra la base desplegada, solo el PostgreSQL efímero del target `test`. Clase: capacidad nueva condicionada (puede cerrarse sin cambio). Ventana: la de T-28. DECISIÓN: sin migración (no se toca `schema.sql` ni `test_migrations_additive.py`; `content_manifest().sha256` no cambia al no migrar). MEDIDA (PostgreSQL 17 efímero del target `test`, sin red, tabla sintética con la forma de `memory.memory_items` y PK `(project_id,id)`, payload con narrativa de ~4 KB y `payload->'structured'` de `observation.v1`; `EXPLAIN (ANALYZE)`, segunda ejecución, consulta `payload->'structured'->'concepts' ? 'x'` o `->'files_modified' ? 'f'` acotada a un proyecto): 40 000 filas en 20 proyectos (2 000 por proyecto): 23-26 ms por concepto y por fichero sin índice (3.4 ms con GIN `jsonb_path_ops`, 3.9 MB); 400 000 filas (20 000 por proyecto, 216 MB, primera ejecución en frío): 466-612 ms sin índice y 114 ms con GIN (29 MB). Razones: hoy no hay ninguna ruta de lectura que filtre por concepto o fichero (lo define la Iniciativa 6; la forma de la consulta, `?` frente a `@>`, decide el índice) y un proyecto realista tiene miles de observaciones, no decenas de miles; un GIN especulativo encarece cada ingesta. Umbral de revisión: si un proyecto supera unas 20 000 observaciones con filtro por concepto o fichero, añadir `CREATE INDEX IF NOT EXISTS ... USING gin ((payload->'structured') jsonb_path_ops)` como migración aditiva con su test. El script de medida (efímero, fuera del repo) arrancaba `initdb` en `kairos-test:i2p4` con `--network=none --user postgres`.
 
 ### T-33 — Tests de límites del esquema y de la ruta sin `schema_version`
 
 - **Descripción**: Completar los tests de CA-20: cada límite de longitud, `additionalProperties`, tipos, sin eco del contenido en el 422 y compatibilidad con el payload que envía el CLI 0.3.0. Fuente: CA-20, P-11.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: Los límites del esquema, la ausencia de eco del contenido en el 422 y el payload del CLI 0.3.0 sin schema_version quedan cubiertos por tests.
+- **Estado**: completado
+- **Cerrada**: 2026-11-13
 - **Tiempo humano**: est. 2.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.24h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.24h (estimado) · real incluida en la ventana win-42c5948835094fc69f44558c748aa232 de T-28 (bloque T-28..T-34, medido; solape, no sumar)
 - **Supervisión**: est. 0.06h (≈25 % IA) · real —
 - **Previsión IA**: 67 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-31
@@ -1144,27 +1161,31 @@ RED: `memory_platform/tests/test_contract_additive.py::ContractAdditiveTests::te
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t33 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+  - Evidencia (2026-11-13): Suite `docker build --target test -f memory_platform/Dockerfile -t kairos-test:i2p4 .` (rama feat/three-components tras bf3e5b8): `MEMORY_TEST_RESULT` tests 630, failures 0, errors 0, skipped 0, `"passed": true`, `llm_chat_calls` 0 (609 de partida + 21); puerta offline `docker run --rm --network=none -e MEMORY_RETRIEVAL_EVAL=1 ... run_postgres` exit 0, `RETRIEVAL_EVAL_RESULT` gate passed. Casos: cada límite en el borde y uno por encima (campos, `facts`, `concepts`, ficheros, resumen), caracteres frente a bytes (emoji), una prueba por regla (`required`, `additionalProperties`, `type`, `enum`, `const`, `maxLength`, `maxItems`, `minLength`, `uniqueItems`), anidamiento hostil (5000 niveles) y 2 000 claves sobrantes sin eco, centinela ausente en el cuerpo y las cabeceras del 422, payload del CLI 0.3.0 (con `capture` y huella) aceptado, secreto en `structured` rechazado, documento máximo aceptado y evento mayor rechazado (413).
 
 **Criterios de aceptación**
-- [ ] Hay un caso por cada límite y por cada tipo de error
-- [ ] El cuerpo del 422 no contiene ningún valor del contenido enviado (prueba con un valor centinela)
-- [ ] El payload real del CLI 0.3.0 (sin `schema_version`) se acepta
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] Hay un caso por cada límite y por cada tipo de error
+- [x] El cuerpo del 422 no contiene ningún valor del contenido enviado (prueba con un valor centinela)
+- [x] El payload real del CLI 0.3.0 (sin `schema_version`) se acepta
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Escribir los casos
-- [ ] Tomar el payload del CLI desde `packages/kairos-cli/lib/capture.mjs`
-- [ ] `usage-meter start/close`
+- [x] Escribir los casos
+- [x] Tomar el payload del CLI desde `packages/kairos-cli/lib/capture.mjs`
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-20. Patrón: `packages/kairos-cli/lib/capture.mjs:84`. Clase: capacidad nueva (cobertura).
+**Notas**: Procedencia: spec CA-20. Patrón: `packages/kairos-cli/lib/capture.mjs:84`. Clase: capacidad nueva (cobertura). Ventana: la de T-28. Payload del CLI tomado de la forma de `packages/kairos-cli/lib/capture.mjs` (`payload` con `category: agent-activity`, `tags`, `source{uri,sha256}`, `validation_status: observed`, bloque `capture` con huella). Hallazgo al escribirlo: el cuerpo de más de ~256 KiB lo rechaza antes el límite HTTP (`413 body_too_large`), no el chequeo del evento; el test lo fija así.
+
+RED: los casos de límites son cobertura de una capacidad ya implementada en T-30/T-31, con el esquema como oráculo; la primera ejecución en la imagen falló en 5 puntos que corrigieron los tests (ejemplo equivocado como base, huella de captura inválida, mensaje MCP sin código, contrato exacto de herramientas y 413 en lugar de 422) · 2026-11-13.
 
 ### T-34 — Documentar el esquema de observación
 
 - **Descripción**: Documentar los esquemas, el uso de `schema_version`, el error `invalid_observation` y cómo validar un ejemplo en local. Fuente: CA-32, C-05.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: La documentación describe los esquemas observation.v1 y session-summary.v1, el error invalid_observation y cómo validar un ejemplo en local.
+- **Estado**: completado
+- **Cerrada**: 2026-11-13
 - **Tiempo humano**: est. 2.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.24h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.24h (estimado) · real incluida en la ventana win-42c5948835094fc69f44558c748aa232 de T-28 (bloque T-28..T-34, medido; solape, no sumar)
 - **Supervisión**: est. 0.06h (≈25 % IA) · real —
 - **Previsión IA**: 67 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-33
@@ -1174,17 +1195,18 @@ RED: `memory_platform/tests/test_contract_additive.py::ContractAdditiveTests::te
 - **Verificación**:
   - `grep -n "observation.v1" docs/integration.md` → ≥ 1 coincidencia
   - lectura: los límites citados coinciden con los esquemas
+  - Evidencia (2026-11-13): `grep -n "observation.v1" docs/integration.md` → coincidencias en las líneas 161, 164 y 168 (sección «Observaciones estructuradas con esquema versionado»); lectura: los límites citados (200, 20 000, 20×500/2 000, 20×100, 50×500, 5×4 000) coinciden con los esquemas.
 
 **Criterios de aceptación**
-- [ ] La doc cita ambos esquemas y su ruta real
-- [ ] Explica que sin `schema_version` no se valida (P-11)
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] La doc cita ambos esquemas y su ruta real
+- [x] Explica que sin `schema_version` no se valida (P-11)
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Redactar según `docs-style.md`
-- [ ] `usage-meter start/close`
+- [x] Redactar según `docs-style.md`
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-32. Clase: documentación.
+**Notas**: Procedencia: spec CA-32. Clase: documentación. Ventana: la de T-28. `docs-style.md` no existe en el repositorio: se siguió el estilo de cada documento (español y CRLF en `integration.md`, inglés y LF en `extended-workflows.md` y el `README.md` nuevo de `docs/contracts/`). La orden de validación local usa `jsonschema` (ya instalado con `mcp`); explica que sin `payload.structured` no se valida (P-11).
 
 ### T-35 — Revisión adversarial de la Fase 4
 
