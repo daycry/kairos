@@ -41,11 +41,11 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 2 — Servidor sin modelo de lenguaje (C-04) | 9 | 9 | 100% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
 | Fase 3 — Paridad REST /v1 (C-02) | 10 | 10 | 100% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
-| Fase 5 — kairos-mcp (C-03) | 3 | 15 | 20.0% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
+| Fase 5 — kairos-mcp (C-03) | 4 | 15 | 26.7% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **38** | **74** | **51.4%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **39** | **74** | **52.7%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1356,10 +1356,11 @@ RED: `mcp/tests/test_tools_list.py` falló con fallos y errores: create_app sin 
 ### T-39 — Arranque real del contenedor `kairos-mcp` contra un servidor aislado (verificación temprana)
 
 - **Descripción**: Verificación temprana con un componente real (lección de la retro): arrancar el contenedor `kairos-mcp` con solo `KAIROS_API_URL` contra el servidor `/v1` simulado en un proyecto Compose aislado `kairos-mcp-smoke`, sin variables `MEMORY_DSN*`, sin secretos y sin la red `memory-data`; pedir `GET /health/live` y `tools/list` reales. Fuente: CA-09, retro.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: El contenedor kairos-mcp arranca solo con KAIROS_API_URL (sin base de datos, sin secretos) y responde /health/live y la lista de 34 herramientas; hay un humo reproducible en un proyecto Compose aislado.
+- **Estado**: completado
+- **Cerrada**: 2026-11-13
 - **Tiempo humano**: est. 3.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.46h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.46h (estimado) · real 0.04h (medido)
 - **Supervisión**: est. 0.12h (≈25 % IA) · real —
 - **Previsión IA**: 126 k in / 12 k out tok · ⚠️ verificar €
 - **Dependencias**: T-38
@@ -1369,20 +1370,24 @@ RED: `mcp/tests/test_tools_list.py` falló con fallos y errores: create_app sin 
 - **Verificación**:
   - `python mcp/tests/smoke_container.py` → `PASS health 200; tools 34` y exit 0
   - `docker ps -a -q --filter name=knowledge-graphs-` antes y después → idéntico (no se toca la instalación)
+  - Evidencia (2026-11-13): `KAIROS_SMOKE_PROJECT=kairos-i2p5-mcp-smoke python mcp/tests/smoke_container.py` -> `PASS health 200; tools 34`, rc 0; `docker ps -a -q --filter name=knowledge-graphs-` antes y despues identico (15 ids); sin contenedores, red ni imagen del proyecto de humo al terminar.
 
 **Criterios de aceptación**
-- [ ] El contenedor arranca solo con `KAIROS_API_URL` y `GET /health/live` responde 200
-- [ ] `tools/list` por HTTP devuelve las 34 herramientas
-- [ ] El proyecto aislado usa solo recursos `kairos-mcp-smoke_*` y se elimina al terminar
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] El contenedor arranca solo con `KAIROS_API_URL` y `GET /health/live` responde 200
+- [x] `tools/list` por HTTP devuelve las 34 herramientas
+- [x] El proyecto aislado usa solo recursos `kairos-mcp-smoke_*` y se elimina al terminar
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Escribir el fichero Compose aislado (red y volúmenes con nombre de proyecto)
-- [ ] Escribir el script de humo
-- [ ] Ejecutar y limpiar el proyecto
-- [ ] `usage-meter start/close`
+- [x] Escribir el fichero Compose aislado (red y volúmenes con nombre de proyecto)
+- [x] Escribir el script de humo
+- [x] Ejecutar y limpiar el proyecto
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: retro (verificación con componente real pronto), CA-09. Patrón de aislamiento: `scripts/deploy-memory.py:45-66` (`--project-name` distinto de `knowledge-graphs`). Prohibido: contenedores, redes o volúmenes `knowledge-graphs-*`. Clase: capacidad nueva (oráculo: el humo falla sin el contenedor).
+**Notas**: Procedencia: retro (verificación con componente real pronto), CA-09. Patrón de aislamiento: `scripts/deploy-memory.py:45-66` (`--project-name` distinto de `knowledge-graphs`). Prohibido: contenedores, redes o volúmenes `knowledge-graphs-*`. Clase: capacidad nueva (oráculo: el humo falla sin el contenedor). Desviacion: el proyecto del humo se llama `kairos-mcp-smoke` por defecto (spec) pero acepta `KAIROS_SMOKE_PROJECT`; las ejecuciones de esta fase usaron `kairos-i2p5-mcp-smoke` por orden del usuario. El stub `/v1` es el propio stub_api.py servido desde la imagen kairos-mcp (api-stub en la red `smoke`); memory-mcp publica 8791 solo en 127.0.0.1 con puerto aleatorio. El script falla si cambia la lista de contenedores `knowledge-graphs-*` o queda algo del proyecto. usage-meter three-components/T-39: 0.04 h IA (medido, win-d3714a109e34438fa49ec7aa0afc9c8e).
+
+
+RED: `mcp/tests/smoke_container.py` falló con salio con 1: `missing ...compose.smoke.yml` (sin el proyecto Compose el humo falla) · 2026-11-13.
 
 ### T-40 — Servicio Compose `memory-mcp` en red propia, sin `memory-data` ni secretos (CA-09)
 

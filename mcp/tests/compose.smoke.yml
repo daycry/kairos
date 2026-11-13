@@ -1,0 +1,26 @@
+# Isolated project of the container smoke test (mcp/tests/smoke_container.py): the real kairos-mcp image next to a simulated `/v1` server.
+# Always run with its own project name (`-p kairos-mcp-smoke`, never `knowledge-graphs`): the network and every resource are then named after
+# the project. There is no database, no volume, no `secrets:` block and no `MEMORY_DSN*`: kairos-mcp starts with KAIROS_API_URL alone.
+services:
+  api-stub:
+    # The kairos-mcp image carries tests/stub_api.py: it serves a few `/v1` routes (the project list) on 8790.
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: ${KAIROS_SMOKE_IMAGE:-kairos-mcp-smoke-image:smoke}
+    command: ["python", "tests/stub_api.py", "--port", "8790"]
+    networks: [smoke]
+
+  memory-mcp:
+    image: ${KAIROS_SMOKE_IMAGE:-kairos-mcp-smoke-image:smoke}
+    pull_policy: never
+    environment:
+      KAIROS_API_URL: http://api-stub:8790
+    ports:
+      - "127.0.0.1::8791"
+    depends_on:
+      - api-stub
+    networks: [smoke]
+
+networks:
+  smoke: {}
