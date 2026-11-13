@@ -41,11 +41,11 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 2 — Servidor sin modelo de lenguaje (C-04) | 9 | 9 | 100% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
 | Fase 3 — Paridad REST /v1 (C-02) | 10 | 10 | 100% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
-| Fase 5 — kairos-mcp (C-03) | 13 | 15 | 86.7% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
+| Fase 5 — kairos-mcp (C-03) | 14 | 15 | 93.3% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **48** | **74** | **64.9%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **49** | **74** | **66.2%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1710,10 +1710,11 @@ RED: `memory_platform/tests/test_mcp_write.py::MCPBoundaryChainTests` falló con
 ### T-49 — Documentar `kairos-mcp`
 
 - **Descripción**: Documentar el componente: variables `KAIROS_API_URL` y `KAIROS_API_TIMEOUT`, credencial Bearer, envoltorio S-05, errores y cómo ejecutar sus tests. Fuente: CA-32, C-03.
-- **Changelog**: 
-- **Estado**: en-progreso
+- **Changelog**: La documentacion describe kairos-mcp: su arranque y variables (KAIROS_API_URL, KAIROS_API_TIMEOUT, KAIROS_ALLOWED_ORIGINS, KAIROS_MAX_BODY_BYTES), la credencial Bearer, el dato no fiable, los errores y los topes, y la arquitectura de los tres componentes.
+- **Estado**: completado
+- **Cerrada**: 2026-11-13
 - **Tiempo humano**: est. 2.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.31h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.31h (estimado) · real 0.03h (medido)
 - **Supervisión**: est. 0.08h (≈25 % IA) · real —
 - **Previsión IA**: 84 k in / 8 k out tok · ⚠️ verificar €
 - **Dependencias**: T-48
@@ -1723,18 +1724,19 @@ RED: `memory_platform/tests/test_mcp_write.py::MCPBoundaryChainTests` falló con
 - **Verificación**:
   - `grep -c "KAIROS_API_URL\|KAIROS_API_TIMEOUT" mcp/README.md docs/configuration.md` → ≥ 2
   - lectura: valores y rutas citados coinciden con el código
+  - Evidencia (2026-11-13): `grep -c "KAIROS_API_URL|KAIROS_API_TIMEOUT" mcp/README.md docs/configuration.md` -> 4 y 2 (>= 2); lectura: variables, puerto 8791, plazo 30 s (4 x por llamada), tope 262144 B, 32768/262144 B, mensajes de error y rutas coinciden con kairos_mcp/{config,app,auth,budget,translate}.py y con docker-compose.yml; `docker build --target test -f memory_platform/Dockerfile.web` (genera el manual desde docs/) exit 0.
 
 **Criterios de aceptación**
-- [ ] `mcp/README.md` describe arranque, variables y límites
-- [ ] `docs/architecture.md` explica los tres componentes y quién habla con quién
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] `mcp/README.md` describe arranque, variables y límites
+- [x] `docs/architecture.md` explica los tres componentes y quién habla con quién
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Redactar según `docs-style.md`
-- [ ] Comprobar cada variable contra el código
-- [ ] `usage-meter start/close`
+- [x] Redactar según `docs-style.md`
+- [x] Comprobar cada variable contra el código
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-32. Clase: documentación.
+**Notas**: Procedencia: spec CA-32. Clase: documentación. Estilo: docs-style.md no existe en el repositorio; se siguio el de cada documento (espanol; CRLF en architecture.md e integration.md, LF en configuration.md y en mcp/README.md). La documentacion describe lo que ya existe: el proxy web sigue enrutando /mcp al MCP interno hasta T-52, y asi lo dice architecture.md. Cambios visibles para un cliente MCP documentados en integration.md. Archivos anadidos: ninguno. usage-meter three-components/T-49: 0.03 h IA (medido, win-6dac7cf32f3a42659959fe9734d7ddca).
 
 ### T-50 — Revisión adversarial de la Fase 5
 
