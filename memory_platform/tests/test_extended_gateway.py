@@ -181,3 +181,97 @@ class ValidatedEventTests(unittest.TestCase):
         data['payload']['structured'] = {**self.example('session-summary.v1'), 'schema_version': 'observation.v1'}
         with self.assertRaises(MemoryError):
             validated_event(data)
+
+
+class StructuredIngestRouteTests(unittest.TestCase):
+    """Gaps 1-3 and 5 of the phase 4 review: every route that ingests an event validates `structured` at the one shared point."""
+
+    def setUp(self):
+        self.store, actor, self.project = create_core()
+        self.key = self.store.create_key(actor, {'name': 'route-fixture', 'project_ids': [self.project], 'scopes': ['read', 'write']})['token']
+        self.headers = {'Authorization': 'Bearer '+self.key, 'Accept': 'application/json, text/event-stream'}
+        self.app = create_app(Settings('unused'), store=self.store, auth=Auth(self.store))
+        self.http = TestClient(self.app, base_url='http://localhost:8790')
+        self.http.__enter__()
+        self.addCleanup(self.http.__exit__, None, None, None)
+
+    def valid(self):
+        return json.loads((schemas.contracts_dir() / 'examples' / 'observation.v1' / 'valid' / 'valid-bugfix.json').read_text(encoding='utf-8'))
+
+    def post(self, document, path='/v1/events'):
+        data = event(self.project, generate=False)
+        data['payload']['structured'] = document
+        return data, self.http.post(path, headers=self.headers, json=data)
+
+    def remember(self, data):
+        body = {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call', 'params': {'name': 'remember', 'arguments': {'event': data}}}
+        return self.http.post('/mcp/', headers=self.headers, json=body).json()['result']
+
+    def stored_count(self):
+        with self.store.transaction() as c:
+            return c.execute('SELECT count(*) AS n FROM memory.events WHERE project_id=%s', (self.project,)).fetchone()['n']
+
+    def test_events_and_remember_validate_structured_too_and_store_nothing_when_invalid(self):
+        sentinel = 'SENTINEL-9d2e-do-not-echo'
+        before = self.stored_count()
+        bad = {**self.valid(), 'extra': sentinel}
+        data, response = self.post(bad)
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertEqual(response.json()['error']['code'], 'invalid_observation')
+        self.assertIn('additionalProperties at /payload/structured', response.json()['error']['message'])
+        self.assertNotIn(sentinel, response.text)
+        data = event(self.project, generate=False)
+        data['payload']['structured'] = bad
+        result = self.remember(data)
+        self.assertTrue(result['isError'])
+        self.assertIn('does not match its schema: additionalProperties at /payload/structured', json.dumps(result))
+        self.assertNotIn(sentinel, json.dumps(result))
+        self.assertEqual(self.stored_count(), before)
+        data, response = self.post(self.valid())
+        self.assertEqual(response.status_code, 202, response.text)
+        data = event(self.project, generate=False)
+        data['payload']['structured'] = self.valid()
+        self.assertFalse(self.remember(data).get('isError'))
+
+    def test_a_huge_array_over_events_is_422_in_under_a_second(self):
+        import time
+        started = time.monotonic()
+        data, response = self.post({**self.valid(), 'concepts': ['x'] + list(range(8000))})
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()['error']['code'], 'invalid_observation')
+        self.assertIn('maxItems', response.json()['error']['message'])
+        self.assertLess(time.monotonic() - started, 1.0)
+
+    def test_the_api_loads_the_schemas_at_startup_and_fails_when_they_are_missing(self):
+        import tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as empty, patch.dict('os.environ', {'MEMORY_SCHEMA_DIR': empty}):
+            schemas._validator.cache_clear()
+            try:
+                with self.assertRaises(FileNotFoundError):
+                    create_app(Settings('unused'), store=self.store, auth=Auth(self.store))
+            finally:
+                schemas._validator.cache_clear()
+        create_app(Settings('unused'), store=self.store, auth=Auth(self.store))
+
+    def test_structured_is_dropped_from_what_the_extraction_model_returns(self):
+        from memory_platform.tests.test_store import extraction_receipt
+        store, actor, pid = create_core(extraction=True)
+        receipt = store.ingest_event(actor, event(pid, generate=True))
+        jid = receipt['jobs'][0]
+        with store.transaction() as c:
+            c.execute("UPDATE memory.jobs SET state='running',fence=1,lease_until=clock_timestamp()+interval '1 minute' WHERE id=%s", (jid,))
+        generated = extraction_receipt()
+        generated['payload']['structured'] = {'schema_version': 'observation.v1', 'bogus': True}
+        self.assertTrue(store.complete_job(jid, 1, generated))
+        with store.transaction() as c:
+            saved = c.execute('SELECT receipt FROM memory.projection_receipts WHERE job_id=%s', (jid,)).fetchone()
+        derived = store.get_item(actor, pid, saved['receipt']['derived_item_id'])
+        self.assertNotIn('structured', derived)
+
+    def test_sensitive_data_inside_structured_rejects_the_event_and_is_not_redacted(self):
+        # Gap 4: docs/integration.md says so; `structured` is never rewritten, so its shape stays the one that was validated.
+        data, response = self.post({**self.valid(), 'narrative': 'visto <private>token interno</private> aqui'})
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertEqual(response.json()['error']['code'], 'sensitive_source_requires_review')
+        self.assertNotIn('token interno', response.text)

@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timezone
 
 from .errors import Conflict, Forbidden, MemoryError, NotFound
+from . import schemas
 from .privacy import has_sensitive, sanitize_payload
 from .store_common import as_dict, canonical, digest, new_id, clean
 
@@ -66,6 +67,7 @@ class IngestMixin:
             return None
         source=parent['payload']
         self._validate_facts(payload,'\n'.join(source.get(name,'') for name in ('content','problem','correction')),False)
+        payload.pop('structured',None)  # the client's document is validated on ingest; a model's is never stored
         payload.pop('supersedes',None)
         payload.pop('validated_by',None)
         payload['validation_status']='unverified'
@@ -95,6 +97,8 @@ class IngestMixin:
     def ingest_event(self, actor, event):
         fingerprint_payload = event.payload.model_dump(mode='json',exclude_unset=True,exclude_none=True) if hasattr(event,'model_dump') else event['payload']
         event = as_dict(event)
+        # The one point every route shares (POST /v1/events, remember, observation_add, ...): nothing is written before this passes.
+        schemas.validate_event_structured(event.get('payload') or {})
         event.setdefault('generate',False)
         capture = event.get('capture')
         auto_mode = None

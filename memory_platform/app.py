@@ -8,6 +8,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from . import models as m
 from . import observability
+from . import schemas
 from .auth import Auth
 from .config import Settings
 from .errors import MemoryError, Unauthorized, Forbidden
@@ -65,6 +66,7 @@ def mount_label(request):
 
 def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity_duration=25.0, activity_poll_interval=2.0):
     settings = settings or Settings.from_env()
+    schemas.load_all()  # fail here, not on the first observation, when a schema file is missing or broken
     if store is None:
         store = Store(settings.dsn, settings.project_maps, embedding_enabled=getattr(settings, 'embed_enabled', True))
         store.extraction_enabled = getattr(settings, 'extract_enabled', False)
