@@ -159,6 +159,7 @@ class McpServiceTests(unittest.TestCase):
         self.assertNotIn('secrets', self.service)
         environment = self.service['environment']
         self.assertEqual(environment['KAIROS_API_URL'], 'http://memory-api:8790')
+        self.assertEqual(sorted(environment), ['KAIROS_ALLOWED_ORIGINS', 'KAIROS_API_TIMEOUT', 'KAIROS_API_URL', 'KAIROS_MAX_BODY_BYTES'])  # the whole configuration of the component
         self.assertFalse([key for key in environment if key.startswith('MEMORY_')], 'kairos-mcp takes no MEMORY_* setting')
         self.assertFalse([key for key in environment if 'DSN' in key or 'PASSWORD' in key or 'SECRET' in key])
 

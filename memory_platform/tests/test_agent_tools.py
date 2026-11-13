@@ -9,6 +9,7 @@ import uuid
 from memory_platform.agent_store import AgentStore, apply_fields, corpus_filters, fields, migrate_agent_schema, visible_state
 from memory_platform.agent_tools import DETAIL_BYTES, NORMAL_BYTES, TRUNCATION, register_agent_tools, render
 from memory_platform.errors import Conflict, Forbidden, MemoryError, NotFound, Unauthorized
+from memory_platform.tests.chain_services import ChainAgentStore, ChainSession
 from memory_platform.tests.test_store import create_core, event
 
 
@@ -86,7 +87,11 @@ class AgentPostgresTests(unittest.TestCase):
         self.store, self.actor, self.project = create_core()
         with self.store.transaction() as connection:
             migrate_agent_schema(connection)
-        self.service = AgentStore(self.store)
+        self.service = self.make_service()
+
+    def make_service(self):
+        """A new `AgentStore` over the store of the test (its chain variant: the same methods, each one a tool call through kairos-mcp)."""
+        return AgentStore(self.store)
 
     def add(self, content='Database fencing prevents stale updates', **payload):
         data = event(self.project, generate=False, payload={'title': 'Índice: "Árbol", decisión 🌳', 'content': content, 'tags': ['area:despliegue', 'nota:uno,dos', '"Árbol" 🌳'], 'category': 'decision', 'source': {'uri': 'fixture://approved/source'}, 'validation_status': 'unverified', **payload})
@@ -101,7 +106,7 @@ class AgentPostgresTests(unittest.TestCase):
     def test_append_retry_revision_and_restart_recovery(self):
         first = self.service.work_write(self.actor, self.project, 'release', {'task': 'Preparar índice', 'status': 'doing'}, 'r1', 0)
         second = self.service.work_write(self.actor, self.project, 'release', {'task': 'Preparar índice', 'status': 'done'}, 'r2', 1)
-        recovered = AgentStore(self.store)
+        recovered = self.make_service()
         self.assertEqual(recovered.work_write(self.actor, self.project, 'release', {'task': 'Preparar índice', 'status': 'doing'}, 'r1', 0), first)
         self.assertEqual(second['version'], 2)
         self.assertEqual(recovered.work_read(self.actor, self.project)['lists'][0]['state']['tasks'], {})
@@ -160,7 +165,7 @@ class AgentPostgresTests(unittest.TestCase):
         self.assertEqual(first['items'][0]['tags'], source['payload']['tags'])
         self.assertEqual(first['items'][0]['id'], source['item_id'])
         self.assertEqual(first['items'][0]['title'], source['payload']['title'])
-        recovered = AgentStore(self.store)
+        recovered = self.make_service()
         self.assertEqual(recovered.query_corpus(self.actor, self.project, 'decisions', 'Database'), first)
         self.assertEqual(recovered.prime_corpus(self.actor, self.project, 'decisions')['session_id'], primed['session_id'])
         source = self.change(source)
@@ -234,6 +239,16 @@ class AgentPostgresTests(unittest.TestCase):
             self.service.build_corpus(self.actor, self.project, 'subset', query='other')
         self.service.prime_corpus(self.actor, self.project, 'subset')
         self.assertEqual(self.service.query_corpus(self.actor, self.project, 'subset', 'absentword')['items'], [])
+
+
+class AgentPostgresChainTests(AgentPostgresTests):
+    """T-48 (CA-11): the same scenarios, each service call a tool call through kairos-mcp over the same store; the results and refusals are those of the service."""
+
+    def make_service(self):
+        if getattr(self, 'chain', None) is None:
+            self.chain = ChainSession(self.store, self.actor)
+            self.addCleanup(self.chain.close)
+        return ChainAgentStore(self.chain)
 
 
 if __name__ == '__main__':

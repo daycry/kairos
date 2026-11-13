@@ -41,11 +41,11 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 2 — Servidor sin modelo de lenguaje (C-04) | 9 | 9 | 100% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
 | Fase 3 — Paridad REST /v1 (C-02) | 10 | 10 | 100% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
-| Fase 5 — kairos-mcp (C-03) | 10 | 15 | 66.7% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
+| Fase 5 — kairos-mcp (C-03) | 13 | 15 | 86.7% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **45** | **74** | **60.8%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **48** | **74** | **64.9%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1603,94 +1603,109 @@ RED: `mcp/tests/test_untrusted.py` falló con 1 fallo y 25 errores: las respuest
 ### T-46 — Envoltorio S-05 en el MCP interno (lecturas) con el CLI 0.3.0 intacto
 
 - **Descripción**: Aplicar el mismo envoltorio aditivo a las herramientas de lectura del MCP interno, con una sola función compartida por las cuatro tablas de herramientas. Fuente: CA-13, S-05, P-02.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: El MCP interno añade tambien untrusted: true y warning a todas sus herramientas de lectura, igual que kairos-mcp, sin cambiar ningun campo existente ni el contrato de las 34 herramientas.
+- **Estado**: completado
+- **Cerrada**: 2026-11-13
 - **Tiempo humano**: est. 2.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.38h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.38h (estimado) · real 0.66h (medido)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 105 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: T-45
 - **Tipo**: backend
-- **Archivos**: `memory_platform/mcp.py`, `memory_platform/agent_tools.py`, `memory_platform/extended_tools.py`, `memory_platform/corpus_answer_tools.py`, `memory_platform/tests/test_untrusted_internal.py`, `docs/contracts/kairos-mcp.json`
+- **Archivos**: `memory_platform/mcp.py`, `memory_platform/agent_tools.py`, `memory_platform/extended_tools.py`, `memory_platform/corpus_answer_tools.py`, `memory_platform/tests/test_untrusted_internal.py`, `docs/contracts/kairos-mcp.json`, `memory_platform/tests/test_api.py`, `memory_platform/tests/test_mcp_write.py`, `memory_platform/tests/test_tool_endpoint_parity.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t46 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
   - `cd packages/kairos-cli && npm test` → pasa sin cambios
+  - Evidencia (2026-11-13): `docker build --target test -f memory_platform/Dockerfile -t kairos-test:i2p5 .` (con T-46, T-47 y T-48 aplicados) -> MEMORY_TEST_RESULT tests 727, failures 0, errors 0, skipped 0, passed true, llm_chat_calls 0; test_untrusted_internal 6 OK; contrato regenerado (Python 3.13) sin ninguna diferencia (34 herramientas); `cd packages/kairos-cli && npm test` -> ver nota (90 pass).
 
 **Criterios de aceptación**
-- [ ] Las herramientas de lectura del MCP interno devuelven `untrusted` y `warning`; el resto de campos no cambia
-- [ ] `test_mcp.py`, `test_agent_tools.py` y `test_extended_tools.py` pasan (ajustados solo donde comparan el objeto completo)
-- [ ] El contrato `kairos-mcp.json` regenerado solo tiene adiciones
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] Las herramientas de lectura del MCP interno devuelven `untrusted` y `warning`; el resto de campos no cambia
+- [x] `test_mcp.py`, `test_agent_tools.py` y `test_extended_tools.py` pasan (ajustados solo donde comparan el objeto completo)
+- [x] El contrato `kairos-mcp.json` regenerado solo tiene adiciones
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Test en rojo parametrizado
-- [ ] Aplicar el envoltorio de forma centralizada
-- [ ] Regenerar contratos y comprobar el diff aditivo
-- [ ] `usage-meter start/close`
+- [x] Test en rojo parametrizado
+- [x] Aplicar el envoltorio de forma centralizada
+- [x] Regenerar contratos y comprobar el diff aditivo
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-13/P-02. Patrón: `memory_platform/mcp.py:20-63` (`safe`, `stored`) como punto común; herramientas de lectura en `mcp.py:68-172`, `agent_tools.py:48-146`, `extended_tools.py:24-76`. Clase: cambio de comportamiento → primer oráculo: test en rojo que fija el comportamiento nuevo; los tests que asumían el anterior se ajustan en la misma tarea.
+**Notas**: Procedencia: spec CA-13/P-02. Patrón: `memory_platform/mcp.py:20-63` (`safe`, `stored`) como punto común; herramientas de lectura en `mcp.py:68-172`, `agent_tools.py:48-146`, `extended_tools.py:24-76`. Clase: cambio de comportamiento → primer oráculo: test en rojo que fija el comportamiento nuevo; los tests que asumían el anterior se ajustan en la misma tarea. CAMBIO VISIBLE PARA UN CLIENTE MCP del MCP interno (memory-api:8790/mcp): las lecturas (readOnlyHint, salvo important_workflow) llevan `untrusted: true` y `warning` al principio del objeto; un `warning` ya existente (observation_context, team_brief) se respeta. Una sola funcion, `agent_tools.untrusted`, usada por mcp.py, agent_tools.py, extended_tools.py y corpus_answer_tools.py (test: el mismo objeto en los cuatro). Ajustes de tests que comparaban el objeto completo (solo ahi): test_mcp_write.py (2 aserciones con ENVELOPE), test_api.py (`assertSame` quita el sobre de la herramienta al compararla con el endpoint), test_tool_endpoint_parity.py (`without_envelope` y comprobacion de que la herramienta de lectura lo trae). El contrato no cambia: ninguna herramienta cambia de esquema (las de agente declaran `-> str`; las demas no tienen outputSchema). Archivos anadidos con esta nota: `memory_platform/tests/test_api.py`, `memory_platform/tests/test_mcp_write.py`, `memory_platform/tests/test_tool_endpoint_parity.py`. Ventana de usage-meter solapada con T-47 y T-48 (no sumar). usage-meter three-components/T-46: 0.66 h IA (medido, win-84de384a942248aeb4a1a3dad07d933f).
+
+
+RED: `memory_platform/tests/test_untrusted_internal.py` falló con KeyError: 'untrusted' en todas las herramientas de lectura y AttributeError: agent_tools sin `untrusted` · 2026-11-13.
 
 ### T-47 — Arnés en cadena: kairos-mcp → servidor, ASGI en proceso sobre PostgreSQL aislado
 
 - **Descripción**: Arnés de pruebas que monta kairos-mcp contra la app del servidor por transporte ASGI en proceso, sobre el PostgreSQL efímero del target `test`, sin red y sin importar código del servidor desde `mcp/` (el arnés vive en el lado del servidor). Fuente: CA-11.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: Hay un arnes de pruebas que monta kairos-mcp delante del servidor en el mismo proceso, sobre PostgreSQL aislado, para comprobar que las herramientas dan por la cadena lo mismo que el MCP interno.
+- **Estado**: completado
+- **Cerrada**: 2026-11-13
 - **Tiempo humano**: est. 4.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.61h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.61h (estimado) · real 0.43h (medido)
 - **Supervisión**: est. 0.15h (≈25 % IA) · real —
 - **Previsión IA**: 168 k in / 16 k out tok · ⚠️ verificar €
 - **Dependencias**: T-46
 - **Tipo**: test
-- **Archivos**: `memory_platform/tests/chain_harness.py`, `mcp/tests/test_chain_smoke.py`
+- **Archivos**: `memory_platform/tests/chain_harness.py`, `memory_platform/tests/test_chain_smoke.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t47 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01 (incluye el humo de la cadena)
   - `grep -rn "memory_platform" mcp/ --include=*.py` → sin coincidencias
+  - Evidencia (2026-11-13): `docker build --target test ... -t kairos-test:i2p5 .` -> MEMORY_TEST_RESULT tests 727, failures 0, errors 0, skipped 0, passed true (incluye test_chain_smoke: projects, remember y search por la cadena iguales al MCP interno, mismo mensaje con clave sin permiso y 401 sin credencial); `grep -rn "memory_platform" mcp/ --include=*.py` -> sin coincidencias.
 
 **Criterios de aceptación**
-- [ ] El arnés permite llamar a una herramienta por la cadena kairos-mcp → servidor con las mismas credenciales de prueba
-- [ ] `mcp/` sigue sin importar `memory_platform` (el test de CA-08 pasa)
-- [ ] Un caso de humo de la cadena (`projects`, `remember`, `search`) pasa
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] El arnés permite llamar a una herramienta por la cadena kairos-mcp → servidor con las mismas credenciales de prueba
+- [x] `mcp/` sigue sin importar `memory_platform` (el test de CA-08 pasa)
+- [x] Un caso de humo de la cadena (`projects`, `remember`, `search`) pasa
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Diseñar el puente ASGI (dónde vive el arnés para respetar CA-08)
-- [ ] Test en rojo de la cadena mínima
-- [ ] Implementar
-- [ ] `usage-meter start/close`
+- [x] Diseñar el puente ASGI (dónde vive el arnés para respetar CA-08)
+- [x] Test en rojo de la cadena mínima
+- [x] Implementar
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-11, §Pruebas (modo ASGI en proceso). Patrón: arnés `memory_platform/tests/run_postgres.py:30-35` (PostgreSQL efímero) y tests de gateway `memory_platform/tests/test_corpus_gateway.py`. Clase: capacidad nueva.
+**Notas**: Procedencia: spec CA-11, §Pruebas (modo ASGI en proceso). Patrón: arnés `memory_platform/tests/run_postgres.py:30-35` (PostgreSQL efímero) y tests de gateway `memory_platform/tests/test_corpus_gateway.py`. Clase: capacidad nueva. DESVIACION: el humo de la cadena vive en `memory_platform/tests/test_chain_smoke.py` y no en `mcp/tests/` (esa ruta no puede nombrar ni importar el servidor, y el grep de la Verificacion lo exige); `mcp/tests/test_health.py` prueba CA-08 con la cadena partida, y `test_chain_smoke.ComponentIsolationTests` lo comprueba desde el servidor. Arnes: `chain_harness.py` (ChainClient: `/mcp/` va a kairos-mcp y lo demas al servidor; `httpx.ASGITransport` con `raise_app_exceptions=False`; `RecordingTransport` registra las peticiones y admite un gancho tras la respuesta; `ChainMode` y `chain_variant` para ejecutar un TestCase dos veces). El target `test` de `memory_platform/Dockerfile` copia ya `mcp/` en `/app/mcp` (T-38). Archivos anadidos con esta nota: `memory_platform/tests/test_chain_smoke.py` (en lugar de `mcp/tests/test_chain_smoke.py`). Ventana de usage-meter solapada con T-46 y T-48 (no sumar). usage-meter three-components/T-47: 0.43 h IA (medido, win-d83388608bb14e53971e68e23e5df420).
+
+
+RED: `memory_platform/tests/test_chain_smoke.py` falló con ModuleNotFoundError: No module named 'memory_platform.tests.chain_harness' · 2026-11-13.
 
 ### T-48 — Los 7 ficheros de tests de comportamiento MCP contra la cadena (CA-11)
 
 - **Descripción**: Ejecutar los siete ficheros de tests del MCP interno también contra la cadena kairos-mcp → servidor, con los mismos resultados salvo los campos aditivos de S-05. Fuente: CA-11, CA-12, CA-13.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: Los tests de comportamiento del MCP se ejecutan ahora tambien por la cadena kairos-mcp -> servidor con los mismos resultados; kairos-mcp devuelve 413 con cuerpos grandes, 401 con claves revocadas y nunca el texto de un error interno.
+- **Estado**: completado
+- **Cerrada**: 2026-11-13
 - **Tiempo humano**: est. 4.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.61h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.61h (estimado) · real incluida en las ventanas de T-46 y T-47 (medido, solape; no sumar)
 - **Supervisión**: est. 0.15h (≈25 % IA) · real —
 - **Previsión IA**: 168 k in / 16 k out tok · ⚠️ verificar €
 - **Dependencias**: T-47
 - **Tipo**: test
-- **Archivos**: `memory_platform/tests/test_mcp.py`, `memory_platform/tests/test_mcp_write.py`, `memory_platform/tests/test_agent_tools.py`, `memory_platform/tests/test_extended_tools.py`, `memory_platform/tests/test_corpus_gateway.py`, `memory_platform/tests/test_extended_gateway.py`, `memory_platform/tests/test_work_gateway.py`, `memory_platform/tests/chain_harness.py`
+- **Archivos**: `memory_platform/tests/test_mcp.py`, `memory_platform/tests/test_mcp_write.py`, `memory_platform/tests/test_agent_tools.py`, `memory_platform/tests/test_extended_tools.py`, `memory_platform/tests/test_corpus_gateway.py`, `memory_platform/tests/test_extended_gateway.py`, `memory_platform/tests/test_work_gateway.py`, `memory_platform/tests/chain_harness.py`, `memory_platform/tests/chain_services.py`, `memory_platform/tests/test_chain_retry.py`, `mcp/kairos_mcp/limits.py`, `mcp/kairos_mcp/config.py`, `mcp/kairos_mcp/app.py`, `mcp/kairos_mcp/auth.py`, `mcp/kairos_mcp/translate.py`, `mcp/kairos_mcp/tools.py`, `mcp/kairos_mcp/logs.py`, `mcp/tests/test_limits.py`, `mcp/tests/test_unauthorized.py`, `mcp/tests/test_robustness.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t48 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
   - `docker build` anterior imprime `tests` ≥ línea base de T-01 más los casos de la cadena
+  - Evidencia (2026-11-13): `docker build --target test ... -t kairos-test:i2p5 .` -> MEMORY_TEST_RESULT tests 727 (649 de la linea base de T-40 + 78 casos de la cadena y de las fases siguientes: 5 ficheros HTTP con variante chain, AgentPostgresChainTests, ExtendedPostgresChainTests, test_chain_retry 8, test_chain_smoke 4, test_untrusted_internal 6), failures 0, errors 0, skipped 0, passed true, llm_chat_calls 0; mcp: `docker run --rm kairos-mcp:t48 python -m unittest discover -s tests` -> Ran 99 tests, OK.
 
 **Criterios de aceptación**
-- [ ] Los siete ficheros pasan con el MCP interno y con la cadena, con los mismos resultados salvo `untrusted` y `warning`
-- [ ] Con una clave sin permiso de lectura la herramienta falla con el mismo mensaje que el MCP interno; sin credencial, 401
-- [ ] El recuento de tests del MCP interno no baja (ningún test desactivado)
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] Los siete ficheros pasan con el MCP interno y con la cadena, con los mismos resultados salvo `untrusted` y `warning`
+- [x] Con una clave sin permiso de lectura la herramienta falla con el mismo mensaje que el MCP interno; sin credencial, 401
+- [x] El recuento de tests del MCP interno no baja (ningún test desactivado)
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Parametrizar los siete ficheros por modo (interno / cadena)
-- [ ] Corregir las diferencias reales de kairos-mcp (no los tests)
-- [ ] `usage-meter start/close`
+- [x] Parametrizar los siete ficheros por modo (interno / cadena)
+- [x] Corregir las diferencias reales de kairos-mcp (no los tests)
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-11. Patrón: los siete ficheros ya existen y dan el oráculo. Clase: refactor de pruebas con paridad de comportamiento (oráculo: el mismo test en verde por las dos vías).
+**Notas**: Procedencia: spec CA-11. Patrón: los siete ficheros ya existen y dan el oráculo. Clase: refactor de pruebas con paridad de comportamiento (oráculo: el mismo test en verde por las dos vías). Los siete ficheros corren dos veces con la misma clase: test_mcp, test_mcp_write, test_corpus_gateway, test_extended_gateway y test_work_gateway usan `self.open(app)` (ChainMode) y una subclase `...ChainTests` (chain_variant; ningun test copiado ni omitido); test_agent_tools y test_extended_tools llaman a AgentStore/ExtendedStore, asi que sus clases Postgres tienen una fabrica `make_service` y una variante cuyos servicios son fachadas (`chain_services.py`: cada metodo es una llamada de herramienta por kairos-mcp que devuelve los datos y relanza la excepcion de dominio por su mensaje). Los 649 tests del MCP interno no bajan. DIFERENCIAS REALES halladas y corregidas en kairos-mcp (no en los tests): (1) cuerpo grande: el MCP interno da 413 antes de leer; kairos-mcp lo aceptaba -> `limits.BodyLimit` y variable KAIROS_MAX_BODY_BYTES (262144 por defecto, tope 16 MiB; el arnes la iguala a la del servidor); (2) clave revocada: el MCP interno da 401 HTTP; kairos-mcp daba 200 con error de herramienta -> un 401 de /v1 pasa a ser el 401 de la peticion MCP con el mismo cuerpo (`auth.credential_refused`); (3) una excepcion inesperada dentro de kairos-mcp (p. ej. un recibo sin `jobs`) filtraba el texto de la excepcion -> mensaje generico y log solo con el tipo. Deuda de la Fase 3 resuelta aqui: `test_chain_retry.py` prueba por la cadena real (ASGI en proceso, sin guion) `reread`, `only_if_value_changed` y `max` con un gancho que cambia la version entre la lectura y el POST y registra las peticiones (GET,POST 409,GET,POST 200; GET,POST,GET sin reenviar; 4 GET y 4 POST como maximo), el orden de errores con clave de solo lectura y de solo escritura, `expected_version: 0` (solo GET, sin rebuild), un segundo actor real con read+write que no ve ni toca el corpus del primero (404 en lectura y envio; su list_corpora vacio), y la clave revocada (401); cada respuesta se compara con la del MCP interno sobre el mismo estado. Diferencias que se mantienen y estan documentadas: el texto de un argumento invalido (`Input validation error` frente al de FastMCP) y que tools/list no valida el token. Archivos anadidos con esta nota: `memory_platform/tests/chain_services.py`, `memory_platform/tests/test_chain_retry.py`, `memory_platform/tests/test_mcp_write.py`, `mcp/kairos_mcp/limits.py`, `mcp/kairos_mcp/config.py`, `mcp/kairos_mcp/app.py`, `mcp/kairos_mcp/auth.py`, `mcp/kairos_mcp/translate.py`, `mcp/kairos_mcp/tools.py`, `mcp/kairos_mcp/logs.py`, `mcp/tests/test_limits.py`, `mcp/tests/test_unauthorized.py`, `mcp/tests/test_robustness.py`. Sin ventana de usage-meter propia: el trabajo cae dentro de las de T-46 y T-47.
+
+
+RED: `memory_platform/tests/test_mcp_write.py::MCPBoundaryChainTests` falló con AssertionError 200 != 413 (cuerpo grande) y 200 != 401 (clave revocada) en las variantes chain; KeyError 'jobs' filtrado como texto de la herramienta · 2026-11-13.
 
 ### T-49 — Documentar `kairos-mcp`
 

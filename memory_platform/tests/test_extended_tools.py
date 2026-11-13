@@ -10,6 +10,7 @@ from memory_platform.errors import Conflict, Forbidden, MemoryError, NotFound, U
 from memory_platform.extended_store import ExtendedStore, migrate_extended_schema, validated_event
 from memory_platform.extended_tools import register_extended_tools
 from memory_platform.store import digest
+from memory_platform.tests.chain_services import ChainAgentStore, ChainExtendedStore, ChainSession
 from memory_platform.tests.test_store import create_core, event
 
 
@@ -45,7 +46,14 @@ class ExtendedPostgresTests(unittest.TestCase):
             for permission in ('read', 'write'):
                 c.execute('INSERT INTO memory.project_grants VALUES(%s,%s,%s)', (aid, self.project, permission))
         self.other = {'id': aid, 'credential_type': 'bootstrap'}
-        self.service = ExtendedStore(self.store)
+        self.service = self.make_service()
+
+    def make_service(self):
+        """An `ExtendedStore` over the store of the test (its chain variant: the same methods, each one a tool call through kairos-mcp)."""
+        return ExtendedStore(self.store)
+
+    def make_agent_service(self):
+        return AgentStore(self.store)
 
     def captured(self, tool='Read', mode='summary', content=None):
         payload = {'title': 'Technical tool summary', 'content': content or json.dumps({'tool': tool, 'status': 'success', 'detail': 'private body omitted'}), 'category': 'agent-activity'}
@@ -59,16 +67,16 @@ class ExtendedPostgresTests(unittest.TestCase):
     def test_observation_exact_retry_reload_revision_and_withdrawal(self):
         original = event(self.project, generate=False)
         first = self.service.observation_add(self.actor, original)
-        self.assertEqual(ExtendedStore(self.store).observation_add(self.actor, original), first)
+        self.assertEqual(self.make_service().observation_add(self.actor, original), first)
         with self.assertRaises(Conflict):
             self.service.observation_add(self.actor, {**original, 'payload': {'title': 'Different', 'content': 'Different'}})
         updated = {**original, 'event_id': str(uuid.uuid4()), 'version': 2, 'payload': {'title': 'Árbol: "índice" 🌳', 'content': 'Updated evidence', 'tags': ['a:b', 'one,two', '"sí"']}}
         self.service.observation_record_event(self.actor, updated)
-        result = AgentStore(self.store).observations(self.actor, self.project, ids=[original['item_id']])['items'][0]
+        result = self.make_agent_service().observations(self.actor, self.project, ids=[original['item_id']])['items'][0]
         self.assertEqual(result['tags'], updated['payload']['tags'])
         self.assertEqual(result['version'], 2)
         self.service.observation_record_event(self.actor, {**updated, 'event_id': str(uuid.uuid4()), 'version': 3, 'event_type': 'delete'})
-        self.assertEqual(AgentStore(self.store).observations(self.actor, self.project, ids=[original['item_id']])['items'], [])
+        self.assertEqual(self.make_agent_service().observations(self.actor, self.project, ids=[original['item_id']])['items'], [])
         with self.assertRaises(MemoryError):
             self.service.observation_add(self.actor, updated)
 
@@ -101,13 +109,13 @@ class ExtendedPostgresTests(unittest.TestCase):
             self.service.get_tool_uses(self.other, self.project)
 
     def test_team_two_actors_share_and_private_state_stays_private(self):
-        AgentStore(self.store).work_write(self.actor, self.project, 'release', {'task': 'private'}, 'private')
+        self.make_agent_service().work_write(self.actor, self.project, 'release', {'task': 'private'}, 'private')
         first = self.service.team_write(self.actor, self.project, 'release', {'task': 'shared', 'status': 'doing'}, 'r1', 0)
         self.assertEqual(self.service.team_read(self.other, self.project)['lists'][0]['state'], first['state'])
         second = self.service.team_write(self.other, self.project, 'release', {'task': 'shared', 'owner': 'agent-b'}, 'r1', 1)
         self.assertEqual(second['updated_by'], self.other['id'])
-        self.assertEqual(ExtendedStore(self.store).team_write(self.actor, self.project, 'release', {'task': 'shared', 'status': 'doing'}, 'r1', 0), first)
-        self.assertEqual(AgentStore(self.store).work_read(self.other, self.project)['lists'], [])
+        self.assertEqual(self.make_service().team_write(self.actor, self.project, 'release', {'task': 'shared', 'status': 'doing'}, 'r1', 0), first)
+        self.assertEqual(self.make_agent_service().work_read(self.other, self.project)['lists'], [])
         self.assertEqual(self.service.team_search(self.actor, self.project, 'agent-b')['lists'][0]['version'], 2)
         with self.assertRaises(Conflict):
             self.service.team_write(self.actor, self.project, 'release', {'task': 'stale'}, 'r2', 1)
@@ -185,6 +193,22 @@ class ExtendedPostgresTests(unittest.TestCase):
         self.assertTrue(result['truncated'])
         self.assertLess(len(json.dumps(result, ensure_ascii=False).encode('utf-8')), 262_144)
         self.assertEqual(self.service.team_search(self.other, self.project, 'z-match')['lists'][0]['list'], 'z-match')
+
+
+class ExtendedPostgresChainTests(ExtendedPostgresTests):
+    """T-48 (CA-11): the same scenarios, each service call a tool call through kairos-mcp over the same store; the results and refusals are those of the service."""
+
+    def session(self):
+        if getattr(self, 'chain', None) is None:
+            self.chain = ChainSession(self.store, self.actor)
+            self.addCleanup(self.chain.close)
+        return self.chain
+
+    def make_service(self):
+        return ChainExtendedStore(self.session())
+
+    def make_agent_service(self):
+        return ChainAgentStore(self.session())
 
 
 if __name__ == '__main__':

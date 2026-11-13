@@ -6,9 +6,10 @@ from fastapi.testclient import TestClient
 from memory_platform.app import create_app
 from memory_platform.config import Settings
 from memory_platform.tests.test_store import create_core, event
+from memory_platform.tests.chain_harness import ChainMode, chain_variant
 
 
-class CorpusGatewayTests(unittest.TestCase):
+class CorpusGatewayTests(ChainMode, unittest.TestCase):
     def test_selection_prime_answer_mcp_retry_reload_and_rebuild(self):
         store, actor, project = create_core()
         source = event(project, generate=False, payload={'title': 'Fencing', 'content': 'Check the fencing token before publication.'})
@@ -25,7 +26,7 @@ class CorpusGatewayTests(unittest.TestCase):
         base = '/v1/projects/'+project+'/corpora'
         with patch('memory_platform.corpus_answers.NativeCorpusProvider', return_value=Provider()):
             app = create_app(settings, store=store)
-            with TestClient(app, base_url='http://localhost:8790') as client:
+            with self.open(app) as client:
                 built = client.post(base, headers=headers, json={'name': 'selected', 'query': 'fencing'})
                 self.assertEqual(built.status_code, 200, built.text)
                 self.assertEqual(client.get(base, headers=headers).json()['items'][0]['name'], 'selected')
@@ -41,7 +42,7 @@ class CorpusGatewayTests(unittest.TestCase):
                 receipt = json.loads(retry.json()['result']['content'][0]['text'])
                 self.assertEqual(receipt, result.json())
                 self.assertEqual(len(packets), 1)
-                reloaded = TestClient(create_app(settings, store=store), base_url='http://localhost:8790')
+                reloaded = self.open(create_app(settings, store=store))
                 with reloaded:
                     self.assertEqual(reloaded.get(base+'/selected/answers/same-operation', headers=headers).json(), result.json())
                 store.ingest_event(actor, event(project, generate=False, payload={'title': 'New fencing', 'content': 'A new fencing source.'}))
@@ -65,7 +66,7 @@ class CorpusGatewayTests(unittest.TestCase):
             async def answer(self, messages, sources, limits):
                 calls.append(messages)
         with patch('memory_platform.corpus_answers.NativeCorpusProvider', return_value=Provider()):
-            with TestClient(create_app(Settings('unused'), store=store), base_url='http://localhost:8790') as client:
+            with self.open(create_app(Settings('unused'), store=store)) as client:
                 client.post(base, headers=headers, json={'name': 'selected', 'query': 'fencing'})
                 primed = client.post(base+'/selected/prime', headers=headers, json={'fresh': False}).json()
                 intent = {'question': 'fencing', 'request_id': 'off-operation', 'expected_session_id': primed['session_id'], 'expected_generation': primed['version']}
@@ -81,3 +82,7 @@ class CorpusGatewayTests(unittest.TestCase):
                 status = client.get(base+'/selected/answers/off-operation', headers=headers)
                 self.assertEqual(status.status_code, 404)  # nothing was reserved, so there is nothing to read
         self.assertEqual(calls, [])
+
+
+# Every class above runs a second time through kairos-mcp (T-48, CA-11): the same tests, the same results, the envelope of S-05 aside.
+CorpusGatewayChain = chain_variant(CorpusGatewayTests)

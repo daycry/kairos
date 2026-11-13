@@ -14,15 +14,16 @@ from memory_platform.extended_store import validated_event
 from memory_platform.store import digest
 from memory_platform.tests.test_store import create_core, event
 from memory_platform.tests.test_work_gateway import unpack
+from memory_platform.tests.chain_harness import ChainMode, chain_variant
 
 
-class ExtendedGatewayTests(unittest.TestCase):
+class ExtendedGatewayTests(ChainMode, unittest.TestCase):
     def test_mcp_http_observation_and_team_retry_share_receipts(self):
         store, actor, project = create_core()
         key = store.create_key(actor, {'name': 'extended-fixture', 'project_ids': [project], 'scopes': ['read', 'write']})['token']
         headers = {'Authorization': 'Bearer '+key, 'Accept': 'application/json, text/event-stream'}
         app = create_app(Settings('unused'), store=store, auth=Auth(store))
-        with TestClient(app, base_url='http://localhost:8790') as client:
+        with self.open(app) as client:
             def tool(name, arguments):
                 response = client.post('/mcp/', headers=headers, json={'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call', 'params': {'name': name, 'arguments': arguments}})
                 self.assertEqual(response.status_code, 200)
@@ -44,11 +45,12 @@ class ExtendedGatewayTests(unittest.TestCase):
             self.assertEqual(client.get('/v1/projects/'+project+'/team-work', headers=read_headers).status_code, 200)
 
 
+
 if __name__ == '__main__':
     unittest.main()
 
 
-class StructuredObservationTests(unittest.TestCase):
+class StructuredObservationTests(ChainMode, unittest.TestCase):
     """C-05 (CA-20, CA-21, P-11): `payload.structured` is validated against its schema; events without it behave as before."""
 
     def setUp(self):
@@ -56,7 +58,7 @@ class StructuredObservationTests(unittest.TestCase):
         self.key = self.store.create_key(actor, {'name': 'structured-fixture', 'project_ids': [self.project], 'scopes': ['read', 'write']})['token']
         self.headers = {'Authorization': 'Bearer '+self.key, 'Accept': 'application/json, text/event-stream'}
         app = create_app(Settings('unused'), store=self.store, auth=Auth(self.store))
-        self.http = TestClient(app, base_url='http://localhost:8790')
+        self.http = self.open(app)
         self.http.__enter__()
         self.addCleanup(self.http.__exit__, None, None, None)
 
@@ -183,7 +185,7 @@ class ValidatedEventTests(unittest.TestCase):
             validated_event(data)
 
 
-class StructuredIngestRouteTests(unittest.TestCase):
+class StructuredIngestRouteTests(ChainMode, unittest.TestCase):
     """Gaps 1-3 and 5 of the phase 4 review: every route that ingests an event validates `structured` at the one shared point."""
 
     def setUp(self):
@@ -191,7 +193,7 @@ class StructuredIngestRouteTests(unittest.TestCase):
         self.key = self.store.create_key(actor, {'name': 'route-fixture', 'project_ids': [self.project], 'scopes': ['read', 'write']})['token']
         self.headers = {'Authorization': 'Bearer '+self.key, 'Accept': 'application/json, text/event-stream'}
         self.app = create_app(Settings('unused'), store=self.store, auth=Auth(self.store))
-        self.http = TestClient(self.app, base_url='http://localhost:8790')
+        self.http = self.open(self.app)
         self.http.__enter__()
         self.addCleanup(self.http.__exit__, None, None, None)
 
@@ -275,3 +277,9 @@ class StructuredIngestRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 422, response.text)
         self.assertEqual(response.json()['error']['code'], 'sensitive_source_requires_review')
         self.assertNotIn('token interno', response.text)
+
+
+# Every class above runs a second time through kairos-mcp (T-48, CA-11): the same tests, the same results, the envelope of S-05 aside.
+ExtendedGatewayChainTests = chain_variant(ExtendedGatewayTests)
+StructuredObservationChainTests = chain_variant(StructuredObservationTests)
+StructuredIngestRouteChainTests = chain_variant(StructuredIngestRouteTests)

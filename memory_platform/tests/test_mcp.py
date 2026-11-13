@@ -6,9 +6,10 @@ from fastapi.testclient import TestClient
 from memory_platform.app import create_app
 from memory_platform.config import Settings
 from memory_platform.errors import Unauthorized, NotFound
+from memory_platform.tests.chain_harness import ChainMode, chain_variant
 
 
-class NativeMCPTests(unittest.TestCase):
+class NativeMCPTests(ChainMode, unittest.TestCase):
     def setUp(self):
         self.auth = Mock()
         self.auth.authenticate_bearer.return_value = {'id': 'test', 'credential_type': 'bearer'}
@@ -17,7 +18,7 @@ class NativeMCPTests(unittest.TestCase):
         self.app = create_app(Settings('unused'), store=Mock(), auth=self.auth, retrieval=self.retrieval)
 
     def test_native_initialize_list_and_search(self):
-        with TestClient(self.app, base_url='http://localhost:8790') as client:
+        with self.open(self.app) as client:
             headers = {'Authorization': 'Bearer fixture', 'Accept': 'application/json, text/event-stream'}
             response = client.post('/mcp/', headers=headers, json={'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {'protocolVersion': '2025-03-26', 'capabilities': {}, 'clientInfo': {'name': 'test', 'version': '1'}}})
             self.assertEqual(response.status_code, 200, response.text)
@@ -39,20 +40,20 @@ class NativeMCPTests(unittest.TestCase):
         self.retrieval.search.assert_awaited_once()
 
     def test_missing_auth_cannot_discover_or_invoke(self):
-        with TestClient(self.app, base_url='http://localhost:8790') as client:
+        with self.open(self.app) as client:
             response = client.post('/mcp/', json={'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'})
             self.assertEqual(response.status_code, 401)
         self.retrieval.search.assert_not_called()
 
     def test_tool_scope_denial_is_not_success(self):
         self.retrieval.search.side_effect = NotFound()
-        with TestClient(self.app, base_url='http://localhost:8790') as client:
+        with self.open(self.app) as client:
             response = client.post('/mcp/', headers={'Authorization': 'Bearer fixture', 'Accept': 'application/json, text/event-stream'}, json={'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call', 'params': {'name': 'search', 'arguments': {'project_ids': ['foreign'], 'q': 'fixture'}}})
             self.assertEqual(response.status_code, 200, response.text)
             self.assertTrue(response.json()['result']['isError'])
 
 
-class SearchHitFieldsTests(unittest.TestCase):
+class SearchHitFieldsTests(ChainMode, unittest.TestCase):
     """CA-29 at the tool: `matched_chunk` travels untouched when a hit has it and is absent when it has not."""
     def test_search_passes_matched_chunk_through_and_omits_it_for_other_hits(self):
         auth = Mock()
@@ -62,7 +63,7 @@ class SearchHitFieldsTests(unittest.TestCase):
         chunked = dict(plain, ref='documental:a:two:1', item_id='two', matched_chunk={'ordinal': 4, 'char_start': 5200, 'char_end': 6700})
         retrieval = Mock(search=AsyncMock(return_value={'items': [chunked, plain], 'backends': {}, 'partial': False}))
         app = create_app(Settings('unused'), store=Mock(), auth=auth, retrieval=retrieval)
-        with TestClient(app, base_url='http://localhost:8790') as client:
+        with self.open(app) as client:
             headers = {'Authorization': 'Bearer fixture', 'Accept': 'application/json, text/event-stream'}
             client.post('/mcp/', headers=headers, json={'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {'protocolVersion': '2025-03-26', 'capabilities': {}, 'clientInfo': {'name': 'fixture', 'version': '1'}}})
             call = client.post('/mcp/', headers=headers, json={'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call', 'params': {'name': 'search', 'arguments': {'project_ids': ['a'], 'q': 'fixture'}}})
@@ -76,7 +77,7 @@ class SearchHitFieldsTests(unittest.TestCase):
         self.assertEqual(items[1]['ref'], 'documental:a:one:1')
 
 
-class DegradedSemanticToolTests(unittest.TestCase):
+class DegradedSemanticToolTests(ChainMode, unittest.TestCase):
     """CA-16 at the tools: `search` and `context` keep answering with lexical hits and carry `degraded` when only the semantic layer fails."""
     def test_search_and_context_tools_report_degraded_with_lexical_hits(self):
         from memory_platform.providers import ProviderError
@@ -89,7 +90,7 @@ class DegradedSemanticToolTests(unittest.TestCase):
         store.search_documents.return_value, store.search_native_facts.return_value, store.has_vectors.return_value = [], [], True
         settings = Settings('unused', request_timeout=5, embedding_query_timeout=0.3)
         app = create_app(settings, store=store, auth=auth, retrieval=Retrieval(store, settings, Mock(embed=AsyncMock(side_effect=ProviderError('http_503')))))
-        with TestClient(app, base_url='http://localhost:8790') as client:
+        with self.open(app) as client:
             headers = {'Authorization': 'Bearer fixture', 'Accept': 'application/json, text/event-stream'}
             client.post('/mcp/', headers=headers, json={'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {'protocolVersion': '2025-03-26', 'capabilities': {}, 'clientInfo': {'name': 'fixture', 'version': '1'}}})
             for number, name in ((2, 'search'), (3, 'context')):
@@ -116,7 +117,7 @@ class DegradedSemanticToolTests(unittest.TestCase):
         store.search_documents.return_value, store.search_native_facts.return_value, store.has_vectors.return_value = [], [], True
         settings = Settings('unused', request_timeout=5, embedding_query_timeout=5.0)
         app = create_app(settings, store=store, auth=auth, retrieval=Retrieval(store, settings, Mock(embed=AsyncMock(side_effect=stalled))))
-        with TestClient(app, base_url='http://localhost:8790') as client:
+        with self.open(app) as client:
             headers = {'Authorization': 'Bearer fixture', 'Accept': 'application/json, text/event-stream'}
             client.post('/mcp/', headers=headers, json={'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {'protocolVersion': '2025-03-26', 'capabilities': {}, 'clientInfo': {'name': 'fixture', 'version': '1'}}})
             for number, name in ((2, 'search'), (3, 'context')):
@@ -146,3 +147,9 @@ class DegradedSemanticToolTests(unittest.TestCase):
             self.assertIn('degraded', schema['properties'])
             self.assertNotIn('degraded', schema.get('required', []))
         self.assertEqual(sorted(schemas[0]['$defs']['Degraded']['required']), ['layer', 'reason'])
+
+
+# Every class above runs a second time through kairos-mcp (T-48, CA-11): the same tests, the same results, the envelope of S-05 aside.
+NativeMCPChain = chain_variant(NativeMCPTests)
+SearchHitFieldsChain = chain_variant(SearchHitFieldsTests)
+DegradedSemanticToolChain = chain_variant(DegradedSemanticToolTests)

@@ -6,6 +6,7 @@ from memory_platform.app import create_app
 from memory_platform.auth import Auth
 from memory_platform.config import Settings
 from memory_platform.tests.test_store import create_core
+from memory_platform.tests.chain_harness import ChainMode, chain_variant
 
 
 def unpack(result):
@@ -15,7 +16,7 @@ def unpack(result):
     return json.loads(text)
 
 
-class WorkGatewayTests(unittest.TestCase):
+class WorkGatewayTests(ChainMode, unittest.TestCase):
     def test_mcp_persist_reload_http_retry_and_read_only_denial(self):
         store, admin, project = create_core()
         token = store.create_key(admin, {'name': 'fixture', 'project_ids': [project], 'scopes': ['read', 'write']})['token']
@@ -23,14 +24,14 @@ class WorkGatewayTests(unittest.TestCase):
         headers = {'Authorization': 'Bearer '+token, 'Accept': 'application/json, text/event-stream'}
         app = create_app(Settings('unused'), store=store, auth=auth)
         change = {'list': 'Revisi\u00f3n: "\u00c1rbol" \U0001f333', 'fields': {'task': 'Conservar tags, con comas', 'status': 'doing'}, 'request_id': 'one-delivery', 'expected_version': 0}
-        with TestClient(app, base_url='http://localhost:8790') as client:
+        with self.open(app) as client:
             response = client.post('/mcp/', headers=headers, json={'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call', 'params': {'name': 'work_state_write', 'arguments': {'project': project, **change}}})
             self.assertEqual(response.status_code, 200)
             original = unpack(response.json()['result'])
             retry = client.post('/v1/projects/'+project+'/work-state', headers=headers, json=change)
             self.assertEqual(retry.json(), original)
         reloaded = create_app(Settings('unused'), store=store, auth=auth)
-        with TestClient(reloaded, base_url='http://localhost:8790') as client:
+        with self.open(reloaded) as client:
             result = client.get('/v1/projects/'+project+'/work-state', headers=headers)
             self.assertEqual(result.json()['lists'][0]['list'], change['list'])
             self.assertEqual(result.json()['lists'][0]['state'], original['state'])
@@ -51,3 +52,7 @@ class WorkGatewayTests(unittest.TestCase):
         reader = Auth(store).authenticate_bearer(store.create_key(actor, {'name': 'reader', 'project_ids': [project], 'scopes': ['read']})['token'])
         with self.assertRaises(Forbidden):
             service.query_corpus(reader, project, 'empty', 'question')
+
+
+# Every class above runs a second time through kairos-mcp (T-48, CA-11): the same tests, the same results, the envelope of S-05 aside.
+WorkGatewayChain = chain_variant(WorkGatewayTests)
