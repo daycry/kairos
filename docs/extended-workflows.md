@@ -31,6 +31,19 @@ own generated learning; validation requires permission and evidence.
 The REST adapters accept the same Event JSON: `POST /v1/observations` creates an
 observation and `POST /v1/observations/events` records subsequent events.
 
+## Structured observations
+
+An event may carry a structured document in `payload.structured`, validated against
+a versioned JSON Schema (2020-12) in `docs/contracts/`: `observation.v1`
+(`type`, `title`, `facts` with a literal `evidence_quote`, `narrative`, `concepts`,
+`files_read`, `files_modified`) or `session-summary.v1` (`request`, `investigated`,
+`learned`, `completed`, `next_steps`). The document's own `schema_version` selects the
+schema; unknown fields are refused and every text has a length limit. A document that
+does not match is a 422 `invalid_observation` whose message names the JSON path of the
+first error and never echoes content. An event without `payload.structured` is not
+validated and is accepted as before. Limits and local validation are in
+`docs/integration.md` and `docs/contracts/README.md`.
+
 ## Recover tool summaries
 
 `get_tool_uses(project, session_id?, tool?, limit=20, cursor?)` returns authorized,

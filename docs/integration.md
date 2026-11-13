@@ -152,6 +152,41 @@ Consulta `event_status(event_id)` después de una aceptación o timeout. `comple
 
 `generate: true` solicita procesamiento de generación cuando el flujo está permitido. No equivale a validación: los aprendizajes generados permanecen sin validar. Tipos admitidos: `note`, `summary`, `learning`, `correction`, `session_start`, `session_end` y `delete`. La política del servidor puede restringirlos.
 
+## Observaciones estructuradas con esquema versionado
+
+Cuando quieras que el servidor compruebe la forma de una observación o de un resumen de sesión, añade el documento a `payload.structured` del mismo evento de `remember` o de `observation_add`. Dos esquemas JSON (JSON Schema 2020-12) lo definen:
+
+| Esquema | Fichero | Campos (todos obligatorios) |
+|---|---|---|
+| `observation.v1` | `docs/contracts/observation.v1.schema.json` | `schema_version`, `type`, `title`, `facts`, `narrative`, `concepts`, `files_read`, `files_modified` |
+| `session-summary.v1` | `docs/contracts/session-summary.v1.schema.json` | `schema_version`, `request`, `investigated`, `learned`, `completed`, `next_steps` |
+
+`schema_version` es la constante del esquema (`"observation.v1"` o `"session-summary.v1"`) y elige con qué esquema se valida el documento. Ningún esquema admite campos sobrantes (`additionalProperties: false`). Límites de `observation.v1`: `type` es uno de `decision`, `bugfix`, `feature`, `refactor`, `change` o `discovery`; `title` de 1 a 200 caracteres; `narrative` de 1 a 20 000; `facts` hasta 20 elementos, cada uno con `statement` (1 a 500) y `evidence_quote` (1 a 2 000, la cita literal que respalda el hecho); `concepts` hasta 20 etiquetas únicas de 1 a 100 caracteres; `files_read` y `files_modified` hasta 50 rutas únicas de 1 a 500 caracteres. En `session-summary.v1`, los cinco campos de texto tienen de 1 a 4 000 caracteres. El límite de 256 KiB por evento sigue aplicándose, y el contenido pasa por las mismas reglas de privacidad que el resto del evento.
+
+```json
+{
+  "schema_version": "observation.v1",
+  "type": "bugfix",
+  "title": "Corregir el bucle de reintentos del worker",
+  "facts": [{"statement": "El bucle no esperaba entre intentos", "evidence_quote": "reintentaba cada 10 ms sin pausa"}],
+  "narrative": "Al leer el worker vi que reintentaba cada 10 ms sin pausa. Añadí una espera exponencial.",
+  "concepts": ["reintentos", "espera exponencial"],
+  "files_read": ["worker/sync.py"],
+  "files_modified": ["worker/sync.py"]
+}
+```
+
+**Solo se valida lo que declara `structured`.** Un evento sin `payload.structured` no se valida y se acepta como siempre; el CLI 0.3.0 no lo envía y no cambia. Si `structured` llega y no cumple su esquema (falta un campo, sobra uno, un texto o una lista excede su límite, el tipo es erróneo o `schema_version` falta o es desconocida), el servidor responde **422** con el código `invalid_observation` y un mensaje con la ruta JSON del primer error, por ejemplo `Structured observation does not match its schema: maxLength at /payload/structured/title`. El mensaje nunca reproduce valores del contenido. Corrige el documento y reenvía el evento con la misma identidad: un 422 no deja nada guardado.
+
+Valida un documento en local antes de enviarlo. Los ejemplos válidos e inválidos de cada esquema están en `docs/contracts/examples/<esquema>/valid/` y `.../invalid/`:
+
+```bash
+python -c "import json,sys,jsonschema;s=json.load(open('docs/contracts/observation.v1.schema.json',encoding='utf-8'));jsonschema.Draft202012Validator(s).validate(json.load(open(sys.argv[1],encoding='utf-8')))" mi-observacion.json
+python -m unittest discover -s scripts/tests -p test_contract_examples.py
+```
+
+La primera orden termina con error y la ruta del fallo si el documento no es válido; la segunda comprueba todos los ejemplos con `jsonschema`, un validador que no comparte código con el servidor.
+
 ## Publicar conocimiento aprobado
 
 El consumidor conserva la aprobación local y su evidencia. No debe enviar candidatos pendientes ni todo el repositorio. Para cada fuente, asigna un UUID documental canónico y una versión remota secuencial, manteniendo la correspondencia con su ID local.
