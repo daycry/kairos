@@ -42,6 +42,9 @@ WORKDIR /app
 COPY --chown=postgres:postgres memory_platform /app/memory_platform
 COPY --chown=postgres:postgres docs/contracts/*.schema.json /app/docs/contracts/
 COPY --chown=postgres:postgres docs/contracts/examples /app/docs/contracts/examples
+COPY --chown=postgres:postgres docs/contracts/kairos-mcp.json /app/docs/contracts/kairos-mcp.json
+# kairos-mcp (C-03): its contract copy is compared with the exported one, and the in-process chain tests (chain_harness.py) import kairos_mcp from here.
+COPY --chown=postgres:postgres mcp /app/mcp
 COPY --chown=postgres:postgres scripts/memory-client.py /app/scripts/memory-client.py
 COPY --chown=postgres:postgres scripts/memory-admin.py /app/scripts/memory-admin.py
 COPY --chown=postgres:postgres scripts/deploy-memory.py /app/scripts/deploy-memory.py

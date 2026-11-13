@@ -41,11 +41,11 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 2 — Servidor sin modelo de lenguaje (C-04) | 9 | 9 | 100% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
 | Fase 3 — Paridad REST /v1 (C-02) | 10 | 10 | 100% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
-| Fase 5 — kairos-mcp (C-03) | 2 | 15 | 13.3% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
+| Fase 5 — kairos-mcp (C-03) | 3 | 15 | 20.0% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **37** | **74** | **50.0%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **38** | **74** | **51.4%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1321,32 +1321,37 @@ RED: `mcp/tests/test_client.py` falló con 17 errores: ModuleNotFoundError kairo
 ### T-38 — Servidor MCP con `tools/list` generado desde `kairos-mcp.json` (P-05, CA-10)
 
 - **Descripción**: Montar el servidor MCP de bajo nivel que sirve las 34 herramientas desde el contrato (nombre, descripción, `inputSchema`, anotaciones, orden) en `streamable-http` `/mcp/`. Comprobar primero la hipótesis de que `mcp==1.27.1` permite `inputSchema` arbitrario; si no, escalar al usuario antes de pasar a copiar modelos (alternativa de la spec). Fuente: CA-10, P-05, R-01.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: kairos-mcp sirve por streamable-http en /mcp/ las mismas 34 herramientas del contrato, con los mismos nombres, descripciones, esquemas de entrada y anotaciones que el MCP interno.
+- **Estado**: completado
+- **Cerrada**: 2026-11-13
 - **Tiempo humano**: est. 3.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.46h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.46h (estimado) · real 0.10h (medido)
 - **Supervisión**: est. 0.12h (≈25 % IA) · real —
 - **Previsión IA**: 126 k in / 12 k out tok · ⚠️ verificar €
 - **Dependencias**: T-37
 - **Tipo**: mcp
-- **Archivos**: `mcp/kairos_mcp/tools.py`, `mcp/kairos_mcp/contract.py`, `mcp/contract/kairos-mcp.json`, `mcp/tests/test_tools_list.py`
+- **Archivos**: `mcp/kairos_mcp/tools.py`, `mcp/kairos_mcp/contract.py`, `mcp/contract/kairos-mcp.json`, `mcp/tests/test_tools_list.py`, `mcp/kairos_mcp/app.py`, `mcp/kairos_mcp/budget.py`, `mcp/kairos_mcp/translate.py`, `mcp/tests/test_client.py`, `memory_platform/tests/test_mcp_contract_copy.py`, `memory_platform/Dockerfile`, `mcp/contract/.keep`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build -f mcp/Dockerfile -t kairos-mcp:t38 mcp/ && docker run --rm kairos-mcp:t38 python -m unittest discover -s tests` → `OK`, incluido `test_tools_list`
+  - Evidencia (2026-11-13): `docker build -f mcp/Dockerfile -t kairos-mcp:t38 mcp/ && docker run --rm kairos-mcp:t38 python -m unittest discover -s tests` -> Ran 35 tests, OK (incluye test_tools_list con SDK mcp 1.27.1); `memory_platform.tests.test_mcp_contract_copy` OK en local; el target `test` completo se ejecuta en T-40.
 
 **Criterios de aceptación**
-- [ ] `tools/list` devuelve las 34 herramientas en el mismo orden y con los mismos `name`, `description`, `inputSchema` y `annotations` que `docs/contracts/kairos-mcp.json`, con la regla de `test_contract_additive.py`
-- [ ] La copia `mcp/contract/kairos-mcp.json` es idéntica a `docs/contracts/kairos-mcp.json` (test de igualdad)
-- [ ] Si el SDK no lo permite, la tarea queda bloqueada con la evidencia y se pide decisión
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] `tools/list` devuelve las 34 herramientas en el mismo orden y con los mismos `name`, `description`, `inputSchema` y `annotations` que `docs/contracts/kairos-mcp.json`, con la regla de `test_contract_additive.py`
+- [x] La copia `mcp/contract/kairos-mcp.json` es idéntica a `docs/contracts/kairos-mcp.json` (test de igualdad)
+- [x] Si el SDK no lo permite, la tarea queda bloqueada con la evidencia y se pide decisión
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Spike del SDK de bajo nivel y anotar el resultado
-- [ ] Test en rojo de `tools/list`
-- [ ] Implementar el registro desde el contrato
-- [ ] `usage-meter start/close`
+- [x] Spike del SDK de bajo nivel y anotar el resultado
+- [x] Test en rojo de `tools/list`
+- [x] Implementar el registro desde el contrato
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-10/P-05/R-01, hipótesis del SDK (spec §Supuestos). Patrón: regla de comparación en `memory_platform/tests/test_contract_additive.py:28-40`; la lista de herramientas la sirve hoy `memory_platform/mcp.py:20-63`. Como `mcp/` no puede importar el servidor, el contrato se copia dentro de `mcp/` y un test garantiza que no diverge. Clase: capacidad nueva (oráculo: igualdad con el contrato).
+**Notas**: Procedencia: spec CA-10/P-05/R-01, hipótesis del SDK (spec §Supuestos). Patrón: regla de comparación en `memory_platform/tests/test_contract_additive.py:28-40`; la lista de herramientas la sirve hoy `memory_platform/mcp.py:20-63`. Como `mcp/` no puede importar el servidor, el contrato se copia dentro de `mcp/` y un test garantiza que no diverge. Clase: capacidad nueva (oráculo: igualdad con el contrato). SPIKE (hipotesis P-05 confirmada, sin escalar): el Server de bajo nivel de mcp==1.27.1 sirve el inputSchema del contrato tal cual ($defs, pattern, anyOf, additionalProperties) y valida la llamada contra el (jsonschema). tools/list incluye outputSchema cuando el contrato lo trae (22 herramientas) y no envia las claves x-kairos-*. Decisiones: errores de herramienta con el mismo texto que FastMCP (`Error executing tool <nombre>: <mensaje>`); `initialize` lleva las mismas `instructions`; proteccion de DNS rebinding como el MCP interno (loopback, hostnames de KAIROS_ALLOWED_ORIGINS y `memory-mcp`); tools/list exige Bearer (401 sin el), pero kairos-mcp no valida el token hasta la primera llamada a /v1. La copia del contrato se compara con docs/contracts en el lado del servidor (la imagen mcp/ no ve docs/): `memory_platform/tests/test_mcp_contract_copy.py`, y el target test de `memory_platform/Dockerfile` copia ahora `docs/contracts/kairos-mcp.json` y `mcp/` (la ruta del arnes de T-47). `mcp/contract/.keep` de T-36 se elimina. `translate.py` y `budget.py` quedan como esqueleto (ninguna herramienta se atiende hasta T-41). usage-meter three-components/T-38: 0.10 h IA (medido, win-394c46e6ba0a4ea3b6368f3dd62860c0).
+
+
+RED: `mcp/tests/test_tools_list.py` falló con fallos y errores: create_app sin /mcp/ ni allowed_origins (setUpClass: initialize no devuelve result) · 2026-11-13.
 
 ### T-39 — Arranque real del contenedor `kairos-mcp` contra un servidor aislado (verificación temprana)
 

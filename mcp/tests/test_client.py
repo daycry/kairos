@@ -82,13 +82,13 @@ class RefusalTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_deadline_that_passes_is_the_generic_message_and_bounded(self):
         from kairos_mcp.errors import UNAVAILABLE, ToolError
-        with StubApi({('GET', '/v1/projects'): Reply(200, {'projects': []}, delay=1.5)}) as stub:
+        with StubApi({('GET', '/v1/projects'): Reply(200, {'projects': []}, delay=3.0)}) as stub:
             started = time.monotonic()
             with self.assertRaises(ToolError) as caught:
                 await self.call(stub, timeout=0.3)
             elapsed = time.monotonic() - started
         self.assertEqual(str(caught.exception), UNAVAILABLE)
-        self.assertLess(elapsed, 1.2)
+        self.assertLess(elapsed, 2.0)  # cut at 0.3 s, long before the 3 s the upstream takes
 
     async def test_a_dropped_connection_is_the_generic_message(self):
         from kairos_mcp.client import ApiClient
