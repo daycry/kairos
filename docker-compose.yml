@@ -131,7 +131,7 @@ services:
     restart: unless-stopped
     environment: *memory-environment
     secrets: [memory_dsn]
-    networks: [memory-data, webui, inference]
+    networks: [memory-data, webui, inference, mcp]
     ports: ['127.0.0.1:8790:8790']
     depends_on:
       memory-migrate: {condition: service_completed_successfully}
@@ -141,6 +141,27 @@ services:
       timeout: 5s
       retries: 6
     stop_grace_period: 30s
+
+  # kairos-mcp (C-03): the 34 MCP tools in front of /v1, with the caller's own credential. No database, no secret, no model proxy: its only
+  # peer is memory-api, on the network `mcp` that they alone share (CA-09). The proxy reaches it from memory-web (T-52).
+  memory-mcp:
+    <<: *process
+    image: kairos-mcp:latest
+    build: {context: ./mcp, dockerfile: Dockerfile}
+    profiles: [memory]
+    restart: unless-stopped
+    environment:
+      KAIROS_API_URL: http://memory-api:8790
+      KAIROS_API_TIMEOUT: ${KAIROS_API_TIMEOUT:-30}
+      KAIROS_ALLOWED_ORIGINS: ${MEMORY_ALLOWED_ORIGINS:-http://127.0.0.1:5173,http://localhost:5173}
+    networks: [mcp]
+    depends_on:
+      memory-api: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8791/health/live', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
 
   memory-worker:
     <<: *process
@@ -183,6 +204,7 @@ networks:
   inference: {driver: bridge, internal: true, name: knowledge-graphs_inference}
   egress: {}
   webui: {driver: bridge, name: knowledge-graphs_webui}
+  mcp: {driver: bridge, internal: true, name: knowledge-graphs_mcp}
 
 volumes:
   memory-postgres-data: {name: knowledge-graphs_memory-postgres-data}

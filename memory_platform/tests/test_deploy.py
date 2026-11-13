@@ -143,3 +143,60 @@ class BackfillPhaseTests(unittest.TestCase):
         with self.assertRaises(Exception) as raised:  # the helper loads its own copy of the script, hence its own exception class
             self.run_phases('not json')
         self.assertEqual(type(raised.exception).__name__, 'DeploymentError')
+
+
+class McpServiceTests(unittest.TestCase):
+    """T-40 (CA-09): `memory-mcp` lives on a network of its own with `memory-api` alone: no database, no secrets, no model proxy."""
+
+    @classmethod
+    def setUpClass(cls):
+        import yaml
+        cls.root = Path(__file__).parents[2]
+        cls.compose = yaml.safe_load((cls.root / 'docker-compose.yml').read_text(encoding='utf-8'))
+        cls.service = cls.compose['services']['memory-mcp']
+
+    def test_the_service_has_no_secrets_no_dsn_and_only_the_api_address(self):
+        self.assertNotIn('secrets', self.service)
+        environment = self.service['environment']
+        self.assertEqual(environment['KAIROS_API_URL'], 'http://memory-api:8790')
+        self.assertFalse([key for key in environment if key.startswith('MEMORY_')], 'kairos-mcp takes no MEMORY_* setting')
+        self.assertFalse([key for key in environment if 'DSN' in key or 'PASSWORD' in key or 'SECRET' in key])
+
+    def test_the_service_is_on_the_mcp_network_only_and_that_network_is_internal(self):
+        networks = self.service['networks']
+        self.assertEqual(list(networks), ['mcp'])
+        for forbidden in ('memory-data', 'inference', 'egress', 'webui'):
+            self.assertNotIn(forbidden, networks)
+        self.assertIs(self.compose['networks']['mcp']['internal'], True)
+
+    def test_only_memory_api_shares_the_mcp_network(self):
+        members = {name for name, value in self.compose['services'].items() if 'mcp' in (value.get('networks') or [])}
+        self.assertEqual(members, {'memory-api', 'memory-mcp'})  # T-52 adds memory-web, which routes /mcp to this service
+
+    def test_the_image_is_built_from_the_component_alone_and_waits_for_the_api(self):
+        self.assertEqual(self.service['image'], 'kairos-mcp:latest')
+        self.assertEqual(self.service['build']['context'], './mcp')
+        self.assertEqual(self.service['depends_on']['memory-api']['condition'], 'service_healthy')
+        self.assertIn('memory', self.service['profiles'])
+        self.assertIn('/health/live', json.dumps(self.service['healthcheck']))
+
+    def test_the_deployment_script_builds_starts_and_plans_the_service(self):
+        self.assertIn('memory-mcp', deploy.SERVICES)
+        with patch.object(deploy.subprocess, 'run'), contextlib.redirect_stdout(io.StringIO()) as output:
+            deploy.main([])
+        self.assertIn('memory-mcp', json.loads(output.getvalue())['services'])
+
+    def test_a_rehearsal_gets_its_own_image_and_network_for_the_service(self):
+        import yaml
+        override = yaml.load(deploy.isolation_override('kairos-rehearsal', 18790, 15173).replace('!override', ''), Loader=yaml.SafeLoader)
+        self.assertEqual(override['services']['memory-mcp']['image'], 'rehearsal-kairos-rehearsal-mcp:latest')
+        self.assertEqual(override['networks']['mcp']['name'], 'kairos-rehearsal_mcp')
+
+    def test_the_new_network_of_an_upgrade_is_created_by_the_start_not_a_missing_infrastructure_error(self):
+        # An installation that predates kairos-mcp has no `knowledge-graphs_mcp` network: `up` creates it; any other missing network still stops.
+        self.assertEqual(deploy.NEW_NETWORKS, ('mcp',))
+
+    def test_the_diagnosis_knows_the_service_and_its_network(self):
+        source = (self.root / 'scripts' / 'diagnose-deployment.py').read_text(encoding='utf-8')
+        self.assertIn("'memory-mcp'", source)
+        self.assertIn('knowledge-graphs_mcp', source)

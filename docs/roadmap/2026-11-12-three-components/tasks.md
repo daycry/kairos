@@ -41,11 +41,11 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 2 — Servidor sin modelo de lenguaje (C-04) | 9 | 9 | 100% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
 | Fase 3 — Paridad REST /v1 (C-02) | 10 | 10 | 100% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
-| Fase 5 — kairos-mcp (C-03) | 4 | 15 | 26.7% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
+| Fase 5 — kairos-mcp (C-03) | 5 | 15 | 33.3% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **39** | **74** | **52.7%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **40** | **74** | **54.1%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1392,33 +1392,38 @@ RED: `mcp/tests/smoke_container.py` falló con salio con 1: `missing ...compose.
 ### T-40 — Servicio Compose `memory-mcp` en red propia, sin `memory-data` ni secretos (CA-09)
 
 - **Descripción**: Añadir el servicio `memory-mcp` (imagen `kairos-mcp`) a una red nueva compartida solo con `memory-api`, sin `memory-data`, `inference`, `secrets` ni DSN; hacer que `deploy-memory.py` y el diagnóstico conozcan el servicio nuevo para el ensayo de T-72. Fuente: CA-09, spec §Arquitectura (Compose).
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: El stack Compose incluye el servicio memory-mcp, en una red interna que solo comparte con memory-api (sin base de datos, sin secretos), y el despliegue y el diagnostico lo conocen.
+- **Estado**: completado
+- **Cerrada**: 2026-11-13
 - **Tiempo humano**: est. 2.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.31h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.31h (estimado) · real 0.53h (medido)
 - **Supervisión**: est. 0.08h (≈25 % IA) · real —
 - **Previsión IA**: 84 k in / 8 k out tok · ⚠️ verificar €
 - **Dependencias**: T-39
 - **Tipo**: devops
-- **Archivos**: `docker-compose.yml`, `scripts/deploy-memory.py`, `scripts/diagnose-deployment.py`, `memory_platform/tests/test_deploy.py`
+- **Archivos**: `docker-compose.yml`, `scripts/deploy-memory.py`, `scripts/diagnose-deployment.py`, `memory_platform/tests/test_deploy.py`, `memory_platform/Dockerfile`, `memory_platform/tests/ollama_proxy_probe.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t40 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
   - `docker compose -p kairos-cfg-t40 config --format json` → `services.memory-mcp` sin `secrets` ni `memory-data` en `networks`
+  - Evidencia (2026-11-13): build `--target test` (kairos-test:i2p5): MEMORY_TEST_RESULT tests 649, failures 0, errors 0, skipped 0, passed true, llm_chat_calls 0. `docker compose -p kairos-i2p5-cfg-t40 --profile memory config --format json`: services.memory-mcp sin `secrets`, networks [mcp]; red mcp internal; miembros de mcp: memory-api y memory-mcp. `deploy-memory.py` (dry-run) lista memory-mcp en `services`. Sin `up`: no se creo nada.
 
 **Criterios de aceptación**
-- [ ] `docker compose -p kairos-cfg-t40 config` muestra `memory-mcp` sin `secrets` ni la red `memory-data`
-- [ ] `deploy-memory.py --dry-run` incluye el servicio nuevo
-- [ ] Los tests de despliegue existentes pasan
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] `docker compose -p kairos-cfg-t40 config` muestra `memory-mcp` sin `secrets` ni la red `memory-data`
+- [x] `deploy-memory.py --dry-run` incluye el servicio nuevo
+- [x] Los tests de despliegue existentes pasan
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Test en rojo sobre el `config` renderizado
-- [ ] Añadir servicio, red y variables
-- [ ] Actualizar el script de despliegue y el diagnóstico
-- [ ] `usage-meter start/close`
+- [x] Test en rojo sobre el `config` renderizado
+- [x] Añadir servicio, red y variables
+- [x] Actualizar el script de despliegue y el diagnóstico
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-09. Patrón: `docker-compose.yml:114-131` (`memory-api`), `:169-173` (redes, nombres fijos: R-09). `config` no crea nada; no se ejecuta `up` aquí. Clase: capacidad nueva (cambio de infraestructura).
+**Notas**: Procedencia: spec CA-09. Patrón: `docker-compose.yml:114-131` (`memory-api`), `:169-173` (redes, nombres fijos: R-09). `config` no crea nada; no se ejecuta `up` aquí. Clase: capacidad nueva (cambio de infraestructura). Decisiones: la red `mcp` es `internal: true` (nombre fijo knowledge-graphs_mcp), por eso memory-mcp no publica puerto en el host; memory-web la compartira en T-52. `NEW_NETWORKS = ('mcp',)` en deploy-memory.py: una instalacion previa no tiene esa red y el `up` la crea (cualquier otra red ausente sigue deteniendo el despliegue). Variables del servicio: KAIROS_API_URL (http://memory-api:8790), KAIROS_API_TIMEOUT (30), KAIROS_ALLOWED_ORIGINS (reutiliza MEMORY_ALLOWED_ORIGINS); sin ninguna MEMORY_*. Archivos anadidos con esta nota: `memory_platform/Dockerfile` (el target test copia `scripts/diagnose-deployment.py`, mcp/ y docs/contracts/kairos-mcp.json) y `memory_platform/tests/ollama_proxy_probe.py` (su override renombra tambien la red mcp). usage-meter three-components/T-40: 0.53 h IA (medido, win-6a6b949bb4874069b971ef3b2ce97c4e).
+
+
+RED: `memory_platform/tests/test_deploy.py::McpServiceTests` falló con KeyError: 'memory-mcp' en setUpClass (el compose no tenia el servicio) · 2026-11-13.
 
 ### T-41 — Herramientas del grupo `mcp.py` (12) traducidas a `/v1`
 

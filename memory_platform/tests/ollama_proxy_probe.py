@@ -72,7 +72,7 @@ def override(project: str, secrets_dir: str, allow_chat: str = '0') -> dict:
             'ollama': {'environment': {'OLLAMA_UPSTREAM': 'stub:11434', 'OLLAMA_ALLOW_CHAT': allow_chat}},
             'stub': {'image': STUB_IMAGE, 'entrypoint': ['python', '-c', STUB], 'networks': ['inference'], 'restart': 'no'},
         },
-        'networks': {'inference': {'name': project + '_inference'}, 'webui': {'name': project + '_webui'}},
+        'networks': {'inference': {'name': project + '_inference'}, 'webui': {'name': project + '_webui'}, 'mcp': {'name': project + '_mcp'}},
         'volumes': {'memory-postgres-data': {'name': project + '_postgres'}, 'memory-backups': {'name': project + '_backups'}},
         'secrets': {name: {'file': secrets_dir + '/' + name} for name in ('postgres_password', 'dsn', 'bootstrap_password')},
     }

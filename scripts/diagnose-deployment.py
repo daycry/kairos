@@ -42,7 +42,7 @@ def main():
             return {'exit_code': result.returncode, 'stdout': redact(result.stdout)[-20000:], 'stderr': redact(result.stderr)[-8000:]}
         except (OSError, subprocess.TimeoutExpired) as exc:
             return {'error': type(exc).__name__}
-    services = ['memory-postgres', 'memory-api', 'memory-worker', 'memory-web', 'ollama']
+    services = ['memory-postgres', 'memory-api', 'memory-worker', 'memory-mcp', 'memory-web', 'ollama']
     report = {'read_only': True, 'state': run(compose+['ps', '-a', '--format', 'json', *services]),
               'logs': run(compose+['logs', '--no-color', '--tail=40', *services[1:]])}
     states = {}
@@ -54,7 +54,7 @@ def main():
     report['containers'] = states
     report['networks'] = []
     network_format = '{"name":{{json .Name}},"driver":{{json .Driver}},"internal":{{json .Internal}},"labels":{{json .Labels}},"containers":{{json .Containers}}}'
-    for name in ('knowledge-graphs_memory-data', 'knowledge-graphs_webui', 'knowledge-graphs_inference', 'knowledge-graphs_egress'):
+    for name in ('knowledge-graphs_memory-data', 'knowledge-graphs_webui', 'knowledge-graphs_inference', 'knowledge-graphs_mcp', 'knowledge-graphs_egress'):
         report['networks'].append(run(['docker', 'network', 'inspect', '--format', network_format, name]))
     print(json.dumps(report, indent=2, ensure_ascii=True))
 

@@ -23,7 +23,8 @@ DEFAULT_API_PORT, DEFAULT_WEB_PORT = 8790, 5173
 MIGRATE_TIMEOUT_SECONDS = 3600  # the first pgvector migration rewrites and indexes embeddings; the default 120 s would abort it
 ISOLATED_PRIVATE_FILES = ('memory-platform.env', 'compose.override.yml', 'deployment-status.json', 'deployment-status.tmp')
 VOLUMES = (DEFAULT_PROJECT + '_memory-postgres-data', DEFAULT_PROJECT + '_memory-backups')
-SERVICES = ('memory-api', 'memory-worker', 'memory-web')
+SERVICES = ('memory-api', 'memory-worker', 'memory-mcp', 'memory-web')
+NEW_NETWORKS = ('mcp',)  # networks that an installation made before this release does not have yet: the start creates them, a missing one is not an error
 BACKFILL_TIMEOUT_SECONDS = 1800  # queues jobs in short transactions; the worker does the embedding after `start`
 BACKFILL_REPORT_KEYS = ('status', 'reason', 'enqueued', 'derived', 'failed', 'pending', 'remaining', 'batches', 'embedding_filled', 'stale_marked')  # counts only, never anything else
 PHASES = ('engine', 'configuration', 'build', 'database', 'inspect', 'backup',
@@ -60,8 +61,8 @@ def isolated_image(project, name):
 def check_isolation_names(project, compose_text):
     """No generated image tag, volume or network may equal anything docker-compose.yml fixes for the installed project."""
     fixed = set(re.findall(r'^\s+image:\s*(\S+)', compose_text, re.M)) | set(re.findall(r'name:\s*(knowledge-graphs_\S+?)[,}\s]', compose_text))
-    generated = {isolated_image(project, name) for name in ('postgres', 'api', 'worker', 'web', 'operator')}
-    generated |= {project + suffix for suffix in ('_inference', '_webui', '_memory-postgres-data', '_memory-backups')}
+    generated = {isolated_image(project, name) for name in ('postgres', 'api', 'worker', 'web', 'operator', 'mcp')}
+    generated |= {project + suffix for suffix in ('_inference', '_webui', '_mcp', '_memory-postgres-data', '_memory-backups')}
     if fixed & generated:
         raise DeploymentError('A generated rehearsal name collides with an installed one; choose another --project-name')
 
@@ -83,6 +84,7 @@ services:
     image: {image('api')}
     ports: !override ['127.0.0.1:{api_port}:8790']
   memory-worker: {{image: {image('worker')}}}
+  memory-mcp: {{image: {image('mcp')}}}
   memory-web:
     image: {image('web')}
     ports: !override ['127.0.0.1:{web_port}:8080']
@@ -90,6 +92,7 @@ services:
 networks:
   inference: {{name: {project}_inference}}
   webui: {{name: {project}_webui}}
+  mcp: {{name: {project}_mcp}}
 volumes:
   memory-postgres-data: {{name: {project}_memory-postgres-data}}
   memory-backups: {{name: {project}_memory-backups}}
@@ -273,7 +276,7 @@ class Deployment:
         self.report['networks'] = []
         for desired in effective.get('networks', {}).values():
             if desired['name'] not in existing_networks:
-                if not self.args.fresh:
+                if not self.args.fresh and desired['name'] not in {self.project + '_' + name for name in NEW_NETWORKS}:
                     raise DeploymentError('An expected network is missing; verify infrastructure before deployment')
                 continue
             observed = decode_json(self.run(['docker', 'network', 'inspect', '--format', '{{json .}}', desired['name']]))
@@ -469,7 +472,7 @@ def main(argv=None):
             validate_isolation(args.project_name, args.api_port, args.web_port)
         except DeploymentError as exc:
             parser.error(str(exc))
-        print(json.dumps({'mode': 'dry-run', 'phases': PHASES, 'fresh': args.fresh, 'project': args.project_name,
+        print(json.dumps({'mode': 'dry-run', 'phases': PHASES, 'services': SERVICES, 'fresh': args.fresh, 'project': args.project_name,
                           'volumes': project_volumes(args.project_name), 'models': 'preserve configuration',
                           'data_removed': False}, indent=2))
         return 0
