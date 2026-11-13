@@ -40,12 +40,12 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 1 — Integración continua (C-01) | 8 | 8 | 100% | 0 / 18.0h | 0 / 2.3h | 0 / 0.6h | 0 / 578 k |
 | Fase 2 — Servidor sin modelo de lenguaje (C-04) | 9 | 9 | 100% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
 | Fase 3 — Paridad REST /v1 (C-02) | 10 | 10 | 100% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
-| Fase 4 — Esquema de observación (C-05) | 7 | 8 | 88% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
+| Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 0 | 15 | 0% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **34** | **74** | **45.9%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **35** | **74** | **47.3%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -976,7 +976,7 @@ RED: `memory_platform/tests/test_contract_additive.py::ContractAdditiveTests::te
 
 ## Fase 4 — Esquema de observación (C-05)
 
-**Estado**: en-progreso · **Estimado**: 37.8h (31.5h base) · **Real**: — · **Coste est.**: 1.890 € · **Tokens est.**: 1193 k
+**Estado**: completado · **Estimado**: 37.8h (31.5h base) · **Real**: — · **Coste est.**: 1.890 € · **Tokens est.**: 1193 k
 
 ### T-28 — Esquemas JSON `observation.v1` y `session-summary.v1`
 
@@ -1211,8 +1211,9 @@ RED: los casos de límites son cobertura de una capacidad ya implementada en T-3
 ### T-35 — Revisión adversarial de la Fase 4
 
 - **Descripción**: Revisión adversarial: ¿un esquema permite inyectar contenido sin límite? ¿el 422 filtra contenido? ¿la dependencia nueva amplía la superficie? ¿la migración (si existe) es de verdad aditiva? Fuente: retro, R-04, R-06.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: El esquema de observación se revisó de forma adversarial en dos intentos: se cerró un bloqueo de CPU con listas largas en `structured` y la validación cubre ahora todas las rutas de ingesta, también `remember` y `POST /v1/events`.
+- **Estado**: completado
+- **Cerrada**: 2026-11-13
 - **Tiempo humano**: est. 10.5h (base) · real —
 - **Tiempo IA (ejec.)**: est. 1.44h (estimado) · real —
 - **Supervisión**: est. 0.36h (≈25 % IA) · real —
@@ -1224,16 +1225,17 @@ RED: los casos de límites son cobertura de una capacidad ya implementada en T-3
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t35 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
   - lectura: `review.md`, sección «Fase 4», sin hallazgos Critical/Important abiertos
+  - Evidencia (2026-11-13): `review.md` sección «Fase 4»; 2 intentos (A+B y C; A+B+C forzada). Intento 1: 1 Critical (DoS por `uniqueItems`) y 1 Important (`remember` y `POST /v1/events` sin validar) corregidos en fd80bd0, 0d4c90e, a7f617a y 1bd3b54 con los 4 Minor. Intento 2: sin Critical/Important; los dos Minor (coste superlineal acotado y doc de privacidad) los corrigió el orquestador en el commit de cierre (`MAX_NODES`, RED observado: 3,86 s con el código anterior). Suite tras el cierre: `MEMORY_TEST_RESULT` 639 tests, 0 failures, 0 errors, 0 skipped, `llm_chat_calls` 0 (`kairos-test:i2p4close`, `docker run --network=none`); puerta offline exit 0. Contrato: 34 herramientas, sin cambios desde 23ec012.
 
 **Criterios de aceptación**
-- [ ] `review.md` tiene la sección «Fase 4»
-- [ ] 0 hallazgos Critical o Important abiertos
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] `review.md` tiene la sección «Fase 4»
+- [x] 0 hallazgos Critical o Important abiertos
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar — EXCEPCIÓN: los intentos de revisión no se midieron con usage-meter; los tokens de los revisores constan solo en la telemetría de los subagentes (estimado)
 
 **Subtareas**
-- [ ] Probar payloads hostiles (profundidad, tamaño, Unicode)
-- [ ] Cerrar hallazgos
-- [ ] `usage-meter start/close` por intento
+- [x] Probar payloads hostiles (profundidad, tamaño, Unicode)
+- [x] Cerrar hallazgos
+- [x] `usage-meter start/close` por intento — EXCEPCIÓN: ver el criterio anterior
 
 **Notas**: Procedencia: retro. No escribe en `testing/`.
 
@@ -2586,3 +2588,12 @@ RED: `test_observation_schema.LimitTests.test_a_huge_array_is_rejected_in_linear
 - Decisión gap 4: documentar el rechazo en lugar de redactar. Redactar `structured` cambiaría un documento ya validado (podría romper límites o `facts` literales) y obligaría a revalidar; el rechazo es lo más simple y seguro y no pierde datos sensibles en silencio.
 - Decisión gap 1: un array mayor que el mayor `maxItems` se rechaza aunque esté bajo una clave desconocida (la regla que se informa es `maxItems`, no `additionalProperties`); es una cota de tamaño, no de esquema.
 - Cambio visible para clientes MCP: ninguno en herramientas ni contrato (34 herramientas). `remember` ahora responde error 422 `invalid_observation` si `payload.structured` no cumple su esquema (antes lo guardaba); un array de más de 50 elementos dentro de `structured` se rechaza con `maxItems`.
+
+## Revisión de dos lentes — intento 2: Fase 4 (esquema de observación), correcciones (T-30, T-31, T-34)
+
+Veredicto: **sin Critical ni Important; la Fase 4 cierra en el intento 2 de 3**. Lentes: A+B y C en un revisor (C forzada: el Critical del intento 1 era de seguridad; el selector no la activaba sobre 28ee9e4..HEAD). Los 6 gaps del intento 1, cerrados: `_oversized_array` recorre el documento en tiempo lineal antes de `iter_errors`; `Store.ingest_event` valida antes de cualquier escritura y es el punto común de todas las rutas (la otra inserción en `memory.events` es la del worker, sin payload de cliente); extracción sin `structured`; esquemas cargados en `create_app`; transitivas fijadas (`pip check` limpio). Contrato sin cambios en 28ee9e4..HEAD. CI 43447573957 en verde. Suite tras el cierre: 639, 0 skipped, `llm_chat_calls` 0.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| N1 | Minor | Coste superlineal acotado: la cota de arrays es global (50) y `uniqueItems` sigue comparando pares de elementos grandes no ordenables; 50 listas de 49×49 enteros (240 KB) → 2,38 s de CPU, de 6 a 12 veces un evento legítimo (CWE-407) | T-30 | corregido (commit de cierre): `MAX_NODES = 1000` valores por documento antes de jsonschema, 422 `maxNodes` en la raíz (un documento en todos sus límites tiene 189); test con el caso del revisor < 1 s (RED: 3,86 s con el código anterior) | Lente C: `schemas.py:85,113` |
+| N2 | Minor | La doc prometía siempre `sensitive_source_requires_review` y que los `facts` se redactan; un `<private>` sin cerrar da `invalid_private_block`, un PEM incompleto `invalid_private_key_block` y un `fact` con secreto se descarta | T-34 | corregido (commit de cierre): `docs/integration.md` nombra los tres códigos, el descarte de `facts` y el límite `maxNodes` | Lente A+B: `privacy.py:65,127,150-160` |

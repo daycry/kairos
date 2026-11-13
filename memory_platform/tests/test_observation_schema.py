@@ -153,6 +153,20 @@ class LimitTests(unittest.TestCase):
             self.assertIn('maxItems', caught.exception.message)
             self.assertNotIn(SENTINEL, caught.exception.message)
 
+    def test_many_large_elements_are_bounded_by_the_node_count(self):
+        # Review of phase 4, N1: 50 arrays of 49x49 integers that differ only in the last one cost ~2 s in `uniqueItems`.
+        import time
+        block = [[i * 49 + j for j in range(49)] for i in range(49)]
+        document = {**self.base(), 'concepts': [{}] + [[row[:] for row in block] + [[k]] for k in range(49)]}
+        started = time.monotonic()
+        with self.assertRaises(MemoryError) as caught:
+            schemas.validate_structured(document)
+        self.assertLess(time.monotonic() - started, 1.0)
+        self.assertEqual(caught.exception.code, 'invalid_observation')
+        self.assertIn('maxNodes at /payload/structured', caught.exception.message)
+        at_limit = named('observation.v1', 'valid-at-every-limit')
+        schemas.validate_structured(at_limit)
+
     def test_the_array_bound_is_the_largest_maxItems_of_the_schemas(self):
         self.assertEqual(schemas.max_array_items(), 50)
 

@@ -70,3 +70,21 @@ Las cinco deudas del intento 3 exigen editar el workflow a propósito, y cualqui
 | 2 | Minor | Gramática de `event_status` sin proyecto y `expected_version: 0` sin documentar en el contrato; el nginx del portal normalizaba `a/../b` | Corregidos |
 | 3 | Minor | Log de nginx con la query string; lectura de corpus con clave de solo escritura; nombre con NUL → 503 | Corregidos al cerrar |
 | 3 | Minor | Orden de errores distinto en casos de error de `rebuild_corpus`; `expected_version: 0` responde 409 sin llamar; `max:3` de reintentos; tests con menos alcance del que dicen | Deuda aceptada (Fase 5, T-41 a T-48) |
+
+## Fase 4 — Esquema de observación (T-28 a T-34)
+
+- **Fecha**: 2026-11-13
+- **Lentes**: intento 1, A+B y C (activada por `memory_platform/Dockerfile`); intento 2, A+B y C (forzada, porque el Critical del intento 1 era de seguridad).
+- **Veredicto**: cerrada en el intento 2 de 3, sin hallazgos Critical ni Important abiertos.
+- **Evidencia**:
+  - Suite: 630 tests al implementar, 638 tras el intento 1 y 639 al cerrar; 0 omitidos y 0 llamadas a `/api/chat`. Puerta offline en verde.
+  - CI en verde en los runs 43437683851 y 43447573957.
+  - Contrato MCP: 34 herramientas; solo se añade el campo opcional `payload.structured`. OpenAPI: solo adiciones. Sin migraciones (medido: el `payload` jsonb basta hasta unas 20 000 observaciones por proyecto).
+  - Seguridad: el 422 `invalid_observation` no repite contenido (ruta con nombres del esquema, índices o `*`); `$ref` remotos no se resuelven; la privacidad existente recorre `structured`.
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Critical | `uniqueItems` cuadrático: una lista de 8 000 elementos de tipos mezclados ocupaba 184 s de CPU con una clave de escritura | Corregido: listas de más de 50 elementos rechazadas en tiempo lineal antes de validar |
+| 1 | Important | `remember` y `POST /v1/events` guardaban `payload.structured` sin validar | Corregido: validación única en `Store.ingest_event` |
+| 1 | Minor | Extracción LLM con `structured` abierto; doc de privacidad; esquemas cargados en caliente; transitivas sin fijar | Corregidos |
+| 2 | Minor | Coste superlineal acotado con elementos grandes; doc de privacidad incompleta | Corregidos al cerrar (`MAX_NODES` y doc) |

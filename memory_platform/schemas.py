@@ -19,6 +19,10 @@ BASE = '/payload/structured'
 # Hostile nesting: the schemas are shallow (3 levels) and `additionalProperties: false` stops the descent at unknown keys, but
 # the check below also bounds what is handed to the validator.
 MAX_DEPTH = 8
+# Total values (objects, arrays and scalars) a document may hold before it reaches jsonschema. A document at every limit of
+# `observation.v1` holds under 200, so 1 000 never rejects a valid one; it bounds the pairwise work of `uniqueItems` on arrays
+# of large non-string elements, which the per-array bound alone leaves at about 2 s per 240 KB request (review of phase 4, N1).
+MAX_NODES = 1000
 
 
 def contracts_dir():
@@ -76,20 +80,26 @@ def _too_deep(value):
     return False
 
 
-def _oversized_array(document):
-    """Path of the first array longer than any schema allows, or None. Linear in the size of the document.
+def _oversized(document):
+    """(path, rule) of the first size violation, or None. Linear in the size of the document.
+
+    `maxNodes` at the document root once it holds more than `MAX_NODES` values; `maxItems` at the first array longer than any
+    schema allows.
 
     `uniqueItems` compares every pair of elements (quadratic with mixed types) and jsonschema evaluates it before it looks at
     `maxItems`, so an array this long never reaches the validator. Keys that are not property names of a schema are shown as `*`.
     """
     limit = max_array_items()
     known = frozenset().union(*(_bounds(version)[1] for version in VERSIONS))
-    pending = [(document, BASE)]
+    pending, nodes = [(document, BASE)], 0
     while pending:
         current, path = pending.pop()
+        nodes += 1
+        if nodes > MAX_NODES:
+            return BASE, 'maxNodes'
         if isinstance(current, list):
             if len(current) > limit:
-                return path
+                return path, 'maxItems'
             pending.extend((child, f'{path}/{index}') for index, child in enumerate(current))
         elif isinstance(current, dict):
             pending.extend((child, f'{path}/{key if key in known else "*"}') for key, child in current.items())
@@ -107,9 +117,9 @@ def validate_structured(document):
         _fail(BASE + '/schema_version', 'required')
     if not isinstance(version, str) or version not in VERSIONS:
         _fail(BASE + '/schema_version', 'const')
-    oversized = _oversized_array(document)
+    oversized = _oversized(document)
     if oversized is not None:
-        _fail(oversized, 'maxItems')
+        _fail(*oversized)
     errors = list(_validator(version).iter_errors(document))
     if not errors:
         return
