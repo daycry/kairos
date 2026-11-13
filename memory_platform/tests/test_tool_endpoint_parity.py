@@ -127,12 +127,16 @@ def read_missing(rule, arguments, rest):
 
 
 def perform(rule, arguments, rest, between=None):
-    """What a client of `/v1` does with one call, from the contract alone: `untranslatable` values are answered without a call; `when_absent`
+    """What a client of `/v1` does with one call, from the contract alone: `untranslatable` values are answered without sending the request (after the read of `after_read`); `when_absent`
     values are read and sent; a `retry` status with a value that changed since the read sends the request again. `between` is called after each
     read and before the request (a test hook: the concurrent change). Returns `(status, body)`."""
     for refused in rule.get('untranslatable', []):
         value = arguments.get(refused['argument'])
         if value is not None and value == refused['value'] and type(value) is type(refused['value']):
+            if refused.get('after_read'):  # the read first: the server checks access and existence in the order the tool does, and its refusal is the answer
+                _, failed = read_missing(rule, {**arguments, refused['argument']: None}, rest)
+                if failed:
+                    return failed
             return refused['answer']['status'], {'error': refused['answer']['error']}
     retry = next((where['when_absent'].get('retry') for where in rule['args'].values() if 'when_absent' in where), None)
     sent = last = None
@@ -236,6 +240,19 @@ class Scenario:
         response = self.client.request(method, path, headers=self.headers, **kwargs)
         body = response.json() if response.content else None
         return response.status_code, body
+
+    def acting(self, token):
+        """Run a block with another credential (a key of this actor with other scopes, or a key of another actor); `rest` and `tool` both use it."""
+        import contextlib
+
+        @contextlib.contextmanager
+        def swap():
+            saved, self.headers = self.headers, {'Authorization': 'Bearer ' + token}
+            try:
+                yield
+            finally:
+                self.headers = saved
+        return swap()
 
     def view(self, status, body):
         return ('error', body['error']['message']) if status >= 400 else ('ok', body)
@@ -491,7 +508,7 @@ class ToolEndpointParityTests(unittest.TestCase):
             with s.store.transaction() as c:
                 c.execute("DELETE FROM memory.agent_corpora WHERE project_id=%s AND name LIKE 'a-filler-%%'", (s.pid,))
 
-    def test_a_missing_name_is_the_tools_not_found_and_the_read_endpoint_hides_other_actors(self):
+    def test_a_missing_name_is_the_tools_not_found_and_the_read_endpoint_validates_the_name_and_the_credential(self):
         s = self.scenario
         status, body = s.rest('GET', s.prefix + '/corpus', params={'name': 'no-such-corpus'})
         self.assertEqual((status, body['error']['code']), (404, 'not_found'))
@@ -504,6 +521,48 @@ class ToolEndpointParityTests(unittest.TestCase):
         writer = s.store.create_key(s.admin, {'name': 'write only', 'project_ids': [s.pid], 'scopes': ['write']})
         response = s.client.get(s.prefix + '/corpus', params={'name': 'team/search'}, headers={'Authorization': 'Bearer ' + writer['token']})
         self.assertEqual((response.status_code, response.json()['error']['code']), (403, 'forbidden'))  # every corpus operation needs read
+
+    def test_a_key_without_write_gets_the_tools_403_for_any_name_not_a_404_from_the_read(self):
+        """The read that precedes a rebuild asks for `write` first, as the rebuild does: a read-only key learns nothing about a name it does not have."""
+        s = self.scenario
+        rule = self.declared['rebuild_corpus']
+        for scopes in (['read'], ['write']):
+            token = s.store.create_key(s.admin, {'name': 'scoped-' + '-'.join(scopes), 'project_ids': [s.pid], 'scopes': scopes})['token']
+            for name in ('c-rebuild', 'no-such-corpus'):
+                for extra in ({}, {'expected_version': 0}):
+                    arguments = {'project': s.pid, 'name': name, **extra}
+                    with self.subTest(scopes=scopes, name=name, extra=extra), s.acting(token):
+                        tool, endpoint = s.tool('rebuild_corpus', arguments), s.endpoint(rule, arguments)
+                    self.assertEqual(tool, ('error', 'Operation not permitted'))
+                    self.assertEqual(endpoint, tool)
+
+    def test_a_zero_version_is_the_conflict_only_for_a_corpus_the_caller_has_and_otherwise_what_the_tool_says(self):
+        s = self.scenario
+        rule = self.declared['rebuild_corpus']
+        for name, expected in (('c-rebuild', ('error', 'Corpus version changed')), ('no-such-corpus', ('error', 'Resource not found'))):
+            arguments = {'project': s.pid, 'name': name, 'expected_version': 0}
+            self.assertEqual(s.tool('rebuild_corpus', arguments), expected)
+            self.assertEqual(s.endpoint(rule, arguments), expected)
+
+    def test_another_actor_with_read_and_write_cannot_see_nor_rebuild_the_corpora_of_the_first(self):
+        """A second real actor on the same project: the read endpoint, the tool and the translation all answer the not-found of the tool for a name that is the first actor's."""
+        s = self.scenario
+        user = s.store.create_user(s.admin, {'username': 'peer-' + uuid.uuid4().hex[:10], 'password': 'synthetic-password-123', 'project_ids': [s.pid], 'scopes': ['read', 'write']})
+        made = s.store.create_key(s.admin, {'name': 'peer key', 'project_ids': [s.pid], 'scopes': ['read', 'write']})  # only an admin delegates a key: hand it to the peer
+        with s.store.transaction() as c:
+            c.execute('UPDATE memory.api_keys SET actor_id=%s WHERE id=%s', (user['id'], made['id']))
+        token = made['token']
+        rule = self.declared['rebuild_corpus']
+        with s.acting(token):
+            status, body = s.rest('GET', s.prefix + '/corpus', params={'name': 'c-rebuild'})
+            self.assertEqual((status, body['error']['code']), (404, 'not_found'))
+            self.assertEqual(s.rest('GET', s.prefix + '/corpora')[1]['items'], [])  # not in its list either
+            for extra in ({}, {'expected_version': 0}, {'expected_version': 1}):
+                arguments = {'project': s.pid, 'name': 'c-rebuild', **extra}
+                tool, endpoint = s.tool('rebuild_corpus', arguments), s.endpoint(rule, arguments)
+                self.assertEqual(tool, ('error', 'Resource not found'), extra)
+                self.assertEqual(endpoint, tool, extra)
+        self.assertEqual(s.rest('GET', s.prefix + '/corpus', params={'name': 'c-rebuild'})[0], 200)  # the first actor still has it
 
     def test_a_rebuild_that_lands_between_the_read_and_the_post_is_retried_like_the_tool_that_never_conflicts(self):
         s = self.scenario
@@ -580,11 +639,13 @@ class RetryRuleTests(unittest.TestCase):
         result, reads, posts = self.run_rule((404, {'error': {'code': 'not_found'}}), lambda n: (200, {}))
         self.assertEqual((result[0], posts), (404, []))
 
-    def test_a_given_version_is_sent_as_it_is_and_zero_is_answered_without_a_call(self):
+    def test_a_given_version_is_sent_as_it_is_and_zero_is_answered_after_the_read_without_a_rebuild(self):
         result, reads, posts = self.run_rule([9], lambda n: (200, {}), {'project': 'p', 'name': 'c', 'expected_version': 3})
         self.assertEqual((reads, posts), ([], [{'expected_version': 3}]))
         result, reads, posts = self.run_rule([9], lambda n: (200, {}), {'project': 'p', 'name': 'c', 'expected_version': 0})
-        self.assertEqual((result[0], reads, posts), (409, [], []))
+        self.assertEqual((result[0], reads, posts), (409, ['/v1/projects/p/corpus'], []))  # `after_read`: the read first, never the POST
+        result, reads, posts = self.run_rule((403, {'error': {'code': 'forbidden'}}), lambda n: (200, {}), {'project': 'p', 'name': 'c', 'expected_version': 0})
+        self.assertEqual((result[0], posts), (403, []))  # the refusal of the read, not the conflict
 
 
 def make_case(label):

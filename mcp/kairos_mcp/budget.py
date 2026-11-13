@@ -16,6 +16,11 @@ OUTPUT = {
     # T-41: the group of `mcp.py`. The internal MCP gives these dicts no byte budget; kairos-mcp caps them at the larger one.
     **{name: (OBJECT, DETAIL_BYTES) for name in ('projects', 'remember', 'publish_document', 'document_status', 'document_manifest', 'revoke_document',
                                                  'search', 'details', 'context', 'timeline', 'event_status', 'capture_policy')},
+    # T-42: the group of `agent_tools.py`: `call` renders at NORMAL_BYTES, and at DETAIL_BYTES only for `get_observations`.
+    **{name: (TEXT, NORMAL_BYTES) for name in ('work_state_write', 'work_state_read', 'list_corpora', 'build_corpus', 'rebuild_corpus', 'prime_corpus',
+                                               'reprime_corpus', 'query_corpus', 'observation_search', 'observation_context', 'observation_generation_status')},
+    'get_observations': (TEXT, DETAIL_BYTES),
+    'important_workflow': (PLAIN, NORMAL_BYTES),  # fixed text, answered without a request
 }
 
 

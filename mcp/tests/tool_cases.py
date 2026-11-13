@@ -33,7 +33,7 @@ def exercise(test, cases):
             with Harness({(case.method, case.route): (case.status, case.reply)}) as harness:
                 result = harness.call(case.tool, case.args)
                 test.assertFalse(result.error, result.text)
-                test.assertEqual(plain(result.data()), case.reply)
+                test.assertEqual(plain(result.data()), plain(case.reply))
                 test.assertEqual(len(harness.stub.requests), 1)
                 request = harness.stub.requests[0]
                 test.assertEqual((request.method, request.route), (case.method, case.route))
