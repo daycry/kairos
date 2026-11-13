@@ -267,6 +267,13 @@ class ParityEndpointTests(unittest.TestCase):
         key = self.store.create_key(self.admin, {'name': 'parity', 'project_ids': projects or [self.pid], 'scopes': scopes})
         return {'Authorization': 'Bearer ' + key['token']}
 
+    def assertSame(self, endpoint, tool):
+        """The endpoint's answer equals the tool's, which also carries the untrusted-data envelope (S-05: `untrusted` and `warning`, top level) of a reading tool."""
+        self.assertIs(tool.get('untrusted'), True)
+        self.assertTrue(tool.get('warning'))
+        strip = lambda value: {key: item for key, item in value.items() if key not in ('untrusted', 'warning')}
+        self.assertEqual(strip(endpoint), strip(tool))
+
     def tool(self, headers, name, arguments):
         """The same operation through the internal MCP endpoint, with the same credential: what the REST endpoint must equal."""
         import json
@@ -306,9 +313,9 @@ class ParityEndpointTests(unittest.TestCase):
             response = self.client.get(url, headers=headers)
             self.assertEqual(response.status_code, 200, response.text)
             self.assertEqual(response.json(), {'project_id': self.pid, 'capture_mode': 'summary', 'capture_allowed': allowed})
-            self.assertEqual(response.json(), self.tool(headers, 'capture_policy', {'project_id': self.pid}))
+            self.assertSame(response.json(), self.tool(headers, 'capture_policy', {'project_id': self.pid}))
         self.store.set_policy(self.admin, self.pid, {'capture_mode': 'off', 'temporal_projection': False})
-        self.assertEqual(self.client.get(url, headers=self.writer).json(), self.tool(self.writer, 'capture_policy', {'project_id': self.pid}))
+        self.assertSame(self.client.get(url, headers=self.writer).json(), self.tool(self.writer, 'capture_policy', {'project_id': self.pid}))
         self.assertFalse(self.client.get(url, headers=self.writer).json()['capture_allowed'])
         self.assertEqual(self.client.get(url, headers=self.foreign).status_code, 404)
         self.assertEqual(self.client.get(url).status_code, 401)
@@ -329,7 +336,7 @@ class ParityEndpointTests(unittest.TestCase):
         body = found.json()
         self.assertEqual(body['receipt']['event_id'], value['event_id'])
         self.assertTrue(body['jobs'] and isinstance(body['complete'], bool))
-        self.assertEqual(body, self.tool(self.writer, 'event_status', {'event_id': value['event_id'], 'project_id': self.pid}))
+        self.assertSame(body, self.tool(self.writer, 'event_status', {'event_id': value['event_id'], 'project_id': self.pid}))
         # the two reads it composes are unchanged
         self.assertEqual(self.client.get('/v1/events/' + value['event_id'], headers=self.writer).json(), body['receipt'])
         self.assertEqual(self.client.get('/v1/jobs/' + body['receipt']['jobs'][0], headers=self.writer).json(), body['jobs'][0])
@@ -338,7 +345,7 @@ class ParityEndpointTests(unittest.TestCase):
         absent = self.client.get(self.prefix + '/events/' + missing + '/status', headers=self.writer)
         self.assertEqual(absent.status_code, 200, absent.text)
         self.assertEqual(absent.json(), {'found': False, 'event_id': missing, 'project_id': self.pid})
-        self.assertEqual(absent.json(), self.tool(self.writer, 'event_status', {'event_id': missing, 'project_id': self.pid}))
+        self.assertSame(absent.json(), self.tool(self.writer, 'event_status', {'event_id': missing, 'project_id': self.pid}))
         # reconciling needs read AND write: a reader and another project's key are refused
         self.assertEqual(self.client.get(url, headers=self.reader).status_code, 403)
         self.assertEqual(self.client.get(url, headers=self.foreign).status_code, 404)
@@ -352,18 +359,18 @@ class ParityEndpointTests(unittest.TestCase):
         got = self.client.post(base + '/get', json={'ids': [fencing['item_id'], other['item_id']]}, headers=self.reader)
         self.assertEqual(got.status_code, 200, got.text)
         self.assertEqual({item['id'] for item in got.json()['items']}, {fencing['item_id'], other['item_id']})
-        self.assertEqual(got.json(), self.tool(self.reader, 'get_observations', {'projectId': self.pid, 'ids': [fencing['item_id'], other['item_id']]}))
+        self.assertSame(got.json(), self.tool(self.reader, 'get_observations', {'projectId': self.pid, 'ids': [fencing['item_id'], other['item_id']]}))
         # observation_search: lexical, bounded
         found = self.client.get(base + '/search', params={'query': 'fencing', 'limit': 5}, headers=self.reader)
         self.assertEqual(found.status_code, 200, found.text)
         self.assertEqual([item['id'] for item in found.json()['items']], [fencing['item_id']])
-        self.assertEqual(found.json(), self.tool(self.reader, 'observation_search', {'projectId': self.pid, 'query': 'fencing', 'limit': 5}))
+        self.assertSame(found.json(), self.tool(self.reader, 'observation_search', {'projectId': self.pid, 'query': 'fencing', 'limit': 5}))
         # observation_context: the evidence plus its text and the untrusted-data warning
         context = self.client.get(base + '/context', params={'query': 'index'}, headers=self.reader)
         self.assertEqual(context.status_code, 200, context.text)
         self.assertIn('[' + other['item_id'] + ']', context.json()['context'])
         self.assertIn('untrusted', context.json()['warning'])
-        self.assertEqual(context.json(), self.tool(self.reader, 'observation_context', {'projectId': self.pid, 'query': 'index'}))
+        self.assertSame(context.json(), self.tool(self.reader, 'observation_context', {'projectId': self.pid, 'query': 'index'}))
         # the limits of each tool
         self.assertEqual(self.client.get(base + '/search', params={'query': 'x', 'limit': 101}, headers=self.reader).status_code, 422)
         self.assertEqual(self.client.get(base + '/context', params={'limit': 201}, headers=self.reader).status_code, 422)
@@ -457,10 +464,10 @@ class ParityEndpointTests(unittest.TestCase):
         found = self.client.get(url, params={'query': 'fencing', 'limit': 5}, headers=self.reader)
         self.assertEqual(found.status_code, 200, found.text)
         self.assertEqual([item['list'] for item in found.json()['lists']], ['release'])
-        self.assertEqual(found.json(), self.tool(self.reader, 'team_search', {'project': self.pid, 'query': 'fencing', 'limit': 5}))
+        self.assertSame(found.json(), self.tool(self.reader, 'team_search', {'project': self.pid, 'query': 'fencing', 'limit': 5}))
         everything = self.client.get(url, headers=self.reader)  # query and limit are optional, as in the tool
         self.assertEqual([item['list'] for item in everything.json()['lists']], ['docs', 'release'])
-        self.assertEqual(everything.json(), self.tool(self.reader, 'team_search', {'project': self.pid}))
+        self.assertSame(everything.json(), self.tool(self.reader, 'team_search', {'project': self.pid}))
         self.assertEqual(self.client.get(url, params={'limit': 101}, headers=self.reader).status_code, 422)
         self.assertEqual(self.client.get(url, params={'limit': 0}, headers=self.reader).status_code, 422)
         self.assertEqual(self.client.get(url, params={'query': 'fencing'}, headers=self.headers(['write'])).status_code, 403)

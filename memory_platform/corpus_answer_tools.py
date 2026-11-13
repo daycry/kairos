@@ -4,7 +4,7 @@ from typing import Annotated
 
 from pydantic import Field
 
-from .agent_tools import DETAIL_BYTES, Name, Project, render
+from .agent_tools import DETAIL_BYTES, Name, Project, render, untrusted
 from .corpus_answers import CorpusAnswers
 
 
@@ -34,6 +34,6 @@ def register_corpus_answer_tools(server, actor, safe, store, settings):
         An expired pending request becomes unknown without another provider call.
         Reprime/withdrawal invalidates access to answers from the old generation.
         """
-        return render(await safe(asyncio.to_thread(service.status, actor(), project, name, request_id)), DETAIL_BYTES)
+        return render(untrusted(await safe(asyncio.to_thread(service.status, actor(), project, name, request_id))), DETAIL_BYTES)
 
     return service

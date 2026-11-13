@@ -7,8 +7,8 @@ The request is NOT written by hand: `translate` is a small generic translator th
 from the contract alone (where each argument goes, under which name, the fixed values, the composition of `event_status` without a
 project, the read of a missing `expected_version` and its retry). So the contract is only as good as what this test can do with it, which is what a client of `/v1` (kairos-mcp) will have.
 
-The comparison is the content: the MCP byte budget (`render`) and the additive fields of the untrusted-data envelope (S-05, C-03) are
-the only differences allowed, and neither is produced yet. Operations that write are idempotent by design (a retry returns the same
+The comparison is the content: the MCP byte budget (`render`) and the additive fields of the untrusted-data envelope (S-05, C-03: `untrusted` and `warning`, stripped at the
+top level of a reading tool) are the only differences allowed. Operations that write are idempotent by design (a retry returns the same
 receipt), so the second call is the endpoint's, over the state the tool left; `reprime_corpus`, which opens a new session each time,
 ignores the session fields.
 
@@ -55,6 +55,11 @@ def drop(value, keys):
     if isinstance(value, list):
         return [drop(item, keys) for item in value]
     return value
+
+
+def without_envelope(value):
+    """The answer without the two fields of the untrusted-data envelope (S-05), at the top level only."""
+    return {key: item for key, item in value.items() if key not in ('untrusted', 'warning')} if isinstance(value, dict) else value
 
 
 def csv_list(value):
@@ -280,6 +285,11 @@ class Scenario:
             result[key] = scope[how['from']] if 'from' in how else all(holds(condition, scope) for condition in how['all_of'])
         return 'ok', result
 
+    def listing(self):
+        if getattr(self, '_listed', None) is None:
+            self._listed = self.tool_listing()
+        return self._listed
+
     def tool_listing(self):
         response = self.client.post('/mcp/', headers={**self.headers, 'Accept': 'application/json, text/event-stream'}, json={'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list'})
         return {tool['name']: tool for tool in response.json()['result']['tools']}
@@ -392,6 +402,11 @@ class ToolEndpointParityTests(unittest.TestCase):
         arguments = {**arguments, **override}
         rule = self.declared[name] if rule is None else rule
         tool_status, tool_value = s.tool(name, arguments)
+        reading = tool_status == 'ok' and isinstance(tool_value, dict) and s.listing()[name]['annotations']['readOnlyHint']
+        if reading:  # S-05: a tool that only reads adds `untrusted` and `warning`; the endpoint does not, and what is compared is the rest
+            self.assertIs(tool_value.get('untrusted'), True, label)
+            self.assertTrue(tool_value.get('warning'), label)
+            tool_value = without_envelope(tool_value)
         if rule == 'local':
             self.assertEqual(tool_status, 'ok', tool_value)
             self.assertIsInstance(tool_value, (str, dict))
@@ -401,6 +416,8 @@ class ToolEndpointParityTests(unittest.TestCase):
         self.assertEqual(tool_status, 'error' if options.get('error') else 'ok', (label, tool_value))
         self.assertTrue(tool_value, label)
         ignore = options.get('ignore', set())
+        if reading:
+            endpoint_value = without_envelope(endpoint_value)  # the endpoint's own `warning` (observation context, team brief) is the same text the tool keeps
         self.assertEqual(drop(endpoint_value, ignore), drop(tool_value, ignore), label)
         text = json.dumps(tool_value, indent=1)
         if 'contains' in options:
