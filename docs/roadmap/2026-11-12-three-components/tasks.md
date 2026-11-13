@@ -41,11 +41,11 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 2 — Servidor sin modelo de lenguaje (C-04) | 9 | 9 | 100% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
 | Fase 3 — Paridad REST /v1 (C-02) | 10 | 10 | 100% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
-| Fase 5 — kairos-mcp (C-03) | 5 | 15 | 33.3% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
+| Fase 5 — kairos-mcp (C-03) | 6 | 15 | 40.0% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **40** | **74** | **54.1%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **41** | **74** | **55.4%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1428,32 +1428,37 @@ RED: `memory_platform/tests/test_deploy.py::McpServiceTests` falló con KeyError
 ### T-41 — Herramientas del grupo `mcp.py` (12) traducidas a `/v1`
 
 - **Descripción**: Implementar en kairos-mcp las 12 herramientas de `mcp.py` y su traducción a `/v1`. Fuente: CA-10, CA-11, spec §Arquitectura (tabla de paridad).
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: kairos-mcp atiende ya las 12 herramientas basicas (proyectos, remember, documentos, busqueda, contexto, estado de eventos y politica de captura) traduciendolas a /v1 con la credencial de quien llama.
+- **Estado**: completado
+- **Cerrada**: 2026-11-13
 - **Tiempo humano**: est. 2.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.31h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.31h (estimado) · real 0.03h (medido)
 - **Supervisión**: est. 0.08h (≈25 % IA) · real —
 - **Previsión IA**: 84 k in / 8 k out tok · ⚠️ verificar €
 - **Dependencias**: T-39
 - **Tipo**: mcp
-- **Archivos**: `mcp/kairos_mcp/tools.py`, `mcp/kairos_mcp/budget.py`, `mcp/tests/test_tools_t41.py`
+- **Archivos**: `mcp/kairos_mcp/tools.py`, `mcp/kairos_mcp/budget.py`, `mcp/tests/test_tools_t41.py`, `mcp/kairos_mcp/translate.py`, `mcp/tests/support.py`, `mcp/tests/tool_cases.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build -f mcp/Dockerfile -t kairos-mcp:t41 mcp/ && docker run --rm kairos-mcp:t41 python -m unittest discover -s tests` → `OK`, 12 herramientas probadas
+  - Evidencia (2026-11-13): `docker build -f mcp/Dockerfile -t kairos-mcp:t41 mcp/ && docker run --rm kairos-mcp:t41 python -m unittest discover -s tests` -> Ran 46 tests, OK (12 herramientas: exito, 4xx, 5xx y caida cada una; event_status con y sin proyecto; presupuesto de bytes).
 
 **Criterios de aceptación**
-- [ ] Cada herramienta llama al endpoint declarado en su `x-kairos-endpoint`, con la misma cabecera y los argumentos validados contra su `inputSchema`
-- [ ] El resultado respeta el presupuesto de bytes (`NORMAL_BYTES`/`DETAIL_BYTES`)
-- [ ] Un caso de éxito, uno de 4xx y uno de caída por herramienta contra el servidor simulado
-- [ ] Las herramientas de este grupo: `projects`, `remember`, `publish_document`, `document_status`, `document_manifest`, `revoke_document`, `search`, `details`, `context`, `timeline`, `event_status`, `capture_policy`
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] Cada herramienta llama al endpoint declarado en su `x-kairos-endpoint`, con la misma cabecera y los argumentos validados contra su `inputSchema`
+- [x] El resultado respeta el presupuesto de bytes (`NORMAL_BYTES`/`DETAIL_BYTES`)
+- [x] Un caso de éxito, uno de 4xx y uno de caída por herramienta contra el servidor simulado
+- [x] Las herramientas de este grupo: `projects`, `remember`, `publish_document`, `document_status`, `document_manifest`, `revoke_document`, `search`, `details`, `context`, `timeline`, `event_status`, `capture_policy`
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Tests en rojo contra `stub_api.py`
-- [ ] Implementar la traducción herramienta → llamada
-- [ ] `usage-meter start/close`
+- [x] Tests en rojo contra `stub_api.py`
+- [x] Implementar la traducción herramienta → llamada
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-10/CA-11. Patrón: herramientas en `memory_platform/mcp.py:68-172`; `event_status` usa el endpoint de T-20 y `capture_policy` el de T-19. Clase: capacidad nueva (oráculo: igualdad de salida con el MCP interno, comprobada en T-47/T-48).
+**Notas**: Procedencia: spec CA-10/CA-11. Patrón: herramientas en `memory_platform/mcp.py:68-172`; `event_status` usa el endpoint de T-20 y `capture_policy` el de T-19. Clase: capacidad nueva (oráculo: igualdad de salida con el MCP interno, comprobada en T-47/T-48). Motor generico en `translate.py` (porta el traductor de test_tool_endpoint_parity): ninguna herramienta se trata por nombre; `budget.OUTPUT` es la tabla herramienta -> (forma, presupuesto) y una herramienta fuera de ella responde `This tool is not available`. Forma de la respuesta como FastMCP: objeto -> structuredContent + texto JSON con sangria; `-> str` -> texto JSON compacto + `{result: texto}`. Las 12 herramientas de mcp.py no tienen tope de bytes en el MCP interno: kairos-mcp las limita a DETAIL_BYTES (262144) y, si se pasa, devuelve solo el texto cortado con el marcador (sin structuredContent). Los errores salen como `Error executing tool <nombre>: <mensaje>`, igual que FastMCP. Plazo total por llamada: 4 x KAIROS_API_TIMEOUT. Archivos anadidos con esta nota: `mcp/kairos_mcp/translate.py`, `mcp/tests/support.py`, `mcp/tests/tool_cases.py`. El soporte de `after_read` en translate.py se prueba y se cierra en T-42. usage-meter three-components/T-41: 0.03 h IA (medido, win-d1afc0613c474b998657b7f496436132).
+
+
+RED: `mcp/tests/test_tools_t41.py` falló con 52 fallos y 5 errores: las herramientas respondian `This tool is not available in this build of kairos-mcp` (tabla OUTPUT vacia) · 2026-11-13.
 
 ### T-42 — Herramientas del grupo `agent_tools.py` (13) traducidas a `/v1`
 
