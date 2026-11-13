@@ -5,7 +5,7 @@ import uuid
 
 from pydantic import ValidationError
 
-from . import models
+from . import models, schemas
 from .agent_store import apply_fields, fields, integer, invalid, revision, text, visible_state
 from .errors import Conflict, Forbidden, MemoryError
 from .store import canonical, clean, digest
@@ -39,9 +39,11 @@ def validated_event(value):
         event = models.Event.model_validate(value)
         if len(canonical(event.model_dump(mode='json')).encode('utf-8')) > 262_144:
             invalid('Observation event exceeds 256 KiB')
-        return event
     except (ValidationError, ValueError, TypeError, UnicodeError):
         invalid('Observation requires a valid structured event with stable UUIDs and timezone')
+    # Outside the try: `invalid_observation` is its own domain error (422), not the generic invalid_agent_input above.
+    schemas.validate_event_structured(event.payload)
+    return event
 
 
 class ExtendedStore:

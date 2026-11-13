@@ -1,11 +1,17 @@
 """HTTP and MCP exercise the same observation and shared-work transactions."""
+import json
 import unittest
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from memory_platform.app import create_app
 from memory_platform.auth import Auth
+from memory_platform import schemas
 from memory_platform.config import Settings
+from memory_platform.errors import MemoryError
+from memory_platform.extended_store import validated_event
+from memory_platform.store import digest
 from memory_platform.tests.test_store import create_core, event
 from memory_platform.tests.test_work_gateway import unpack
 
@@ -40,3 +46,102 @@ class ExtendedGatewayTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class StructuredObservationTests(unittest.TestCase):
+    """C-05 (CA-20, CA-21, P-11): `payload.structured` is validated against its schema; events without it behave as before."""
+
+    def setUp(self):
+        self.store, actor, self.project = create_core()
+        self.key = self.store.create_key(actor, {'name': 'structured-fixture', 'project_ids': [self.project], 'scopes': ['read', 'write']})['token']
+        self.headers = {'Authorization': 'Bearer '+self.key, 'Accept': 'application/json, text/event-stream'}
+        app = create_app(Settings('unused'), store=self.store, auth=Auth(self.store))
+        self.http = TestClient(app, base_url='http://localhost:8790')
+        self.http.__enter__()
+        self.addCleanup(self.http.__exit__, None, None, None)
+
+    def examples(self, schema, kind):
+        return sorted((schemas.contracts_dir() / 'examples' / schema / kind).glob('*.json'))
+
+    def post(self, document, path='/v1/observations'):
+        data = event(self.project, generate=False)
+        data['payload']['structured'] = document
+        return data, self.http.post(path, headers=self.headers, json=data)
+
+    def valid(self):
+        return self.named('valid-bugfix')
+
+    def named(self, name, schema='observation.v1'):
+        return json.loads((schemas.contracts_dir() / 'examples' / schema / 'valid' / (name + '.json')).read_text(encoding='utf-8'))
+
+    def test_a_valid_observation_is_accepted_over_both_routes(self):
+        for path in ('/v1/observations', '/v1/observations/events'):
+            data, response = self.post(self.valid(), path)
+            self.assertEqual(response.status_code, 202, response.text)
+        data, response = self.post(self.valid())
+        self.assertEqual(response.json()['status'], 'accepted')
+
+    def test_an_invalid_observation_is_422_with_the_path_and_without_the_content(self):
+        sentinel = 'SENTINEL-77aa-do-not-echo'
+        base = self.valid()
+        missing = {key: value for key, value in base.items() if key != 'facts'}
+        cases = [(missing, '/payload/structured/facts'),
+                 ({**base, 'mood': sentinel}, '/payload/structured'),
+                 ({**base, 'title': sentinel * 20}, '/payload/structured/title'),
+                 ({**base, 'schema_version': 'observation.v9'}, '/payload/structured/schema_version')]
+        for document, path in cases:
+            data, response = self.post(document)
+            self.assertEqual(response.status_code, 422, response.text)
+            body = response.json()
+            self.assertEqual(body['error']['code'], 'invalid_observation')
+            self.assertIn(path, body['error']['message'])
+            self.assertNotIn(sentinel, response.text)
+
+    def test_the_same_invalid_observation_is_the_same_error_over_mcp(self):
+        data = event(self.project, generate=False)
+        data['payload']['structured'] = {**self.valid(), 'extra': 1}
+        response = self.http.post('/mcp/', headers=self.headers, json={'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call', 'params': {'name': 'observation_add', 'arguments': {'event': data}}})
+        result = response.json()['result']
+        self.assertTrue(result['isError'])
+        # The MCP error text is the domain message (as for every tool): the code is a REST concept.
+        self.assertIn('does not match its schema: additionalProperties at /payload/structured', json.dumps(result))
+
+    def test_an_event_without_structured_is_accepted_as_before(self):
+        data = event(self.project, generate=False)
+        self.assertNotIn('structured', data['payload'])
+        self.assertEqual(self.http.post('/v1/observations', headers=self.headers, json=data).status_code, 202)
+
+    def test_the_server_agrees_with_the_examples_the_independent_validator_checks(self):
+        for schema in ('observation.v1', 'session-summary.v1'):
+            for kind, status in (('valid', 202), ('invalid', 422)):
+                for path in self.examples(schema, kind):
+                    data, response = self.post(json.loads(path.read_text(encoding='utf-8')))
+                    self.assertEqual(response.status_code, status, f'{schema}/{path.name}: {response.text[:200]}')
+                    if status == 422:
+                        self.assertEqual(response.json()['error']['code'], 'invalid_observation', path.name)
+
+
+class ValidatedEventTests(unittest.TestCase):
+    """The validation step itself, without a database."""
+
+    def example(self, schema='observation.v1'):
+        name = 'valid-bugfix' if schema == 'observation.v1' else 'valid-complete'
+        return json.loads((schemas.contracts_dir() / 'examples' / schema / 'valid' / (name + '.json')).read_text(encoding='utf-8'))
+
+    def test_structured_is_validated_when_present_and_only_then(self):
+        data = event('p1', generate=False)
+        self.assertEqual(validated_event(data).payload.structured, None)
+        data['payload']['structured'] = self.example()
+        self.assertEqual(validated_event(data).payload.structured['schema_version'], 'observation.v1')
+        data['payload']['structured'] = {**self.example(), 'extra': 1}
+        with self.assertRaises(MemoryError) as caught:
+            validated_event(data)
+        self.assertEqual((caught.exception.code, caught.exception.status_code), ('invalid_observation', 422))
+
+    def test_a_summary_document_is_validated_with_its_own_schema(self):
+        data = event('p1', generate=False)
+        data['payload']['structured'] = self.example('session-summary.v1')
+        validated_event(data)
+        data['payload']['structured'] = {**self.example('session-summary.v1'), 'schema_version': 'observation.v1'}
+        with self.assertRaises(MemoryError):
+            validated_event(data)

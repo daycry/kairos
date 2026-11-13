@@ -1035,6 +1035,19 @@
               }
             ]
           },
+          "structured": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "description": "Structured document of schema_version observation.v1 or session-summary.v1; validated when present (docs/contracts).",
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Structured"
+          },
           "supersedes": {
             "anyOf": [
               {

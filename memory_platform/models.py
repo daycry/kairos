@@ -111,6 +111,8 @@ class Payload(Model):
     evidence: Annotated[list[Annotated[str, Field(max_length=4000)]], Field(max_length=20)] | None = None
     validation_status: Literal['observed', 'unverified', 'validated'] | None = None
     supersedes: UUID | None = None
+    # Optional structured document (C-05, P-11): validated against docs/contracts/<schema_version>.schema.json when present.
+    structured: Annotated[dict[str, Any], Field(description='Structured document of schema_version observation.v1 or session-summary.v1; validated when present (docs/contracts).')] | None = None
 
 class AutomaticCapture(Model):
     mode: Literal['summary','full']

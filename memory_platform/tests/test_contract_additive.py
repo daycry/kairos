@@ -71,6 +71,13 @@ def without_budget(tool):
     return stripped
 
 
+def without_structured(tool):
+    """The tool with only the optional `payload.structured` of C-05 taken out of the event schema it embeds (`$defs.Payload`)."""
+    stripped = json.loads(json.dumps(tool))
+    stripped['inputSchema'].get('$defs', {}).get('Payload', {}).get('properties', {}).pop('structured', None)
+    return stripped
+
+
 def endpoints(declared):
     """Every `{method, path}` object inside a declaration, nested ones included."""
     found = [declared] if 'path' in declared else []
@@ -162,13 +169,24 @@ class ContractAdditiveTests(unittest.TestCase):
         after = {tool['name']: tool for tool in self.exported['kairos-mcp.json']['tools']}
         self.assertEqual(list(before), list(after))
         for name in before:
-            current = without_endpoint(without_budget(after[name]) if name in BUDGET_TOOLS else after[name])
+            current = without_endpoint(without_structured(without_budget(after[name]) if name in BUDGET_TOOLS else after[name]))
             self.assertEqual(tool_differences(before[name], current), [], name)
         for name in BUDGET_TOOLS:
             schema = after[name]['inputSchema']
             self.assertEqual(set(schema['properties']) - set(before[name]['inputSchema']['properties']), {'semantic_budget_ms'}, name)
             self.assertNotIn('semantic_budget_ms', schema.get('required', []), name)
         self.assertIs(after['search']['inputSchema']['properties']['semantic']['default'], True)  # the existing default is not touched
+
+    def test_structured_is_an_optional_object_in_every_tool_that_embeds_the_event(self):
+        # C-05 (P-11): the new `payload.structured` never becomes required and appears wherever the event schema does.
+        carriers = [tool for tool in self.exported['kairos-mcp.json']['tools'] if 'Payload' in tool['inputSchema'].get('$defs', {})]
+        self.assertGreaterEqual({tool['name'] for tool in carriers}, {'observation_add', 'observation_record_event'})
+        for tool in carriers:
+            payload = tool['inputSchema']['$defs']['Payload']
+            self.assertIn('structured', payload['properties'], tool['name'])
+            self.assertNotIn('structured', payload.get('required', []), tool['name'])
+        schemas = self.exported['memory-platform.openapi.json']['components']['schemas']
+        self.assertNotIn('structured', schemas['Payload'].get('required', []))
 
     def test_ca04_every_tool_declares_an_endpoint_that_exists_in_the_openapi_or_is_local(self):
         paths = self.exported['memory-platform.openapi.json']['paths']
@@ -207,7 +225,7 @@ class ContractAdditiveTests(unittest.TestCase):
         latest = {tool['name']: tool for tool in json.loads((BASE_23CED03 / 'kairos-mcp.json').read_text(encoding='utf-8'))['tools']}
         self.assertTrue(all('semantic_budget_ms' in latest[name]['inputSchema']['properties'] for name in BUDGET_TOOLS))
         for tool in self.exported['kairos-mcp.json']['tools']:
-            self.assertEqual(tool_differences(latest[tool['name']], without_endpoint(tool)), [], tool['name'])
+            self.assertEqual(tool_differences(latest[tool['name']], without_endpoint(without_structured(tool))), [], tool['name'])
         # the existing routes keep their operations: every (path, method) of the baseline is still there with its parameters and body
         base_paths = json.loads((BASE_23CED03 / 'memory-platform.openapi.json').read_text(encoding='utf-8'))['paths']
         paths = self.exported['memory-platform.openapi.json']['paths']
