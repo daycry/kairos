@@ -53,7 +53,7 @@ class GroupTests(unittest.TestCase):
             result = harness.call('list_corpora', {'project': PROJECT})
         self.assertEqual(result.structured, {'result': result.text})
         self.assertNotIn('\n', result.text)
-        self.assertNotIn(', ', result.text.replace('"', ''))  # compact separators
+        self.assertEqual(json.dumps(json.loads(result.text), ensure_ascii=False, separators=(',', ':')), result.text)  # compact separators
 
 
 class ImportantWorkflowTests(unittest.TestCase):

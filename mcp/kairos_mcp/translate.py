@@ -11,9 +11,11 @@ from urllib.parse import quote
 
 from mcp import types
 
-from .budget import OBJECT, OUTPUT, cut, render
+from .budget import OBJECT, OUTPUT, PLAIN, cut, render
 from .client import fail
+from .contract import read_only
 from .errors import UNAVAILABLE, ToolError
+from .untrusted import wrap
 
 LOCAL_TEXT = {
     'important_workflow': (
@@ -191,4 +193,6 @@ class Executor:
         if status >= 400:
             fail(status, body)
         value = body if isinstance(body, dict) else {}
+        if read_only(tool) and shape != PLAIN:  # the contract's own annotation says which tools read: no list of names here
+            value = wrap(value)
         return shape_result(shape, budget, value)
