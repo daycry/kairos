@@ -86,46 +86,6 @@
     {
       "statement": "The retry loop never backed off",
       "evidence_quote": "the loop retried every 10 ms without a delay"
-    },
-    {
-      "statement": "The retry loop never backed off",
-      "evidence_quote": "the loop retried every 10 ms without a delay"
-    },
-    {
-      "statement": "The retry loop never backed off",
-      "evidence_quote": "the loop retried every 10 ms without a delay"
-    },
-    {
-      "statement": "The retry loop never backed off",
-      "evidence_quote": "the loop retried every 10 ms without a delay"
-    },
-    {
-      "statement": "The retry loop never backed off",
-      "evidence_quote": "the loop retried every 10 ms without a delay"
-    },
-    {
-      "statement": "The retry loop never backed off",
-      "evidence_quote": "the loop retried every 10 ms without a delay"
-    },
-    {
-      "statement": "The retry loop never backed off",
-      "evidence_quote": "the loop retried every 10 ms without a delay"
-    },
-    {
-      "statement": "The retry loop never backed off",
-      "evidence_quote": "the loop retried every 10 ms without a delay"
-    },
-    {
-      "statement": "The retry loop never backed off",
-      "evidence_quote": "the loop retried every 10 ms without a delay"
-    },
-    {
-      "statement": "The retry loop never backed off",
-      "evidence_quote": "the loop retried every 10 ms without a delay"
-    },
-    {
-      "statement": "The retry loop never backed off",
-      "evidence_quote": "the loop retried every 10 ms without a delay"
     }
   ],
   "narrative": "While reading the worker I found that the loop retried every 10 ms without a delay, which saturated the database. I added an exponential backoff.",
