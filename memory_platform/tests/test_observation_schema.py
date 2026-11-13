@@ -133,6 +133,29 @@ class LimitTests(unittest.TestCase):
         wide = {**self.base(), **{f'{SENTINEL}{i}': i for i in range(2000)}}
         self.rejected(wide, '')
 
+    def test_a_huge_array_is_rejected_in_linear_time_before_uniqueItems_runs(self):
+        # CWE-407: with mixed types `uniqueItems` compares every pair, so 8 000 elements took minutes.
+        import time
+        for field in ('concepts', 'files_read', 'files_modified'):
+            document = {**self.base(), field: ['x'] + list(range(8000))}
+            started = time.monotonic()
+            with self.assertRaises(MemoryError) as caught:
+                schemas.validate_structured(document)
+            self.assertLess(time.monotonic() - started, 1.0, field)
+            self.assertEqual(caught.exception.code, 'invalid_observation')
+            self.assertIn('maxItems at /payload/structured/' + field, caught.exception.message)
+        # Nested arrays and arrays under unknown keys are bounded too.
+        for document in ({**self.base(), 'facts': [['x'] + list(range(8000))]}, {**self.base(), SENTINEL: ['x'] + list(range(8000))}):
+            started = time.monotonic()
+            with self.assertRaises(MemoryError) as caught:
+                schemas.validate_structured(document)
+            self.assertLess(time.monotonic() - started, 1.0)
+            self.assertIn('maxItems', caught.exception.message)
+            self.assertNotIn(SENTINEL, caught.exception.message)
+
+    def test_the_array_bound_is_the_largest_maxItems_of_the_schemas(self):
+        self.assertEqual(schemas.max_array_items(), 50)
+
 
 if __name__ == '__main__':
     unittest.main()

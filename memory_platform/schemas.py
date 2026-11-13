@@ -34,6 +34,33 @@ def _validator(version):
     return Draft202012Validator(document)
 
 
+def load_all():
+    """Load every schema now: the API calls this at startup so a missing or broken file stops it there, not on a request."""
+    for version in VERSIONS:
+        _validator(version)
+
+
+@lru_cache(maxsize=None)
+def _bounds(version):
+    """(largest `maxItems`, property names) the schema declares; computed once from the loaded document."""
+    largest, names, pending = 0, set(), [_validator(version).schema]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, dict):
+            if isinstance(node.get('maxItems'), int):
+                largest = max(largest, node['maxItems'])
+            if isinstance(node.get('properties'), dict):
+                names.update(node['properties'])
+            pending.extend(node.values())
+        elif isinstance(node, list):
+            pending.extend(node)
+    return largest, frozenset(names)
+
+
+def max_array_items():
+    return max(_bounds(version)[0] for version in VERSIONS)
+
+
 def _fail(path, rule):
     raise MemoryError('invalid_observation', f'Structured observation does not match its schema: {rule} at {path}', 422)
 
@@ -49,6 +76,26 @@ def _too_deep(value):
     return False
 
 
+def _oversized_array(document):
+    """Path of the first array longer than any schema allows, or None. Linear in the size of the document.
+
+    `uniqueItems` compares every pair of elements (quadratic with mixed types) and jsonschema evaluates it before it looks at
+    `maxItems`, so an array this long never reaches the validator. Keys that are not property names of a schema are shown as `*`.
+    """
+    limit = max_array_items()
+    known = frozenset().union(*(_bounds(version)[1] for version in VERSIONS))
+    pending = [(document, BASE)]
+    while pending:
+        current, path = pending.pop()
+        if isinstance(current, list):
+            if len(current) > limit:
+                return path
+            pending.extend((child, f'{path}/{index}') for index, child in enumerate(current))
+        elif isinstance(current, dict):
+            pending.extend((child, f'{path}/{key if key in known else "*"}') for key, child in current.items())
+    return None
+
+
 def validate_structured(document):
     """Raise `invalid_observation` (422) unless `document` is valid for the version it declares."""
     if not isinstance(document, dict):
@@ -60,6 +107,9 @@ def validate_structured(document):
         _fail(BASE + '/schema_version', 'required')
     if not isinstance(version, str) or version not in VERSIONS:
         _fail(BASE + '/schema_version', 'const')
+    oversized = _oversized_array(document)
+    if oversized is not None:
+        _fail(oversized, 'maxItems')
     errors = list(_validator(version).iter_errors(document))
     if not errors:
         return
@@ -75,7 +125,7 @@ def validate_structured(document):
 
 def validate_event_structured(payload):
     """Validate `structured` when the payload carries it; without it nothing is checked (P-11)."""
-    structured = getattr(payload, 'structured', None)
+    structured = payload.get('structured') if isinstance(payload, dict) else getattr(payload, 'structured', None)
     if structured is None:
         return
     validate_structured(structured)
