@@ -2563,3 +2563,16 @@ Veredicto: **sin Critical ni Important; la Fase 3 cierra en el intento 3 de 3**.
 | 7 | Minor | Tests que prometen más de lo que comprueban: `…hides_other_actors` sin segundo actor; `perform` no lee `reread`/`only_if_value_changed`; el 409 real solo con servidor guionizado | T-25 | deuda aceptada (para T-47/T-48, la cadena completa MCP→REST) | Lente A+B: `test_tool_endpoint_parity.py:494-500,131-161` |
 | 8 | Minor | El ledger no recogía el run 43422142841 | T-24, T-25 | corregido (este veredicto) | `gh run view`: 5/5 en verde |
 | 9 | Minor | Rutas que antes se normalizaban (`/x/../memory-api/...`, `//memory-api/...`) ahora dan 400 | T-22 | aceptado: cambio funcional deliberado, sin impacto de seguridad; el portal no genera esas rutas | Lente C (fuera de lente) |
+
+## Revisión de dos lentes — intento 1: Fase 4 (esquema de observación) (T-28, T-29, T-30, T-31, T-32, T-33, T-34)
+
+Veredicto: **2 gaps bloqueantes (1 Critical, 1 Important); vuelve al implementer**. Lentes: A+B en un revisor y C (activada por `memory_platform/Dockerfile`). A: todos los criterios de T-28..T-34 ✓ salvo la doc de T-34 (gaps 2 y 5); contrato MCP con 34 herramientas, +42/-0; OpenAPI +13/-0; sin migraciones. `scope-check --base 3f15c0d` exit 0.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Critical | DoS por `uniqueItems` cuadrático (CWE-407/400): `iter_errors` evalúa `uniqueItems` sobre el array entero aunque supere `maxItems`; con tipos mezclados compara todos los pares. 8 000 elementos (39 KB) → 184 s de CPU con una clave `write` | T-30, T-31 | pendiente | Lente C: `schemas.py:63`; `observation.v1.schema.json` (`concepts`, `files_read`, `files_modified`); medido con jsonschema 4.26.0 |
+| 2 | Important | `remember` y `POST /v1/events` guardan `payload.structured` sin validarlo, aunque el contrato (`kairos-mcp.json:605`) y `docs/integration.md` dicen que se valida | T-31, T-34 | pendiente | Lentes A+B y C: `app.py:343-345`, `mcp.py:75-84`, `store_ingest.py:95-140` |
+| 3 | Minor | La extracción LLM opcional envía `Payload.model_json_schema()` como `format`, ahora con `structured` abierto; si el modelo lo emite, `_materialize_extract` lo guarda sin validar | T-31 | pendiente | Lente A+B: `providers.py:75,80,88`, `store_ingest.py:58-85` |
+| 4 | Minor | `sanitize_payload` no limpia `structured`: un `<private>` ahí rechaza el evento (422 `sensitive_source_requires_review`) en vez de redactarse; la doc promete «las mismas reglas» | T-34 | pendiente | Lente A+B: `privacy.py:143-163,184-201` |
+| 5 | Minor | Esquemas cargados en la primera petición: si faltan, el servidor arranca sano y responde 503 en caliente | T-30 | pendiente | Lente A+B: `schemas.py:30-35` |
+| 6 | Minor | Dependencias transitivas de `jsonschema` (`attrs`, `jsonschema-specifications`, `referencing`, `rpds-py`) sin fijar (CWE-1357) | T-30 | pendiente | Lente C: `requirements.txt:7` |
