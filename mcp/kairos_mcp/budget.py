@@ -21,6 +21,11 @@ OUTPUT = {
                                                'reprime_corpus', 'query_corpus', 'observation_search', 'observation_context', 'observation_generation_status')},
     'get_observations': (TEXT, DETAIL_BYTES),
     'important_workflow': (PLAIN, NORMAL_BYTES),  # fixed text, answered without a request
+    # T-43: the group of `extended_tools.py`: `call` renders every tool at DETAIL_BYTES.
+    **{name: (TEXT, DETAIL_BYTES) for name in ('observation_add', 'observation_record_event', 'get_tool_uses', 'team_work_write', 'team_work_read',
+                                               'team_search', 'team_brief')},
+    # T-44: the group of `corpus_answer_tools.py`: both render at DETAIL_BYTES; with that, the 34 tools of the contract are served.
+    **{name: (TEXT, DETAIL_BYTES) for name in ('corpus_answer', 'corpus_answer_status')},
 }
 
 
