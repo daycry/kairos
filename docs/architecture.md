@@ -1,6 +1,6 @@
 # Cómo está construido Kairos
 
-Última actualización: 2026-11-11.
+Última actualización: 2026-11-14.
 
 ## Componentes y recorrido de una operación
 
@@ -21,13 +21,32 @@ El puente MCP convierte mensajes stdio en peticiones HTTP autenticadas. El servi
 | Unidad | Responsabilidad | Fuente |
 |---|---|---|
 | `memory_platform` | API, autenticación, modelos, persistencia, recuperación y procesamiento | [paquete](../memory_platform/__init__.py) |
-| `memory_platform/mcp.py`, `agent_tools.py`, `extended_tools.py` y `corpus_answer_tools.py` | Frontera única de 34 herramientas para agentes | [MCP](../memory_platform/mcp.py) |
+| `memory_platform/mcp.py`, `agent_tools.py`, `extended_tools.py` y `corpus_answer_tools.py` | MCP interno: las 34 herramientas sobre el servidor, con credencial por clave o por sesión del portal | [MCP](../memory_platform/mcp.py) |
+| `mcp` (`kairos_mcp`) | kairos-mcp: las mismas 34 herramientas como cliente de `/v1`, con la credencial de quien llama; sin base de datos ni secretos | [README](../mcp/README.md) |
 | `memory_platform/store.py` y `store_*.py` | `Store` es una fachada sobre mixins por dominio (autenticación, ingesta, documentos, grafo, trabajos y vectores); el código que usa `Store` no cambió | [fachada](../memory_platform/store.py) |
 | `memory_platform/observability.py` | Logs JSON con redacción y métricas Prometheus de valores cerrados | [observabilidad](../memory_platform/observability.py) |
 | `memory_platform/admin.py` | Migración, usuario inicial, inspección, copias, relleno de fragmentos y restauración de comprobación | [administración](../memory_platform/admin.py) |
 | `web` | Web pública, acceso y panel privado, filtros, listas y mapa | [portal](../web/src/memory-portal.ts) |
 | `packages/kairos-cli` | Instalación de configuración y puente MCP local | [manifiesto](../packages/kairos-cli/package.json) |
 | `docker-compose.yml` | Servicios, redes y almacenamiento persistente | [Compose](../docker-compose.yml) |
+
+## Tres componentes: servidor, kairos-mcp y cliente
+
+```mermaid
+flowchart LR
+  A[Agente MCP] -- "Bearer clave" --> M[kairos-mcp :8791]
+  M -- "/v1, misma cabecera" --> S[memory-api :8790]
+  P[Portal web] --> S
+  K[CLI: puente stdio] -- "Bearer clave" --> S
+  S --> D[(PostgreSQL)]
+  W[Trabajador] --> D
+```
+
+- **Servidor** (`memory-api` y `memory-worker`): único con acceso a PostgreSQL. Autentica, aplica los permisos por proyecto y expone la API REST `/v1`. Mantiene además el MCP interno (`/mcp/`), con sus cabeceras de sesión y CSRF, mientras el proxy web siga enrutando `/mcp` a él.
+- **kairos-mcp** (`memory-mcp`, puerto `8791`): publica `/mcp/` con las 34 herramientas del contrato `docs/contracts/kairos-mcp.json` y convierte cada llamada en una petición `/v1` con la misma cabecera `Authorization: Bearer`. No accede a la base de datos, no tiene credencial propia, no decide permisos y no importa código del servidor. Vive en una red interna que solo comparte con `memory-api`. Añade a las respuestas de lectura los campos `untrusted` y `warning` (dato no fiable) y aplica los topes de bytes de las herramientas. Detalle en [mcp/README.md](../mcp/README.md).
+- **Cliente** (`packages/kairos-cli` y el portal): el CLI instala la configuración y mantiene el puente stdio; habla con `/mcp/` de la entrada web. Mientras el proxy no enrute `/mcp` a kairos-mcp, ese puente sigue usando el MCP interno; ambos servidores dan los mismos resultados (las pruebas de comportamiento MCP se ejecutan contra los dos).
+
+Quién habla con quién: el agente solo habla con un MCP; kairos-mcp solo habla con `/v1`; solo el servidor habla con la base de datos y con el servidor de modelos de embeddings. Una clave sin permiso recibe el mismo error por cualquiera de los dos MCP, y un 401 de `/v1` es el 401 de la petición MCP.
 
 ## Stack y configuración
 

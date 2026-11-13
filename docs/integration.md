@@ -86,6 +86,17 @@ Las herramientas adicionales responden mediante bloques de texto MCP. La mayorí
 
 Cada respuesta HTTP lleva `X-Request-ID`. Ese identificador aparece en los logs JSON del servidor, en la línea de acceso y en la de cada capa de la búsqueda, y permite al operador localizar una petición sin que el log contenga la consulta, el contenido ni los identificadores de proyecto. Cítalo en una incidencia. `GET /metrics` (formato Prometheus) no forma parte del contrato MCP ni del cliente: es solo de la red interna del servidor (ver [observabilidad](operations.md#observabilidad-logs-y-metricas)) y las herramientas MCP y sus esquemas no cambian por ello.
 
+## Conectar con kairos-mcp
+
+kairos-mcp (`memory-mcp`, versión 0.4.0) publica las mismas 34 herramientas por *streamable HTTP* en `/mcp/` del puerto `8791` de su red interna, con los mismos nombres, esquemas y anotaciones que el MCP interno (`docs/contracts/kairos-mcp.json`). La credencial es solo `Authorization: Bearer <clave>`; las sesiones con cookie del portal no se aceptan. Lo que ve un cliente respecto al MCP interno:
+
+- **Dato no fiable.** Las herramientas con `readOnlyHint` (todas las de lectura salvo `important_workflow`) añaden `untrusted: true` y `warning` al principio del objeto JSON de la respuesta; ningún otro campo cambia y el texto sigue siendo JSON. El MCP interno hace lo mismo.
+- **Errores.** Un fallo es un resultado con `isError` y el texto `Error executing tool <nombre>: <mensaje>`, con el mensaje del servidor. Caída, plazo (`KAIROS_API_TIMEOUT`, 30 s) o 5xx: `Memory service temporarily unavailable`. Sin cabecera `Authorization` o con otro esquema, y con una clave que `/v1` rechaza con 401: HTTP 401 con `{"error": {"code": "unauthorized", "message": "Authentication required"}, "request_id": ""}`. Cuerpo MCP mayor que `KAIROS_MAX_BODY_BYTES` (262144): 413 `body_too_large`. `tools/list` no llama a la API.
+- **Tope de bytes.** 32 768 bytes (`NORMAL_BYTES`) en las herramientas de agente y 262 144 (`DETAIL_BYTES`) en `get_observations`, las observaciones y el equipo, y los corpus; un texto cortado termina con el marcador `[Output shortened at the UTF-8 byte budget; narrow the selection to retrieve more.]`. Las 12 herramientas básicas se limitan también a `DETAIL_BYTES` (el MCP interno no las limita).
+- **`rebuild_corpus`.** Sin `expected_version` lee la versión actual y la envía; si otro `rebuild` la cambia entre la lectura y el envío, relee y reenvía como máximo 3 veces más, y después devuelve `Corpus version changed` (la herramienta montada en el MCP interno no tendría ese conflicto). Con `expected_version: 0` comprueba primero que el corpus existe y es suyo (403 o 404 como en el MCP interno) y responde `Corpus version changed` sin reconstruir.
+
+Configuración del servicio en [Configuración](configuration.md#kairos-mcp); pruebas en [mcp/README.md](../mcp/README.md).
+
 ## Compartir el estado de trabajo con el panel
 
 Cada lista pertenece al actor autenticado y a un proyecto. Dos claves del mismo actor comparten sus listas dentro de los permisos concedidos. Actores diferentes no ven esas listas aunque puedan consultar el mismo proyecto. No se infiere el proyecto a partir del directorio del servidor.

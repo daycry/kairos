@@ -1711,7 +1711,7 @@ RED: `memory_platform/tests/test_mcp_write.py::MCPBoundaryChainTests` falló con
 
 - **Descripción**: Documentar el componente: variables `KAIROS_API_URL` y `KAIROS_API_TIMEOUT`, credencial Bearer, envoltorio S-05, errores y cómo ejecutar sus tests. Fuente: CA-32, C-03.
 - **Changelog**: 
-- **Estado**: borrador
+- **Estado**: en-progreso
 - **Tiempo humano**: est. 2.0h (base) · real —
 - **Tiempo IA (ejec.)**: est. 0.31h (estimado) · real —
 - **Supervisión**: est. 0.08h (≈25 % IA) · real —
