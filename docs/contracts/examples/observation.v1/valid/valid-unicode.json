@@ -1,0 +1,23 @@
+{
+  "schema_version": "observation.v1",
+  "type": "feature",
+  "title": "Soporte de ñandú y 日本語 🦜",
+  "facts": [
+    {
+      "statement": "Los acentos se conservan",
+      "evidence_quote": "«café» y 日本語 🦜"
+    }
+  ],
+  "narrative": "Se añadió soporte de acentos: «café» y 日本語 🦜.",
+  "concepts": [
+    "unicode",
+    "ñ"
+  ],
+  "files_read": [
+    "worker/sync.py"
+  ],
+  "files_modified": [
+    "worker/sync.py",
+    "worker/tests/test_sync.py"
+  ]
+}

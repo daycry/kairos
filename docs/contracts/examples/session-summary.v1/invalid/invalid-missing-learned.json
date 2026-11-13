@@ -1,0 +1,7 @@
+{
+  "schema_version": "session-summary.v1",
+  "request": "Make the sync worker back off",
+  "investigated": "The retry loop and its callers",
+  "completed": "Added exponential backoff and a test",
+  "next_steps": "Watch the worker metrics for a day"
+}
