@@ -19,7 +19,11 @@ class JsonFormatter(logging.Formatter):
 
 def configure_logging(stream=None, level=logging.INFO):
     """One JSON handler on the `kairos_mcp` logger; `httpx`, `httpcore` and `mcp` stay at WARNING so that no request line is written."""
-    if not any(getattr(handler, _MARK, False) for handler in LOGGER.handlers):
+    ours = [handler for handler in LOGGER.handlers if getattr(handler, _MARK, False)]
+    if ours:
+        if stream is not None:
+            ours[0].setStream(stream)  # one handler, pointed at the stream of the latest call
+    else:
         handler = logging.StreamHandler(stream or sys.stderr)
         handler.setFormatter(JsonFormatter())
         setattr(handler, _MARK, True)

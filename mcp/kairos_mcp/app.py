@@ -11,7 +11,8 @@ from starlette.routing import Mount, Route
 from . import contract as contract_module
 from .auth import RequireBearer
 from .client import ApiClient
-from .config import DEFAULT_TIMEOUT, from_env, parse_api_url
+from .config import DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT, from_env, parse_api_url
+from .limits import BodyLimit
 from .logs import configure_logging
 from .tools import build_server
 
@@ -33,7 +34,7 @@ def security(allowed_origins):
     return TransportSecuritySettings(enable_dns_rebinding_protection=True, allowed_hosts=list(dict.fromkeys(hosts)), allowed_origins=list(allowed_origins))
 
 
-def create_app(api_url=None, timeout=None, allowed_origins=(), transport=None, contract=None):
+def create_app(api_url=None, timeout=None, allowed_origins=(), transport=None, contract=None, max_body_bytes=DEFAULT_MAX_BODY_BYTES):
     """`transport` replaces the network (an ASGI transport onto the server in the in-process chain tests); the credential is never configured here."""
     from .translate import Executor
     api_url = parse_api_url(api_url)
@@ -53,6 +54,7 @@ def create_app(api_url=None, timeout=None, allowed_origins=(), transport=None, c
         await client.aclose()
 
     app = Starlette(routes=[Route('/health/live', live, methods=['GET']), Mount('/mcp', app=RequireBearer(mcp_endpoint))], lifespan=lifespan)
+    app.add_middleware(BodyLimit, maximum=max_body_bytes)
     app.state.api_url, app.state.client = api_url, client
     return app
 
@@ -61,7 +63,7 @@ def main():
     import uvicorn
     configure_logging()
     config = from_env()
-    uvicorn.run(create_app(config.api_url, config.timeout, config.allowed_origins), host='0.0.0.0', port=PORT, log_config=None, access_log=False)
+    uvicorn.run(create_app(config.api_url, config.timeout, config.allowed_origins, max_body_bytes=config.max_body_bytes), host='0.0.0.0', port=PORT, log_config=None, access_log=False)
 
 
 if __name__ == '__main__':

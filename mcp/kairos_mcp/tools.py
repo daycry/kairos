@@ -4,7 +4,8 @@ from mcp.server.lowlevel import Server
 
 from . import __version__
 from .auth import current_authorization
-from .errors import ToolError
+from .errors import UNAVAILABLE, ToolError
+from .logs import log_event
 
 # The text the internal MCP gives clients at `initialize` of the server; kairos-mcp is a drop-in front, so it says the same.
 INSTRUCTIONS = (
@@ -49,5 +50,8 @@ def build_server(contract, executor):
             return await executor(name, arguments, current_authorization())
         except ToolError as exc:
             return error_result(name, str(exc))
+        except Exception as exc:  # a bug here, or an answer of the API that does not have the shape of the contract: the type is logged, never its text
+            log_event('tool_failed', 'error', tool=name, reason=type(exc).__name__)
+            return error_result(name, UNAVAILABLE)
 
     return server

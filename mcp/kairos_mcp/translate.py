@@ -12,6 +12,7 @@ from urllib.parse import quote
 from mcp import types
 
 from .budget import OBJECT, OUTPUT, PLAIN, cut, render
+from .auth import credential_refused
 from .client import fail
 from .contract import read_only
 from .errors import UNAVAILABLE, ToolError
@@ -190,6 +191,8 @@ class Executor:
                     status, body = await perform(endpoint, arguments, call)
         except TimeoutError:
             raise ToolError(UNAVAILABLE) from None
+        if status == 401:
+            credential_refused()  # the answer to the whole MCP request is that 401; the tool error below is what is left if no response can be rewritten
         if status >= 400:
             fail(status, body)
         value = body if isinstance(body, dict) else {}
