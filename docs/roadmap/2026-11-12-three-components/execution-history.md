@@ -798,3 +798,30 @@ SHA-256 del bloque: `e08f4fe533e769b9f5116665173fcee16fb6fdd0a0e433d9d737c610cf0
 SHA-256 del bloque: `745f31637737939ce3150531b3bc35cf7e0b87e0d96e216f57acf8e67b345678`.
 
 **Notas**: Procedencia: spec CA-32. Clase: documentación (oráculo: grep + lectura). Cambios por script con edición por bytes (los docs son CRLF; EOL conservados). Rutas de nginx y del Dockerfile web → `web/nginx.conf` y `web/Dockerfile`; `../packages/kairos-cli/...` → `../client/...`; `../../docs/` → `../docs/` en `client/README.md`. `release-cli.md` abre con la versión 0.4.0 (preparada el 2026-11-14, sin tarball revisado ni publicación). Recuento de pruebas de la tabla de CI: 525 → 759. Archivos añadidos con nota: `client/README.md`, `docs/RAG-INDEX.md`, `docs/code-analysis.md`, `docs/corpus-generated-answers.md`, `docs/extended-workflows.md`, `docs/manual.md`. usage-meter three-components/T-66: 0.03 h IA (medido, win-514807194b9a44dc85e14bce279d8eb9).
+
+## Archivado 2026-11-14 — T-63 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `666f33d4db11fcf54c6c8f07c5084487438f90b4a70b8324f95e9148fa54d35e`.
+
+- **Verificación**:
+  - `docker build --target test -f web/Dockerfile -t kairos-web-test:t63 .` → exit 0
+  - `cd web && npm run typecheck && npm test && npm run build` → exit 0
+  - Evidencia (2026-11-14): Movimiento f00c763 (`Dockerfile.web` → `web/Dockerfile`, `nginx.conf` → `web/nginx.conf`, ambos 100 %, 0 líneas). `docker build --target test -f web/Dockerfile -t kairos-web-test:i2p7 .` → rc 0, `nginx -t`: syntax is ok / test is successful. `cd web && npm ci && npm run typecheck && npm test && npm run build` → rc 0, node --test 65 pass, 0 fail, vite built. Suite: `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:i2p7 .` rc 0 y `docker run --rm --network=none … run_postgres` rc 0: MEMORY_TEST_RESULT tests 757, failures 0, errors 0, skipped 0, llm_chat_calls 0 (= T-57). `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → Ran 43 OK. Compose: `dockerfile: web/Dockerfile`; CI: `docker build --target test -f web/Dockerfile`.
+
+## Archivado 2026-11-14 — T-65 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `6389acf793636fe7536face31c3977442959cb6f9220642e9ba2b5ce2774c2d0`.
+
+- **Verificación**:
+  - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
+  - `gh run list --branch feat/three-components --limit 1 --json conclusion` → `success`
+  - Evidencia (2026-11-14): `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → Ran 45 OK (incluye `ComponentTests` y el mínimo 759). Push de la rama (sin force) → run de GitHub Actions 43613535562 (push de `feat/three-components`, commit 607f7a8): conclusion success; los seis trabajos en verde: server (MEMORY_TEST_RESULT, tests=759 minimum=759), retrieval-eval (RETRIEVAL_EVAL_RESULT, puerta passed), mcp, client, web, contracts. `gh run list --branch feat/three-components --limit 1 --json conclusion` → success. Test estructural y puerta de higiene (`HygieneTests`) pasan dentro de test_ci_workflow.
+
+## Archivado 2026-11-14 — T-66 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `ee4aa462333f0d0a2cab052bc48afa618dcf9c36933cff31094c5d43c583c40c`.
+
+- **Verificación**:
+  - `grep -rn "packages/kairos-cli" README.md docs/*.md` → sin salida
+  - lectura: comandos citados válidos contra el árbol nuevo
+  - Evidencia (2026-11-14): `grep -rn "packages/kairos-cli" README.md docs/*.md client/README.md mcp/README.md` → sin salida. `git grep -nIP "(?<![\w/])memory_platform/" -- README.md 'docs/*.md' client mcp web` → solo recibos históricos de `docs/roadmap` (no se reescriben). Comprobación de comandos y enlaces con un script sobre README.md, client/README.md, mcp/README.md y docs/*.md: 0 enlaces relativos rotos y 0 rutas `server/`, `client/`, `web/`, `mcp/`, `scripts/` inexistentes. El README ganó la tabla Componente · carpeta y versión · Dockerfile · pruebas (las mismas órdenes que ejecuta la CI). `0.3.0` → `0.4.0` en nombres de tarball y runtime; se conservan como históricos los textos sobre cambios de la 0.3.0.

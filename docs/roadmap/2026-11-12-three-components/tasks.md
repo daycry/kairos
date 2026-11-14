@@ -2085,10 +2085,7 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 - **Tipo**: refactor
 - **Archivos**: `web/Dockerfile`, `web/nginx.conf`, `docker-compose.yml`, `.github/workflows/ci.yml`, `server/memory_platform/Dockerfile`, `server/memory_platform/Dockerfile.e2e`, `server/memory_platform/tests/**`, `scripts/tests/test_ci_workflow.py`
 - **Cubre (tests)**: —
-- **Verificación**:
-  - `docker build --target test -f web/Dockerfile -t kairos-web-test:t63 .` → exit 0
-  - `cd web && npm run typecheck && npm test && npm run build` → exit 0
-  - Evidencia (2026-11-14): Movimiento f00c763 (`Dockerfile.web` → `web/Dockerfile`, `nginx.conf` → `web/nginx.conf`, ambos 100 %, 0 líneas). `docker build --target test -f web/Dockerfile -t kairos-web-test:i2p7 .` → rc 0, `nginx -t`: syntax is ok / test is successful. `cd web && npm ci && npm run typecheck && npm test && npm run build` → rc 0, node --test 65 pass, 0 fail, vite built. Suite: `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:i2p7 .` rc 0 y `docker run --rm --network=none … run_postgres` rc 0: MEMORY_TEST_RESULT tests 757, failures 0, errors 0, skipped 0, llm_chat_calls 0 (= T-57). `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → Ran 43 OK. Compose: `dockerfile: web/Dockerfile`; CI: `docker build --target test -f web/Dockerfile`.
+- **Verificación**: `docker build --target test -f web/Dockerfile -t kairos-web-test:t63 .` → exit 0 · `cd web && npm run typecheck && npm test && npm run build` → exit 0 · Evidencia (2026-11-14): Movimiento f00c763 (`Dockerfile.web` → `web/Dockerfile`, `nginx.conf` → `web/nginx.conf`, ambos 100 %, 0 líneas). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `666f33d4db11`.
 
 **Criterios de aceptación**
 - [x] La imagen web se construye desde `web/` y su target `test` pasa (`nginx -t`)
@@ -2149,10 +2146,7 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 - **Tipo**: devops
 - **Archivos**: `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`
 - **Cubre (tests)**: —
-- **Verificación**:
-  - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
-  - `gh run list --branch feat/three-components --limit 1 --json conclusion` → `success`
-  - Evidencia (2026-11-14): `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → Ran 45 OK (incluye `ComponentTests` y el mínimo 759). Push de la rama (sin force) → run de GitHub Actions 43613535562 (push de `feat/three-components`, commit 607f7a8): conclusion success; los seis trabajos en verde: server (MEMORY_TEST_RESULT, tests=759 minimum=759), retrieval-eval (RETRIEVAL_EVAL_RESULT, puerta passed), mcp, client, web, contracts. `gh run list --branch feat/three-components --limit 1 --json conclusion` → success. Test estructural y puerta de higiene (`HygieneTests`) pasan dentro de test_ci_workflow.
+- **Verificación**: `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK` · `gh run list --branch feat/three-components --limit 1 --json conclusion` → `success` · Evidencia (2026-11-14): `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → Ran 45 OK (incluye `ComponentTests` y el mínimo 759). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `6389acf79363`.
 
 **Criterios de aceptación**
 - [x] Los seis trabajos (`server`, `retrieval-eval`, `mcp`, `client`, `web`, `contracts`) usan rutas nuevas y terminan en verde en el PR
@@ -2180,10 +2174,7 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 - **Tipo**: docs
 - **Archivos**: `README.md`, `docs/architecture.md`, `docs/install.md`, `docs/operations.md`, `docs/integration.md`, `docs/configuration.md`, `docs/server-install.md`, `docs/release-cli.md`, `client/README.md`, `docs/RAG-INDEX.md`, `docs/code-analysis.md`, `docs/corpus-generated-answers.md`, `docs/extended-workflows.md`, `docs/manual.md`
 - **Cubre (tests)**: —
-- **Verificación**:
-  - `grep -rn "packages/kairos-cli" README.md docs/*.md` → sin salida
-  - lectura: comandos citados válidos contra el árbol nuevo
-  - Evidencia (2026-11-14): `grep -rn "packages/kairos-cli" README.md docs/*.md client/README.md mcp/README.md` → sin salida. `git grep -nIP "(?<![\w/])memory_platform/" -- README.md 'docs/*.md' client mcp web` → solo recibos históricos de `docs/roadmap` (no se reescriben). Comprobación de comandos y enlaces con un script sobre README.md, client/README.md, mcp/README.md y docs/*.md: 0 enlaces relativos rotos y 0 rutas `server/`, `client/`, `web/`, `mcp/`, `scripts/` inexistentes. El README ganó la tabla Componente · carpeta y versión · Dockerfile · pruebas (las mismas órdenes que ejecuta la CI). `0.3.0` → `0.4.0` en nombres de tarball y runtime; se conservan como históricos los textos sobre cambios de la 0.3.0.
+- **Verificación**: `grep -rn "packages/kairos-cli" README.md docs/*.md` → sin salida · lectura: comandos citados válidos contra el árbol nuevo · Evidencia (2026-11-14): `grep -rn "packages/kairos-cli" README.md docs/*.md client/README.md mcp/README.md` → sin salida. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `ee4aa462333f`.
 
 **Criterios de aceptación**
 - [x] Ningún manual vigente cita `memory_platform/` ni `packages/kairos-cli` como ruta actual (los recibos de iniciativas cerradas quedan como históricos)
