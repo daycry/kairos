@@ -578,6 +578,8 @@ RED: `memory_platform/tests/test_no_llm.py` falló con AssertionError: 'beam:clo
 
 **Notas**: Procedencia: spec CA-32. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `b3877fda111e`.
 
+**Corrección de la revisión final (intento 1, gap 2)**: `docs/server-install.md` ya no dice que `beam:cloud` sea el valor por defecto; coincide con `server/memory_platform/config.py:282` (`MEMORY_LLM_MODEL` sin valor por defecto). Commit 151ff34.
+
 ### T-17 — Revisión adversarial de la Fase 2
 
 - **Descripción**: Revisión adversarial: ¿queda algún camino que llame a `/api/chat`? ¿se pierde algún trabajo `extract` heredado? ¿el recibo aditivo rompe a un cliente? ¿el 403 del proxy se puede esquivar (rutas con `//`, mayúsculas, `/api/embed/..`)? Registrar y cerrar hallazgos. Fuente: retro, R-03.
@@ -2295,6 +2297,8 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 
 **Notas**: Procedencia: plan director, cierre de la Iniciativa 2; spec CA-10/CA-29. Patrón: `test_contract_additive.py:28-40`. Clase: capacidad nueva (verificación de cierre). usage-meter three-components/T-69: 0.13 h IA (medido, win-873b11b182fa4e23bb6614adf0b3b99d). La regla (`additive_violations`/`tool_differences`) se ejecuta sobre el `tools/list` vivo del MCP interno y de kairos-mcp (clase `ToolsListIdentityTests`, lado servidor) y sobre kairos-mcp contra una copia de la línea base `23ced03` (`mcp/tests/contract_base_23ced03/`, byte a byte igual a la del servidor, comprobado por un test); `payload.structured` es lo único añadido a un esquema desde `23ced03`. Contrato sin cambios; sin cambios visibles para clientes.
 
+**Corrección de la revisión final (intento 1, gap 3)**: `KAIROS_MIN_TESTS` 759 → 764 en `.github/workflows/ci.yml`, `MIN_FLOOR = 764` en `scripts/tests/test_ci_workflow.py` y `docs/operations.md`; `test_ci_workflow` 45 OK. Commit 9e10203.
+
 ### T-70 — Contenedor MCP arrancado sin credenciales de base (cierre)
 
 - **Descripción**: Arrancar el contenedor `kairos-mcp` con solo `KAIROS_API_URL`, sin `MEMORY_DSN*`, secretos ni red `memory-data`, y comprobar `GET /health/live` y la salida de `docker compose config` del proyecto aislado. Fuente: CA-09, cierre del plan director.
@@ -2393,6 +2397,8 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 
 **Notas**: Procedencia: spec CA-31/CA-30, R-09. Patrón: `scripts/deploy-memory.py:45-66` (validación de aislamiento y rechazo del nombre de la instalación) y `:460-472` (`--project-name`, `--dry-run`); `memory_platform/tests/test_deploy_isolation.py:29-48`. Nunca contra la instalación local. Clase: capacidad nueva (verificación de cierre). usage-meter three-components/T-72: 0.03 h IA (medido, win-ae5a2d8b43624918bd503ba948be354a). SALDA LA DEUDA DE LA FASE 6 (review.md, «Fase 6», hallazgo 5): hay una prueba CLI → nginx (`memory-web`, `/mcp`) → kairos-mcp real → `/v1` → PostgreSQL con procesos reales (`kairos mcp --url http://127.0.0.1:15173` lanzado desde `client/`), y la paridad de `allowed_hosts` con el `Host` que reenvía nginx se comprueba por petición: `127.0.0.1:15173` y `localhost:15173` → 200, `evil.example` → 421. Primer intento del ensayo: `remember` devolvió «Capture is disabled for this project» porque la política de captura por defecto es `off` (un proyecto nuevo no captura): el ensayo ahora fija `capture_mode: full` con `PUT /v1/projects/rehearsal/policy` (la creación del proyecto no la fija) y tolera el proyecto ya existente en un reintento. Corregido también (T-71): `verify_runtime` pasaba por sesión de portal, que `nginx` no reenvía a kairos-mcp. docs/operations.md documenta `--embed-stub`, `--roundtrip` y la verificación por Bearer; advierte de no usar `docker compose -p … down` desde la raíz porque el compose base fija los nombres `knowledge-graphs_inference|webui|mcp`. La limpieza se hizo por etiqueta/nombre del proyecto del ensayo, nunca con el compose base. Sin cambios visibles para clientes; despliegue: opciones nuevas del script (ver T-71).
 
+**Corrección de la revisión final (intento 1, gaps 5-8)**: `verify_runtime` y `roundtrip` revocan la clave temporal en el `finally` conservando el error original; si el DELETE falla se avisa en `warnings` del informe JSON y en stderr con el nombre/id de la clave (nunca el token) y cómo revocarla a mano; la clave de verificación nombra como mucho 100 proyectos (el resto, `projects_not_checked`) y se crea dentro del `try`; la consola dice «verified; /mcp not checked: the installation has no projects». Tests nuevos `RevocationTests` y `ConsoleMessageTests` en `scripts/tests/test_rehearsal_three_components.py`: ROJO comprobado moviendo el DELETE fuera del `finally` (3 FAIL + 1 ERROR) y VERDE restaurado (20 OK). `python -m unittest discover -s scripts/tests` 132 OK. Commit 557b2b3.
+
 ### T-73 — Cierre: suite, `retrieval-eval` y manuales (CA-32)
 
 - **Descripción**: Ejecutar la suite completa y `retrieval-eval` con los umbrales vigentes, regenerar los contratos y comprobar que los manuales describen los tres componentes y la retirada del MCP interno. Fuente: CA-32, cierre del plan director.
@@ -2405,7 +2411,7 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 - **Previsión IA**: 60 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-72
 - **Tipo**: test
-- **Archivos**: `README.md`, `docs/architecture.md`, `docs/configuration.md`, `docs/operations.md`, `docs/install.md`, `docs/integration.md`, `docs/contracts/*.json`
+- **Archivos**: `README.md`, `docs/architecture.md`, `docs/configuration.md`, `docs/operations.md`, `docs/install.md`, `docs/integration.md`, `docs/contracts/*.json`, `docs/roadmap/README.md`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:t73 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
@@ -2425,6 +2431,8 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 - [x] `usage-meter start/close`
 
 **Notas**: Procedencia: spec CA-32. Clase: verificación de cierre. usage-meter three-components/T-73: 0.07 h IA (medido, win-ba66daafe6bf47098080ea9eef8626f5). `docs/install.md` (CRLF conservado): sección «Los tres componentes y la ruta MCP» (el instalador sigue necesitando solo la dirección base y la clave; el MCP interno `:8790/mcp/` y `/memory-api/mcp/` se retira en la 0.5.0; reinstalar con `install --replace`). `docs/configuration.md`: párrafo de apertura con los tres componentes. Sin cambios en contratos ni visibles para clientes. La línea base del servidor de la imagen de pruebas sigue siendo 764 tests (759 + 5 de T-69).
+
+**Corrección de la revisión final (intento 1, gap 1)**: `README.md` actualizado (diagrama con kairos-mcp en `/mcp/`, tres componentes, servidor sin modelo de lenguaje salvo `MEMORY_LLM_MODEL`, requisito previo sin `beam:cloud`, retirada del MCP interno en la 0.5.0 con enlace a `docs/integration.md`, 764 pruebas) y `docs/architecture.md` (ya no cita `beam:cloud`); `corpus-generated-answers.md` conserva `beam:cloud` por ser evidencia histórica fechada. Índice `docs/roadmap/README.md` en CRLF con el estado real (gap 4, commit 9d4ed81). Commit 85386fa. Medido (T-73-fix1): 0.24 h IA.
 
 ### T-74 — Revisión final de la iniciativa
 
@@ -2725,3 +2733,7 @@ Veredicto: **sin Critical ni Important; la Fase 7 cierra en el intento 2 de 3**.
 |---|---|---|---|---|---|
 | 1 | Minor | La evidencia de las Notas de T-60 (`python -I -c "...import frozen_evidence"`) no se reproduce en Python 3.13: `-I` implica `-P` y no añade el directorio actual | T-60 | corregido (commit de cierre): la nota usa `python -c` y explica por qué la puerta real no se ve afectada | Lente A+B: `tasks.md:2010` |
 | 2 | Minor | `while not entered.is_set()` en el test nuevo no tenía tope: si la primera llamada terminara sin validar, el test se colgaría hasta el límite del trabajo de CI | T-65 | corregido (commit de cierre): tope de 10 s y fallo explícito si la primera llamada termina antes de validar | Lente A+B: `mcp/tests/test_review5.py:87` |
+
+## Revisión de dos lentes — intento 1: Final de la iniciativa y Fase 8 (T-69, T-70, T-71, T-72, T-73)
+
+Pendiente de revisión; sin veredicto.
