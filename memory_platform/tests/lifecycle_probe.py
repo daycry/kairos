@@ -133,7 +133,8 @@ def run():
                   'authenticated_ipc': True, 'real_mcp': True, 'persisted_events': 1, 'lost_ack_reconciled': True,
                   'provider_calls': measured, 'provider_calls_measured': True, 'embedding_enabled': True,
                   'control_provider_calls': baseline,'real_client_acceptance': False,
-                  'kairos_mcp': True, 'bridge_tools': len(names), 'doctor': report['status']}, sort_keys=True), flush=True)
+                  'kairos_mcp': True, 'bridge_tools': len(names), 'doctor': report['status'],
+                  'doctor_tools': len(report['tools']), 'doctor_missing_tools': report['missing_tools'], 'doctor_project_authorized': report['project_authorized']}, sort_keys=True), flush=True)
     finally:
         stop(mcp, mcp_thread, mcp_listener)
         stop(api, api_thread, api_listener)

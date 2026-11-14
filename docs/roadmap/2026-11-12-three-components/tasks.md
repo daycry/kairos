@@ -42,10 +42,10 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 3 — Paridad REST /v1 (C-02) | 10 | 10 | 100% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 15 | 15 | 100% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
-| Fase 6 — Compatibilidad (C-07) | 3 | 6 | 50.0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
+| Fase 6 — Compatibilidad (C-07) | 4 | 6 | 66.7% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **53** | **74** | **71.6%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **54** | **74** | **73.0%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1884,10 +1884,11 @@ RED: `memory_platform/tests/test_nginx_routes.py` falló con 7 tests: 3 failures
 ### T-54 — `kairos doctor` contra kairos-mcp en proyecto aislado
 
 - **Descripción**: Comprobar que `kairos doctor` funciona contra kairos-mcp en el proyecto aislado (herramientas requeridas y versión). Fuente: CA-28.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: kairos doctor --online se comprueba contra kairos-mcp: informa de las 34 herramientas, sin ninguna requerida ausente, y del proyecto autorizado.
+- **Estado**: completado
+- **Cerrada**: 2026-11-14
 - **Tiempo humano**: est. 2.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.25h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.25h (estimado) · real 0.03h (medido)
 - **Supervisión**: est. 0.06h (≈25 % IA) · real —
 - **Previsión IA**: 69 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-53
@@ -1896,18 +1897,22 @@ RED: `memory_platform/tests/test_nginx_routes.py` falló con 7 tests: 3 failures
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target lifecycle-test -f memory_platform/Dockerfile -t kairos-lifecycle:t54 .` → exit 0 con el caso de `doctor`
+  - Evidencia (2026-11-14): `docker build --target lifecycle-test -f memory_platform/Dockerfile -t kairos-lifecycle:t54 .` exit 0 (suite 756 tests, 0 failures, 0 errors, 0 skipped); salida del caso doctor (sin escribir en testing/): doctor ready, doctor_tools 34, doctor_missing_tools [], doctor_project_authorized true (con capture y context automaticos, que exigen capture_policy, el esquema de event_status y match_mode de context).
 
 **Criterios de aceptación**
-- [ ] `kairos doctor` informa de las herramientas requeridas presentes contra kairos-mcp
-- [ ] El resultado queda en el ledger como evidencia, sin escribir en `testing/`
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] `kairos doctor` informa de las herramientas requeridas presentes contra kairos-mcp
+- [x] El resultado queda en el ledger como evidencia, sin escribir en `testing/`
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Añadir el caso al probe
-- [ ] Ejecutar el target y anotar la salida en `Notas`
-- [ ] `usage-meter start/close`
+- [x] Añadir el caso al probe
+- [x] Ejecutar el target y anotar la salida en `Notas`
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-28. Patrón: `doctor` y `REQUIRED_TOOLS` en `packages/kairos-cli/lib/mcp.mjs:7-8`, `:113`. Clase: capacidad nueva (cobertura).
+**Notas**: Procedencia: spec CA-28. Patrón: `doctor` y `REQUIRED_TOOLS` en `packages/kairos-cli/lib/mcp.mjs:7-8`, `:113`. Clase: capacidad nueva (cobertura). El caso doctor vive en lifecycle_probe.py junto al del puente (T-53); no se toco el CLI ni lifecycle.test.mjs. RED parcial (ver linea RED): no hubo ejecucion roja propia del caso doctor. usage-meter three-components/T-54: 0.03 h IA (medido).
+
+
+RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD parcial: el caso doctor se escribio junto al de T-53 en el mismo probe; su aserción no corrió en rojo por separado (con el probe apuntado al MCP interno falla antes, en la identidad del servidor); primera ejecucion completa en verde · 2026-11-14.
 
 ### T-55 — Nota de migración y retirada del MCP interno
 
