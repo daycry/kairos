@@ -2266,32 +2266,34 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 ### T-69 — Prueba de contrato de kairos-mcp idéntica a la del MCP interno
 
 - **Descripción**: Ejecutar la misma regla de `test_contract_additive.py` sobre `tools/list` del MCP interno y de kairos-mcp, y sobre el contrato regenerado contra la línea base de `23ced03`. Fuente: cierre de la Iniciativa 2 del plan director, CA-10, CA-29.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: Una prueba de contrato comprueba que el MCP interno y kairos-mcp ofrecen las mismas 34 herramientas, con el mismo contenido y solo adiciones respecto de la línea base anterior.
+- **Estado**: completado
+- **Cerrada**: 2026-11-14
 - **Tiempo humano**: est. 1.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.15h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.15h (estimado) · real 0.13h (medido)
 - **Supervisión**: est. 0.04h (≈25 % IA) · real —
 - **Previsión IA**: 40 k in / 4 k out tok · ⚠️ verificar €
 - **Dependencias**: T-68
 - **Tipo**: test
-- **Archivos**: `mcp/tests/test_contract_identity.py`, `server/memory_platform/tests/test_contract_additive.py`
+- **Archivos**: `mcp/tests/test_contract_identity.py`, `server/memory_platform/tests/test_contract_additive.py`, `mcp/tests/contract_base_23ced03/kairos-mcp.json`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:t69 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
   - `docker build -f mcp/Dockerfile -t kairos-mcp:t69 mcp/ && docker run --rm kairos-mcp:t69 python -m unittest tests.test_contract_identity` → `OK`
+  - Evidencia (2026-11-14): `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:t69 .` → `MEMORY_TEST_RESULT` passed true, tests 764 (759 + 5 nuevas), failures 0, errors 0, skipped 0, llm_chat_calls 0. `docker run --rm kairos-mcp:t69 python -m unittest tests.test_contract_identity` → 4 tests OK; suite completa de mcp en la imagen: 140 tests OK. Mutación comprobada: cambiar una letra de la descripción de `projects` en `mcp/contract/kairos-mcp.json` pone en rojo dos pruebas (2 FAIL, `$.description: ... became ...`); revertido (sin diff).
 
 **Criterios de aceptación**
-- [ ] Ambos MCP pasan la misma prueba con 34 herramientas, mismo orden y mismo contenido (`name`, `description`, `inputSchema`, `annotations`)
-- [ ] El contrato regenerado solo tiene adiciones respecto de `23ced03`
-- [ ] Un cambio mínimo en una descripción de kairos-mcp hace fallar la prueba (comprobado)
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] Ambos MCP pasan la misma prueba con 34 herramientas, mismo orden y mismo contenido (`name`, `description`, `inputSchema`, `annotations`)
+- [x] El contrato regenerado solo tiene adiciones respecto de `23ced03`
+- [x] Un cambio mínimo en una descripción de kairos-mcp hace fallar la prueba (comprobado)
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Parametrizar la regla para ambos orígenes
-- [ ] Mutación manual para ver el rojo
-- [ ] `usage-meter start/close`
+- [x] Parametrizar la regla para ambos orígenes
+- [x] Mutación manual para ver el rojo
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: plan director, cierre de la Iniciativa 2; spec CA-10/CA-29. Patrón: `test_contract_additive.py:28-40`. Clase: capacidad nueva (verificación de cierre).
+**Notas**: Procedencia: plan director, cierre de la Iniciativa 2; spec CA-10/CA-29. Patrón: `test_contract_additive.py:28-40`. Clase: capacidad nueva (verificación de cierre). usage-meter three-components/T-69: 0.13 h IA (medido, win-873b11b182fa4e23bb6614adf0b3b99d). La regla (`additive_violations`/`tool_differences`) se ejecuta sobre el `tools/list` vivo del MCP interno y de kairos-mcp (clase `ToolsListIdentityTests`, lado servidor) y sobre kairos-mcp contra una copia de la línea base `23ced03` (`mcp/tests/contract_base_23ced03/`, byte a byte igual a la del servidor, comprobado por un test); `payload.structured` es lo único añadido a un esquema desde `23ced03`. Contrato sin cambios; sin cambios visibles para clientes.
 
 ### T-70 — Contenedor MCP arrancado sin credenciales de base (cierre)
 

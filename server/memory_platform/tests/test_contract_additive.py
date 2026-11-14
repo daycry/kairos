@@ -6,10 +6,18 @@ exporter output is compared against it with a strictly additive rule.
 import importlib.util
 import json
 from pathlib import Path
+import copy
 import unittest
+from unittest.mock import AsyncMock, Mock
+
+from fastapi.testclient import TestClient
 
 from memory_platform import models
+from memory_platform.app import create_app
+from memory_platform.config import Settings
+from memory_platform.errors import Unauthorized
 from memory_platform.retrieval import hit
+from memory_platform.tests.chain_harness import ChainClient
 
 HERE = Path(__file__).parent
 BASE = HERE / 'contracts_base'
@@ -250,6 +258,64 @@ class ContractAdditiveTests(unittest.TestCase):
     def test_the_models_module_defines_the_field_once(self):
         self.assertIn('matched_chunk', models.Hit.model_fields)
         self.assertIs(models.Hit.model_fields['matched_chunk'].is_required(), False)
+
+
+PUBLIC_KEYS = ('name', 'description', 'inputSchema', 'annotations')  # what a client sees of a tool
+LIST_HEADERS = {'Authorization': 'Bearer fixture', 'Accept': 'application/json, text/event-stream'}
+INITIALIZE = {'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {'protocolVersion': '2025-03-26', 'capabilities': {}, 'clientInfo': {'name': 'test', 'version': '1'}}}
+
+
+def public(tool):
+    return {key: tool[key] for key in PUBLIC_KEYS}
+
+
+def listed_tools(chain):
+    """`tools/list` as a client gets it: from the internal MCP of the server, or from kairos-mcp in front of the same server."""
+    auth = Mock()
+    auth.authenticate_bearer.return_value = {'id': 'test', 'credential_type': 'bearer'}
+    auth.authenticate_session.side_effect = Unauthorized()
+    app = create_app(Settings('unused'), store=Mock(), auth=auth, retrieval=Mock(search=AsyncMock()))
+    with (ChainClient(app, base_url='http://localhost:8790') if chain else TestClient(app, base_url='http://localhost:8790')) as client:
+        client.post('/mcp/', headers=LIST_HEADERS, json=INITIALIZE)
+        return client.post('/mcp/', headers=LIST_HEADERS, json={'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list', 'params': {}}).json()['result']['tools']
+
+
+class ToolsListIdentityTests(unittest.TestCase):
+    """T-69 (CA-10, CA-29): the same rule runs over `tools/list` of the internal MCP and of kairos-mcp against the contract of `23ced03`."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.base = json.loads((BASE_23CED03 / 'kairos-mcp.json').read_text(encoding='utf-8'))['tools']
+        cls.listings = {'internal': listed_tools(False), 'kairos-mcp': listed_tools(True)}
+
+    def test_both_origins_list_34_tools_in_the_order_of_the_baseline(self):
+        for origin, listed in self.listings.items():
+            self.assertEqual(len(listed), EXPECTED_TOOLS, origin)
+            self.assertEqual([tool['name'] for tool in listed], [tool['name'] for tool in self.base], origin)
+
+    def test_both_origins_pass_the_additive_rule_and_keep_every_existing_key_against_the_baseline(self):
+        for origin, listed in self.listings.items():
+            for tool, base in zip(listed, self.base):
+                with self.subTest(origin=origin, tool=base['name']):
+                    self.assertEqual(additive_violations(public(base), public(tool)), [])
+                    self.assertEqual(tool_differences(public(base), public(without_structured(tool))), [])
+
+    def test_both_origins_list_the_same_content_name_description_input_schema_and_annotations(self):
+        internal, kairos = self.listings['internal'], self.listings['kairos-mcp']
+        for left, right in zip(internal, kairos):
+            with self.subTest(tool=left['name']):
+                self.assertEqual(tool_differences(public(left), public(right)), [])  # the text modulo layout (3.12 keeps the docstring indentation of the internal MCP)
+
+    def test_a_minimal_change_in_a_description_of_kairos_mcp_fails_the_rule(self):
+        for index in (0, EXPECTED_TOOLS // 2, EXPECTED_TOOLS - 1):
+            mutated = copy.deepcopy(self.listings['kairos-mcp'][index])
+            mutated['description'] = mutated['description'][:-1] + ('!' if not mutated['description'].endswith('!') else '?')
+            self.assertTrue(additive_violations(public(self.base[index]), public(mutated)), self.base[index]['name'])
+            self.assertTrue(tool_differences(public(self.base[index]), public(without_structured(mutated))), self.base[index]['name'])
+
+    def test_the_copy_of_the_baseline_kept_with_kairos_mcp_is_this_one(self):
+        copied = Path(__file__).resolve().parents[3] / 'mcp' / 'tests' / 'contract_base_23ced03' / 'kairos-mcp.json'
+        self.assertEqual(copied.read_bytes(), (BASE_23CED03 / 'kairos-mcp.json').read_bytes())
 
 
 if __name__ == '__main__':
