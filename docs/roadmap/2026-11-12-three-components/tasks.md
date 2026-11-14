@@ -43,9 +43,9 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 15 | 15 | 100% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 6 | 6 | 100% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
-| Fase 7 — Estructura del repositorio (C-06) | 6 | 12 | 50.0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
+| Fase 7 — Estructura del repositorio (C-06) | 7 | 12 | 58.3% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **62** | **74** | **83.8%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **63** | **74** | **85.1%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2074,32 +2074,34 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 ### T-63 — Imagen web: `Dockerfile.web` y `nginx.conf` a `web/`
 
 - **Descripción**: Mover `Dockerfile.web` y `nginx.conf` a `web/`, ajustar contextos y Compose, y conservar los targets `runtime`, `test` y `final`. Fuente: CA-23, CA-24.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: La imagen del portal se construye desde `web/Dockerfile` y usa `web/nginx.conf`; el contenido servido y la configuración de nginx no cambian y Compose conserva el servicio `memory-web`.
+- **Estado**: completado
+- **Cerrada**: 2026-11-14
 - **Tiempo humano**: est. 2.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.28h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.28h (estimado) · real 0.17h (medido)
 - **Supervisión**: est. 0.07h (≈25 % IA) · real —
 - **Previsión IA**: 77 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-62
 - **Tipo**: refactor
-- **Archivos**: `web/Dockerfile`, `web/nginx.conf`, `docker-compose.yml`, `.github/workflows/ci.yml`
+- **Archivos**: `web/Dockerfile`, `web/nginx.conf`, `docker-compose.yml`, `.github/workflows/ci.yml`, `server/memory_platform/Dockerfile`, `server/memory_platform/Dockerfile.e2e`, `server/memory_platform/tests/**`, `scripts/tests/test_ci_workflow.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f web/Dockerfile -t kairos-web-test:t63 .` → exit 0
   - `cd web && npm run typecheck && npm test && npm run build` → exit 0
+  - Evidencia (2026-11-14): Movimiento f00c763 (`Dockerfile.web` → `web/Dockerfile`, `nginx.conf` → `web/nginx.conf`, ambos 100 %, 0 líneas). `docker build --target test -f web/Dockerfile -t kairos-web-test:i2p7 .` → rc 0, `nginx -t`: syntax is ok / test is successful. `cd web && npm ci && npm run typecheck && npm test && npm run build` → rc 0, node --test 65 pass, 0 fail, vite built. Suite: `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:i2p7 .` rc 0 y `docker run --rm --network=none … run_postgres` rc 0: MEMORY_TEST_RESULT tests 757, failures 0, errors 0, skipped 0, llm_chat_calls 0 (= T-57). `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → Ran 43 OK. Compose: `dockerfile: web/Dockerfile`; CI: `docker build --target test -f web/Dockerfile`.
 
 **Criterios de aceptación**
-- [ ] La imagen web se construye desde `web/` y su target `test` pasa (`nginx -t`)
-- [ ] Compose y CI apuntan a las rutas nuevas
-- [ ] El contenido servido no cambia
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] La imagen web se construye desde `web/` y su target `test` pasa (`nginx -t`)
+- [x] Compose y CI apuntan a las rutas nuevas
+- [x] El contenido servido no cambia
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] `git mv` en commit aparte
-- [ ] Ajustar `COPY` y contextos
-- [ ] `usage-meter start/close`
+- [x] `git mv` en commit aparte
+- [x] Ajustar `COPY` y contextos
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-23/CA-24. Patrón: `memory_platform/Dockerfile.web:1-28`, `memory_platform/nginx.conf:43-62`. El portal solo cambia de sitio (sin interfaz nueva). Clase: refactor (oráculo: mismo `nginx -t` y misma build).
+**Notas**: Procedencia: spec CA-23/CA-24. Patrón: `memory_platform/Dockerfile.web:1-28`, `memory_platform/nginx.conf:43-62`. El portal solo cambia de sitio (sin interfaz nueva). Clase: refactor (oráculo: mismo `nginx -t` y misma build). Targets `runtime`, `test` y `final` intactos. Corrección de T-59: `COPY memory_platform/requirements-docs.txt` de la imagen web seguía con la ruta antigua (el build web no se probó hasta aquí); ahora `server/memory_platform/requirements-docs.txt`. Los tests de nginx (`test_nginx_routes`, `test_nginx_portal`, `test_metrics`, `nginx_portal_probe`) leen `web/nginx.conf` y `web/Dockerfile`, que la imagen de test copia a `/app/web/`. `server/memory_platform/Dockerfile.e2e` copia `server/memory_platform` a `/app/server/memory_platform` (no se ejecuta: usa imágenes locales de QA). Archivos añadidos con nota: `server/memory_platform/Dockerfile`, `server/memory_platform/Dockerfile.e2e`, `server/memory_platform/tests/**`, `scripts/tests/test_ci_workflow.py`. usage-meter three-components/T-63: 0.17 h IA (medido, win-d5bc27e807644beaa7fe6c28cf5503ca).
 
 ### T-64 — Versión, imagen y orden de tests de cada componente (CA-24)
 

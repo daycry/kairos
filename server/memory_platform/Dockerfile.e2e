@@ -5,7 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends chromium fonts-
     && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir playwright==1.55.0
 COPY --from=web /usr/share/nginx/html /web
-COPY --chown=postgres:postgres memory_platform /app/memory_platform
+COPY --chown=postgres:postgres server/memory_platform /app/server/memory_platform
 RUN mkdir /qa && chown postgres:postgres /qa
 USER postgres
 

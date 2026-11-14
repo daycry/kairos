@@ -486,7 +486,7 @@ class MetricsRouteTests(unittest.TestCase):
 
 class DeploymentTests(unittest.TestCase):
     def test_nginx_never_publishes_metrics(self):
-        text = (PACKAGE / 'nginx.conf').read_text(encoding='utf-8')
+        text = (ROOT / 'web' / 'nginx.conf').read_text(encoding='utf-8')
         block = re.search(r'location\s+~\*?\s+(\S*metrics\S*)\s*\{\s*return 404;\s*\}', text)
         self.assertIsNotNone(block, 'nginx must answer 404 for /metrics and /memory-api/metrics')
         pattern = re.compile(block.group(1))

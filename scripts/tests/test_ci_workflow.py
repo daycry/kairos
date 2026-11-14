@@ -190,7 +190,7 @@ class AuxiliaryJobsTests(unittest.TestCase):
         self.assertIn('working-directory: web', block)
         for command in ('npm ci', 'npm run typecheck', 'npm test', 'npm run build'):
             self.assertIn(command, block)
-        self.assertIn('docker build --target test -f server/memory_platform/Dockerfile.web', block)
+        self.assertIn('docker build --target test -f web/Dockerfile', block)
 
 
 class McpJobTests(unittest.TestCase):

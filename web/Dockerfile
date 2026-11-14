@@ -1,6 +1,6 @@
 FROM python@sha256:b18b261e1b4974b4f321451ad5251ded85abb22c2b8b262da527dda1d031ab30 AS handbook
 WORKDIR /product
-COPY memory_platform/requirements-docs.txt ./requirements-docs.txt
+COPY server/memory_platform/requirements-docs.txt ./requirements-docs.txt
 RUN pip install --no-cache-dir -r requirements-docs.txt
 COPY docs/ ./docs/
 COPY scripts/build-handbook.py ./scripts/build-handbook.py
@@ -16,7 +16,7 @@ RUN npm run build
 
 FROM nginx@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2 AS runtime
 COPY --from=build /web/dist /usr/share/nginx/html
-COPY memory_platform/nginx.conf /etc/nginx/nginx.conf
+COPY web/nginx.conf /etc/nginx/nginx.conf
 USER 101:101
 EXPOSE 8080
 ENTRYPOINT ["nginx", "-g", "daemon off;"]

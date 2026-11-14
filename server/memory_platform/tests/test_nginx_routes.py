@@ -1,6 +1,6 @@
 """T-52 (CA-27, CA-28, P-07): the proxy routes `/mcp` to kairos-mcp (`memory-mcp:8791`) and Compose orders and connects the services for it.
 
-Checked as text, without Docker; `nginx -t` runs in the `test` target of `Dockerfile.web`. The internal MCP stays reachable at `memory-api:8790/mcp` for
+Checked as text, without Docker; `nginx -t` runs in the `test` target of `web/Dockerfile`. The internal MCP stays reachable at `memory-api:8790/mcp` for
 the compatibility version and, through the generic `/memory-api/` prefix of the proxy, at `/memory-api/mcp/` while `MEMORY_MOUNT_MCP=1`.
 """
 import re
@@ -8,8 +8,8 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).parents[3]
-CONF = (ROOT / 'server' / 'memory_platform' / 'nginx.conf').read_text(encoding='utf-8')
-WEB = (ROOT / 'server' / 'memory_platform' / 'Dockerfile.web').read_text(encoding='utf-8')
+CONF = (ROOT / 'web' / 'nginx.conf').read_text(encoding='utf-8')
+WEB = (ROOT / 'web' / 'Dockerfile').read_text(encoding='utf-8')
 
 
 def block(header, text=CONF):

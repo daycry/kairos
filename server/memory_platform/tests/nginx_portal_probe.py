@@ -1,6 +1,6 @@
 """Isolated probe of the portal's nginx (T-22): `python -m memory_platform.tests.nginx_portal_probe`.
 
-It starts the `server/memory_platform/nginx.conf` of the portal (same pinned image as `Dockerfile.web`) in front of two stubs that echo the request line
+It starts the `web/nginx.conf` of the portal (same pinned image as `web/Dockerfile`) in front of two stubs that echo the request line
 they receive (`memory-api:8790` and, since T-52, `memory-mcp:8791`, which is where `/mcp` goes), in a throwaway network, and sends raw HTTP requests (curl `--path-as-is`, no client-side normalisation). It checks what reached
 the stub: `/memory-api/` forwards the URI as it came (a corpus name such as `a%2F..%2Fb`, `//` and `..` included, query string included) and
 never opens `/metrics`; `/mcp` reaches the kairos-mcp stub and never the API one. It never touches the deployed `knowledge-graphs` project, its containers, volumes or networks, and never the Ollama of
@@ -61,8 +61,8 @@ def docker(*args, check=True):
 
 
 def pinned_image():
-    found = re.search(r'^FROM (nginx@sha256:[0-9a-f]{64})', (ROOT / 'server' / 'memory_platform' / 'Dockerfile.web').read_text(encoding='utf-8'), re.M)
-    assert found, 'Dockerfile.web has no pinned nginx image'
+    found = re.search(r'^FROM (nginx@sha256:[0-9a-f]{64})', (ROOT / 'web' / 'Dockerfile').read_text(encoding='utf-8'), re.M)
+    assert found, 'web/Dockerfile has no pinned nginx image'
     return found.group(1)
 
 
@@ -77,7 +77,7 @@ def main():
             docker('network', 'create', network)
             docker('run', '-d', '--rm', '--name', stub, '--network', network, '--network-alias', 'memory-api', '-v', f'{script}:/stub.py:ro', STUB_IMAGE, 'python3', '/stub.py', 'api', '8790')
             docker('run', '-d', '--rm', '--name', mcp_stub, '--network', network, '--network-alias', 'memory-mcp', '-v', f'{script}:/stub.py:ro', STUB_IMAGE, 'python3', '/stub.py', 'mcp', '8791')
-            docker('run', '-d', '--rm', '--name', web, '--network', network, '-v', f'{ROOT / "server" / "memory_platform" / "nginx.conf"}:/etc/nginx/nginx.conf:ro', '--tmpfs', '/tmp', pinned_image())
+            docker('run', '-d', '--rm', '--name', web, '--network', network, '-v', f'{ROOT / "web" / "nginx.conf"}:/etc/nginx/nginx.conf:ro', '--tmpfs', '/tmp', pinned_image())
             for _ in range(30):
                 if docker('exec', web, 'curl', '-s', '-o', '/dev/null', 'http://localhost:8080/health/live', check=False).returncode == 0:
                     break

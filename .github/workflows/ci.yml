@@ -132,7 +132,7 @@ jobs:
         working-directory: web
         run: npm run build
       - name: Web image test target
-        run: docker build --target test -f server/memory_platform/Dockerfile.web -t kairos-web-test:ci .
+        run: docker build --target test -f web/Dockerfile -t kairos-web-test:ci .
 
   contracts:
     # The MCP and OpenAPI contracts may only grow (test_contract_additive) and the exported files must match the versioned ones.

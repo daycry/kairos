@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 import unittest
 
-CONF = (Path(__file__).parents[1] / 'nginx.conf').read_text(encoding='utf-8')
+CONF = (Path(__file__).parents[3] / 'web' / 'nginx.conf').read_text(encoding='utf-8')
 
 
 def block(header):

@@ -183,7 +183,7 @@ services:
   memory-web:
     <<: *process
     image: kairos-web:latest
-    build: {context: ., dockerfile: server/memory_platform/Dockerfile.web, target: final}
+    build: {context: ., dockerfile: web/Dockerfile, target: final}
     profiles: [memory]
     restart: unless-stopped
     networks: [webui, mcp]  # `mcp` (internal): the only way from the proxy to kairos-mcp, which routes /mcp (T-52)
