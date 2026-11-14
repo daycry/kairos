@@ -43,9 +43,9 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 15 | 15 | 100% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 6 | 6 | 100% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
-| Fase 7 — Estructura del repositorio (C-06) | 5 | 12 | 41.7% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
+| Fase 7 — Estructura del repositorio (C-06) | 6 | 12 | 50.0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **61** | **74** | **82.4%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **62** | **74** | **83.8%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1903,11 +1903,7 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 - **Tipo**: refactor
 - **Archivos**: `memory_platform/tests/store_surface.json`
 - **Cubre (tests)**: —
-- **Verificación**:
-  - `gh pr view 2 --json state --jq .state` → `MERGED`
-  - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t57 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
-  - `sha256sum memory_platform/tests/store_surface.json` → valor anotado
-  - Evidencia (2026-11-14): `gh pr view 2 --json state --jq .state` → MERGED (merge commit 153e49d). `docker build --target test -f memory_platform/Dockerfile -t kairos-test:i2p7 .` rc 0 y `docker run --rm --network=none kairos-test:i2p7 python -m memory_platform.tests.run_postgres` rc 0: MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 757}. `sha256sum memory_platform/tests/store_surface.json` → 83c27763460c342acac9a1deda71a75dbd3cc94b0fa0d1fcc2e12c04e80e4b00. `npm pack --dry-run --json` (packages/kairos-cli): @daycry/kairos 0.3.0, 34 ficheros, 669212 bytes, sha256 de la lista de rutas ordenada f879ab102c400ac1896db67c2783d5bcf4513e3d278d43d648017744b969882f (LICENSE, README.md, bin/kairos.mjs, 16 lib/*.mjs, 14 lib/vendor/tree-sitter/*, package.json). Puerta congelada sobre `git archive HEAD` (788682d), `--network=none`, candidato en solo lectura, salida a un directorio temporal fuera del repo: (a) tal cual (`frozen-source-gate.py` sin modificar): ROJA de partida, source_sha256 553c94cb3a26f4589426ebfb095a5339671318403162c6bb52e31c795111e7c3, file_count 195, MEMORY_TEST_RESULT tests 669, failures 3, errors 195 (la puerta solo copia memory_platform, scripts, packages y docker-compose.yml y faltan docs/contracts, mcp y ollama-proxy desde las Fases 2-5: FileNotFoundError docs/contracts/observation.v1.schema.json); T-60 la repara. (b) copia temporal fuera del repo con esos tres directorios añadidos (línea base comparable): source_sha256 2747f5ea82c9ef33a21a2a24c99df269049f590bbc6f9f7a1495d4c414456dd5, file_count 271, MEMORY_TEST_RESULT tests 757, failures 0, errors 1, skipped 0: el error es test_retrieval.test_timed_out_vectors_keep_bounded_slots_without_starving_authentication (CancelledError en un bucle de espera por tiempo, flaky bajo la carga del host); ejecutado solo con KAIROS_TEST_MODULES=memory_platform.tests.test_retrieval: 38 tests, 0 failures, 0 errors, passed true.
+- **Verificación**: `gh pr view 2 --json state --jq .state` → `MERGED` · `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t57 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01 · `sha256sum memory_platform/tests/store_surface.json` → valor anotado · Evidencia (2026-11-14): `gh pr view 2 --json state --jq .state` →… Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `2dae3585de1c`.
 
 **Criterios de aceptación**
 - [x] Quedan anotados `tests`, `sha256` de `store_surface.json`, la lista de `npm pack --dry-run` y el recibo de la puerta congelada
@@ -1919,7 +1915,7 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 - [x] Ejecutar la suite y la puerta y anotar los valores
 - [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-25/CA-26, P-09. Dependencia externa (no tarea): fusión del PR #2; si no está fusionado, el bloque no empieza. Patrón: puerta congelada `docs/roadmap/2026-11-06-functional-parity/testing/frozen-source-gate.py:26`, `:45`, `:77`. Clase: refactor (línea base del oráculo). Oráculo del bloque: 757 tests, store_surface 83c27763…4b00, npm pack 34 ficheros, mismo resultado esperado en T-67. La rama parte de `main` por MERGE, no por rebase: el PR #2 se fusionó (153e49d) y `origin/main` se fusionó en la rama (788682d, árbol idéntico, `main` es ancestro de HEAD); no se rebasó para no reescribir la historia ni forzar un push. Ledger archivado (commit propio previo; 250 KB, tope 256 KiB; el archivo con umbrales bajos recorta también Verificación de tareas pendientes: se restauraron a mano). usage-meter three-components/T-57: 0.25 h IA (medido).
+**Notas**: Procedencia: spec CA-25/CA-26, P-09. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `985747ea32bd`.
 
 ### T-58 — `git mv memory_platform server/memory_platform` en un commit solo de movimiento
 
@@ -1951,7 +1947,7 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 - [x] Comprobar similitud y EOL
 - [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-23, P-06, R-07. Los commits de movimiento y de ajuste se separan para que la revisión vea un renombrado limpio. Sin copias del código ni de `.pyc`. Clase: refactor (oráculo: similitud 100 %). Pasos T-58 y T-59 se cierran como un único paso verde de suite. Movimiento en un único commit (66677ae) solo de renombrados; el índice se preparó con `git reset` de ruta + `git add -N` para pasar `commit-selection.py` (que rechaza rutas ya en staging). usage-meter three-components/T-58: 0.02 h IA (medido, win-cc2aca062679499d926eeec4471f2000).
+**Notas**: Procedencia: spec CA-23, P-06, R-07. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `59c630705f37`.
 
 ### T-59 — Dockerfiles, Compose y rutas del servidor tras el movimiento
 
@@ -1967,10 +1963,7 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 - **Tipo**: refactor
 - **Archivos**: `server/memory_platform/Dockerfile`, `docker-compose.yml`, `server/memory_platform/tests/run_postgres.py`, `.github/workflows/ci.yml`, `scripts/*.py`, `server/memory_platform/tests/**`, `server/memory_platform/schemas.py`, `scripts/tests/**`, `mcp/README.md`, `mcp/requirements.txt`
 - **Cubre (tests)**: —
-- **Verificación**:
-  - `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:t59 .` → `MEMORY_TEST_RESULT` con `tests` igual a T-57, 0 fallos, 0 errores, 0 omitidos
-  - `sha256sum server/memory_platform/tests/store_surface.json` → igual que T-57
-  - Evidencia (2026-11-14): `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:i2p7 .` rc 0 y `docker run --rm --network=none kairos-test:i2p7 python -m memory_platform.tests.run_postgres` rc 0: MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 757} (= línea base de T-57). `sha256sum server/memory_platform/tests/store_surface.json` → 83c27763460c342acac9a1deda71a75dbd3cc94b0fa0d1fcc2e12c04e80e4b00 (= T-57). Targets `api`, `operator` y `worker` construidos desde la ruta nueva (rc 0) y `import memory_platform.app` en la imagen api OK (contracts_dir /app/docs/contracts); `postgres-pgvector`, `test` (y por herencia `live-probe`) construyen; `retrieval-eval` y `lifecycle-test` se ejecutan en T-62/T-65. `docker compose --profile memory --profile memory-admin config` resuelve las imágenes (kairos-api, kairos-postgres, kairos-mcp, kairos-web, kairos-worker, kairos-operator) y `dockerfile: server/memory_platform/Dockerfile[.web]`; `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → Ran 43 tests OK.
+- **Verificación**: `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:t59 .` → `MEMORY_TEST_RESULT` con `tests` igual a T-57, 0 fallos, 0 errores, 0 omitidos · `sha256sum server/memory_platform/tests/store_surface.json` → igual que T-57 · Evidencia (2026-11-14): `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:i2p7 .` rc 0 y `docker run --rm… Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `fdc075a65498`.
 
 **Criterios de aceptación**
 - [x] Todos los targets del Dockerfile construyen desde la nueva ruta
@@ -1984,7 +1977,7 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 - [x] Ejecutar la suite completa
 - [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-23/CA-25. Patrón: `memory_platform/Dockerfile:5-9` y `:25-30` (rutas copiadas), `:63-66` (target `lifecycle-test`). El nombre del paquete Python no cambia, así que los 391 usos de `memory_platform` en imports no se tocan (P-06). Clase: refactor (oráculo: misma suite en verde antes y después). Decisión: el Dockerfile queda en `server/memory_platform/Dockerfile` (contexto `.`, sin `server/Dockerfile`). Imagen runtime (api/operator/worker): `/app/memory_platform` como antes, para que el despliegue arranque igual (MEMORY_PROJECT_MAP_FILE sin cambios). La imagen de test replica el árbol del repositorio (`/app/server/memory_platform`, `PYTHONPATH=/app/server`), así los tests resuelven la raíz con `parents[3]` igual en el contenedor que en un checkout (14 ficheros de test; `run_postgres.py` no cambia: su `top_level_dir` ya es el directorio que contiene el paquete). `schemas.contracts_dir()` cae al `docs/contracts` del repositorio cuando no hay uno junto al paquete (cambio de ruta, no de comportamiento en las imágenes). Los scripts añaden `server/` al `sys.path`. Archivos añadidos con nota: `server/memory_platform/tests/**`, `server/memory_platform/schemas.py`, `scripts/tests/**`, `mcp/README.md`, `mcp/requirements.txt` (comentarios y rutas citadas). ci.yml y test_ci_workflow: rutas del servidor y `PYTHONPATH=server` en el trabajo `contracts`; los trabajos client y web se ajustan en T-62/T-63. EOL preservados (ediciones por bytes; 4 ficheros CRLF restaurados tras una conversión accidental de sed antes del commit). usage-meter three-components/T-59: 0.16 h IA (medido, win-63498fa151b64429ac1ae007754b1b3f).
+**Notas**: Procedencia: spec CA-23/CA-25. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `60f0a26dd9e2`.
 
 ### T-60 — Puerta congelada, scripts y herramientas con las rutas nuevas
 
@@ -2000,11 +1993,7 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 - **Tipo**: refactor
 - **Archivos**: `docs/roadmap/2026-11-06-functional-parity/testing/frozen-source-gate.py`, `scripts/frozen-source-gate.py`, `scripts/deploy-memory.py`, `scripts/export-contracts.py`, `scripts/memory-admin.py`, `scripts/memory-client.py`, `scripts/diagnose-deployment.py`, `scripts/tests/**`
 - **Cubre (tests)**: —
-- **Verificación**:
-  - `python docs/roadmap/2026-11-06-functional-parity/testing/frozen-source-gate.py` → `PASS` con las rutas nuevas
-  - `python scripts/export-contracts.py && git diff --stat docs/contracts` → sin diff
-  - `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:t60 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
-  - Evidencia (2026-11-14): Puerta (copia actualizada `scripts/frozen-source-gate.py`, candidato `git archive 208ad1e` en solo lectura, `--network=none`, imagen kairos-test:i2p7, recibo en directorio temporal fuera del repo): KAIROS_FROZEN_SOURCE source_sha256 61e81c526e3efc1dd48c287b45948d95635f0e944191aa7e5f0e4f1d70228634, file_count 271; MEMORY_TEST_RESULT tests 757, failures 0, errors 0, skipped 0, passed true, llm_chat_calls 0 (= línea base de T-57: 757 tests; mismos 271 ficheros que la línea base comparable, hash distinto porque cambian las rutas del manifiesto, `server/…` en lugar de `memory_platform/…`). `PYTHONPATH` no hace falta: la puerta añade `snapshot/server` a sys.path. `python scripts/export-contracts.py` (venv con las dependencias del servidor) → "Native HTTP and MCP contracts exported without connecting to services."; `git status --short docs/contracts` y `git diff --stat docs/contracts` → sin diff. `git grep -nE "(^|[^/])memory_platform/" -- scripts` → sin rutas antiguas del servidor; queda `packages/kairos-cli/bin/kairos.mjs` en `accept-native-clients.py:135` y en `test_ci_workflow.py:183`, que se cambian en T-62 tras mover el cliente (T-61).
+- **Verificación**: `python docs/roadmap/2026-11-06-functional-parity/testing/frozen-source-gate.py` → `PASS` con las rutas nuevas · `python scripts/export-contracts.py && git diff --stat docs/contracts` → sin diff · `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:t60 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base… Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `1ee32160206f`.
 
 **Criterios de aceptación**
 - [x] La puerta congelada apunta a las rutas nuevas y genera un recibo
@@ -2018,7 +2007,7 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 - [x] Ejecutar la puerta
 - [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec §Arquitectura (estructura final) y CA-25. Patrón: `frozen-source-gate.py:26`, `:45`, `:77`. Los recibos históricos de iniciativas cerradas que citan `memory_platform/` no se reescriben (evaluación C-06). Clase: refactor. El hook del implementer deniega escribir en `docs/roadmap/**/testing/` (propiedad de qa; DENY al editar `frozen-source-gate.py` de la iniciativa 2026-11-06). Siguiendo la nota de la tarea se genera una copia actualizada en `scripts/frozen-source-gate.py` (importa `frozen_evidence.py` de `testing/`, montado en la ejecución; el original queda intacto como puerta histórica). Cambios respecto al original: copia `server` (no `memory_platform`), añade `docs/contracts`, `mcp` y `ollama-proxy` (los tests los leen desde las Fases 2-5; el original, sin ellos, ya daba 195 errores y 3 fallos en la línea base) y pone `snapshot/server` en `sys.path`. `packages` se cambia a `client` en T-62. Propuesta para qa: sustituir el original por esta copia o referenciarla en su plan de pruebas. Archivos añadido con nota: `scripts/frozen-source-gate.py`. usage-meter three-components/T-60: 0.06 h IA (medido, win-b447f66d832b41f9819fbaad334773b1).
+**Notas**: Procedencia: spec §Arquitectura (estructura final) y CA-25. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `3deb2e0cf44a`.
 
 ### T-61 — `git mv packages/kairos-cli client` en un commit solo de movimiento
 
@@ -2049,13 +2038,13 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 - [x] Comprobar similitud
 - [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-23/CA-26. Clase: refactor (oráculo: similitud 100 %). Se cierra junto con T-62 en un único paso verde. Movimiento en un único commit (ba954b4) con la misma preparación del índice que T-58. `packages/` queda sin contenido y se elimina del árbol. `client/artifacts/` y `client/.npm-cache/` (ignorados bajo la ruta antigua) quedan sin ignorar hasta que T-62 actualice `.gitignore`; no entraron en el commit. usage-meter three-components/T-61: 0.02 h IA (medido, win-1f062d7b6c894813842299032323d6cb).
+**Notas**: Procedencia: spec CA-23/CA-26. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `a622ab52c389`.
 
 ### T-62 — Rutas del cliente: `RUNTIME_FILES`, Dockerfile.test, `release:check` y `npm pack` idéntico
 
 - **Descripción**: Ajustar `RUNTIME_FILES`, el Dockerfile de test, las rutas del target `lifecycle-test` y la CI al nuevo `client/`. El contenido empaquetado no cambia. Fuente: CA-26, CA-23.
 - **Changelog**: El CLI se prueba y empaqueta desde `client/` con el mismo paquete npm de antes (los mismos 34 ficheros, mismos tamaños); `npm test`, `release:check` y la prueba de ciclo de vida siguen en verde.
-- **Estado**: en-progreso
+- **Estado**: completado
 - **Cerrada**: 2026-11-14
 - **Tiempo humano**: est. 3.5h (base) · real —
 - **Tiempo IA (ejec.)**: est. 0.49h (estimado) · real 0.08h (medido)
@@ -2065,12 +2054,7 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 - **Tipo**: refactor
 - **Archivos**: `client/lib/config.mjs`, `client/package.json`, `client/Dockerfile.test`, `client/tests/release-check.mjs`, `server/memory_platform/Dockerfile`, `.github/workflows/ci.yml`, `.gitignore`, `scripts/accept-native-clients.py`, `scripts/frozen-source-gate.py`, `scripts/tests/test_ci_workflow.py`, `server/memory_platform/tests/lifecycle_probe.py`, `server/memory_platform/tests/test_extended_gateway.py`
 - **Cubre (tests)**: —
-- **Verificación**:
-  - `cd client && npm test` → pasa
-  - `cd client && npm run release:check` → exit 0
-  - `cd client && npm pack --dry-run --json` → lista de `files` idéntica a la anotada en T-57
-  - `docker build --target lifecycle-test -f server/memory_platform/Dockerfile -t kairos-lifecycle:t62 .` → exit 0
-  - Evidencia (2026-11-14): `cd client && npm test` → tests 90, pass 90, fail 0. `cd client && npm run release:check` → rc 0 (`tests: passed`, `fresh_cache_offline_npx: passed`, `publication: not-attempted`); el primer intento falló una vez con `release_gate_failed:node.exe` y no se reprodujo: `node tests/run.mjs` rc 0, `node tests/npx-smoke.mjs` KAIROS_NPX_RESULT passed true y el segundo `release:check` rc 0 (flaky en el host Windows, sin relación con las rutas). `cd client && npm pack --dry-run --json` → @daycry/kairos 0.3.0, 34 ficheros, 669212 bytes, sha256 de la lista de rutas f879ab102c400ac1896db67c2783d5bcf4513e3d278d43d648017744b969882f = línea base de T-57 (mismas rutas y mismos tamaños por fichero). `docker build --target lifecycle-test -f server/memory_platform/Dockerfile -t kairos-lifecycle:i2p7 .` → rc 0 (la suite del target test dentro de la build: MEMORY_TEST_RESULT 757 tests, 0 failures, 0 errors, 0 skipped, llm_chat_calls 0; sonda de ciclo de vida del cliente en verde). `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → Ran 43 OK; `test_accept_native_clients.py` → Ran 57 OK. `npm publish` no ejecutado: solo `--dry-run`.
+- **Verificación**: `cd client && npm test` → pasa · `cd client && npm run release:check` → exit 0 · `cd client && npm pack --dry-run --json` → lista de `files` idéntica a la anotada en T-57 · `docker build --target lifecycle-test -f server/memory_platform/Dockerfile -t kairos-lifecycle:t62 .` → exit 0 · Evidencia (2026-11-14): `cd client && npm test` → tests 90, pass 90, fail 0. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `ce250b7a6821`.
 
 **Criterios de aceptación**
 - [x] `npm pack --dry-run` del cliente produce la misma lista de ficheros que la línea base de T-57
