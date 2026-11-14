@@ -22,13 +22,13 @@ class UnexpectedFailureTests(unittest.TestCase):
         self.assertIn('tool_failed', stream.getvalue())
         self.assertIn('KeyError', stream.getvalue())
 
-    def test_a_malformed_answer_of_the_api_is_not_a_crash(self):
-        # the API answers 200 with a JSON array where an object is expected, and a non-JSON body: the tool still answers
-        with Harness({('GET', '/v1/projects'): (200, [1, 2, 3])}) as harness:
-            result = harness.call('projects')
-        self.assertFalse(result.error, result.text)
-        with Harness({('GET', '/v1/projects'): (200, None)}) as harness:
-            self.assertFalse(harness.call('projects').error)
+    def test_a_malformed_answer_of_the_api_is_a_failed_call_not_a_success_and_not_a_crash(self):
+        # the API answers 200 with a JSON array where an object is expected, and with nothing: the call fails with the generic message
+        for body in ([1, 2, 3], None):
+            with Harness({('GET', '/v1/projects'): (200, body)}) as harness:
+                result = harness.call('projects')
+            self.assertTrue(result.error)
+            self.assertEqual(result.text, 'Error executing tool projects: ' + UNAVAILABLE)
 
     def test_a_missing_field_in_a_composed_answer_is_not_a_crash(self):
         # `event_status` without a project reads `receipt.jobs`: a receipt without it must be a failure of the call, not the text of a KeyError

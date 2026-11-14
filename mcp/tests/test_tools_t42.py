@@ -57,13 +57,13 @@ class GroupTests(unittest.TestCase):
 
 
 class ImportantWorkflowTests(unittest.TestCase):
-    def test_it_answers_the_fixed_text_without_calling_the_api(self):
-        with Harness({}) as harness:
+    def test_it_answers_the_fixed_text_and_asks_the_api_only_whether_the_credential_is_valid(self):
+        with Harness({('GET', '/v1/auth/me'): (200, {'actor': {}})}) as harness:
             result = harness.call('important_workflow')
             self.assertFalse(result.error)
             self.assertTrue(result.text.startswith('Choose an authorized project with projects.'))
             self.assertEqual(result.structured, {'result': result.text})
-            self.assertEqual(harness.stub.requests, [])
+            self.assertEqual([r.route for r in harness.stub.requests], ['/v1/auth/me'])  # no request of its own
             with self.assertRaises(ValueError):
                 json.loads(result.text)  # fixed guidance, not retrieved data: plain text, no JSON object to put an envelope in
 
@@ -130,11 +130,20 @@ class RebuildCorpusTests(unittest.TestCase):
             self.assertEqual(harness.stub.requests[0].body, {'expected_version': 2, 'force': False})
 
     def test_a_failed_read_is_the_answer_of_the_call(self):
-        for reply, message in ((NOT_FOUND, 'Resource not found'), (FORBIDDEN, 'Operation not permitted')):
-            with self.subTest(message=message), Harness({('GET', P + '/corpus'): reply}) as harness:
+        reply, message = FORBIDDEN, 'Operation not permitted'
+        with Harness({('GET', P + '/corpus'): reply}) as harness:
+            result = harness.call('rebuild_corpus', {'project': PROJECT, 'name': 'c1'})
+            self.assertEqual(result.text, 'Error executing tool rebuild_corpus: ' + message)
+            self.assertEqual([r.method for r in harness.stub.requests], ['GET'])  # the rebuild is never sent
+
+    def test_a_read_that_finds_no_corpus_or_refuses_the_name_sends_the_rebuild_with_a_version_no_corpus_has(self):
+        for status in (404, 422):
+            routes = {('GET', P + '/corpus'): (status, {'error': {'code': 'x', 'message': 'read refused'}}), ('POST', P + '/corpora/c1/rebuild'): FORBIDDEN}
+            with self.subTest(status=status), Harness(routes) as harness:
                 result = harness.call('rebuild_corpus', {'project': PROJECT, 'name': 'c1'})
-                self.assertEqual(result.text, 'Error executing tool rebuild_corpus: ' + message)
-                self.assertEqual([r.method for r in harness.stub.requests], ['GET'])  # the rebuild is never sent
+                self.assertEqual(result.text, 'Error executing tool rebuild_corpus: Operation not permitted')  # the answer of the rebuild endpoint, in the order of the tool
+                self.assertEqual([r.method for r in harness.stub.requests], ['GET', 'POST'])
+                self.assertEqual(harness.stub.requests[1].body, {'expected_version': 2147483646})
 
     def test_a_conflict_with_a_changed_version_is_retried_with_the_new_one(self):
         posts = []
@@ -169,18 +178,19 @@ class RebuildCorpusTests(unittest.TestCase):
 
 
 class RebuildZeroTests(unittest.TestCase):
-    """`expected_version: 0` cannot travel (the endpoint refuses it with 422) and no corpus has version 0: the tool answers the conflict, but only after the
-    server has checked access and existence in the order the internal tool does (403/404 first, never a bare 409 for a corpus the caller cannot see)."""
+    """`expected_version: 0` cannot travel (the endpoint refuses it with 422) and no corpus has version 0: the request goes with a version no corpus can
+    have, so the server answers in the order of the internal tool (403, 422 or 404 first; the conflict only for a corpus the caller has)."""
 
-    def test_an_existing_readable_corpus_gets_the_conflict_without_a_rebuild(self):
-        with Harness({('GET', P + '/corpus'): (200, {'name': 'c1', 'version': 3})}) as harness:
+    def test_the_request_goes_with_a_version_no_corpus_has_and_nothing_is_read(self):
+        with Harness({('POST', P + '/corpora/c1/rebuild'): CONFLICT}) as harness:
             result = harness.call('rebuild_corpus', {'project': PROJECT, 'name': 'c1', 'expected_version': 0})
             self.assertEqual(result.text, 'Error executing tool rebuild_corpus: Corpus version changed')
-            self.assertEqual([r.method for r in harness.stub.requests], ['GET'])
+            self.assertEqual([r.method for r in harness.stub.requests], ['POST'])
+            self.assertEqual(harness.stub.requests[0].body, {'expected_version': 2147483646})
 
     def test_a_missing_corpus_or_a_key_without_access_gets_that_error_not_the_conflict(self):
         for reply, message in ((NOT_FOUND, 'Resource not found'), (FORBIDDEN, 'Operation not permitted')):
-            with self.subTest(message=message), Harness({('GET', P + '/corpus'): reply}) as harness:
+            with self.subTest(message=message), Harness({('POST', P + '/corpora/nope/rebuild'): reply}) as harness:
                 result = harness.call('rebuild_corpus', {'project': PROJECT, 'name': 'nope', 'expected_version': 0})
                 self.assertEqual(result.text, 'Error executing tool rebuild_corpus: ' + message)
 

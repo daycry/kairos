@@ -106,16 +106,16 @@ class ChainRebuildTests(unittest.TestCase):
         self.assertEqual(self.error(chain), (True, 'Error executing tool rebuild_corpus: Corpus version changed'))
         self.assertEqual([(method, status) for method, _, status in sent], [('POST', 409)])
 
-    def test_a_zero_version_reads_first_and_is_the_conflict_only_for_a_corpus_the_caller_has(self):
+    def test_a_zero_version_goes_as_a_version_no_corpus_has_and_is_the_conflict_only_for_a_corpus_the_caller_has(self):
         chain, internal, sent = self.both({'name': 'c1', 'expected_version': 0})
         self.assertEqual(self.error(chain), (True, 'Error executing tool rebuild_corpus: Corpus version changed'))
         self.assertEqual(self.error(chain), self.error(internal))
-        self.assertEqual([(method, status) for method, _, status in sent], [('GET', 200)])  # no rebuild was sent
+        self.assertEqual([(method, status) for method, _, status in sent], [('POST', 409)])  # no read: the endpoint refuses a version that is not the corpus's, and nothing is rebuilt
         self.assertEqual(self.version(), 1)
         chain, internal, sent = self.both({'name': 'no-such-corpus', 'expected_version': 0})
         self.assertEqual(self.error(chain), (True, 'Error executing tool rebuild_corpus: Resource not found'))
         self.assertEqual(self.error(chain), self.error(internal))
-        self.assertEqual([status for _, _, status in sent], [404])
+        self.assertEqual([(method, status) for method, _, status in sent], [('POST', 404)])
 
     def test_another_actor_with_read_and_write_hides_and_cannot_touch_the_corpora_of_the_first(self):
         user = self.store.create_user(self.admin, {'username': 'peer-' + uuid.uuid4().hex[:10], 'password': 'synthetic-password-123',
@@ -139,7 +139,27 @@ class ChainRebuildTests(unittest.TestCase):
                 chain, internal, sent = self.both(arguments, reader)
                 self.assertEqual(self.error(chain), (True, 'Error executing tool rebuild_corpus: Operation not permitted'))
                 self.assertEqual(self.error(chain), self.error(internal))
-                self.assertNotIn('POST', [method for method, _, _ in sent])
+                self.assertEqual([status for method, _, status in sent if method == 'POST'], [403])  # the endpoint refuses, and nothing was rebuilt
+                self.assertEqual(self.version(), 1)
+
+    def test_the_order_of_errors_for_a_blank_or_invalid_name_is_the_tools_for_every_kind_of_key(self):
+        """Gap 9 of the phase 5 review: a read-only key gets the 403 of the tool, not the 422 of the name; a key with write gets the 422."""
+        keys = {'read': self.key(self.admin, ['read']), 'write': self.key(self.admin, ['write']), 'both': self.key(self.admin, ['read', 'write'])}
+        for kind, token in keys.items():
+            for name in ('  ', 'a\x00b', 'é' * 150):
+                for extra in ({}, {'expected_version': 0}, {'expected_version': 3}):
+                    with self.subTest(key=kind, name=name, extra=extra):
+                        chain, internal, sent = self.both({'name': name, **extra}, token)
+                        self.assertEqual(self.error(chain), self.error(internal))
+                        if kind == 'read':
+                            self.assertEqual(self.error(chain), (True, 'Error executing tool rebuild_corpus: Operation not permitted'))
+        self.assertEqual(self.version(), 1)
+
+    def test_a_key_with_read_only_reads_the_version_of_its_corpus_through_the_endpoint(self):
+        reader = self.key(self.admin, ['read'])
+        response = self.client.get('/v1/projects/' + self.pid + '/corpus', params={'name': 'c1'}, headers={'Authorization': 'Bearer ' + reader})
+        self.assertEqual((response.status_code, response.json()['version']), (200, 1))
+
 
     def test_a_revoked_key_is_a_401_of_the_endpoint_like_on_the_internal_mcp(self):
         token = self.key(self.admin, ['read', 'write'])

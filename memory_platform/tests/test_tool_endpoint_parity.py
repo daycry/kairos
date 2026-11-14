@@ -41,6 +41,11 @@ ORIGIN = 'http://localhost:8790'
 EXPORTER = Path(__file__).parents[2] / 'scripts' / 'export-contracts.py'
 
 
+def untrusted_writes():
+    """The tools annotated as a write whose endpoint the contract marks `untrusted` (retrieved content: they carry the S-05 envelope)."""
+    return {name for name, rule in declared_endpoints().items() if rule != 'local' and rule.get('untrusted')}
+
+
 def declared_endpoints():
     """The `x-kairos-endpoint` of every tool of the exported contract (no file read: what the exporter would write)."""
     spec = importlib.util.spec_from_file_location('kairos_export_contracts_parity', EXPORTER)
@@ -124,6 +129,10 @@ def read_missing(rule, arguments, rest):
             how = where['when_absent']
             method, path, kwargs = translate(how['read'], {key: value for key, value in arguments.items() if key in how['read']['args']})
             status, read = rest(method, path, **kwargs)
+            instead = how.get('send_instead_on_status')
+            if instead and status in instead['statuses']:
+                values[argument] = instead['value']  # the request goes with a version no corpus has and the server answers in its own order of checks
+                continue
             if status >= 400:
                 assert how['on_read_error'] == 'answer', how
                 return None, (status, read)
@@ -132,17 +141,14 @@ def read_missing(rule, arguments, rest):
 
 
 def perform(rule, arguments, rest, between=None):
-    """What a client of `/v1` does with one call, from the contract alone: `untranslatable` values are answered without sending the request (after the read of `after_read`); `when_absent`
-    values are read and sent; a `retry` status with a value that changed since the read sends the request again. `between` is called after each
-    read and before the request (a test hook: the concurrent change). Returns `(status, body)`."""
+    """What a client of `/v1` does with one call, from the contract alone: an `untranslatable` value goes as `send_instead`; `when_absent`
+    values are read and sent (a read that fails with `send_instead_on_status` gives the value that status says); a `retry` status with a value that changed since
+    the read sends the request again. `between` is called after each read and before the request (a test hook: the concurrent change). Returns `(status, body)`."""
     for refused in rule.get('untranslatable', []):
         value = arguments.get(refused['argument'])
         if value is not None and value == refused['value'] and type(value) is type(refused['value']):
-            if refused.get('after_read'):  # the read first: the server checks access and existence in the order the tool does, and its refusal is the answer
-                _, failed = read_missing(rule, {**arguments, refused['argument']: None}, rest)
-                if failed:
-                    return failed
-            return refused['answer']['status'], {'error': refused['answer']['error']}
+            arguments = {**arguments, refused['argument']: refused['send_instead']}
+            break
     retry = next((where['when_absent'].get('retry') for where in rule['args'].values() if 'when_absent' in where), None)
     sent = last = None
     for _ in range(1 + (retry['max'] if retry else 0)):
@@ -402,8 +408,8 @@ class ToolEndpointParityTests(unittest.TestCase):
         arguments = {**arguments, **override}
         rule = self.declared[name] if rule is None else rule
         tool_status, tool_value = s.tool(name, arguments)
-        reading = tool_status == 'ok' and isinstance(tool_value, dict) and s.listing()[name]['annotations']['readOnlyHint']
-        if reading:  # S-05: a tool that only reads adds `untrusted` and `warning`; the endpoint does not, and what is compared is the rest
+        reading = tool_status == 'ok' and isinstance(tool_value, dict) and (s.listing()[name]['annotations']['readOnlyHint'] or name in untrusted_writes())
+        if reading:  # S-05: a tool that only reads (or answers retrieved content, `untrusted` in its endpoint) adds `untrusted` and `warning`; the endpoint does not, and what is compared is the rest
             self.assertIs(tool_value.get('untrusted'), True, label)
             self.assertTrue(tool_value.get('warning'), label)
             tool_value = without_envelope(tool_value)
@@ -540,7 +546,8 @@ class ToolEndpointParityTests(unittest.TestCase):
         self.assertEqual((response.status_code, response.json()['error']['code']), (403, 'forbidden'))  # every corpus operation needs read
 
     def test_a_key_without_write_gets_the_tools_403_for_any_name_not_a_404_from_the_read(self):
-        """The read that precedes a rebuild asks for `write` first, as the rebuild does: a read-only key learns nothing about a name it does not have."""
+        """The read by name asks for `read` only (a read-only key reads its corpus); when it finds nothing the request goes without a version and the
+        rebuild endpoint refuses in the order of the tool, write first: a read-only key learns nothing about a name it does not have."""
         s = self.scenario
         rule = self.declared['rebuild_corpus']
         for scopes in (['read'], ['write']):
@@ -552,6 +559,29 @@ class ToolEndpointParityTests(unittest.TestCase):
                         tool, endpoint = s.tool('rebuild_corpus', arguments), s.endpoint(rule, arguments)
                     self.assertEqual(tool, ('error', 'Operation not permitted'))
                     self.assertEqual(endpoint, tool)
+
+    def test_a_blank_or_invalid_name_is_the_tools_403_for_a_key_without_write_and_its_own_error_otherwise(self):
+        """Gap 9 of the phase 5 review: the order of the errors is the tool's for a name the read refuses (422) too."""
+        s = self.scenario
+        rule = self.declared['rebuild_corpus']
+        for scopes in (['read'], ['write'], ['read', 'write']):
+            token = s.store.create_key(s.admin, {'name': 'named-' + '-'.join(scopes), 'project_ids': [s.pid], 'scopes': scopes})['token']
+            for name in ('   ', 'a\x00b', 'é' * 150):
+                for extra in ({}, {'expected_version': 0}, {'expected_version': 2}):
+                    arguments = {'project': s.pid, 'name': name, **extra}
+                    with self.subTest(scopes=scopes, name=name, extra=extra), s.acting(token):
+                        tool, endpoint = s.tool('rebuild_corpus', arguments), s.endpoint(rule, arguments)
+                    self.assertEqual(endpoint, tool)
+                    if scopes == ['read']:
+                        self.assertEqual(tool, ('error', 'Operation not permitted'))
+
+    def test_the_read_by_name_needs_read_only_and_a_key_with_write_alone_is_refused(self):
+        """Gap 4 of the phase 5 review: `GET .../corpus` is a read, as the phase 3 left it."""
+        s = self.scenario
+        for scopes, expected in ((['read'], 200), (['write'], 403), (['read', 'write'], 200)):
+            token = s.store.create_key(s.admin, {'name': 'reads-' + '-'.join(scopes), 'project_ids': [s.pid], 'scopes': scopes})['token']
+            response = s.client.get(s.prefix + '/corpus', params={'name': 'c-rebuild'}, headers={'Authorization': 'Bearer ' + token})
+            self.assertEqual(response.status_code, expected, scopes)
 
     def test_a_zero_version_is_the_conflict_only_for_a_corpus_the_caller_has_and_otherwise_what_the_tool_says(self):
         s = self.scenario
@@ -652,17 +682,22 @@ class RetryRuleTests(unittest.TestCase):
         result, reads, posts = self.run_rule([1, 2], lambda n: (409, {}) if n == 1 else (200, {'version': 2}))
         self.assertEqual((result, [post['expected_version'] for post in posts]), ((200, {'version': 2}), [1, 2]))
 
-    def test_a_failed_read_is_the_answer_and_nothing_is_posted(self):
-        result, reads, posts = self.run_rule((404, {'error': {'code': 'not_found'}}), lambda n: (200, {}))
-        self.assertEqual((result[0], posts), (404, []))
-
-    def test_a_given_version_is_sent_as_it_is_and_zero_is_answered_after_the_read_without_a_rebuild(self):
+    def test_a_given_version_is_sent_as_it_is_and_zero_goes_as_a_version_no_corpus_has_without_a_read(self):
         result, reads, posts = self.run_rule([9], lambda n: (200, {}), {'project': 'p', 'name': 'c', 'expected_version': 3})
         self.assertEqual((reads, posts), ([], [{'expected_version': 3}]))
-        result, reads, posts = self.run_rule([9], lambda n: (200, {}), {'project': 'p', 'name': 'c', 'expected_version': 0})
-        self.assertEqual((result[0], reads, posts), (409, ['/v1/projects/p/corpus'], []))  # `after_read`: the read first, never the POST
-        result, reads, posts = self.run_rule((403, {'error': {'code': 'forbidden'}}), lambda n: (200, {}), {'project': 'p', 'name': 'c', 'expected_version': 0})
-        self.assertEqual((result[0], posts), (403, []))  # the refusal of the read, not the conflict
+        result, reads, posts = self.run_rule([9], lambda n: (409, {'error': {'message': 'Corpus version changed'}}), {'project': 'p', 'name': 'c', 'expected_version': 0})
+        self.assertEqual((result[0], reads, posts), (409, [], [{'expected_version': 2147483646}]))  # the endpoint answers in the order of the tool
+
+    def test_a_read_that_finds_no_corpus_or_refuses_the_name_sends_a_version_no_corpus_has(self):
+        for status in (404, 422):
+            result, reads, posts = self.run_rule((status, {'error': {'code': 'x'}}), lambda n: (403, {'error': {'code': 'forbidden'}}))
+            self.assertEqual((result[0], posts), (403, [{'expected_version': 2147483646}]), status)  # the server's own order: a key without write is refused before the name or the corpus
+            self.assertEqual(len(reads), 1, status)
+
+    def test_any_other_failed_read_is_the_answer(self):
+        for status in (401, 403, 409):
+            result, reads, posts = self.run_rule((status, {'error': {'code': 'x'}}), lambda n: (200, {}))
+            self.assertEqual((result[0], posts), (status, []), status)
 
 
 def make_case(label):

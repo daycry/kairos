@@ -44,7 +44,7 @@ class EnvelopeTests(unittest.TestCase):
 
     def test_a_tool_that_writes_gets_no_envelope(self):
         for name, tool in TOOLS.items():
-            if tool['annotations']['readOnlyHint'] or name not in CASES:
+            if tool['annotations']['readOnlyHint'] or tool['x-kairos-endpoint'].get('untrusted') or name not in CASES:  # `query_corpus` writes by annotation, answers retrieved content
                 continue
             case = CASES[name]
             with self.subTest(tool=name), serve(case) as harness:

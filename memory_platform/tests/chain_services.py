@@ -52,8 +52,9 @@ class ChainSession:
         return self.tokens[(actor['id'], project)]
 
     def call(self, actor, scope, tool, /, **arguments):  # positional-only: `project`, `tool` and `name` are arguments of the tools too
-        """`scope` is the project the key of the call is for; `arguments` are the arguments of the tool (which may carry their own `project`)."""
-        arguments = {key: value for key, value in arguments.items() if value is not None}
+        """`scope` is the project the key of the call is for; `arguments` are the arguments of the tool (which may carry their own `project`).
+        Every argument is sent as it is given, a `None` included: it travels as an explicit JSON `null` (the stores' wrappers below leave out what a test
+        did not give, a call of the session itself can send the null)."""
         response = self.client.chain.post('/mcp/', headers={'Authorization': 'Bearer ' + self.token(actor, scope), 'Accept': ACCEPT},
                                           json={'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call', 'params': {'name': tool, 'arguments': arguments}})
         if response.status_code == 401:
@@ -77,7 +78,8 @@ class ChainAgentStore:
         self.session = session
 
     def call(self, actor, scope, tool, /, **arguments):
-        return self.session.call(actor, scope, tool, **arguments)
+        """The arguments a test left out are `None` in the service signatures: they are not sent (the tool applies its default)."""
+        return self.session.call(actor, scope, tool, **{key: value for key, value in arguments.items() if value is not None})
 
     def work_write(self, actor, project, list, fields, request_id, expected_version=None):
         return self.call(actor, project, 'work_state_write', project=project, list=list, fields=fields, request_id=request_id, expected_version=expected_version)
