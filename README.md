@@ -59,16 +59,20 @@ flowchart LR
   A[Claude Code / Codex / OpenCode] --> B[Puente MCP local<br/>@daycry/kairos]
   B -->|HTTPS + clave| C[Entrada web<br/>memory-web]
   D[Panel web] --> C
-  C --> E[API<br/>memory-api]
+  C -->|/mcp/| M[kairos-mcp<br/>memory-mcp]
+  M -->|/v1 + Bearer| E[Servidor<br/>memory-api]
+  C -->|/memory-api/| E
   E --> F[(PostgreSQL)]
   F --> G[Trabajador<br/>memory-worker]
-  G --> H[Ollama<br/>beam:cloud · nomic-embed-text]
+  G --> H[Proxy de Ollama<br/>nomic-embed-text]
   G --> F
 ```
 
-1. El agente llama a una herramienta MCP. El puente local la convierte en una petición HTTP autenticada con una clave privada.
+Kairos son tres componentes: el **servidor** (`memory-api` y `memory-worker`, único con acceso a PostgreSQL), **kairos-mcp** (`memory-mcp`, las 34 herramientas MCP delante de `/v1`, sin base de datos) y el **cliente** (`@daycry/kairos`), más la **web**. `/mcp/` de la entrada web es kairos-mcp. El servidor no usa ningún modelo de lenguaje: solo pide embeddings, por el proxy de Ollama. El MCP interno de `memory-api` (`:8790/mcp/`) está en desuso desde la 0.4.0 y se retira en la 0.5.0; los clientes antiguos que lo usen deben migrar, ver [integración](docs/integration.md#migración-el-mcp-interno-queda-en-desuso-y-se-retira-en-la-050).
+
+1. El agente llama a una herramienta MCP. El puente local la convierte en una petición HTTP autenticada con una clave privada hacia `/mcp/`, que atiende kairos-mcp y que traduce cada llamada a `/v1` con la misma clave.
 2. La API comprueba permisos por proyecto (`read`, `write`, `publish`, `validate`, `admin`) y la política de captura, y guarda la operación junto con sus trabajos.
-3. El trabajador procesa los trabajos de forma asíncrona: extracción, embeddings y relaciones, usando el servidor de modelos.
+3. El trabajador procesa los trabajos de forma asíncrona: extracción, embeddings y relaciones; los embeddings se piden al servidor de modelos por el proxy de Ollama, y la extracción y las respuestas generadas solo funcionan si activas un modelo de lenguaje (`MEMORY_LLM_MODEL`, sin valor por defecto).
 4. Las búsquedas combinan tres capas: **episódica** (experiencias), **documental** (fuentes aprobadas) y **temporal** (hechos y relaciones con evidencia), más una recuperación **semántica** por embeddings (pgvector, con los textos largos troceados en fragmentos). La búsqueda léxica entiende español e inglés sin tildes y completa con títulos parecidos; si falla solo la parte semántica, la respuesta léxica sigue siendo válida (`degraded`).
 
 Más detalle en [arquitectura](docs/architecture.md).
@@ -121,7 +125,7 @@ Los manuales de `docs/` se publican en `/docs/` sin dependencias externas.
 
 - Docker Desktop (Windows) o Docker Engine con Compose (Linux).
 - Python 3.11 o posterior para los scripts del operador.
-- **Ollama en marcha y accesible** con los modelos configurados (`beam:cloud`, `nomic-embed-text`). El servicio `ollama` del Compose es solo un proxy hacia él.
+- **Ollama en marcha y accesible** con el modelo de embeddings (`nomic-embed-text`); no hace falta ningún modelo de lenguaje salvo que actives la extracción o las respuestas generadas. El servicio `ollama` del Compose es solo un proxy hacia él.
 - Puertos libres: `5173` (web) y `8790` (API).
 
 ### Instalación nueva
@@ -147,7 +151,7 @@ El despliegue recorre diez fases: `engine → configuration → build → databa
 | `http://127.0.0.1:5173/` | Web pública |
 | `http://127.0.0.1:5173/app/` | Panel privado |
 | `http://127.0.0.1:5173/docs/` | Documentación publicada |
-| `http://127.0.0.1:5173/mcp/` | Entrada MCP para clientes |
+| `http://127.0.0.1:5173/mcp/` | Entrada MCP para clientes (kairos-mcp) |
 
 Guía completa: [servidor desde cero](docs/server-install.md) y [configuración](docs/configuration.md).
 
@@ -207,7 +211,7 @@ Contratos: [`docs/contracts/kairos-mcp.json`](docs/contracts/kairos-mcp.json) y 
 .
 ├── docker-compose.yml        Servicios, redes y volúmenes
 ├── .env.example              Plantilla de configuración (sin secretos)
-├── server/                   Servidor: paquete Python `memory_platform` (API FastAPI, MCP interno, trabajador, migraciones, tests) y su Dockerfile
+├── server/                   Servidor: paquete Python `memory_platform` (API FastAPI, MCP interno en desuso hasta la 0.5.0, trabajador, migraciones, tests) y su Dockerfile
 ├── mcp/                      kairos-mcp: las 34 herramientas MCP delante de /v1, sin base de datos
 ├── client/                   Instalador y puente MCP local (@daycry/kairos)
 ├── web/                      Web pública y panel (TypeScript + Vite), con el Dockerfile y el nginx.conf de la imagen web
@@ -245,7 +249,7 @@ Copias, restauración aislada, claves e incidencias: [operación y recuperación
 
 | Ámbito | Cómo se verifica |
 |---|---|
-| Backend | Suite completa contra PostgreSQL aislado (759 pruebas) |
+| Backend | Suite completa contra PostgreSQL aislado (764 pruebas) |
 | Calidad de recuperación | Puerta `retrieval-eval` (recall@5, MRR y no regresión por subconjunto sobre un conjunto sintético congelado), con embeddings simulados en la suite y con un Ollama desechable en la medida con el modelo real |
 | Web | Pruebas unitarias (65), TypeScript y build de producción con Vite |
 | Interfaz | Navegación real en Chromium con Playwright (20 escenarios), escritorio y móvil |

@@ -52,7 +52,7 @@ Quién habla con quién: el agente solo habla con un MCP; kairos-mcp solo habla 
 
 El backend usa Python, FastAPI, Pydantic y PostgreSQL mediante psycopg. MCP usa FastMCP. La web usa TypeScript y Vite; el mapa carga su renderizador cuando se utiliza. El instalador usa Node `>=20.12.0`, módulos ECMAScript y ninguna dependencia npm de ejecución. Las versiones exactas son las declaradas en los manifiestos del código, no las de este documento.
 
-Los modelos configurados en la instalación existente son `beam:cloud` para generación y `nomic-embed-text` para embeddings. El motor de modelos sigue siendo necesario para esas funciones. La persistencia y la autenticación son responsabilidades del servicio central. Cambiar el modelo requiere una decisión operativa y comprobaciones de compatibilidad; instalar un cliente no lo cambia.
+El modelo de embeddings configurado es `nomic-embed-text`; `MEMORY_LLM_MODEL` no tiene valor por defecto y solo hace falta un modelo de lenguaje si activas la extracción o las respuestas generadas. El motor de modelos sigue siendo necesario para los embeddings. La persistencia y la autenticación son responsabilidades del servicio central. Cambiar el modelo requiere una decisión operativa y comprobaciones de compatibilidad; instalar un cliente no lo cambia.
 
 ## Tres capas de recuperación
 
