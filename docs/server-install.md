@@ -24,7 +24,7 @@ Copy-Item -LiteralPath .env.example -Destination .env
 
 El repositorio contiene directamente `docker-compose.yml`, `.env.example`, `memory_platform`, `web`, `packages`, `scripts` y `docs`. No necesitas una segunda carpeta del producto dentro de la raíz.
 
-Edita `.env` según la [referencia de configuración](configuration.md). En Windows, el ejemplo utiliza `C:/docker-secrets/knowledge-memory` para los secretos, fuera del repositorio. Conserva los modelos y el destino de Ollama si ya los tienes preparados. Los valores predeterminados de esta distribución son `beam:cloud` y `nomic-embed-text`; una instalación nueva debe comprobar que su proveedor permita usarlos.
+Edita `.env` según la [referencia de configuración](configuration.md). En Windows, el ejemplo utiliza `C:/docker-secrets/knowledge-memory` para los secretos, fuera del repositorio. Conserva el modelo de embeddings y el destino de Ollama si ya los tienes preparados. El valor predeterminado de esta distribución para embeddings es `nomic-embed-text`; `MEMORY_LLM_MODEL` no tiene valor por defecto y solo se necesita si activas la extracción o las respuestas generadas. Una instalación nueva debe comprobar que su proveedor permita usarlos.
 
 En Linux, selecciona una ruta privada accesible para el operador y Docker, por ejemplo `/srv/kairos/secrets`, y configura esa misma ruta en `MEMORY_SECRETS_DIR`. El destino `host.docker.internal` del ejemplo está pensado para Docker Desktop: en otro entorno define un destino de Ollama que sea realmente accesible desde el contenedor.
 
