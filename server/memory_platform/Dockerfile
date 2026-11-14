@@ -74,6 +74,6 @@ RUN python -m memory_platform.tests.run_postgres
 FROM node:22-bookworm-slim@sha256:3ed98443660ff48413b5af19ecefce3b9d50845a901a43420d47cc63a9fddbe9 AS lifecycle-node
 FROM test AS lifecycle-test
 COPY --from=lifecycle-node /usr/local/bin/node /usr/local/bin/node
-COPY --chown=postgres:postgres packages/kairos-cli /app/client
+COPY --chown=postgres:postgres client /app/client
 ENV MEMORY_CLIENT_PROBE=1
 RUN python -m memory_platform.tests.run_postgres

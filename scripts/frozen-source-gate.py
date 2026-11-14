@@ -46,9 +46,9 @@ def copy(source, destination):
         manifest[destination.relative_to(snapshot).as_posix()] = hashlib.sha256(body).hexdigest()
 
 
-# Layout of the three components (C-06): server/ (package `memory_platform`), mcp/, packages/ (client/ after T-61), the web portal is built by its own image.
+# Layout of the three components (C-06): server/ (package `memory_platform`), mcp/, client/, the web portal is built by its own image.
 # docs/contracts and ollama-proxy are read by tests since phases 2-5; the original gate predates them and lacks them.
-for name in ('server', 'scripts', 'packages', 'docker-compose.yml', 'docs/contracts', 'mcp', 'ollama-proxy'):
+for name in ('server', 'scripts', 'client', 'docker-compose.yml', 'docs/contracts', 'mcp', 'ollama-proxy'):
     copy(candidate/name, snapshot/name)
 encoded = json.dumps(manifest, sort_keys=True, separators=(',', ':')).encode()
 receipt = {'schema': 1, 'mode': 'frozen-container-source', 'source_sha256': hashlib.sha256(encoded).hexdigest(),

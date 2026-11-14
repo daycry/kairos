@@ -2054,36 +2054,38 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 ### T-62 — Rutas del cliente: `RUNTIME_FILES`, Dockerfile.test, `release:check` y `npm pack` idéntico
 
 - **Descripción**: Ajustar `RUNTIME_FILES`, el Dockerfile de test, las rutas del target `lifecycle-test` y la CI al nuevo `client/`. El contenido empaquetado no cambia. Fuente: CA-26, CA-23.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: El CLI se prueba y empaqueta desde `client/` con el mismo paquete npm de antes (los mismos 34 ficheros, mismos tamaños); `npm test`, `release:check` y la prueba de ciclo de vida siguen en verde.
+- **Estado**: en-progreso
+- **Cerrada**: 2026-11-14
 - **Tiempo humano**: est. 3.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.49h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.49h (estimado) · real 0.08h (medido)
 - **Supervisión**: est. 0.12h (≈25 % IA) · real —
 - **Previsión IA**: 135 k in / 11 k out tok · ⚠️ verificar €
 - **Dependencias**: T-61
 - **Tipo**: refactor
-- **Archivos**: `client/lib/config.mjs`, `client/package.json`, `client/Dockerfile.test`, `client/tests/release-check.mjs`, `server/memory_platform/Dockerfile`, `.github/workflows/ci.yml`
+- **Archivos**: `client/lib/config.mjs`, `client/package.json`, `client/Dockerfile.test`, `client/tests/release-check.mjs`, `server/memory_platform/Dockerfile`, `.github/workflows/ci.yml`, `.gitignore`, `scripts/accept-native-clients.py`, `scripts/frozen-source-gate.py`, `scripts/tests/test_ci_workflow.py`, `server/memory_platform/tests/lifecycle_probe.py`, `server/memory_platform/tests/test_extended_gateway.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `cd client && npm test` → pasa
   - `cd client && npm run release:check` → exit 0
   - `cd client && npm pack --dry-run --json` → lista de `files` idéntica a la anotada en T-57
   - `docker build --target lifecycle-test -f server/memory_platform/Dockerfile -t kairos-lifecycle:t62 .` → exit 0
+  - Evidencia (2026-11-14): `cd client && npm test` → tests 90, pass 90, fail 0. `cd client && npm run release:check` → rc 0 (`tests: passed`, `fresh_cache_offline_npx: passed`, `publication: not-attempted`); el primer intento falló una vez con `release_gate_failed:node.exe` y no se reprodujo: `node tests/run.mjs` rc 0, `node tests/npx-smoke.mjs` KAIROS_NPX_RESULT passed true y el segundo `release:check` rc 0 (flaky en el host Windows, sin relación con las rutas). `cd client && npm pack --dry-run --json` → @daycry/kairos 0.3.0, 34 ficheros, 669212 bytes, sha256 de la lista de rutas f879ab102c400ac1896db67c2783d5bcf4513e3d278d43d648017744b969882f = línea base de T-57 (mismas rutas y mismos tamaños por fichero). `docker build --target lifecycle-test -f server/memory_platform/Dockerfile -t kairos-lifecycle:i2p7 .` → rc 0 (la suite del target test dentro de la build: MEMORY_TEST_RESULT 757 tests, 0 failures, 0 errors, 0 skipped, llm_chat_calls 0; sonda de ciclo de vida del cliente en verde). `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → Ran 43 OK; `test_accept_native_clients.py` → Ran 57 OK. `npm publish` no ejecutado: solo `--dry-run`.
 
 **Criterios de aceptación**
-- [ ] `npm pack --dry-run` del cliente produce la misma lista de ficheros que la línea base de T-57
-- [ ] `npm run release:check` pasa
-- [ ] `npm test` en `client/` pasa sin cambios en los tests
-- [ ] `lifecycle-test` pasa
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] `npm pack --dry-run` del cliente produce la misma lista de ficheros que la línea base de T-57
+- [x] `npm run release:check` pasa
+- [x] `npm test` en `client/` pasa sin cambios en los tests
+- [x] `lifecycle-test` pasa
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Ajustar `config.mjs:11` y rutas
-- [ ] Comparar `npm pack --dry-run` con la línea base
-- [ ] Ejecutar `npm test`, `release:check` y `lifecycle-test`
-- [ ] `usage-meter start/close`
+- [x] Ajustar `config.mjs:11` y rutas
+- [x] Comparar `npm pack --dry-run` con la línea base
+- [x] Ejecutar `npm test`, `release:check` y `lifecycle-test`
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-26. Patrón: `packages/kairos-cli/lib/config.mjs:11` (`RUNTIME_FILES`), `package.json:9` (scripts). Nada se publica en npm: solo `--dry-run`, no `npm publish`. Clase: refactor (oráculo: la misma lista de `npm pack` antes y después).
+**Notas**: Procedencia: spec CA-26. Patrón: `packages/kairos-cli/lib/config.mjs:11` (`RUNTIME_FILES`), `package.json:9` (scripts). Nada se publica en npm: solo `--dry-run`, no `npm publish`. Clase: refactor (oráculo: la misma lista de `npm pack` antes y después). `RUNTIME_FILES` y `package.json` no necesitan cambios: sus rutas son relativas al paquete (no hay ninguna `packages/…` dentro de `client/`); `config.mjs` no se toca (la versión pasa a 0.4.0 en T-64). Cambios de rutas: `client/Dockerfile.test` (`COPY client/ ./`), `lifecycle-test` del Dockerfile del servidor (`COPY client /app/client`), `.gitignore` (`client/artifacts/`), `scripts/accept-native-clients.py`, `ci.yml` (trabajo client con `working-directory: client`), su test estructural, la copia de la puerta (`client` en lugar de `packages`) y dos comentarios de tests del servidor. Archivos añadidos con nota: `client/Dockerfile.test` ya constaba; añadidos `.gitignore`, `scripts/accept-native-clients.py`, `scripts/frozen-source-gate.py`, `scripts/tests/test_ci_workflow.py`, `server/memory_platform/tests/lifecycle_probe.py`, `server/memory_platform/tests/test_extended_gateway.py`. usage-meter three-components/T-62: 0.08 h IA (medido, win-07b41a8fb87448c8bfcc4fd38c30af69).
 
 ### T-63 — Imagen web: `Dockerfile.web` y `nginx.conf` a `web/`
 

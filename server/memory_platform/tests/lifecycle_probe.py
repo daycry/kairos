@@ -19,7 +19,7 @@ from memory_platform.worker import Worker
 
 
 REQUIRED = {'projects', 'search', 'details', 'context', 'timeline', 'remember', 'event_status',
-            'publish_document', 'document_status', 'document_manifest', 'revoke_document'}  # `REQUIRED_TOOLS` of packages/kairos-cli/lib/mcp.mjs
+            'publish_document', 'document_status', 'document_manifest', 'revoke_document'}  # `REQUIRED_TOOLS` of client/lib/mcp.mjs
 
 
 def serve(application):

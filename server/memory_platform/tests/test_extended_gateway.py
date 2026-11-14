@@ -132,7 +132,7 @@ class StructuredObservationTests(ChainMode, unittest.TestCase):
         self.assertNotIn(sentinel, json.dumps(list(response.headers.items())))
 
     def test_the_payload_the_cli_0_3_0_sends_is_accepted_without_schema_version(self):
-        # Shape of the event built in packages/kairos-cli/lib/capture.mjs (summary with generate: true, capture block, no structured).
+        # Shape of the event built in client/lib/capture.mjs (summary with generate: true, capture block, no structured).
         sha = 'a' * 64
         payload = {'title': 'Session summary', 'content': '{"summary":"done"}', 'category': 'agent-activity',
                    'tags': ['runtime:claude', 'capture:summary'], 'source': {'uri': 'agent://claude/s1/' + sha, 'sha256': sha},

@@ -180,7 +180,7 @@ class AuxiliaryJobsTests(unittest.TestCase):
     def test_client_job_runs_tests_and_release_check_in_the_package(self):
         self.assertIn('client', self.jobs)
         block = self.jobs['client']
-        self.assertIn('working-directory: packages/kairos-cli', block)
+        self.assertIn('working-directory: client', block)
         self.assertIn('npm test', block)
         self.assertIn('npm run release:check', block)
 

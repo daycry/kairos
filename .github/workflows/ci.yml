@@ -83,10 +83,10 @@ jobs:
         with:
           node-version: 22
       - name: Tests
-        working-directory: packages/kairos-cli
+        working-directory: client
         run: npm test
       - name: Release check
-        working-directory: packages/kairos-cli
+        working-directory: client
         run: npm run release:check
 
   mcp:

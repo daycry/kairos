@@ -132,7 +132,7 @@ def reader(private):
     yield request
 
 def install_arguments(node,client,root,key,state,*,capture='off',replace=False):
-    args=[node,str(ROOT/'packages/kairos-cli/bin/kairos.mjs'),'install','--root',str(root),'--client',client,
+    args=[node,str(ROOT/'client/bin/kairos.mjs'),'install','--root',str(root),'--client',client,
           '--url',ORIGIN,'--project',PROJECT,'--key-file',str(key),'--capture',capture,'--context','auto','--state-dir',str(state),'--yes']
     if replace:args.append('--replace')
     if client=='opencode':args+=['--opencode-version','2']
