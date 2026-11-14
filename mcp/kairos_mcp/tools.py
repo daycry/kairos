@@ -2,8 +2,8 @@
 from itertools import islice
 from uuid import UUID
 
-from jsonschema.exceptions import best_match
-from jsonschema.validators import validator_for
+from jsonschema.exceptions import ValidationError as SchemaError, best_match
+from jsonschema.validators import extend, validator_for
 from mcp import types
 from mcp.server.lowlevel import Server
 from pydantic import ValidationError, create_model
@@ -13,10 +13,24 @@ from .auth import current_authorization
 from .errors import UNAVAILABLE, ToolError
 from .logs import log_event
 
-# `best_match` is given at most this many errors: `iter_errors` is lazy, and consuming all of them costs ~190 microseconds per element of an invalid array,
-# on the event loop, for any caller with a Bearer (60 000 elements under the body limit: seconds). The first ones decide the message in every case the
-# contract can produce by hand; only for an input with more failures than this can the text name a different one than the SDK's, never a different kind.
+# No keyword of the validator may consume more than this many errors of an invalid input: `iter_errors` is lazy, but jsonschema 4.26 materializes the
+# errors of every `anyOf` branch (`list(descend(...))`) before it yields the first, and a bounded consumer cannot stop that. An invalid array costs ~190
+# microseconds per element on the event loop, for any caller with a Bearer (120 000 elements under the body limit: 29 s). `bounded_any_of` takes at most
+# this many errors per branch and `best_match` is given at most this many in all. The first ones decide the message in every case the contract can
+# produce by hand; only for an input with more failures than this can the text name a different one than the SDK's, never a different kind.
 ERROR_LIMIT = 16
+
+
+def bounded_any_of(validator, alternatives, instance, schema):
+    """`anyOf` of jsonschema 4.26 (the same error, message and `context`), reading at most `ERROR_LIMIT` errors of each alternative."""
+    collected = []
+    for index, alternative in enumerate(alternatives):
+        errors = list(islice(validator.descend(instance, alternative, schema_path=index), ERROR_LIMIT))
+        if not errors:
+            return
+        collected.extend(errors)
+    yield SchemaError('%r is not valid under any of the given schemas' % (instance,), context=collected)
+
 
 # The text the internal MCP gives clients at `initialize` of the server; kairos-mcp is a drop-in front, so it says the same.
 INSTRUCTIONS = (
@@ -55,13 +69,13 @@ class Checks:
 
     The input schema is compiled one time: the SDK's own validation (`jsonschema.validate`) checks the schema again and compiles it on every call, 40 to
     56 ms of synchronous CPU on a single event loop, which any caller with a Bearer could ask for with arguments that fail. The message is the SDK's
-    (`best_match` of the errors, at most `ERROR_LIMIT` of them, so that a huge invalid input costs milliseconds). Then the arguments the contract declares `format: uuid` are parsed like the internal MCP parses its `UUID` parameters
+    (`best_match` of the errors, at most `ERROR_LIMIT` of them, and `anyOf` reads at most that many per alternative, so that a huge invalid input costs milliseconds). Then the arguments the contract declares `format: uuid` are parsed like the internal MCP parses its `UUID` parameters
     (any form `UUID` accepts, the canonical lowercase one on the wire; an invalid one has the same text), and integers sent as `20.0` are integers."""
 
     def __init__(self, name, schema):
         cls = validator_for(schema)
         cls.check_schema(schema)
-        self.validator = cls(schema)
+        self.validator = extend(cls, {'anyOf': bounded_any_of})(schema)
         properties, required = schema.get('properties', {}), set(schema.get('required', []))
         self.integers = {key for key, value in properties.items() if any(part.get('type') == 'integer' for part in branches(value))}
         fields = {}
