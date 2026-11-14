@@ -416,7 +416,7 @@ class ParityEndpointTests(unittest.TestCase):
         self.assertEqual(primed.json()['name'], name)
         answer = self.client.post(base + '/query', json={'question': 'fencing', 'limit': 5}, headers=self.writer)
         self.assertEqual(answer.status_code, 200, answer.text)
-        self.assertEqual(answer.json(), self.tool(self.writer, 'query_corpus', {'project': project, 'name': name, 'question': 'fencing', 'limit': 5}))
+        self.assertEqual({'untrusted': True, **answer.json()}, self.tool(self.writer, 'query_corpus', {'project': project, 'name': name, 'question': 'fencing', 'limit': 5}))
         rebuilt = self.client.post(base + '/rebuild', json={'expected_version': primed.json()['version']}, headers=self.writer)
         self.assertEqual(rebuilt.status_code, 200, rebuilt.text)
         self.assertEqual(rebuilt.json()['name'], name)
@@ -447,7 +447,8 @@ class ParityEndpointTests(unittest.TestCase):
         self.assertEqual(answer.json()['mode'], 'lexical_evidence')
         self.assertIn('fencing', answer.json()['items'][0]['content'])
         self.assertIn('untrusted', answer.json()['warning'])
-        self.assertEqual(answer.json(), self.tool(self.writer, 'query_corpus', {'project': self.pid, 'name': 'evidence', 'question': 'fencing', 'limit': 5}))
+        # the tool adds the envelope of untrusted data (S-05) in front of the same object, the endpoint does not
+        self.assertEqual({'untrusted': True, **answer.json()}, self.tool(self.writer, 'query_corpus', {'project': self.pid, 'name': 'evidence', 'question': 'fencing', 'limit': 5}))
         self.assertEqual(self.client.post(url, json={'question': 'fencing', 'limit': 51}, headers=self.writer).status_code, 422)
         self.assertEqual(self.client.post(url, json={'question': ''}, headers=self.writer).status_code, 422)
         # querying writes the private query history: a reader is refused, another project's key finds no project, an unknown corpus is a 404
