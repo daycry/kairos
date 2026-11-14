@@ -42,10 +42,10 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 3 — Paridad REST /v1 (C-02) | 10 | 10 | 100% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 15 | 15 | 100% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
-| Fase 6 — Compatibilidad (C-07) | 2 | 6 | 33.3% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
+| Fase 6 — Compatibilidad (C-07) | 3 | 6 | 50.0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **52** | **74** | **70.3%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **53** | **74** | **71.6%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1852,32 +1852,34 @@ RED: `memory_platform/tests/test_nginx_routes.py` falló con 7 tests: 3 failures
 ### T-53 — Puente stdio del CLI contra kairos-mcp en proyecto aislado (CA-28)
 
 - **Descripción**: Hacer que el target `lifecycle-test` ejercite el puente stdio del CLI contra kairos-mcp (no contra el MCP interno), en un proyecto Compose aislado, sin tocar el CLI. Fuente: CA-28, P-07.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: La prueba de ciclo de vida del CLI (puente stdio y hooks) se ejecuta ahora contra kairos-mcp y no contra el MCP interno, y comprueba sus 34 herramientas y las requeridas por el CLI.
+- **Estado**: completado
+- **Cerrada**: 2026-11-14
 - **Tiempo humano**: est. 3.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.38h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.38h (estimado) · real 0.18h (medido)
 - **Supervisión**: est. 0.09h (≈25 % IA) · real —
 - **Previsión IA**: 104 k in / 9 k out tok · ⚠️ verificar €
 - **Dependencias**: T-52
 - **Tipo**: test
-- **Archivos**: `memory_platform/tests/lifecycle_probe.py`, `memory_platform/Dockerfile`, `packages/kairos-cli/tests/lifecycle.test.mjs`
+- **Archivos**: `memory_platform/tests/lifecycle_probe.py`, `memory_platform/Dockerfile`, `packages/kairos-cli/tests/lifecycle.test.mjs`, `memory_platform/tests/nginx_portal_probe.py`, `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target lifecycle-test -f memory_platform/Dockerfile -t kairos-lifecycle:t53 .` → exit 0
   - `cd packages/kairos-cli && npm test` → pasa sin cambios
+  - Evidencia (2026-11-14): RED (2026-11-14): con el probe apuntado al MCP interno, `docker run` de kairos-test:i2p6 con node y el CLI montados falla en `the bridge reached {"name": "Kairos", "version": "1.27.1"}` (SDK del servidor, no kairos-mcp). VERDE: `docker build --target lifecycle-test -f memory_platform/Dockerfile -t kairos-lifecycle:t53 .` exit 0; suite del build `MEMORY_TEST_RESULT` tests 756, 0 failures, 0 errors, 0 skipped, `llm_chat_calls` 0; `KAIROS_LIFECYCLE_RESULT` passed true, kairos_mcp true, bridge_tools 34, doctor ready, provider_calls 0. `cd packages/kairos-cli && npm test`: 90 pass, 0 fail, sin cambios en el CLI. Proxy real: `python -m memory_platform.tests.nginx_portal_probe` (nginx de la imagen fijada, proyecto de pruebas kairos-portal-probe-i2p6-, limpiado) PORTAL_PROBE_RESULT 17 casos, 0 fallos; /mcp, /mcp/ y /mcp/anything?x=1 llegan al stub memory-mcp:8791 y nunca al de la API.
 
 **Criterios de aceptación**
-- [ ] El puente stdio inicializa y lista las herramientas contra kairos-mcp a través de `/mcp/` del proxy
-- [ ] El target `lifecycle-test` pasa
-- [ ] `REQUIRED_TOOLS` está presente en lo que lista kairos-mcp
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] El puente stdio inicializa y lista las herramientas contra kairos-mcp a través de `/mcp/` del proxy
+- [x] El target `lifecycle-test` pasa
+- [x] `REQUIRED_TOOLS` está presente en lo que lista kairos-mcp
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Test en rojo (el probe sigue usando el MCP interno)
-- [ ] Añadir kairos-mcp a la cadena del probe
-- [ ] `usage-meter start/close`
+- [x] Test en rojo (el probe sigue usando el MCP interno)
+- [x] Añadir kairos-mcp a la cadena del probe
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-28. Patrón: puente en `packages/kairos-cli/lib/mcp.mjs:33` (`baseURL + '/mcp/'`), `REQUIRED_TOOLS` en `mcp.mjs:7-8`; target `lifecycle-test` en `memory_platform/Dockerfile:63-66`; probe en `memory_platform/tests/lifecycle_probe.py`. Verificación con componente real, temprana (lección de la retro). Clase: capacidad nueva.
+**Notas**: Procedencia: spec CA-28. Patrón: puente en `packages/kairos-cli/lib/mcp.mjs:33` (`baseURL + '/mcp/'`), `REQUIRED_TOOLS` en `mcp.mjs:7-8`; target `lifecycle-test` en `memory_platform/Dockerfile:63-66`; probe en `memory_platform/tests/lifecycle_probe.py`. Verificación con componente real, temprana (lección de la retro). Clase: capacidad nueva. Alcance real: el target lifecycle-test no tiene nginx, asi que la cadena CLI -> kairos-mcp (sockets reales, /mcp/) -> /v1 -> PostgreSQL se prueba en el probe, y el tramo del proxy (/mcp -> memory-mcp:8791) se prueba aparte con una nginx real y stubs (nginx_portal_probe.py, que habia que ampliar porque nginx ya no arranca sin memory-mcp). No se levanto un proyecto Compose completo (memoria justa; seria el despliegue). El puente se ejerce con `kairos mcp` real por stdio (initialize, tools/list, projects). Dockerfile, lifecycle-live.mjs y lifecycle.test.mjs no cambian. Archivos anadidos: nginx_portal_probe.py, ci.yml y test_ci_workflow.py (suelo de tests 743 a 756 con los tests de T-51 y T-52). usage-meter three-components/T-53: 0.18 h IA (medido, win-b78398e4aaf740a1ab6650180dc2f687).
 
 ### T-54 — `kairos doctor` contra kairos-mcp en proyecto aislado
 
