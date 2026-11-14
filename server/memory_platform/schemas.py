@@ -26,9 +26,13 @@ MAX_NODES = 1000
 
 
 def contracts_dir():
-    """`MEMORY_SCHEMA_DIR` if set, otherwise docs/contracts next to the package (the images copy it to /app/docs/contracts)."""
+    """`MEMORY_SCHEMA_DIR` if set, otherwise docs/contracts next to the package (the runtime images copy it to /app/docs/contracts), otherwise the repository one (server/memory_platform/ is two levels below the repository root)."""
     override = os.environ.get('MEMORY_SCHEMA_DIR')
-    return Path(override) if override else Path(__file__).resolve().parent.parent / 'docs' / 'contracts'
+    if override:
+        return Path(override)
+    package = Path(__file__).resolve().parent
+    beside = package.parent / 'docs' / 'contracts'
+    return beside if beside.is_dir() else package.parents[1] / 'docs' / 'contracts'
 
 
 @lru_cache(maxsize=None)

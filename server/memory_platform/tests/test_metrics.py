@@ -18,7 +18,7 @@ from memory_platform.retrieval import Retrieval
 from memory_platform.tests.test_observability import SECRET, QUERY, fake_app
 
 PACKAGE = pathlib.Path(__file__).resolve().parents[1]
-ROOT = PACKAGE.parent
+ROOT = PACKAGE.parents[1]
 
 
 def sample(name, **labels):

@@ -38,7 +38,7 @@ from memory_platform.tests.llm_spy import ChatSpy
 from memory_platform.tests.test_store import create_core, event
 
 ORIGIN = 'http://localhost:8790'
-EXPORTER = Path(__file__).parents[2] / 'scripts' / 'export-contracts.py'
+EXPORTER = Path(__file__).parents[3] / 'scripts' / 'export-contracts.py'
 
 
 def untrusted_writes():

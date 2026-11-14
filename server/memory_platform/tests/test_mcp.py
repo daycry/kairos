@@ -138,7 +138,7 @@ class DegradedSemanticToolTests(ChainMode, unittest.TestCase):
     def test_ca33_degraded_is_an_optional_field_of_the_exported_search_result(self):
         import importlib.util
         from pathlib import Path
-        spec = importlib.util.spec_from_file_location('kairos_export_contracts_degraded', Path(__file__).parents[2] / 'scripts' / 'export-contracts.py')
+        spec = importlib.util.spec_from_file_location('kairos_export_contracts_degraded', Path(__file__).parents[3] / 'scripts' / 'export-contracts.py')
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         exported = module.contracts()

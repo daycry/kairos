@@ -128,8 +128,8 @@ class ModelRequirementTests(unittest.TestCase):
 
     def test_no_file_ships_the_retired_default_model(self):
         from pathlib import Path
-        root = Path(__file__).resolve().parents[2]
-        for name in ('memory_platform/config.py', 'docker-compose.yml', 'docs/configuration.md'):
+        root = Path(__file__).resolve().parents[3]
+        for name in ('server/memory_platform/config.py', 'docker-compose.yml', 'docs/configuration.md'):
             path = root / name
             if path.exists():  # the test image carries the compose file but not the manuals
                 self.assertNotIn('beam', path.read_text(encoding='utf-8'), name)

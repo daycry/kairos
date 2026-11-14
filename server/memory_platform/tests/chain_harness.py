@@ -16,7 +16,7 @@ from pathlib import Path
 import httpx
 from fastapi.testclient import TestClient
 
-MCP_ROOT = Path(__file__).resolve().parents[2] / 'mcp'
+MCP_ROOT = Path(__file__).resolve().parents[3] / 'mcp'
 if str(MCP_ROOT) not in sys.path:
     sys.path.insert(0, str(MCP_ROOT))
 

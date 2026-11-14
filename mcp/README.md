@@ -79,4 +79,4 @@ docker run --rm kairos-mcp:test python -m unittest discover -s tests     # contr
 python mcp/tests/smoke_container.py                                     # el contenedor real en un proyecto Compose aislado
 ```
 
-La suite del servidor (`docker build --target test -f memory_platform/Dockerfile .`) ejecuta además los tests de comportamiento MCP **dos veces**, contra el MCP interno y contra la cadena kairos-mcp → servidor por transporte ASGI en proceso sobre PostgreSQL aislado (`memory_platform/tests/chain_harness.py`).
+La suite del servidor (`docker build --target test -f server/memory_platform/Dockerfile .`) ejecuta además los tests de comportamiento MCP **dos veces**, contra el MCP interno y contra la cadena kairos-mcp → servidor por transporte ASGI en proceso sobre PostgreSQL aislado (`server/memory_platform/tests/chain_harness.py`).

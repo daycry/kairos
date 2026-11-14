@@ -1,6 +1,6 @@
 # kairos-mcp talks to the Kairos REST API over HTTP only: no database driver, no server code.
 # Direct dependencies, then the transitive closure pinned to the versions the server test image resolves,
-# so the in-process chain tests (memory_platform/tests/chain_harness.py) run on the same libraries.
+# so the in-process chain tests (server/memory_platform/tests/chain_harness.py) run on the same libraries.
 mcp==1.27.1
 httpx==0.28.1
 uvicorn==0.46.0

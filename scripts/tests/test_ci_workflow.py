@@ -147,7 +147,7 @@ class WorkflowStructureTests(unittest.TestCase):
         self.assertIn('server', self.jobs)
         block = self.jobs['server']
         self.assertRegex(block, r'runs-on:\s*ubuntu-latest')
-        self.assertIn('docker build --target test -f memory_platform/Dockerfile', block)
+        self.assertIn('docker build --target test -f server/memory_platform/Dockerfile', block)
 
     def test_the_suite_is_never_replayed_from_an_imported_cache(self):
         # Observed in CI (run 43202142933): with --cache-from the last RUN of the test stage was CACHED even with
@@ -171,7 +171,7 @@ class AuxiliaryJobsTests(unittest.TestCase):
     def test_retrieval_eval_job_builds_the_offline_gate_target(self):
         self.assertIn('retrieval-eval', self.jobs)
         block = self.jobs['retrieval-eval']
-        self.assertIn('docker build --target retrieval-eval -f memory_platform/Dockerfile', block)
+        self.assertIn('docker build --target retrieval-eval -f server/memory_platform/Dockerfile', block)
         self.assertNotIn('MEMORY_LLM', block)  # simulated provider only: no model, no external service
         # The gate really ran and passed: its report line is read back from the build log.
         self.assertIn('RETRIEVAL_EVAL_RESULT', block)
@@ -190,7 +190,7 @@ class AuxiliaryJobsTests(unittest.TestCase):
         self.assertIn('working-directory: web', block)
         for command in ('npm ci', 'npm run typecheck', 'npm test', 'npm run build'):
             self.assertIn(command, block)
-        self.assertIn('docker build --target test -f memory_platform/Dockerfile.web', block)
+        self.assertIn('docker build --target test -f server/memory_platform/Dockerfile.web', block)
 
 
 class McpJobTests(unittest.TestCase):
@@ -255,7 +255,7 @@ class ContractsJobTests(unittest.TestCase):
     def test_the_initiative_base_step_names_the_base_it_really_compares_with(self):
         block = self.jobs['contracts']
         self.assertNotIn('initiative base', block)
-        self.assertIn('memory_platform/tests/contracts_base', block)  # T-26 reassigns this base
+        self.assertIn('server/memory_platform/tests/contracts_base', block)  # T-26 reassigns this base
 
     def test_contracts_job_needs_no_service_or_network_beyond_dependencies(self):
         block = self.jobs['contracts']

@@ -67,7 +67,7 @@ def prepare(argv):
 def main():
     if len(sys.argv) > 1 and sys.argv[1] == 'prepare':
         return prepare(sys.argv[2:])
-    sys.path.insert(0, str(ROOT))
+    sys.path.insert(0, str(ROOT / 'server'))
     from memory_platform.admin import main as operator
     return operator(sys.argv[1:])
 

@@ -43,9 +43,9 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 15 | 15 | 100% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 6 | 6 | 100% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
-| Fase 7 — Estructura del repositorio (C-06) | 2 | 12 | 16.7% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
+| Fase 7 — Estructura del repositorio (C-06) | 3 | 12 | 25.0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **58** | **74** | **78.4%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **59** | **74** | **79.7%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1956,33 +1956,35 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 ### T-59 — Dockerfiles, Compose y rutas del servidor tras el movimiento
 
 - **Descripción**: Ajustar contextos `COPY`, rutas de los targets (`api`, `operator`, `worker`, `test`, `retrieval-eval`, `lifecycle-test`), Compose y scripts a la nueva ubicación. El comando de verificación pasa a `-f server/memory_platform/Dockerfile` o `-f server/Dockerfile` según se decida al cerrar (se anota). Fuente: CA-23, CA-25.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: Quien despliega construye el servidor desde `server/memory_platform/Dockerfile`; los servicios, nombres, volúmenes y redes de Compose no cambian y los tests del servidor corren igual desde la nueva ruta.
+- **Estado**: completado
+- **Cerrada**: 2026-11-14
 - **Tiempo humano**: est. 4.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.55h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.55h (estimado) · real 0.16h (medido)
 - **Supervisión**: est. 0.14h (≈25 % IA) · real —
 - **Previsión IA**: 154 k in / 12 k out tok · ⚠️ verificar €
 - **Dependencias**: T-58
 - **Tipo**: refactor
-- **Archivos**: `server/memory_platform/Dockerfile`, `docker-compose.yml`, `server/memory_platform/tests/run_postgres.py`, `.github/workflows/ci.yml`, `scripts/*.py`
+- **Archivos**: `server/memory_platform/Dockerfile`, `docker-compose.yml`, `server/memory_platform/tests/run_postgres.py`, `.github/workflows/ci.yml`, `scripts/*.py`, `server/memory_platform/tests/**`, `server/memory_platform/schemas.py`, `scripts/tests/**`, `mcp/README.md`, `mcp/requirements.txt`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:t59 .` → `MEMORY_TEST_RESULT` con `tests` igual a T-57, 0 fallos, 0 errores, 0 omitidos
   - `sha256sum server/memory_platform/tests/store_surface.json` → igual que T-57
+  - Evidencia (2026-11-14): `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:i2p7 .` rc 0 y `docker run --rm --network=none kairos-test:i2p7 python -m memory_platform.tests.run_postgres` rc 0: MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 757} (= línea base de T-57). `sha256sum server/memory_platform/tests/store_surface.json` → 83c27763460c342acac9a1deda71a75dbd3cc94b0fa0d1fcc2e12c04e80e4b00 (= T-57). Targets `api`, `operator` y `worker` construidos desde la ruta nueva (rc 0) y `import memory_platform.app` en la imagen api OK (contracts_dir /app/docs/contracts); `postgres-pgvector`, `test` (y por herencia `live-probe`) construyen; `retrieval-eval` y `lifecycle-test` se ejecutan en T-62/T-65. `docker compose --profile memory --profile memory-admin config` resuelve las imágenes (kairos-api, kairos-postgres, kairos-mcp, kairos-web, kairos-worker, kairos-operator) y `dockerfile: server/memory_platform/Dockerfile[.web]`; `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → Ran 43 tests OK.
 
 **Criterios de aceptación**
-- [ ] Todos los targets del Dockerfile construyen desde la nueva ruta
-- [ ] `docker compose config` resuelve las imágenes y contextos
-- [ ] La suite tiene `tests` idéntico a la línea base de T-57 y `store_surface.json` no cambia
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] Todos los targets del Dockerfile construyen desde la nueva ruta
+- [x] `docker compose config` resuelve las imágenes y contextos
+- [x] La suite tiene `tests` idéntico a la línea base de T-57 y `store_surface.json` no cambia
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Actualizar `COPY` y contextos
-- [ ] Actualizar Compose y scripts
-- [ ] Ejecutar la suite completa
-- [ ] `usage-meter start/close`
+- [x] Actualizar `COPY` y contextos
+- [x] Actualizar Compose y scripts
+- [x] Ejecutar la suite completa
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-23/CA-25. Patrón: `memory_platform/Dockerfile:5-9` y `:25-30` (rutas copiadas), `:63-66` (target `lifecycle-test`). El nombre del paquete Python no cambia, así que los 391 usos de `memory_platform` en imports no se tocan (P-06). Clase: refactor (oráculo: misma suite en verde antes y después).
+**Notas**: Procedencia: spec CA-23/CA-25. Patrón: `memory_platform/Dockerfile:5-9` y `:25-30` (rutas copiadas), `:63-66` (target `lifecycle-test`). El nombre del paquete Python no cambia, así que los 391 usos de `memory_platform` en imports no se tocan (P-06). Clase: refactor (oráculo: misma suite en verde antes y después). Decisión: el Dockerfile queda en `server/memory_platform/Dockerfile` (contexto `.`, sin `server/Dockerfile`). Imagen runtime (api/operator/worker): `/app/memory_platform` como antes, para que el despliegue arranque igual (MEMORY_PROJECT_MAP_FILE sin cambios). La imagen de test replica el árbol del repositorio (`/app/server/memory_platform`, `PYTHONPATH=/app/server`), así los tests resuelven la raíz con `parents[3]` igual en el contenedor que en un checkout (14 ficheros de test; `run_postgres.py` no cambia: su `top_level_dir` ya es el directorio que contiene el paquete). `schemas.contracts_dir()` cae al `docs/contracts` del repositorio cuando no hay uno junto al paquete (cambio de ruta, no de comportamiento en las imágenes). Los scripts añaden `server/` al `sys.path`. Archivos añadidos con nota: `server/memory_platform/tests/**`, `server/memory_platform/schemas.py`, `scripts/tests/**`, `mcp/README.md`, `mcp/requirements.txt` (comentarios y rutas citadas). ci.yml y test_ci_workflow: rutas del servidor y `PYTHONPATH=server` en el trabajo `contracts`; los trabajos client y web se ajustan en T-62/T-63. EOL preservados (ediciones por bytes; 4 ficheros CRLF restaurados tras una conversión accidental de sed antes del commit). usage-meter three-components/T-59: 0.16 h IA (medido, win-63498fa151b64429ac1ae007754b1b3f).
 
 ### T-60 — Puerta congelada, scripts y herramientas con las rutas nuevas
 

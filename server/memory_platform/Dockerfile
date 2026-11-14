@@ -2,11 +2,12 @@ ARG PYTHON_IMAGE=python:3.12-slim@sha256:b18b261e1b4974b4f321451ad5251ded85abb22
 FROM ${PYTHON_IMAGE} AS api
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
-COPY memory_platform/requirements.txt /app/requirements.txt
+COPY server/memory_platform/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt \
     && useradd --create-home --uid 10001 memory
-COPY --chown=10001:10001 memory_platform /app/memory_platform
-# JSON Schemas of structured observations (C-05): memory_platform/schemas.py reads them from docs/contracts next to the package.
+COPY --chown=10001:10001 server/memory_platform /app/memory_platform
+# JSON Schemas of structured observations (C-05): server/memory_platform/schemas.py reads them from docs/contracts next to the package
+# (this runtime image keeps the package at /app/memory_platform, so /app/docs/contracts).
 COPY --chown=10001:10001 docs/contracts/*.schema.json /app/docs/contracts/
 USER 10001:10001
 EXPOSE 8790
@@ -36,10 +37,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3 python3
     && rm -rf /var/lib/apt/lists/*
 RUN python3 -m venv /opt/memory-venv
 ENV PATH=/opt/memory-venv/bin:$PATH PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
-COPY memory_platform/requirements.txt /tmp/memory-requirements.txt
+COPY server/memory_platform/requirements.txt /tmp/memory-requirements.txt
 RUN pip install --no-cache-dir -r /tmp/memory-requirements.txt
 WORKDIR /app
-COPY --chown=postgres:postgres memory_platform /app/memory_platform
+# The test image mirrors the repository layout (server/, mcp/, scripts/, docs/ under /app), so the tests resolve the repository root the same way here and in a checkout.
+COPY --chown=postgres:postgres server/memory_platform /app/server/memory_platform
 COPY --chown=postgres:postgres docs/contracts/*.schema.json /app/docs/contracts/
 COPY --chown=postgres:postgres docs/contracts/examples /app/docs/contracts/examples
 COPY --chown=postgres:postgres docs/contracts/kairos-mcp.json /app/docs/contracts/kairos-mcp.json
@@ -53,7 +55,7 @@ COPY --chown=postgres:postgres scripts/export-contracts.py /app/scripts/export-c
 COPY --chown=postgres:postgres docker-compose.yml /app/docker-compose.yml
 COPY --chown=postgres:postgres ollama-proxy /app/ollama-proxy
 USER postgres
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/app/server
 RUN python -m memory_platform.tests.run_postgres
 
 FROM test AS live-probe

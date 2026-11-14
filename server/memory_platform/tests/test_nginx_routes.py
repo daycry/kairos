@@ -7,9 +7,9 @@ import re
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).parents[2]
-CONF = (ROOT / 'memory_platform' / 'nginx.conf').read_text(encoding='utf-8')
-WEB = (ROOT / 'memory_platform' / 'Dockerfile.web').read_text(encoding='utf-8')
+ROOT = Path(__file__).parents[3]
+CONF = (ROOT / 'server' / 'memory_platform' / 'nginx.conf').read_text(encoding='utf-8')
+WEB = (ROOT / 'server' / 'memory_platform' / 'Dockerfile.web').read_text(encoding='utf-8')
 
 
 def block(header, text=CONF):

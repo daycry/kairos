@@ -8,7 +8,7 @@ import unittest
 import urllib.error
 import uuid
 
-PATH = Path(__file__).resolve().parents[2] / 'scripts' / 'memory-client.py'
+PATH = Path(__file__).resolve().parents[3] / 'scripts' / 'memory-client.py'
 spec = importlib.util.spec_from_file_location('platform_remote_client_tests', PATH)
 client_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(client_module)
@@ -17,7 +17,7 @@ MemoryClient, ClientError = client_module.MemoryClient, client_module.ClientErro
 
 class OutboxTests(unittest.TestCase):
     def setUp(self):
-        fixture_root = (Path(__file__).resolve().parents[2] / '.pytest_cache' / 'memory-client-tests') if os.name == 'nt' else Path('/tmp/memory-client-tests')
+        fixture_root = (Path(__file__).resolve().parents[3] / '.pytest_cache' / 'memory-client-tests') if os.name == 'nt' else Path('/tmp/memory-client-tests')
         fixture_root.mkdir(parents=True, exist_ok=True)
         self.root = fixture_root / ('case-' + uuid.uuid4().hex)
         self.root.mkdir()

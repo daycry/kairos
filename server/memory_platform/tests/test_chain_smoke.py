@@ -14,7 +14,7 @@ from memory_platform.tests.chain_harness import ChainClient, strip_envelope
 from memory_platform.tests.test_store import create_core, event
 
 ORIGIN = 'http://localhost:8790'
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 
 
 def parsed(result):

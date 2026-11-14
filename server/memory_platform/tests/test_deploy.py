@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 from memory_platform.tests.test_admin import workspace
 
-spec = importlib.util.spec_from_file_location('kairos_deploy', Path(__file__).parents[2] / 'scripts/deploy-memory.py')
+spec = importlib.util.spec_from_file_location('kairos_deploy', Path(__file__).parents[3] / 'scripts/deploy-memory.py')
 deploy = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(deploy)
 
@@ -22,7 +22,7 @@ def arguments(**changes):
 class DeploymentTests(unittest.TestCase):
     def test_compose_matches_recorded_network_hashes_without_recreating_shared_networks(self):
         import yaml
-        networks = yaml.safe_load((Path(__file__).parents[2]/'docker-compose.yml').read_text())['networks']
+        networks = yaml.safe_load((Path(__file__).parents[3]/'docker-compose.yml').read_text())['networks']
         recorded = {'webui': 'a34c5a4e713eec0a05343cc7032bc678d660fff906b23d5244b3cc54d450b071',
                     'inference': 'b98bb704e368c5d52ba904a5e3e77ea065bddc46c517dcde08a1e8613eb392c2'}
         for name, wanted in recorded.items():
@@ -151,7 +151,7 @@ class McpServiceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         import yaml
-        cls.root = Path(__file__).parents[2]
+        cls.root = Path(__file__).parents[3]
         cls.compose = yaml.safe_load((cls.root / 'docker-compose.yml').read_text(encoding='utf-8'))
         cls.service = cls.compose['services']['memory-mcp']
 

@@ -13,7 +13,7 @@ import yaml
 
 from memory_platform.tests import ollama_proxy_probe as probe
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 TEMPLATE = ROOT / 'ollama-proxy' / 'default.conf.template'
 COMPOSE = ROOT / 'docker-compose.yml'
 DENIED_ENDPOINTS = ('generate', 'pull', 'delete', 'create', 'push', 'copy', 'tags', 'show')

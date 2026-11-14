@@ -67,7 +67,7 @@ services:
 
   memory-postgres:
     image: kairos-postgres:latest
-    build: {context: ., dockerfile: memory_platform/Dockerfile, target: postgres-pgvector}
+    build: {context: ., dockerfile: server/memory_platform/Dockerfile, target: postgres-pgvector}
     profiles: [memory]
     restart: unless-stopped
     environment:
@@ -87,7 +87,7 @@ services:
   memory-migrate:
     <<: *process
     image: kairos-api:latest
-    build: {context: ., dockerfile: memory_platform/Dockerfile, target: api}
+    build: {context: ., dockerfile: server/memory_platform/Dockerfile, target: api}
     profiles: [memory]
     restart: 'no'
     environment: *memory-environment
@@ -127,7 +127,7 @@ services:
   memory-api:
     <<: *process
     image: kairos-api:latest
-    build: {context: ., dockerfile: memory_platform/Dockerfile, target: api}
+    build: {context: ., dockerfile: server/memory_platform/Dockerfile, target: api}
     profiles: [memory]
     restart: unless-stopped
     environment: *memory-environment
@@ -170,7 +170,7 @@ services:
   memory-worker:
     <<: *process
     image: kairos-worker:latest
-    build: {context: ., dockerfile: memory_platform/Dockerfile, target: worker}
+    build: {context: ., dockerfile: server/memory_platform/Dockerfile, target: worker}
     profiles: [memory]
     restart: unless-stopped
     environment: *memory-environment
@@ -183,7 +183,7 @@ services:
   memory-web:
     <<: *process
     image: kairos-web:latest
-    build: {context: ., dockerfile: memory_platform/Dockerfile.web, target: final}
+    build: {context: ., dockerfile: server/memory_platform/Dockerfile.web, target: final}
     profiles: [memory]
     restart: unless-stopped
     networks: [webui, mcp]  # `mcp` (internal): the only way from the proxy to kairos-mcp, which routes /mcp (T-52)
@@ -196,7 +196,7 @@ services:
   memory-admin:
     <<: *process
     image: kairos-operator:latest
-    build: {context: ., dockerfile: memory_platform/Dockerfile, target: operator}
+    build: {context: ., dockerfile: server/memory_platform/Dockerfile, target: operator}
     profiles: [memory-admin]
     environment: *memory-environment
     secrets: [memory_dsn, memory_bootstrap]

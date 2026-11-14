@@ -18,7 +18,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 COMPOSE = ROOT / 'docker-compose.yml'
 PREFIX = 'kairos-proxy-'
 FORBIDDEN_NAME = re.compile(r'knowledge-graphs', re.IGNORECASE)

@@ -13,7 +13,7 @@ from memory_platform.retrieval import hit
 
 HERE = Path(__file__).parent
 BASE = HERE / 'contracts_base'
-EXPORTER = Path(__file__).parents[2] / 'scripts' / 'export-contracts.py'
+EXPORTER = Path(__file__).parents[3] / 'scripts' / 'export-contracts.py'
 BASE_23CED03 = HERE / 'contracts_base_23ced03'
 BASELINES = {'6008da0': BASE, '23ced03': BASE_23CED03}  # the contracts of the commit each initiative started from; both are kept
 EXPECTED_TOOLS = 34

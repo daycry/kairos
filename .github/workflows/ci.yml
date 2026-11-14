@@ -40,7 +40,7 @@ jobs:
         run: |
           set -euo pipefail
           # No layer cache on purpose: an imported cache replays a passing suite layer instead of running it.
-          docker build --target test -f memory_platform/Dockerfile -t kairos-test:ci --progress=plain . 2>&1 | tee /tmp/server.log
+          docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:ci --progress=plain . 2>&1 | tee /tmp/server.log
       - name: The suite really ran and nothing was skipped
         run: |
           line="$(grep -o 'MEMORY_TEST_RESULT {.*}' /tmp/server.log | tail -1)"
@@ -64,7 +64,7 @@ jobs:
       - name: Run the retrieval gate (target retrieval-eval)
         run: |
           set -euo pipefail
-          docker build --target retrieval-eval -f memory_platform/Dockerfile -t kairos-eval:ci --progress=plain . 2>&1 | tee /tmp/eval.log
+          docker build --target retrieval-eval -f server/memory_platform/Dockerfile -t kairos-eval:ci --progress=plain . 2>&1 | tee /tmp/eval.log
       - name: The gate really ran and passed
         run: |
           line="$(grep -o 'RETRIEVAL_EVAL_RESULT {.*' /tmp/eval.log | tail -1)"
@@ -132,7 +132,7 @@ jobs:
         working-directory: web
         run: npm run build
       - name: Web image test target
-        run: docker build --target test -f memory_platform/Dockerfile.web -t kairos-web-test:ci .
+        run: docker build --target test -f server/memory_platform/Dockerfile.web -t kairos-web-test:ci .
 
   contracts:
     # The MCP and OpenAPI contracts may only grow (test_contract_additive) and the exported files must match the versioned ones.
@@ -146,9 +146,9 @@ jobs:
         with:
           python-version: '3.13'
       - name: Install the server dependencies
-        run: pip install --no-cache-dir -r memory_platform/requirements.txt
-      - name: Additive diff against the contracts of memory_platform/tests/contracts_base (T-26 reassigns that base)
-        run: python -m unittest memory_platform.tests.test_contract_additive
+        run: pip install --no-cache-dir -r server/memory_platform/requirements.txt
+      - name: Additive diff against the contracts of server/memory_platform/tests/contracts_base (T-26 reassigns that base)
+        run: PYTHONPATH=server python -m unittest memory_platform.tests.test_contract_additive
       - name: Exported contracts equal the versioned ones
         run: |
           python scripts/export-contracts.py

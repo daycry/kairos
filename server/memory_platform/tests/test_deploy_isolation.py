@@ -11,11 +11,11 @@ from unittest.mock import patch
 
 from memory_platform.tests.test_admin import workspace
 
-spec = importlib.util.spec_from_file_location('kairos_deploy_isolation', Path(__file__).parents[2] / 'scripts/deploy-memory.py')
+spec = importlib.util.spec_from_file_location('kairos_deploy_isolation', Path(__file__).parents[3] / 'scripts/deploy-memory.py')
 deploy = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(deploy)
 
-COMPOSE = Path(__file__).parents[2] / 'docker-compose.yml'
+COMPOSE = Path(__file__).parents[3] / 'docker-compose.yml'
 
 
 def arguments(**changes):
@@ -116,7 +116,7 @@ class IsolatedDeploymentTests(unittest.TestCase):
             self.assertIsNone(run.call_args.kwargs['env'])
 
     def test_build_phase_includes_the_postgres_image(self):
-        source = (Path(__file__).parents[2] / 'scripts/deploy-memory.py').read_text(encoding='utf-8')
+        source = (Path(__file__).parents[3] / 'scripts/deploy-memory.py').read_text(encoding='utf-8')
         self.assertRegex(source, re.compile(r"\['build', 'memory-postgres', \*SERVICES, 'memory-admin'\]"))
 
     def isolated(self, root, project='kairos-rehearsal', with_env=True):
