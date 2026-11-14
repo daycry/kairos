@@ -244,6 +244,15 @@ El workflow `.github/workflows/ci.yml` se ejecuta en cada pull request, en cada 
 
 Los tiempos de CI son los de la ejecución 43202850710 en `ubuntu-latest`. El trabajo `contracts` usa Python 3.13 porque los contratos versionados se escribieron con esa versión (la imagen de pruebas trae 3.11, con otra sangría en las descripciones) e ignora el fin de línea porque están guardados con CRLF.
 
+## Retirada del MCP interno
+
+El MCP interno (`memory-api:8790/mcp/`) está en desuso desde la 0.4.0 y se retira en la 0.5.0; `/mcp/` de la entrada web (`5173`) lo sirve kairos-mcp (`memory-mcp:8791`). Contexto y diferencias para los clientes en [integración](integration.md#migración-el-mcp-interno-queda-en-desuso-y-se-retira-en-la-050).
+
+1. **Actualiza.** `docker compose --profile memory up -d --build` (o `scripts/deploy-memory.py`). `memory-web` se recrea con la nueva `nginx.conf` y la red interna `mcp`, y `memory-mcp` debe estar sano antes: nginx resuelve `memory-mcp` al arrancar y sin él no arranca. Los datos y las migraciones no cambian.
+2. **Comprueba la ruta.** Una petición a `http://127.0.0.1:5173/mcp/` la contesta kairos-mcp (sin `Deprecation`) y la de `http://127.0.0.1:8790/mcp/` el servidor interno (con `Deprecation` y `Sunset`). `kairos doctor --online` informa de las herramientas requeridas por la primera.
+3. **Localiza a los rezagados.** El evento `mcp_legacy_used` del log de `memory-api` (campos `method`, `status`, `request_id`) marca cada llamada al MCP interno. Si no aparece ninguna durante un periodo representativo, pon `MEMORY_MOUNT_MCP=0` en `.env` y recrea `memory-api`: `/mcp` pasa a responder 404 en el servidor.
+4. **Volver atrás.** `MEMORY_MOUNT_MCP=1` (valor por defecto) vuelve a montarlo. Para que `5173/mcp/` vuelva a servirlo hay que restaurar la ruta de `memory_platform/nginx.conf` y reconstruir `memory-web`.
+
 ## Servidor sin modelo de lenguaje y proxy de Ollama
 
 El servidor arranca y pasa su suite sin ningún modelo de lenguaje: extrae en el cliente, no en el servidor. `MEMORY_EXTRACT_ENABLED`, `MEMORY_CORPUS_ANSWER` y `MEMORY_LLM_MODEL` están descritos en [configuración](configuration.md#servidor-sin-modelo-de-lenguaje). La suite lo comprueba: se ejecuta sin `MEMORY_LLM_MODEL`, con un espía de loopback que responde 500 a `/api/chat` y cuenta las llamadas (`llm_chat_calls` en el recibo `MEMORY_TEST_RESULT`, que debe ser 0), y `test_no_llm` ingiere un resumen con `generate: true`, lo indexa y rechaza `corpus_answer` con el espía vigilando.

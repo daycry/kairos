@@ -24,6 +24,7 @@ El Compose interpola estas opciones. Cambiarlas exige volver a desplegar los ser
 | `MEMORY_LLM_MODEL` | Sin valor | Modelo de lenguaje para extracción y respuestas generadas; solo es obligatorio si se activa `MEMORY_EXTRACT_ENABLED=1` o `MEMORY_CORPUS_ANSWER=on` (sin él, el arranque falla nombrando la variable) |
 | `MEMORY_EXTRACT_ENABLED` | `0` | Con `0`, el worker no crea el proveedor `extract` y un evento con `generate: true` se acepta sin trabajo `extract` (el recibo añade `extraction: "disabled"`) |
 | `MEMORY_CORPUS_ANSWER` | `off` | Con `off`, `corpus_answer` sigue listada; una petición nueva responde `corpus_answer_disabled` sin llamar a ningún proveedor, repetir un `request_id` guardado con la misma petición y el mismo `MEMORY_LLM_MODEL` devuelve la respuesta guardada y con otra petición es un conflicto (si vacías o cambias el modelo al apagar, también: usa `corpus_answer_status`); `corpus_answer_status` lee las respuestas ya guardadas |
+| `MEMORY_MOUNT_MCP` | `1` | `1` monta el MCP interno de `memory-api` (`/mcp/`), en desuso: cada respuesta lleva `Deprecation` y `Sunset` con la versión que lo retira (0.5.0) y se registra `mcp_legacy_used`; `0` no lo monta y `/mcp` responde 404. Otro valor detiene el arranque. `/mcp/` del puerto 5173 lo sirve kairos-mcp, sin depender de esta variable |
 | `MEMORY_EMBEDDING_MODEL` | `nomic-embed-text` | Modelo de embeddings; sus vectores deben ser compatibles con los índices existentes |
 | `OLLAMA_UPSTREAM` | `host.docker.internal:11434` | Destino `host:puerto` al que conecta el proxy interno de Ollama |
 | `OLLAMA_ALLOW_CHAT` | `0` | Con `0`, el proxy interno de Ollama solo deja pasar `/api/embed` y `/api/version`; el resto recibe 403 desde el propio proxy. Con `1` deja pasar también `/api/chat`; solo hace falta si activas `MEMORY_EXTRACT_ENABLED=1` o `MEMORY_CORPUS_ANSWER=on` |
@@ -54,6 +55,7 @@ Las siguientes variables las interpreta `memory_platform/config.py`. Para llegar
 | `MEMORY_LLM_MODEL` | Sin valor | Modelo de lenguaje; obligatorio solo con `MEMORY_EXTRACT_ENABLED=1` o `MEMORY_CORPUS_ANSWER=on` |
 | `MEMORY_EXTRACT_ENABLED` | `0` | Extracción en el servidor (`0` o `1`); el Compose la propaga con ese valor |
 | `MEMORY_CORPUS_ANSWER` | `off` | Respuestas generadas de corpus (`on` u `off`); el Compose la propaga con ese valor |
+| `MEMORY_MOUNT_MCP` | `1` | MCP interno en desuso (`1` o `0`), ver [integración](integration.md#migración-el-mcp-interno-queda-en-desuso-y-se-retira-en-la-050); el Compose la propaga con ese valor |
 | `MEMORY_SESSION_TTL` | `43200` segundos | Duración de sesión del portal |
 | `MEMORY_REQUEST_TIMEOUT` | `30` segundos | Límite general de solicitudes según el consumidor |
 | `MEMORY_PROVIDER_TIMEOUT` | `180` segundos | Plazo del proveedor; las respuestas de corpus lo acotan como máximo a 180 segundos |

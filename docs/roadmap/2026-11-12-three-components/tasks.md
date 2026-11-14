@@ -42,10 +42,10 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 3 — Paridad REST /v1 (C-02) | 10 | 10 | 100% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 15 | 15 | 100% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
-| Fase 6 — Compatibilidad (C-07) | 4 | 6 | 66.7% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
+| Fase 6 — Compatibilidad (C-07) | 5 | 6 | 83.3% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **54** | **74** | **73.0%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **55** | **74** | **74.3%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1432,7 +1432,7 @@ RED: `memory_platform/tests/test_deploy.py::McpServiceTests` falló con KeyError
 - **Estado**: completado
 - **Cerrada**: 2026-11-13
 - **Tiempo humano**: est. 2.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.31h (estimado) · real 0.03h (medido)
+- **Tiempo IA (ejec.)**: est. 0.31h (estimado) · real 0.02h (medido)
 - **Supervisión**: est. 0.08h (≈25 % IA) · real —
 - **Previsión IA**: 84 k in / 8 k out tok · ⚠️ verificar €
 - **Dependencias**: T-39
@@ -1716,7 +1716,7 @@ RED: `memory_platform/tests/test_mcp_write.py::MCPBoundaryChainTests` falló con
 - **Estado**: completado
 - **Cerrada**: 2026-11-13
 - **Tiempo humano**: est. 2.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.31h (estimado) · real 0.03h (medido)
+- **Tiempo IA (ejec.)**: est. 0.31h (estimado) · real 0.02h (medido)
 - **Supervisión**: est. 0.08h (≈25 % IA) · real —
 - **Previsión IA**: 84 k in / 8 k out tok · ⚠️ verificar €
 - **Dependencias**: T-48
@@ -1888,7 +1888,7 @@ RED: `memory_platform/tests/test_nginx_routes.py` falló con 7 tests: 3 failures
 - **Estado**: completado
 - **Cerrada**: 2026-11-14
 - **Tiempo humano**: est. 2.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.25h (estimado) · real 0.03h (medido)
+- **Tiempo IA (ejec.)**: est. 0.25h (estimado) · real 0.02h (medido)
 - **Supervisión**: est. 0.06h (≈25 % IA) · real —
 - **Previsión IA**: 69 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-53
@@ -1909,7 +1909,7 @@ RED: `memory_platform/tests/test_nginx_routes.py` falló con 7 tests: 3 failures
 - [x] Ejecutar el target y anotar la salida en `Notas`
 - [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-28. Patrón: `doctor` y `REQUIRED_TOOLS` en `packages/kairos-cli/lib/mcp.mjs:7-8`, `:113`. Clase: capacidad nueva (cobertura). El caso doctor vive en lifecycle_probe.py junto al del puente (T-53); no se toco el CLI ni lifecycle.test.mjs. RED parcial (ver linea RED): no hubo ejecucion roja propia del caso doctor. usage-meter three-components/T-54: 0.03 h IA (medido).
+**Notas**: Procedencia: spec CA-28. Patrón: `doctor` y `REQUIRED_TOOLS` en `packages/kairos-cli/lib/mcp.mjs:7-8`, `:113`. Clase: capacidad nueva (cobertura). El caso doctor vive en lifecycle_probe.py junto al del puente (T-53); no se toco el CLI ni lifecycle.test.mjs. RED parcial (ver linea RED): no hubo ejecucion roja propia del caso doctor. usage-meter three-components/T-54: 0.02 h IA (medido, win-c7099c9650914975865ba958675a9de6).
 
 
 RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD parcial: el caso doctor se escribio junto al de T-53 en el mismo probe; su aserción no corrió en rojo por separado (con el probe apuntado al MCP interno falla antes, en la identidad del servidor); primera ejecucion completa en verde · 2026-11-14.
@@ -1917,31 +1917,33 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 ### T-55 — Nota de migración y retirada del MCP interno
 
 - **Descripción**: Escribir la nota de migración: el MCP interno queda en desuso y se retira en 0.5.0, `/mcp` pasa a kairos-mcp, cabeceras `Deprecation`/`Sunset`, evento `mcp_legacy_used`, `MEMORY_LLM_MODEL` obligatorio solo si se activa extracción o respuestas, y el trato de `generate: true`. Fuente: CA-27, CA-32, R-03.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: Nota de migracion publicada: el MCP interno queda en desuso y se retira en la 0.5.0, /mcp del proxy pasa a kairos-mcp, y se documentan MEMORY_MOUNT_MCP, el evento mcp_legacy_used y el cambio en la captura de resumenes.
+- **Estado**: completado
+- **Cerrada**: 2026-11-14
 - **Tiempo humano**: est. 2.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.25h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.25h (estimado) · real 0.00h (medido)
 - **Supervisión**: est. 0.06h (≈25 % IA) · real —
 - **Previsión IA**: 69 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-54
 - **Tipo**: docs
-- **Archivos**: `docs/integration.md`, `docs/operations.md`, `CHANGELOG.md`, `CHANGELOG.es.md`
+- **Archivos**: `docs/integration.md`, `docs/operations.md`, `CHANGELOG.md`, `CHANGELOG.es.md`, `docs/architecture.md`, `docs/configuration.md`, `docker-compose.yml`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `grep -c "MEMORY_MOUNT_MCP\|0.5.0" docs/integration.md CHANGELOG.md` → ≥ 2
   - lectura: coincide con T-12, T-09 y T-51
+  - Evidencia (2026-11-14): grep -c de MEMORY_MOUNT_MCP o 0.5.0: docs/integration.md 3, CHANGELOG.md 1 (suma 4 >= 2); lectura contra T-12 (MEMORY_LLM_MODEL solo con extraccion o respuestas, sin beam:cloud), T-09 (generate:true aceptado, sin trabajo extract, recibo extraction disabled) y T-51 (cabeceras, evento, interruptor); `docker compose -p kgi2pt55 --profile memory config` (solo render) muestra MEMORY_MOUNT_MCP "1" en memory-api; test_deploy, test_deploy_isolation y test_nginx_routes en verde.
 
 **Criterios de aceptación**
-- [ ] La nota cita la versión de retirada, las cabeceras, el log y el interruptor `MEMORY_MOUNT_MCP`
-- [ ] Avisa del cambio de captura de resúmenes (R-03) y de `beam:cloud`
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] La nota cita la versión de retirada, las cabeceras, el log y el interruptor `MEMORY_MOUNT_MCP`
+- [x] Avisa del cambio de captura de resúmenes (R-03) y de `beam:cloud`
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Redactar según `docs-style.md`
-- [ ] Comprobar cada variable contra el código
-- [ ] `usage-meter start/close`
+- [x] Redactar según `docs-style.md`
+- [x] Comprobar cada variable contra el código
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-27/CA-32, R-03. Clase: documentación.
+**Notas**: Procedencia: spec CA-27/CA-32, R-03. Clase: documentación. Archivos anadidos: architecture.md y configuration.md (describian el estado anterior del proxy y no listaban la variable) y docker-compose.yml: MEMORY_MOUNT_MCP: ${MEMORY_MOUNT_MCP:-1} en el ancla de entorno, valor por defecto compatible (sin la variable el despliegue actual monta el MCP interno como hoy); sin esa linea el interruptor no llegaria al contenedor. Las notas de despliegue estan en operations.md (seccion Retirada del MCP interno). Cambios del despliegue que la nota cubre: memory-web se recrea con la nueva ruta y la red mcp, y exige memory-mcp sano. usage-meter three-components/T-55: 0.00 h IA (medido, win-124ab66b0aeb466fac08b53b5faa06c5); el texto se escribio dentro de la ventana de T-53/T-54.
 
 ### T-56 — Revisión adversarial de la Fase 6
 

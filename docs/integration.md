@@ -99,6 +99,16 @@ kairos-mcp (`memory-mcp`, versión 0.4.0) publica las mismas 34 herramientas por
 
 Configuración del servicio en [Configuración](configuration.md#kairos-mcp); pruebas en [mcp/README.md](../mcp/README.md).
 
+### Migración: el MCP interno queda en desuso y se retira en la 0.5.0
+
+Desde la 0.4.0 la entrada MCP de la web (`/mcp/` del puerto `5173`, la que usa `kairos mcp`) la sirve kairos-mcp, no el servidor. Un cliente que usa esa dirección no cambia nada (el puente stdio del CLI sigue funcionando) pero ve las diferencias de la lista de arriba: solo `Authorization: Bearer` (sin sesión del portal), `structuredContent` en las 12 herramientas básicas, 401 sin `X-Request-ID` y el trato de las llamadas que no llegan a `/v1`.
+
+- **El MCP interno sigue en `memory-api:8790/mcp/`** (el puerto `127.0.0.1:8790` publicado por el Compose) durante toda la 0.4.x. Cada respuesta suya, también un 401 o un error, lleva `Deprecation: true` y `Sunset: 0.5.0` (la versión que lo retira; no hay fecha fijada), y cada una deja en el log JSON del servidor un evento `mcp_legacy_used` con `method`, `status` y `request_id`, sin credencial, argumentos ni contenido. Busca ese evento en el log para saber qué clientes siguen usándolo.
+- **`MEMORY_MOUNT_MCP`** (por defecto `1`). Con `0` el servidor no monta el MCP interno y cualquier ruta bajo `/mcp` de `memory-api` responde 404; un valor distinto de `0` y `1` detiene el arranque. Pruébalo antes de la 0.5.0 para comprobar que nadie lo usa; en la 0.5.0 desaparece el interruptor y el montaje.
+- **Sin modelo de lenguaje.** `MEMORY_LLM_MODEL` ya no tiene valor por defecto (antes `beam:cloud`) y solo es obligatorio si activas `MEMORY_EXTRACT_ENABLED=1` o `MEMORY_CORPUS_ANSWER=on`. Quien dependía del valor anterior debe fijarlo.
+- **Cambio en la captura de resúmenes (R-03).** Con `MEMORY_EXTRACT_ENABLED=0` (valor por defecto) un evento con `generate: true`, que el CLI envía en los resúmenes, se acepta con 202, queda guardado e indexado tal cual y no crea trabajo `extract`: el servidor ya no deriva aprendizajes del resumen, y el recibo añade `extraction: "disabled"`. Para recuperar la extracción en el servidor activa `MEMORY_EXTRACT_ENABLED=1` con un `MEMORY_LLM_MODEL`; los trabajos que ya estaban en cola quedan `extraction_disabled` y se reencolan con `POST /v1/jobs/{id}/retry`.
+- **Cómo desplegarlo.** Reconstruye y recrea `memory-web` (nueva ruta y red `mcp`) junto con `memory-mcp`; `memory-web` no arranca sin `memory-mcp` sano. Pasos y comprobaciones en [operaciones](operations.md#retirada-del-mcp-interno).
+
 ## Compartir el estado de trabajo con el panel
 
 Cada lista pertenece al actor autenticado y a un proyecto. Dos claves del mismo actor comparten sus listas dentro de los permisos concedidos. Actores diferentes no ven esas listas aunque puedan consultar el mismo proyecto. No se infiere el proyecto a partir del directorio del servidor.

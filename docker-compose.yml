@@ -9,6 +9,7 @@ x-memory-environment: &memory-environment
   MEMORY_LLM_MODEL: ${MEMORY_LLM_MODEL:-}
   MEMORY_EXTRACT_ENABLED: ${MEMORY_EXTRACT_ENABLED:-0}
   MEMORY_CORPUS_ANSWER: ${MEMORY_CORPUS_ANSWER:-off}
+  MEMORY_MOUNT_MCP: ${MEMORY_MOUNT_MCP:-1}  # the internal MCP of memory-api, deprecated; 0 unmounts it (T-51, removed in 0.5.0)
   MEMORY_EMBEDDING_MODEL: ${MEMORY_EMBEDDING_MODEL:-nomic-embed-text}
   MEMORY_BOOTSTRAP_PASSWORD_FILE: /run/secrets/memory_bootstrap
   MEMORY_EMBED_ENABLED: '1'
