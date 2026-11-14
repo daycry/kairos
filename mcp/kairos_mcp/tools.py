@@ -36,7 +36,7 @@ def bounded_any_of(validator, alternatives, instance, schema):
 
 
 # An input of at most this many values (every element of an array and every member of an object counts one; a long string is one value) is validated on the
-# event loop, without a limiter: the worst schema of the contract costs about 5 microseconds a value, so at most ~5 ms (`test_review5` measures it for every
+# event loop, without a limiter: the worst schema of the contract costs about 5 microseconds a value with empty elements (~5 ms) and up to ~15 ms with real content (`test_review5` measures it for every
 # array of the contract, `anyOf` included, and the walk that counts stops at this number, whatever the size of the input). A larger input costs linear time
 # (up to ~2 s for 256 KiB) and goes to the worker thread, where it waits its turn for at most `QUEUE_SECONDS`.
 INLINE_NODES = 1000

@@ -41,11 +41,11 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 2 — Servidor sin modelo de lenguaje (C-04) | 9 | 9 | 100% | 0 / 37.8h | 0 / 5.0h | 0 / 1.2h | 0 / 1245 k |
 | Fase 3 — Paridad REST /v1 (C-02) | 10 | 10 | 100% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
-| Fase 5 — kairos-mcp (C-03) | 14 | 15 | 93.3% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
+| Fase 5 — kairos-mcp (C-03) | 15 | 15 | 100% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **49** | **74** | **66.2%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **50** | **74** | **67.6%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1243,7 +1243,7 @@ RED: los casos de límites son cobertura de una capacidad ya implementada en T-3
 
 ## Fase 5 — kairos-mcp (C-03)
 
-**Estado**: en-progreso · **Estimado**: 68.4h (57.0h base) · **Real**: — · **Coste est.**: 3.420 € · **Tokens est.**: 2532 k
+**Estado**: completado · **Estimado**: 68.4h (57.0h base) · **Real**: — · **Coste est.**: 3.420 € · **Tokens est.**: 2532 k
 
 ### T-36 — Andamiaje del paquete `mcp/` (`kairos_mcp`), Dockerfile sin base de datos y `health`
 
@@ -1743,8 +1743,9 @@ RED: `memory_platform/tests/test_mcp_write.py::MCPBoundaryChainTests` falló con
 ### T-50 — Revisión adversarial de la Fase 5
 
 - **Descripción**: Revisión adversarial del núcleo de la iniciativa: ¿diverge algún `inputSchema`, descripción o anotación del contrato? ¿se filtra la credencial a logs o a `/v1` de otra forma? ¿una herramienta de lectura se escapa del envoltorio? ¿`mcp/` importa servidor por una vía indirecta? ¿hay N+1 o plazos sin tope? Fuente: retro, R-01, R-02, R-05, R-06.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: kairos-mcp se revisó de forma adversarial en seis intentos y dos ciclos: valida la entrada sin bloquear el servicio ni hacer esperar a las llamadas pequeñas, acepta UUID en cualquier forma, recorta respuestas grandes y marca `query_corpus` como dato no fiable.
+- **Estado**: completado
+- **Cerrada**: 2026-11-14
 - **Tiempo humano**: est. 19.0h (base) · real —
 - **Tiempo IA (ejec.)**: est. 2.61h (estimado) · real —
 - **Supervisión**: est. 0.65h (≈25 % IA) · real —
@@ -1757,18 +1758,19 @@ RED: `memory_platform/tests/test_mcp_write.py::MCPBoundaryChainTests` falló con
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t50 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
   - `python mcp/tests/smoke_container.py` → `PASS health 200; tools 34`
   - lectura: `review.md`, sección «Fase 5», sin hallazgos Critical/Important abiertos
+  - Evidencia (2026-11-14): `review.md` sección «Fase 5»; 6 intentos en 2 ciclos (el 2.º con OK del usuario tras el intento 3). Intento 1: 4 Important y 10 Minor, corregidos en fix1. Intentos 2-6: el Important de CPU de la validación de entrada (CWE-400) se cerró por capas: validadores precompilados, errores acotados (fix2), `anyOf` acotado (fix3), validación fuera del event loop (fix4), vía rápida para entradas pequeñas y plazo de cola de 5 s (fix5). Intento 6: sin Critical/Important; los dos Minor (cifras de la doc y test de tiempos frágil) los corrigió el orquestador en el commit de cierre. Suite backend tras fix5: `MEMORY_TEST_RESULT` 743, 0 failures, 0 errors, 0 skipped, `llm_chat_calls` 0; suite de `mcp/` 136 OK; CI 43583624763 6/6; `test_review5` 8 OK tras el cierre; `python mcp/tests/smoke_container.py` → `PASS health 200; tools 34` (con la credencial sintética `smoke-synthetic-token`). Contrato: 34 herramientas, sin cambios fuera de `x-kairos-*` respecto a 57f9902; copia de `mcp/contract/` byte a byte.
 
 **Criterios de aceptación**
-- [ ] `review.md` tiene la sección «Fase 5»
-- [ ] 0 hallazgos Critical o Important abiertos
-- [ ] Suite backend, suite de `mcp/` y humo del contenedor (T-39) en verde tras cada arreglo
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] `review.md` tiene la sección «Fase 5»
+- [x] 0 hallazgos Critical o Important abiertos
+- [x] Suite backend, suite de `mcp/` y humo del contenedor (T-39) en verde tras cada arreglo
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar — EXCEPCIÓN: los intentos de revisión no se midieron con usage-meter; los tokens de los revisores constan solo en la telemetría de los subagentes (estimado); las correcciones sí (T-41-fix1..fix5)
 
 **Subtareas**
-- [ ] Fuzzing de argumentos contra el `inputSchema`
-- [ ] Buscar el token sintético en logs y respuestas
-- [ ] Repetir `smoke_container.py`
-- [ ] `usage-meter start/close` por intento
+- [x] Fuzzing de argumentos contra el `inputSchema`
+- [x] Buscar el token sintético en logs y respuestas
+- [x] Repetir `smoke_container.py`
+- [x] `usage-meter start/close` por intento — EXCEPCIÓN: ver el criterio anterior
 
 **Notas**: Procedencia: retro (hallazgos reales en todas las fases). No escribe en `testing/`.
 
@@ -2751,3 +2753,12 @@ Veredicto: **gap 2 cerrado; gap 1 cerrado en parte (el event loop ya no se bloqu
 Corrección del ciclo 2 tras el intento 5 (fix5, commit 68257c3; veredicto y T-50 sin tocar, sin intento 6): N1 corregido. Rojo observado antes del código (`test_review5`, nuevo, 8 pruebas): con 2 y 6 `remember` de 86 000 elementos en curso, un `search` pequeño tardó 2,09 s y 9,04 s (umbral 0,3 s). Medición que fija el umbral: el peor esquema del contrato cuesta unos 5 µs por valor (500 valores 2,5 ms, 1000 valores 4,6 ms, 2000 valores 10,1 ms, en los 22 arrays y con elemento inválido, `1` y `""`), por eso `INLINE_NODES` = 1000 (≈ 5 ms como máximo, `anyOf` incluido; `is_small` cuenta valores, no bytes, y se detiene al pasar el tope, así que medirla es acotado: 1 000 000 de elementos en < 50 ms, probado). Después del código (imagen Linux de pruebas; Windows entre paréntesis): `search` pequeño con 0, 2, 6 y 40 validaciones grandes en curso, mediana 0,3 ms y máximo 0,5 ms en todos (Windows 0,3 y 0,4-0,7 ms; antes 2,03 → 4,41 s con N=2, 10,6 → 12,8 s con N=6, 32,6 → 73,1 s con N=40 en HTTP real); retraso máximo del loop 12 ms (N=2), 16 ms (N=6), 20 ms (N=40) con un hilo (Windows 42-52 ms; con 2 hilos 55 ms y 140 ms), los de `test_review4` siguen en verde; plazo de cola (5 s): con 6 grandes, 1 sale por plazo (Windows 2) y con 40, 33 (Windows 35), todas con `Memory service temporarily unavailable`, sin llamar al ejecutor, y el tiempo total queda en 5,4-6,2 s en lugar de 32-73 s. Sobre los hilos: la medición no muestra mejora con 2 (cuatro validaciones de 86 000 elementos, Linux: 1 hilo 2,0-4,6 s, 2 hilos 1,6-4,8 s, ruido mayor que la diferencia; Windows 4,9-14,7 s frente a 5,2-7,0 s), el GIL no da más CPU de Python, y con 1 el retraso del loop es menor; por eso el valor por defecto pasa a 1 (variable conservada, de 1 a 64). El límite que queda y que dicen ahora `mcp/README.md` y `docs/integration.md`: el CPU de un solo proceso es un techo (una validación grande ocupa 1-2 s de CPU) que un cliente con muchas peticiones grandes puede alcanzar, y mientras tanto las llamadas grandes legítimas pueden recibir el error de servicio ocupado; acotarlo por cliente es cosa del proxy o del rate limiting del operador. Cambio visible para un operador: `KAIROS_VALIDATION_THREADS` pasa a 1 por defecto (`docker-compose.yml`, `docs/configuration.md`, `mcp/README.md`; `test_deploy` solo comprueba los nombres) y el plazo de 5 s es una constante documentada (no configurable). Para un cliente MCP: contrato, `tools/list` y texto `Input validation error: …` idénticos; solo una entrada de más de 1000 valores puede recibir `Memory service temporarily unavailable` si espera más de 5 s.
 
 usage-meter three-components/T-41-fix5: 0.19 h IA (medido, ventana 2026-11-14T09:34Z-10:04Z). Verificación fix5: `docker build --target test -f memory_platform/Dockerfile -t kairos-test:i2p5fix5 .` rc 0; `docker run --rm --network=none kairos-test:i2p5fix5 python -m memory_platform.tests.run_postgres` rc 0, MEMORY_TEST_RESULT {"database": "PostgreSQL", "errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 743} (sin tests nuevos en el servidor: `KAIROS_MIN_TESTS` y `MIN_FLOOR` siguen en 743); tests de `mcp/` dentro de esa imagen: Ran 136 tests, OK (128 + 8 de `test_review5.py`; en Windows, 136 OK). Imagen `kairos-test:i2p5fix5` borrada. CI run 43583624763 sobre c91e526 (68257c3 y el commit del ledger): 6/6 en verde (client, contracts, server, retrieval-eval, web, mcp).
+
+## Revisión de dos lentes — intento 6: Fase 5 kairos-mcp, vía rápida y plazo de cola (T-41, T-49)
+
+Veredicto: **sin Critical ni Important; la Fase 5 cierra en el intento 6 (3 de 3 del ciclo 2)**. Lentes: A+B+C+D en un revisor. N1 cerrado: la vía rápida (`tools.py:165-166`) valida antes de pedir turno; por HTTP real, peor muestra de una llamada pequeña con N grandes de 256 KiB en curso (67d3d01 / b93dc87 / HEAD): N=2 0,92 / 1,14 / 0,07-0,11 s; N=6 5,4 / 5,3 / 0,11-0,14 s; N=40 73,0 / 36,4 / 1,6-4,0 s. 5003 entradas «pequeñas» hostiles en las 34 herramientas: peor 11,6 ms en línea; `is_small` acotado (pila explícita); el plazo cubre solo la espera; cancelaciones (anyio y desconexiones HTTP reales) sin hilos ni limiters en mal estado; mismo texto de saturación; `test_review5` falla con b93dc87 (5 fallos, 2 errores); contrato aditivo intacto. Una inundación de entradas «pequeñas» pesadas no empeora respecto a antes: es el techo de CPU residual documentado (proxy o rate limiting del operador).
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| M1 | Minor | Cifras de la doc que no eran de HTTP: «0,3 ms de mediana, como sin carga» es el tiempo del handler (por HTTP 64-125 ms de mediana, 6-15 ms sin carga; con 40 cuerpos a la vez la primera tarda 1,6-4 s), y «5 ms como máximo» sale de elementos vacíos (con contenido real hasta ~15 ms); el párrafo del fix5 compara el 0,3 ms con medidas HTTP | T-41, T-49 | corregido (commit de cierre): `mcp/README.md`, `docs/integration.md` y el comentario de `tools.py` dan las cifras HTTP y el máximo con contenido real; este veredicto corrige la comparación del párrafo del fix5 | Lente A+B+C+D: `r6/load6.py`, `r6/inline3.py` |
+| M2 | Minor | `test_review5` tomaba el máximo de ~66 muestras sueltas con umbral de 50 ms: picos de 51-78 ms en Windows con el código correcto | T-41 | corregido (commit de cierre): `fastest()` toma el mejor de 3 ejecuciones por medida; `test_review5` 8 OK en Windows | Lente A+B+C+D: `test_review5.py:107-123` |

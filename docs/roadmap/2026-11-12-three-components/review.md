@@ -88,3 +88,26 @@ Las cinco deudas del intento 3 exigen editar el workflow a propósito, y cualqui
 | 1 | Important | `remember` y `POST /v1/events` guardaban `payload.structured` sin validar | Corregido: validación única en `Store.ingest_event` |
 | 1 | Minor | Extracción LLM con `structured` abierto; doc de privacidad; esquemas cargados en caliente; transitivas sin fijar | Corregidos |
 | 2 | Minor | Coste superlineal acotado con elementos grandes; doc de privacidad incompleta | Corregidos al cerrar (`MAX_NODES` y doc) |
+
+## Fase 5 — kairos-mcp (T-36 a T-49)
+
+- **Fecha**: 2026-11-14
+- **Lentes**: intentos 1 y 2, A+B y C+D en dos revisores; intentos 3 a 6, A+B+C+D en un revisor (D forzada desde el intento 3, porque el gap abierto era de rendimiento). El ciclo 2 (intentos 4 a 6) se abrió con el OK del usuario tras el intento 3.
+- **Veredicto**: cerrada en el intento 6, sin hallazgos Critical ni Important abiertos.
+- **Evidencia**:
+  - Suite backend: 727 tests al implementar y 743 desde fix1; 0 omitidos y 0 llamadas a `/api/chat`. Suite de `mcp/`: 99, 113, 116, 123, 128 y 136 tests.
+  - CI en verde en los runs 43543867333, 43551205331, 43574788571, 43579158717 y 43583624763.
+  - Humo del contenedor: `PASS health 200; tools 34`.
+  - Contrato MCP: 34 herramientas, nombres y esquemas idénticos; solo cambian claves `x-kairos-*` (`send_instead` en `rebuild_corpus`, `untrusted: true` en `query_corpus`).
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Important | Esquema recompilado en cada `tools/call`; UUID en otra forma con 404; respuesta de más de 8 MiB como no disponible; `GET …/corpus` exigía `write` | Corregidos en fix1 |
+| 1 | Minor | Segmentos `.`/`..`; `tools/list` con cualquier Bearer; `trust_env`; paridad documentada de más; orden de errores de `rebuild_corpus`; enteros `20.0`; tests en cadena sin `null`; `query_corpus` sin envoltorio S-05; 200 sin objeto; test de plazo dependiente del tiempo | Corregidos en fix1 |
+| 2 | Important | La validación recorría todos los errores (60 000 ids: 11 s de bloqueo) | Corregido en fix2 (16 errores como máximo) |
+| 2 | Minor | Pico de memoria de 5-7x con el tope de 96 MiB; comentario del tope; diferencia de 401 sin documentar | Corregidos (tope de 64 MiB, `mem_limit: 1g`, documentación) |
+| 3 | Important | `anyOf` materializaba todos los errores de cada rama (13,8-28,8 s) | Corregido en fix3 (ciclo 2) |
+| 4 | Important | Con elementos válidos y un fallo exterior, el array se recorría en el event loop (1,5-2,5 s) | Corregido en fix4 (validación en un hilo con concurrencia acotada) |
+| 5 | Important | Las llamadas pequeñas hacían cola detrás de las grandes | Corregido en fix5 (vía rápida hasta 1000 valores y plazo de cola de 5 s) |
+| 6 | Minor | Cifras de la doc que no eran de HTTP; test de tiempos frágil | Corregidos al cerrar |
+| — | Residual | El CPU de un solo proceso es un techo que un cliente con muchas peticiones grandes puede alcanzar | Documentado: corresponde al proxy o al rate limiting del operador |
