@@ -35,6 +35,30 @@ def bounded_any_of(validator, alternatives, instance, schema):
     yield SchemaError('%r is not valid under any of the given schemas' % (instance,), context=collected)
 
 
+# An input of at most this many values (every element of an array and every member of an object counts one; a long string is one value) is validated on the
+# event loop, without a limiter: the worst schema of the contract costs about 5 microseconds a value, so at most ~5 ms (`test_review5` measures it for every
+# array of the contract, `anyOf` included, and the walk that counts stops at this number, whatever the size of the input). A larger input costs linear time
+# (up to ~2 s for 256 KiB) and goes to the worker thread, where it waits its turn for at most `QUEUE_SECONDS`.
+INLINE_NODES = 1000
+QUEUE_SECONDS = 5.0
+
+
+def is_small(arguments):
+    """Whether `arguments` has at most `INLINE_NODES` values; reads at most that many (a container adds its length at once), never the whole input."""
+    count, pending = 0, [arguments]
+    while pending:
+        value = pending.pop()
+        if isinstance(value, dict):
+            count += len(value)
+            pending.extend(value.values())
+        elif isinstance(value, list):
+            count += len(value)
+            pending.extend(value)
+        if count > INLINE_NODES:
+            return False
+    return True
+
+
 # The text the internal MCP gives clients at `initialize` of the server; kairos-mcp is a drop-in front, so it says the same.
 INSTRUCTIONS = (
     'Kairos stores project-scoped agent memory. Call projects, then search and details '
@@ -116,23 +140,39 @@ class Checks:
         return None, arguments, failure
 
 
-def build_server(contract, executor, validation_threads=2):
+def build_server(contract, executor, validation_threads=1, queue_seconds=QUEUE_SECONDS):
     """`executor(name, arguments, authorization)` returns a `CallToolResult`, or raises `ToolError` (the message the client sees).
 
-    The check of the input runs in a worker thread, at most `validation_threads` at once: its cost is linear in the size of the input (an array of 86 000
-    valid elements with one outer failure, such as `maxItems`, is 1.5-2.5 s of Python, the same as a valid one) and cannot be cut, but jsonschema is pure
-    Python and gives up the GIL every switch interval, so the event loop keeps answering while it works, and the limit bounds the CPU it can take."""
+    An input of up to `INLINE_NODES` values (nearly every call) is checked on the loop in a few milliseconds and never queues. A larger one costs time
+    linear in its size (an array of 86 000 valid elements with one outer failure, such as `maxItems`, is 1.5-2.5 s of Python, the same as a valid one) and
+    cannot be cut, so it runs in a worker thread, at most `validation_threads` at once (jsonschema is pure Python: threads share the GIL and more of them
+    do not make it faster), and waits for its turn at most `queue_seconds`; after that the call fails with the unavailable error, without reaching `/v1`.
+    The loop keeps answering while a thread works, because the thread gives up the GIL every switch interval."""
     server = Server('Kairos', version=__version__, instructions=INSTRUCTIONS)
     known = {tool['name'] for tool in contract['tools']}
     tools = listing(contract)
     checks = {tool['name']: Checks(tool['name'], tool['inputSchema']) for tool in contract['tools']}
-    limiter = []  # created in the first call: a `CapacityLimiter` belongs to the event loop that runs it
+    limiters = []  # created in the first large call: a `CapacityLimiter` belongs to the event loop that runs it
 
-    def validation_limiter():
-        if not limiter:
-            limiter.append(anyio.CapacityLimiter(validation_threads))
-        return limiter[0]
+    def limits():
+        if not limiters:
+            limiters.append((anyio.CapacityLimiter(validation_threads), anyio.CapacityLimiter(validation_threads)))
+        return limiters[0]
     server.validation_threads = validation_threads
+
+    async def checked(name, arguments):
+        """`(refusal, arguments, failure)`, or `None` when a large input waited longer than `queue_seconds` for its turn."""
+        if is_small(arguments):
+            return checks[name].check(arguments)
+        turns, threads = limits()
+        with anyio.move_on_after(queue_seconds) as waiting:
+            await turns.acquire()
+        if waiting.cancelled_caught:
+            return None
+        try:
+            return await to_thread.run_sync(partial(checks[name].check, arguments), limiter=threads)
+        finally:
+            turns.release()
 
     @server.list_tools()
     async def list_tools():
@@ -142,7 +182,11 @@ def build_server(contract, executor, validation_threads=2):
     async def call_tool(name, arguments):
         if name not in known:
             return error_result(name, 'Unknown tool: ' + name)
-        refusal, arguments, failure = await to_thread.run_sync(partial(checks[name].check, arguments), limiter=validation_limiter())
+        outcome = await checked(name, arguments)
+        if outcome is None:
+            log_event('validation_busy', 'warning', tool=name, reason='queue_timeout')
+            return error_result(name, UNAVAILABLE)
+        refusal, arguments, failure = outcome
         if refusal:
             return types.CallToolResult(content=[types.TextContent(type='text', text=refusal)], isError=True)
         if failure:

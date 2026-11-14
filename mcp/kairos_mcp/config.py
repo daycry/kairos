@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_MAX_BODY_BYTES = 262144  # the server's own default (MEMORY_MAX_BODY_BYTES)
 MAX_BODY_BYTES_CEILING = 16 * 1024 * 1024
-DEFAULT_VALIDATION_THREADS = 2  # validations of the input that may run at once, each in a worker thread
+DEFAULT_VALIDATION_THREADS = 1  # validations of large inputs that may run at once, each in a worker thread (the GIL makes more of no use)
 MAX_VALIDATION_THREADS = 64
 
 
