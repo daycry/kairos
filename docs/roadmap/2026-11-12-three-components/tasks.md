@@ -1991,9 +1991,9 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 - **Previsión IA**: 115 k in / 9 k out tok · ⚠️ verificar €
 - **Dependencias**: T-59
 - **Tipo**: refactor
-- **Archivos**: `docs/roadmap/2026-11-06-functional-parity/testing/frozen-source-gate.py`, `scripts/frozen-source-gate.py`, `scripts/deploy-memory.py`, `scripts/export-contracts.py`, `scripts/memory-admin.py`, `scripts/memory-client.py`, `scripts/diagnose-deployment.py`, `scripts/tests/**`
+- **Archivos**: `docs/roadmap/2026-11-06-functional-parity/testing/frozen-source-gate.py`, `scripts/frozen-source-gate.py`, `scripts/deploy-memory.py`, `scripts/export-contracts.py`, `scripts/memory-admin.py`, `scripts/memory-client.py`, `scripts/diagnose-deployment.py`, `scripts/tests/**`, `scripts/frozen_evidence.py`
 - **Cubre (tests)**: —
-- **Verificación**: `python docs/roadmap/2026-11-06-functional-parity/testing/frozen-source-gate.py` → `PASS` con las rutas nuevas · `python scripts/export-contracts.py && git diff --stat docs/contracts` → sin diff · `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:t60 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base… Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `1ee32160206f`.
+- **Verificación**: `docker run --rm --network=none --user postgres -v <git archive de HEAD>:/candidate:ro -v ./scripts:/gate:ro -v <directorio de recibo fuera del repo>:/test-output kairos-test:<etiqueta> python /gate/frozen-source-gate.py` (copia `scripts/frozen-source-gate.py`, con `scripts/frozen_evidence.py` al lado; la puerta de `docs/roadmap/2026-11-06-functional-parity/testing/` es la histórica y ya no sirve con `server/`) → `KAIROS_FROZEN_SOURCE` y `MEMORY_TEST_RESULT` con `passed` true · `python scripts/export-contracts.py && git diff --stat docs/contracts` → sin diff · `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:t60 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base… Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `1ee32160206f`.
 
 **Criterios de aceptación**
 - [x] La puerta congelada apunta a las rutas nuevas y genera un recibo
@@ -2007,7 +2007,7 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 - [x] Ejecutar la puerta
 - [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec §Arquitectura (estructura final) y CA-25. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `3deb2e0cf44a`.
+**Notas**: Procedencia: spec §Arquitectura (estructura final) y CA-25. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `3deb2e0cf44a`. Corrección de la revisión (intento 1, fix1): la `Verificación` apunta ahora a la copia de `scripts/`. La puerta importa `frozen_evidence` (guarda el recibo con hash y escritura exclusiva); su original vive en `testing/` de la iniciativa cerrada de paridad funcional, carpeta de `qa` que el hook impide escribir, así que se copió a `scripts/frozen_evidence.py` (copia exacta) y el import ya no necesita `PYTHONPATH` (el directorio del script es `sys.path[0]`). Evidencia: `cd scripts && python -I -c "import ast;ast.parse(open('frozen-source-gate.py').read());import frozen_evidence"` → ok.
 
 ### T-61 — `git mv packages/kairos-cli client` en un commit solo de movimiento
 
@@ -2112,7 +2112,7 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 - **Previsión IA**: 115 k in / 9 k out tok · ⚠️ verificar €
 - **Dependencias**: T-63
 - **Tipo**: refactor
-- **Archivos**: `server/VERSION`, `mcp/VERSION`, `client/package.json`, `web/package.json`, `CHANGELOG.md`, `CHANGELOG.es.md`, `server/memory_platform/tests/test_versions.py`, `client/lib/config.mjs`, `scripts/tests/test_ci_workflow.py`, `.github/workflows/ci.yml`, `server/memory_platform/Dockerfile`, `scripts/frozen-source-gate.py`
+- **Archivos**: `server/VERSION`, `mcp/VERSION`, `client/package.json`, `web/package.json`, `CHANGELOG.md`, `CHANGELOG.es.md`, `server/memory_platform/tests/test_versions.py`, `client/lib/config.mjs`, `scripts/tests/test_ci_workflow.py`, `.github/workflows/ci.yml`, `server/memory_platform/Dockerfile`, `scripts/frozen-source-gate.py`, `client/tests/lifecycle.test.mjs`
 - **Cubre (tests)**: —
 - **Verificación**: `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:t64 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01 · `cd client && node -p "require('./package.json').version"` → `0.4.0` · Evidencia (2026-11-14): RED (antes de implementar): `PYTHONPATH=server python -m unittest… Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `3a045069a4fa`.
 
@@ -2127,7 +2127,7 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 - [x] Fijar versiones y changelogs
 - [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-24/P-07. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `9e8f1fcb7e8c`.
+**Notas**: Procedencia: spec CA-24/P-07. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `9e8f1fcb7e8c`. Corrección de la revisión (fix1): `client/tests/lifecycle.test.mjs` recorre ahora también la actualización 0.3.0 → 0.4.0 (`previous` = 0.3.0 junto a 0.1.0–0.1.5): `npm test` en `client/` rc 0, 91 tests, `upgrade from 0.3.0 preserves old files and recovers a partial switch` ✔; `npm pack --dry-run` → 0.4.0, 34 ficheros, 669.2 kB (igual que antes).
 
 
 RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` falló con FileNotFoundError: server/VERSION (2 errores) antes de declarar las versiones · 2026-11-14.
@@ -2144,7 +2144,7 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 - **Previsión IA**: 77 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-64
 - **Tipo**: devops
-- **Archivos**: `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`
+- **Archivos**: `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `mcp/tests/test_review5.py`
 - **Cubre (tests)**: —
 - **Verificación**: `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK` · `gh run list --branch feat/three-components --limit 1 --json conclusion` → `success` · Evidencia (2026-11-14): `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → Ran 45 OK (incluye `ComponentTests` y el mínimo 759). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `6389acf79363`.
 
@@ -2158,7 +2158,7 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 - [x] Empujar y comprobar la ejecución
 - [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-24. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `e08f4fe533e7`.
+**Notas**: Procedencia: spec CA-24. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `e08f4fe533e7`. Corrección de la revisión (fix1): `test_a_large_call_that_waits_too_long…` dependía del tiempo (run de CI 43617679410: `len(busy)` 2 en vez de 3 con `queue_seconds=0.3`). Ahora la primera llamada grande retiene el único turno con un validador bloqueado en un `threading.Event` (parche de `Checks.check`), las otras tres vencen su plazo de 0.3 s y solo entonces se libera; nada depende de lo que tarde la validación. Rojo con el código roto (`move_on_after(None)` en `tools.py`, restaurado tras la prueba): `LargeCallsWaitABoundedTimeTests` → `TimeoutError`, FAILED (errors=1); verde con el bueno: `test_review5` 5 ejecuciones seguidas OK (8 tests cada una) y suite completa de `mcp/` `Ran 136 tests` OK.
 
 ### T-66 — Manuales con la estructura de tres componentes
 
@@ -2172,7 +2172,7 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 - **Previsión IA**: 154 k in / 12 k out tok · ⚠️ verificar €
 - **Dependencias**: T-65
 - **Tipo**: docs
-- **Archivos**: `README.md`, `docs/architecture.md`, `docs/install.md`, `docs/operations.md`, `docs/integration.md`, `docs/configuration.md`, `docs/server-install.md`, `docs/release-cli.md`, `client/README.md`, `docs/RAG-INDEX.md`, `docs/code-analysis.md`, `docs/corpus-generated-answers.md`, `docs/extended-workflows.md`, `docs/manual.md`
+- **Archivos**: `README.md`, `docs/architecture.md`, `docs/install.md`, `docs/operations.md`, `docs/integration.md`, `docs/configuration.md`, `docs/server-install.md`, `docs/release-cli.md`, `client/README.md`, `docs/RAG-INDEX.md`, `docs/code-analysis.md`, `docs/corpus-generated-answers.md`, `docs/extended-workflows.md`, `docs/manual.md`, `server/memory_platform/tests/retrieval_eval/README.md`, `docs/extended-workflows.md`
 - **Cubre (tests)**: —
 - **Verificación**: `grep -rn "packages/kairos-cli" README.md docs/*.md` → sin salida · lectura: comandos citados válidos contra el árbol nuevo · Evidencia (2026-11-14): `grep -rn "packages/kairos-cli" README.md docs/*.md client/README.md mcp/README.md` → sin salida. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `ee4aa462333f`.
 
@@ -2186,7 +2186,7 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 - [x] Corregir y comprobar comandos
 - [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-32. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `745f31637737`.
+**Notas**: Procedencia: spec CA-32. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `745f31637737`. Corrección de la revisión (fix1): barrido de `python -m memory_platform`, `memory_platform/` sin `server/`, `packages/kairos-cli` y `Dockerfile.web` en README, `docs/*.md` (fuera de `docs/roadmap/`), `mcp/README.md` y READMEs del servidor. Corregidas (desde la raíz: `PYTHONPATH=server`, igual que la CI): `docs/operations.md` fila `contracts` y la sonda `ollama_proxy_probe`; `docs/extended-workflows.md` (`unittest test_extended_*`); `server/memory_platform/tests/retrieval_eval/README.md` (orden y ruta del dataset `server/memory_platform/tests/retrieval_eval/dataset-v1.jsonl`); `long_doc_measure` aclarado «dentro del arnés (`PYTHONPATH=/app/server`)». Las de `admin backfill-chunks`, `run_postgres`, `stale_measure` y las de `docker build`/`docker run` corren dentro de la imagen (`WORKDIR /app`, `PYTHONPATH=/app/server` en la etapa de test) y quedan como estaban; `packages/kairos-cli` y `Dockerfile.web` no aparecen en ningún manual vigente. Verificado sin Docker: `PYTHONPATH=server python -m memory_platform.tests.retrieval_eval.check_dataset <dataset-v1.jsonl>` → `OK es=24 en=24 typo_id=12 long=12 total=72`; `PYTHONPATH=server python -m unittest memory_platform.tests.test_contract_additive` → 11 tests OK; import de `ollama_proxy_probe`, `test_extended_tools` y `test_extended_gateway` OK (los dos últimos necesitan PostgreSQL para ejecutarse; la sonda necesita Docker). EOL CRLF de `docs/operations.md` conservado. usage-meter three-components/T-66-fix1 (cubre también T-60/T-64/T-65-fix1): 0.16 h IA (medido).
 
 ### T-67 — Recibo final de la estructura: suite, `store_surface.json`, historia y `npm pack`
 
@@ -2691,3 +2691,7 @@ Veredicto: **sin Critical ni Important; la Fase 6 cierra en el intento 1 de 3**.
 | 3 | Minor | `Deprecation: true` y `Sunset: 0.5.0` no siguen el formato de fecha de RFC 9745/8594 (CA-27 pide la versión; ningún cliente conocido lee la cabecera) | T-51 | documentado (commit de cierre) en `integration.md`; la elección de fecha queda para el usuario | Lente A+B: `mcp.py:215,232` |
 | 4 | Minor | `POST /mcp` sin barra da la 307 del router sin `Deprecation`/`Sunset` ni `mcp_legacy_used` | T-51 | documentado (commit de cierre); deuda aceptada: quien sigue la redirección recibe las cabeceras en `/mcp/` | Lente A+B: `mcp.py:248` |
 | 5 | Minor | Ninguna prueba recorre CLI → nginx → kairos-mcp real (el probe va directo; la sonda de nginx usa stubs); la paridad de `allowed_hosts` con el Host reenviado solo se ve leyendo el código | T-53 | deuda aceptada para la Fase 8 (ensayo de integración final, T-72) | Lente A+B: `lifecycle_probe.py:93,124`, `nginx_portal_probe.py:25-35` |
+
+## Revisión de dos lentes — intento 1: Fase 7 estructura del repositorio (T-57, T-58, T-59, T-60, T-61, T-62, T-63, T-64, T-65, T-66, T-67)
+
+Pendiente de revisión; sin veredicto.
