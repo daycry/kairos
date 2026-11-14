@@ -43,9 +43,9 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 15 | 15 | 100% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 6 | 6 | 100% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
-| Fase 7 — Estructura del repositorio (C-06) | 3 | 12 | 25.0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
+| Fase 7 — Estructura del repositorio (C-06) | 4 | 12 | 33.3% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **59** | **74** | **79.7%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **60** | **74** | **81.1%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1989,34 +1989,36 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 ### T-60 — Puerta congelada, scripts y herramientas con las rutas nuevas
 
 - **Descripción**: Actualizar la puerta congelada y los scripts que fijan `memory_platform` o `packages` para que apunten a `server/` y `client/`, con el recibo de la puerta actualizada. Nota: la puerta vive en `testing/` de una iniciativa cerrada; se edita con aprobación de `qa` o se genera una copia junto al ledger (no se escribe en `testing/` de esta iniciativa). Fuente: CA-25, evaluación C-06.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: La puerta de verificación aislada (código congelado en un contenedor sin red) acepta la estructura `server/`, `mcp/` y los contratos; los scripts de operación importan el servidor desde `server/`.
+- **Estado**: completado
+- **Cerrada**: 2026-11-14
 - **Tiempo humano**: est. 3.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.41h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.41h (estimado) · real 0.06h (medido)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 115 k in / 9 k out tok · ⚠️ verificar €
 - **Dependencias**: T-59
 - **Tipo**: refactor
-- **Archivos**: `docs/roadmap/2026-11-06-functional-parity/testing/frozen-source-gate.py`, `scripts/deploy-memory.py`, `scripts/export-contracts.py`, `scripts/memory-admin.py`, `scripts/memory-client.py`, `scripts/diagnose-deployment.py`, `scripts/tests/**`
+- **Archivos**: `docs/roadmap/2026-11-06-functional-parity/testing/frozen-source-gate.py`, `scripts/frozen-source-gate.py`, `scripts/deploy-memory.py`, `scripts/export-contracts.py`, `scripts/memory-admin.py`, `scripts/memory-client.py`, `scripts/diagnose-deployment.py`, `scripts/tests/**`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `python docs/roadmap/2026-11-06-functional-parity/testing/frozen-source-gate.py` → `PASS` con las rutas nuevas
   - `python scripts/export-contracts.py && git diff --stat docs/contracts` → sin diff
   - `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:t60 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+  - Evidencia (2026-11-14): Puerta (copia actualizada `scripts/frozen-source-gate.py`, candidato `git archive 208ad1e` en solo lectura, `--network=none`, imagen kairos-test:i2p7, recibo en directorio temporal fuera del repo): KAIROS_FROZEN_SOURCE source_sha256 61e81c526e3efc1dd48c287b45948d95635f0e944191aa7e5f0e4f1d70228634, file_count 271; MEMORY_TEST_RESULT tests 757, failures 0, errors 0, skipped 0, passed true, llm_chat_calls 0 (= línea base de T-57: 757 tests; mismos 271 ficheros que la línea base comparable, hash distinto porque cambian las rutas del manifiesto, `server/…` en lugar de `memory_platform/…`). `PYTHONPATH` no hace falta: la puerta añade `snapshot/server` a sys.path. `python scripts/export-contracts.py` (venv con las dependencias del servidor) → "Native HTTP and MCP contracts exported without connecting to services."; `git status --short docs/contracts` y `git diff --stat docs/contracts` → sin diff. `git grep -nE "(^|[^/])memory_platform/" -- scripts` → sin rutas antiguas del servidor; queda `packages/kairos-cli/bin/kairos.mjs` en `accept-native-clients.py:135` y en `test_ci_workflow.py:183`, que se cambian en T-62 tras mover el cliente (T-61).
 
 **Criterios de aceptación**
-- [ ] La puerta congelada apunta a las rutas nuevas y genera un recibo
-- [ ] `scripts/*.py` no contiene rutas antiguas (`grep`)
-- [ ] `python scripts/export-contracts.py` produce los contratos sin diff
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] La puerta congelada apunta a las rutas nuevas y genera un recibo
+- [x] `scripts/*.py` no contiene rutas antiguas del servidor (`grep`); la de `packages/kairos-cli` en `accept-native-clients.py` se cambia en T-62, tras mover el cliente
+- [x] `python scripts/export-contracts.py` produce los contratos sin diff
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] `grep -rn "memory_platform/\|packages/kairos-cli" scripts docs/roadmap/2026-11-06-functional-parity/testing/frozen-source-gate.py`
-- [ ] Actualizar rutas
-- [ ] Ejecutar la puerta
-- [ ] `usage-meter start/close`
+- [x] `grep -rn "memory_platform/\|packages/kairos-cli" scripts docs/roadmap/2026-11-06-functional-parity/testing/frozen-source-gate.py`
+- [x] Actualizar rutas
+- [x] Ejecutar la puerta
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec §Arquitectura (estructura final) y CA-25. Patrón: `frozen-source-gate.py:26`, `:45`, `:77`. Los recibos históricos de iniciativas cerradas que citan `memory_platform/` no se reescriben (evaluación C-06). Clase: refactor.
+**Notas**: Procedencia: spec §Arquitectura (estructura final) y CA-25. Patrón: `frozen-source-gate.py:26`, `:45`, `:77`. Los recibos históricos de iniciativas cerradas que citan `memory_platform/` no se reescriben (evaluación C-06). Clase: refactor. El hook del implementer deniega escribir en `docs/roadmap/**/testing/` (propiedad de qa; DENY al editar `frozen-source-gate.py` de la iniciativa 2026-11-06). Siguiendo la nota de la tarea se genera una copia actualizada en `scripts/frozen-source-gate.py` (importa `frozen_evidence.py` de `testing/`, montado en la ejecución; el original queda intacto como puerta histórica). Cambios respecto al original: copia `server` (no `memory_platform`), añade `docs/contracts`, `mcp` y `ollama-proxy` (los tests los leen desde las Fases 2-5; el original, sin ellos, ya daba 195 errores y 3 fallos en la línea base) y pone `snapshot/server` en `sys.path`. `packages` se cambia a `client` en T-62. Propuesta para qa: sustituir el original por esta copia o referenciarla en su plan de pruebas. Archivos añadido con nota: `scripts/frozen-source-gate.py`. usage-meter three-components/T-60: 0.06 h IA (medido, win-b447f66d832b41f9819fbaad334773b1).
 
 ### T-61 — `git mv packages/kairos-cli client` en un commit solo de movimiento
 
