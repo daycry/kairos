@@ -2466,7 +2466,7 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 - [x] Cerrar hallazgos
 - [x] `usage-meter start/close` por intento — EXCEPCIÓN: ver el criterio anterior
 
-**Notas**: Procedencia: retro de `retrieval-quality`, plan director (cierre). No escribe en `testing/`.
+**Notas**: Procedencia: retro de `retrieval-quality`, plan director (cierre). No escribe en `testing/`. qa: sin UI por diseño (`test-plan: n/a (sin UI)`): `ledger-lint` exit 0 y `coverage-check.py tasks.md improvement-plan.md spec.md` exit 0 con `test_plan_na: true` (2026-11-14).
 
 ---
 
