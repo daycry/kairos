@@ -44,8 +44,8 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 5 — kairos-mcp (C-03) | 15 | 15 | 100% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 6 | 6 | 100% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 12 | 12 | 100% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
-| Fase 8 — Integración final y revisión | 5 | 6 | 83% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **73** | **74** | **98.6%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| Fase 8 — Integración final y revisión | 6 | 6 | 100% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
+| **TOTAL** | **74** | **74** | **100.0%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -196,6 +196,7 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 
 **Criterios de aceptación**
 - [x] Los cinco trabajos terminan en verde en el PR de esta rama; enlace anotado en `Notas`
+  - Evidencia (2026-11-14, revisión final): PR #3 (https://github.com/daycry/kairos/pull/3), run 43643750902, evento `pull_request` sobre 038eeef: los seis trabajos en verde.
 - [x] Los tiempos de cada trabajo en CI quedan anotados (la hipótesis de la spec pasa a hecho medido)
 - [x] Ningún test se desactiva ni se marca como omitido para conseguir el verde
 - [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar — EXCEPCIÓN: sin JSON propio del tramo original (el usage-meter no devolvió medición para este tramo, null; tiempo (estimado), no es el del bloque de T-01); la corrección fix1 lleva solo la cifra medida de 0,13 h, sin JSON
@@ -2152,6 +2153,7 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 
 **Criterios de aceptación**
 - [x] Los seis trabajos (`server`, `retrieval-eval`, `mcp`, `client`, `web`, `contracts`) usan rutas nuevas y terminan en verde en el PR
+  - Evidencia (2026-11-14, revisión final): PR #3 (https://github.com/daycry/kairos/pull/3), run 43643750902, evento `pull_request` sobre 038eeef: los seis trabajos en verde.
 - [x] El test estructural y la puerta de higiene pasan
 - [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
@@ -2263,7 +2265,7 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 
 ## Fase 8 — Integración final y revisión
 
-**Estado**: en-progreso · **Estimado**: 12.0h (10.0h base) · **Real**: — · **Coste est.**: 600 € · **Tokens est.**: 440 k
+**Estado**: completado · **Estimado**: 12.0h (10.0h base) · **Real**: — · **Coste est.**: 600 € · **Tokens est.**: 440 k
 
 ### T-69 — Prueba de contrato de kairos-mcp idéntica a la del MCP interno
 
@@ -2437,30 +2439,32 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 ### T-74 — Revisión final de la iniciativa
 
 - **Descripción**: Revisión adversarial final de toda la iniciativa contra CA-01…CA-32 y las restricciones: contrato solo aditivo, migraciones aditivas, nada publicado, ningún recurso `knowledge-graphs-*` tocado, un solo secreto en CI (`GITHUB_TOKEN`), EOL conservado. Esta revisión es la más corta (3 h): se apoya en las revisiones de fase y reserva supervisión por encima del 25 % (R-06).
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: Kairos queda separado en tres componentes (servidor, kairos-mcp y cliente, más la web), revisados de punta a punta contra los 32 criterios de la iniciativa con la CI en verde en su PR.
+- **Estado**: completado
+- **Cerrada**: 2026-11-14
 - **Tiempo humano**: est. 3.0h (base) · real —
 - **Tiempo IA (ejec.)**: est. 0.44h (estimado) · real —
 - **Supervisión**: est. 0.11h (≈25 % IA) · real —
 - **Previsión IA**: 120 k in / 12 k out tok · ⚠️ verificar €
 - **Dependencias**: T-69 … T-73
 - **Tipo**: revisión
-- **Archivos**: `docs/roadmap/2026-11-12-three-components/review.md`, `docs/roadmap/2026-11-12-three-components/tasks.md`
+- **Archivos**: `docs/roadmap/2026-11-12-three-components/review.md`, `docs/roadmap/2026-11-12-three-components/tasks.md`, `docs/roadmap/2026-11-12-three-components/spec.md`, `docs/roadmap/README.md`, `scripts/deploy-memory.py`, `scripts/tests/test_rehearsal_three_components.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `python "C:/Users/46066917X/.claude/plugins/cache/daycry/custom-agents/3.3.0/agent-kits/shared/ledger-lint.py" docs/roadmap/2026-11-12-three-components/tasks.md` → exit 0
   - lectura: `review.md`, sección «Final», sin hallazgos Critical/Important abiertos
+  - Evidencia (2026-11-14): `review.md` sección «Final»; 2 intentos. Intento 1: lente A sobre `23ced03...HEAD` (CA-01…CA-31 ✓, CA-32 ✗ por el README; restricciones ✓) y B+C+D sobre la Fase 8; 2 Important (README de CA-32; T-05/T-65 sin PR) y 8 Minor. fix1 (85386fa, 151ff34, 9e10203, 9d4ed81, 557b2b3, 038eeef) y PR #3 (https://github.com/daycry/kairos/pull/3), run 43643750902, evento `pull_request` sobre 038eeef: los seis trabajos en verde cierran los Important. Intento 2 (A+B+C): todo lo corregido ✓; los 2 Minor nuevos (consola con más de 100 proyectos, test de la protección del logout) los corrigió el orquestador en el commit de cierre, con rojo comprobado (sin la protección del logout: 1 FAIL). `scripts/tests` 134 OK. Suite del servidor 764, 0 omitidos, `llm_chat_calls` 0 (CI 43634349203 y 43643750902). `ledger-lint` exit 0; T-01..T-74 `completado`.
 
 **Criterios de aceptación**
-- [ ] `review.md` tiene la sección «Final» con una tabla CA-01…CA-32 → evidencia
-- [ ] 0 hallazgos Critical o Important abiertos
-- [ ] El ledger no tiene tareas en estado distinto de `completado` o `cancelado` con motivo autorizado
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] `review.md` tiene la sección «Final» con una tabla CA-01…CA-32 → evidencia
+- [x] 0 hallazgos Critical o Important abiertos
+- [x] El ledger no tiene tareas en estado distinto de `completado` o `cancelado` con motivo autorizado
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar — EXCEPCIÓN: los intentos de revisión no se midieron con usage-meter; los tokens de los revisores constan solo en la telemetría de los subagentes (estimado); la corrección sí (T-73-fix1, 0.24 h medido)
 
 **Subtareas**
-- [ ] Recorrer los 32 criterios con su evidencia
-- [ ] Cerrar hallazgos
-- [ ] `usage-meter start/close` por intento
+- [x] Recorrer los 32 criterios con su evidencia
+- [x] Cerrar hallazgos
+- [x] `usage-meter start/close` por intento — EXCEPCIÓN: ver el criterio anterior
 
 **Notas**: Procedencia: retro de `retrieval-quality`, plan director (cierre). No escribe en `testing/`.
 
@@ -2736,4 +2740,26 @@ Veredicto: **sin Critical ni Important; la Fase 7 cierra en el intento 2 de 3**.
 
 ## Revisión de dos lentes — intento 1: Final de la iniciativa y Fase 8 (T-69, T-70, T-71, T-72, T-73)
 
-Pendiente de revisión; sin veredicto.
+Veredicto: **2 Important y 8 Minor; sin Critical**. Lentes: A sobre toda la iniciativa (`23ced03...HEAD`, CA-01…CA-32 y restricciones) en un revisor; B+C+D sobre la Fase 8 (`40964ff...HEAD`) en otro (C forzada por el orquestador: `deploy-memory.py` crea y revoca claves). A: CA-01…CA-31 ✓ con evidencia; CA-32 ✗ por el README; contrato MCP solo aditivo (34 herramientas, mismo orden; copia de `mcp/contract/` byte a byte), sin migraciones, nada publicado, un solo secreto en CI, T-01..T-73 completadas sin criterios reescritos. B+C+D: clave temporal de alcance `read`, revocada en `finally` también con Ctrl+C y fuera del informe; `--embed-stub`/`--roundtrip` rechazados en la instalación real; el override renombra redes y volúmenes fijados; esperas con tope; `scripts/tests` 124 OK.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | CA-32: `README.md` sin la retirada del MCP interno y con el diagrama y el requisito `beam:cloud` de la arquitectura antigua | T-73 | corregido (85386fa): tres componentes, `/mcp/` → kairos-mcp, servidor sin modelo, retirada en la 0.5.0; también `docs/architecture.md:55` | Lente A: `README.md:57-66,124` |
+| 2 | Important | T-05 y T-65 marcados «en verde en el PR» sin PR ni ejecución `pull_request` | T-05, T-65 | corregido: PR #3 abierto con autorización del usuario (2026-11-14); run 43643750902 (`pull_request`, 038eeef) 6/6 en verde, anotado en T-05 y T-65 | Lente A: `gh pr list` vacío antes del PR |
+| 3 | Minor | `KAIROS_MIN_TESTS` en 759 con la suite en 764 | T-69 | corregido (9e10203): 764 en `ci.yml`, `MIN_FLOOR` y `operations.md` | Lente A: `ci.yml:17-20` |
+| 4 | Minor | `docs/roadmap/README.md:11` con una línea LF y estado desfasado | T-73 | corregido (9d4ed81) | Lente A |
+| 5 | Minor | `docs/server-install.md:27` daba `beam:cloud` como valor por defecto | T-16 | corregido (151ff34) | Lente A: contradice `config.py:282` |
+| 6 | Minor | Un DELETE fallido de la clave temporal tapaba el error original y no avisaba de la clave activa (CWE-459) | T-72 | corregido (557b2b3): `revoke_key()` conserva el error y avisa en `warnings` y stderr con nombre e id, nunca el token | Lente B+C: `deploy-memory.py:555-561` |
+| 7 | Minor | La clave pedía todos los proyectos (máximo 100 en `KeyInput`) y se creaba fuera del `try`: 422 y sin logout con más de 100 | T-72 | corregido (557b2b3): hasta 100 proyectos, el resto en `projects_not_checked`; logout en todos los caminos | Lente B: `deploy-memory.py:487-489`, `models.py:85` |
+| 8 | Minor | Sin test de la revocación cuando la verificación falla ni del `finally` de `roundtrip()` | T-72 | corregido (557b2b3): `RevocationTests` (7); rojo con el DELETE fuera del `finally` (3 FAIL, 1 ERROR) | Lente B: `test_rehearsal_three_components.py:140-153` |
+| 9 | Minor | Con 0 proyectos la consola decía «verified» sin haber comprobado `/mcp/` | T-72 | corregido (557b2b3): la consola dice que `/mcp` no se comprobó; `ConsoleMessageTests` | Lente B: `deploy-memory.py:423` |
+| 10 | Minor | `docs/corpus-generated-answers.md` cita `beam:cloud` | T-73 | descartado: es evidencia histórica fechada, no instrucción | fix1 |
+
+## Revisión de dos lentes — intento 2: Final, correcciones del intento 1 (T-16, T-69, T-72, T-73)
+
+Veredicto: **sin Critical ni Important; la revisión final cierra en el intento 2 de 3 y con ella la iniciativa**. Lentes A+B+C sobre `459dd78..038eeef`. Todo lo corregido ✓: el README y los manuales coinciden con el código (`web/nginx.conf:69-70`, `docker-compose.yml:156`, `config.py:282-284`), EOL conservado; `KAIROS_MIN_TESTS`/`MIN_FLOOR` 764 = CI 43634349203; `revoke_key()`, tope de 100 proyectos, logout en todos los caminos y mensaje de consola, cada uno con una mutación que hace fallar sus tests. El gap 2 se cierra con el PR #3 (run 43643750902, `pull_request`, 6/6).
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| N1 | Minor | Con más de 100 proyectos la consola decía «verified» sin decir que `/mcp/` no se comprobó en el resto (solo `projects_not_checked` en el informe) | T-72 | corregido (commit de cierre): `verified_message` dice cuántos proyectos no se comprobaron y por qué; test en `ConsoleMessageTests` | Lente A+B+C: `deploy-memory.py:424,471-475` |
+| N2 | Minor | Ningún test cubría la protección del logout: sin ella el error del logout tapaba el original y los tests seguían en verde | T-72 | corregido (commit de cierre): dos tests (error propagándose y verificación buena); sin la protección, 1 FAIL | Lente A+B+C: `deploy-memory.py:589-601` |

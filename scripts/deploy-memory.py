@@ -470,9 +470,11 @@ class Portal:
 
 def verified_message(verification):
     """Console line of a finished deployment: a skipped `/mcp/` check is said, not hidden behind a plain success."""
-    if verification.get('mcp_checked', True):
-        return 'Kairos deployment verified.'
-    return 'Kairos deployment verified; /mcp not checked: the installation has no projects.'
+    if not verification.get('mcp_checked', True):
+        return 'Kairos deployment verified; /mcp not checked: the installation has no projects.'
+    if verification.get('projects_not_checked'):
+        return f"Kairos deployment verified; /mcp not checked for {verification['projects_not_checked']} projects (a temporary key names at most {MAX_KEY_PROJECTS})."
+    return 'Kairos deployment verified.'
 
 
 MAX_KEY_PROJECTS = 100  # `KeyInput.project_ids` of the server

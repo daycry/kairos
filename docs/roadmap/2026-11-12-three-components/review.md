@@ -146,3 +146,52 @@ Las cinco deudas del intento 3 exigen editar el workflow a propósito, y cualqui
 | 1 | Minor | Verificación de T-60 con la puerta antigua; test de tiempos de la Fase 5 inestable en CI; sin test de actualización desde 0.3.0 | Corregidos en fix1 |
 | 1 | Minor | Merge de `main` en lugar de rebase; `client/.npm-cache` en la imagen de tests (anterior a la fase) | Deuda aceptada |
 | 2 | Minor | Evidencia de T-60 con `python -I`; bucle de espera sin tope en el test nuevo | Corregidos al cerrar |
+
+## Final — Iniciativa completa (T-01 a T-73)
+
+- **Fecha**: 2026-11-14
+- **Lentes**: intento 1, A sobre toda la iniciativa (`23ced03...HEAD`, sin revisar el contenido de la Iniciativa 1 que entró con el merge de `main`) y B+C+D sobre la Fase 8; intento 2, A+B+C sobre las correcciones.
+- **Veredicto**: cerrada en el intento 2 de 3, sin hallazgos Critical ni Important abiertos.
+- **Evidencia**:
+  - Suite del servidor: 757 tests en la línea base de la Fase 7 y 764 al cerrar; 0 omitidos y 0 llamadas a `/api/chat`. `retrieval-eval`: recall@5 1,0, MRR 0,97.
+  - Ensayo aislado completo (T-72): CLI → nginx → kairos-mcp → `/v1`, observación encontrada tras el indexado; `allowed_hosts` con peticiones reales (421 para un `Host` ajeno).
+  - CI en verde en el PR #3: run 43643750902 (`pull_request`, 038eeef), seis trabajos.
+  - Contrato MCP solo aditivo (34 herramientas en el mismo orden; solo `x-kairos-*` y `structured`), sin migraciones, nada publicado, un solo secreto en CI, EOL sin cambios no justificados.
+
+| CA | Resultado | Evidencia |
+|---|---|---|
+| CA-01 | ✓ | `ci.yml` (`pull_request` y `push`); PR #3, run 43643750902 |
+| CA-02 | ✓ | `ci.yml`: `contents: read`, sin secretos ni publicación, acciones fijadas por SHA, `persist-credentials: false` |
+| CA-03 | ✓ | Run 43202864405 (`ci-red-probe`): `server` y `retrieval-eval` en rojo |
+| CA-04 | ✓ | 34 herramientas con `x-kairos-endpoint` existente en OpenAPI; `test_contract_additive.py` |
+| CA-05 | ✓ | `test_api.py` `ParityEndpointTests`: permitido, 403 y proyecto ajeno |
+| CA-06 | ✓ | `test_tool_endpoint_parity.py` (34 herramientas) |
+| CA-07 | ✓ | OpenAPI frente a 23ced03: 14 adiciones, 0 cambios ni borrados |
+| CA-08 | ✓ | `mcp/tests/test_health.py`; sin `memory_platform` ni `psycopg` en kairos-mcp |
+| CA-09 | ✓ | `docker-compose.yml` (`memory-mcp` solo en la red `mcp`, sin secretos ni volúmenes); T-70 `PASS health 200; tools 34` |
+| CA-10 | ✓ | `mcp/tests/test_tools_list.py`, `test_contract_identity.py` |
+| CA-11 | ✓ | T-48 (Fase 5, cerrada en el intento 6) |
+| CA-12 | ✓ | `test_unauthorized.py`, `test_client.py` (token fuera de los logs) |
+| CA-13 | ✓ | `test_untrusted.py`; tests del CLI sin cambios |
+| CA-14, CA-15, CA-18 | ✓ | `test_no_llm.py`; T-71: suite con `llm_chat_calls` 0 y arranque aislado con 0 llamadas |
+| CA-16 | ✓ | Sin `beam:cloud` por defecto (`config.py:284`) |
+| CA-17 | ✓ | `test_ollama_proxy.py` y `ollama_proxy_probe.py` |
+| CA-19 a CA-21 | ✓ | `docs/contracts/{observation,session-summary}.v1.schema.json`, ejemplos y sus tests |
+| CA-22 | ✓ (n/a) | Sin migración (decisión de T-32) |
+| CA-23 | ✓ | `server/`, `mcp/`, `client/`, `web/`; `git log --follow` hasta 7f116d0 |
+| CA-24 | ✓ | 0.4.0 en `server/VERSION`, `mcp/VERSION` y `client/package.json` |
+| CA-25 | ✓ | `store_surface.json` sin cambios |
+| CA-26 | ✓ | `npm pack` con los mismos 34 ficheros; `release:check` en CI |
+| CA-27 | ✓ | `test_mcp_legacy.py` (`Deprecation`/`Sunset: 0.5.0`) |
+| CA-28 | ✓ | `lifecycle-test` (T-53); `REQUIRED_TOOLS` del CLI |
+| CA-29 | ✓ | `kairos-mcp.json` frente a 23ced03: solo adiciones; copia de `mcp/contract/` byte a byte |
+| CA-30 | ✓ | Sin DROP ni TRUNCATE; ningún recurso `knowledge-graphs-*` direccionado |
+| CA-31 | ✓ | T-72 `PASS roundtrip` con `chat_calls 0` |
+| CA-32 | ✓ | Suite y `retrieval-eval` en verde; README y manuales con los tres componentes y la retirada del MCP interno (85386fa) |
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Important | README sin los tres componentes ni la retirada del MCP interno (CA-32) | Corregido en fix1 |
+| 1 | Important | T-05 y T-65 sin PR ni ejecución `pull_request` | Corregido: PR #3 con autorización del usuario, CI en verde |
+| 1 | Minor | `KAIROS_MIN_TESTS` desfasado; EOL y estado de `docs/roadmap/README.md`; `beam:cloud` en `server-install.md`; clave temporal de verificación (revocación fallida silenciosa, límite de 100 proyectos, sin tests de fallo, consola con 0 proyectos) | Corregidos en fix1 |
+| 2 | Minor | Consola con más de 100 proyectos; sin test de la protección del logout | Corregidos al cerrar |

@@ -1,9 +1,9 @@
 ---
 spec: three-components
 descripcion: Separación de Kairos en tres componentes — integración continua, paridad REST /v1, kairos-mcp propio sin acceso a la base, servidor sin modelo de lenguaje, esquema versionado de observación, estructura server/mcp/client/web y compatibilidad.
-estado: aprobada          # borrador | aprobada | implementada | obsoleta
+estado: implementada      # borrador | aprobada | implementada | obsoleta
 creado: 2026-11-12
-actualizado: 2026-11-12
+actualizado: 2026-11-14
 evaluacion: evaluation.md
 design: n/a
 plan: improvement-plan.md
@@ -154,60 +154,60 @@ Todos se comprueban con fixtures aislados (PostgreSQL efímero del target `test`
 
 **C-01 · Integración continua (B-04, O-04)**
 
-- [ ] [GWT] CA-01 — Dado `.github/workflows/ci.yml`, Cuando se abre o actualiza un PR, Entonces se ejecutan los trabajos `server` (suite backend completa en el target `test`), `retrieval-eval` (proveedor simulado, umbrales recall@5 ≥ 0,80 y MRR ≥ 0,60), `client` (`npm test` y `release:check`), `web` (`typecheck`, `test`, `build`) y `contracts` (diff aditivo), y todos terminan en verde en el PR de esta rama (enlace a la ejecución en el ledger).
+- [x] [GWT] CA-01 — Dado `.github/workflows/ci.yml`, Cuando se abre o actualiza un PR, Entonces se ejecutan los trabajos `server` (suite backend completa en el target `test`), `retrieval-eval` (proveedor simulado, umbrales recall@5 ≥ 0,80 y MRR ≥ 0,60), `client` (`npm test` y `release:check`), `web` (`typecheck`, `test`, `build`) y `contracts` (diff aditivo), y todos terminan en verde en el PR de esta rama (enlace a la ejecución en el ledger).
   - **Nota (2026-11-12, autorización del usuario)**: durante la iniciativa la CI se dispara también con `push` a ramas distintas de `main` (el usuario autorizó los push de `feat/three-components` y de la rama desechable, sin merges a `main`, sin publicar y sin abrir PR). CA-01 se verifica en esas ejecuciones `push`; el disparador `pull_request` se ejercita cuando se abra el PR de la iniciativa (T-65), que pide su propia autorización.
-- [ ] CA-02 — El workflow no referencia más secreto que `GITHUB_TOKEN`, no hace `docker push` ni `npm publish` y no contacta con servicios desplegados (comprobación con `grep` en la puerta: `secrets\.`, `push`, `publish`).
-- [ ] CA-03 — Un test que falla a propósito, en una rama desechable que no se fusiona, deja el trabajo correspondiente en rojo (enlace a la ejecución).
+- [x] CA-02 — El workflow no referencia más secreto que `GITHUB_TOKEN`, no hace `docker push` ni `npm publish` y no contacta con servicios desplegados (comprobación con `grep` en la puerta: `secrets\.`, `push`, `publish`).
+- [x] CA-03 — Un test que falla a propósito, en una rama desechable que no se fusiona, deja el trabajo correspondiente en rojo (enlace a la ejecución).
 
 **C-02 · Paridad REST**
 
-- [ ] [GWT] CA-04 — Dado el contrato exportado, Cuando se recorre `tools`, Entonces cada una de las 34 herramientas tiene `x-kairos-endpoint` con `method` y `path` presentes en `memory-platform.openapi.json`, o `local` (solo `important_workflow`).
-- [ ] CA-05 — Existen endpoints `/v1` para `capture_policy`, la reconciliación de `event_status` por proyecto, `query_corpus`, `get_observations`, `observation_search`, `observation_context` y `team_search`, y `POST …/corpora` acepta `date_start` y `date_end`. Cada uno tiene un test de acceso permitido, de lector sin permiso (403) y de proyecto ajeno.
-- [ ] [GWT] CA-06 — Dado un escenario sembrado en PostgreSQL aislado, Cuando se llama a cada herramienta por el MCP interno y a su endpoint por `/v1` con la misma credencial y argumentos, Entonces el contenido devuelto es igual (salvo el presupuesto de bytes y los campos aditivos de S-05). La prueba recorre las 34 herramientas.
-- [ ] CA-07 — El diff de `memory-platform.openapi.json` contra `contracts_base` es solo aditivo (rutas, operaciones y campos opcionales nuevos; ninguno eliminado o cambiado).
+- [x] [GWT] CA-04 — Dado el contrato exportado, Cuando se recorre `tools`, Entonces cada una de las 34 herramientas tiene `x-kairos-endpoint` con `method` y `path` presentes en `memory-platform.openapi.json`, o `local` (solo `important_workflow`).
+- [x] CA-05 — Existen endpoints `/v1` para `capture_policy`, la reconciliación de `event_status` por proyecto, `query_corpus`, `get_observations`, `observation_search`, `observation_context` y `team_search`, y `POST …/corpora` acepta `date_start` y `date_end`. Cada uno tiene un test de acceso permitido, de lector sin permiso (403) y de proyecto ajeno.
+- [x] [GWT] CA-06 — Dado un escenario sembrado en PostgreSQL aislado, Cuando se llama a cada herramienta por el MCP interno y a su endpoint por `/v1` con la misma credencial y argumentos, Entonces el contenido devuelto es igual (salvo el presupuesto de bytes y los campos aditivos de S-05). La prueba recorre las 34 herramientas.
+- [x] CA-07 — El diff de `memory-platform.openapi.json` contra `contracts_base` es solo aditivo (rutas, operaciones y campos opcionales nuevos; ninguno eliminado o cambiado).
 
 **C-03 · kairos-mcp**
 
-- [ ] CA-08 — `mcp/` no importa ningún módulo del servidor (test que analiza los `import` de `mcp/`: 0 apariciones de `memory_platform`) y su imagen no instala `psycopg`.
-- [ ] [GWT] CA-09 — Dado el contenedor `kairos-mcp` arrancado solo con `KAIROS_API_URL`, sin variables `MEMORY_DSN*`, sin secretos montados y sin la red `memory-data`, Cuando se pide `GET /health/live`, Entonces responde 200; y `docker compose config` del proyecto aislado muestra el servicio sin `secrets` ni `memory-data`.
-- [ ] CA-10 — `tools/list` de kairos-mcp devuelve las 34 herramientas en el mismo orden y con los mismos `name`, `description`, `inputSchema` y `annotations` que `docs/contracts/kairos-mcp.json`, comprobado con la misma regla de `test_contract_additive.py`.
-- [ ] [GWT] CA-11 — Dados los tests de comportamiento del MCP interno (`test_mcp.py`, `test_mcp_write.py`, `test_agent_tools.py`, `test_extended_tools.py`, `test_corpus_gateway.py`, `test_extended_gateway.py`, `test_work_gateway.py`), Cuando se ejecutan contra la cadena kairos-mcp → servidor sobre PostgreSQL aislado, Entonces pasan con los mismos resultados (salvo los campos aditivos de S-05).
-- [ ] CA-12 — Con una clave sin permiso de lectura, la herramienta falla con el mismo mensaje que el MCP interno; sin credencial, 401; kairos-mcp no guarda ni registra la credencial (test que busca el token sintético en sus logs: 0 apariciones).
-- [ ] CA-13 — Todas las herramientas de lectura devuelven el envoltorio acordado en P-02 tanto en kairos-mcp como en el MCP interno; los campos existentes no cambian, y los tests del CLI 0.3.0 (`dispatcher.test.mjs`, `mcp.test.mjs`) pasan sin cambios.
+- [x] CA-08 — `mcp/` no importa ningún módulo del servidor (test que analiza los `import` de `mcp/`: 0 apariciones de `memory_platform`) y su imagen no instala `psycopg`.
+- [x] [GWT] CA-09 — Dado el contenedor `kairos-mcp` arrancado solo con `KAIROS_API_URL`, sin variables `MEMORY_DSN*`, sin secretos montados y sin la red `memory-data`, Cuando se pide `GET /health/live`, Entonces responde 200; y `docker compose config` del proyecto aislado muestra el servicio sin `secrets` ni `memory-data`.
+- [x] CA-10 — `tools/list` de kairos-mcp devuelve las 34 herramientas en el mismo orden y con los mismos `name`, `description`, `inputSchema` y `annotations` que `docs/contracts/kairos-mcp.json`, comprobado con la misma regla de `test_contract_additive.py`.
+- [x] [GWT] CA-11 — Dados los tests de comportamiento del MCP interno (`test_mcp.py`, `test_mcp_write.py`, `test_agent_tools.py`, `test_extended_tools.py`, `test_corpus_gateway.py`, `test_extended_gateway.py`, `test_work_gateway.py`), Cuando se ejecutan contra la cadena kairos-mcp → servidor sobre PostgreSQL aislado, Entonces pasan con los mismos resultados (salvo los campos aditivos de S-05).
+- [x] CA-12 — Con una clave sin permiso de lectura, la herramienta falla con el mismo mensaje que el MCP interno; sin credencial, 401; kairos-mcp no guarda ni registra la credencial (test que busca el token sintético en sus logs: 0 apariciones).
+- [x] CA-13 — Todas las herramientas de lectura devuelven el envoltorio acordado en P-02 tanto en kairos-mcp como en el MCP interno; los campos existentes no cambian, y los tests del CLI 0.3.0 (`dispatcher.test.mjs`, `mcp.test.mjs`) pasan sin cambios.
 
 **C-04 · Servidor sin modelo de lenguaje (D-2, D-4, S-04, S-09)**
 
-- [ ] [GWT] CA-14 — Dada la configuración por defecto, Cuando se ingiere un evento `summary` con `generate: true`, Entonces la respuesta es 202, no se crea ningún trabajo `extract`, el recibo lo indica según P-03 y el worker no instancia el proveedor `extract`.
-- [ ] CA-15 — Con la configuración por defecto, `corpus_answer` devuelve `corpus_answer_disabled` y el proveedor simulado recibe 0 llamadas; con `MEMORY_CORPUS_ANSWER=on` y un modelo configurado, los 21 tests actuales de `test_corpus_answers.py` pasan.
-- [ ] CA-16 — `grep -n "beam"` en `memory_platform/config.py`, `docker-compose.yml` y `docs/configuration.md` no devuelve nada; activar `extract` o `corpus_answer` sin `MEMORY_LLM_MODEL` hace fallar `Settings.from_env()` con un mensaje que nombra la variable.
-- [ ] [GWT] CA-17 — Dado el proxy de Ollama con un upstream simulado, Cuando se piden `/api/embed` y `/api/version`, Entonces llegan al upstream; y `/api/pull`, `/api/delete`, `/api/create`, `/api/chat` y `/api/generate` responden 403 sin llegar a él. Con `OLLAMA_ALLOW_CHAT=1`, `/api/chat` llega.
-- [ ] CA-18 — La suite backend completa pasa con `MEMORY_LLM_MODEL` sin definir y un espía que falla ante cualquier llamada a `/api/chat`; el arranque de `memory-api` y `memory-worker` en el proyecto aislado tampoco llama a `/api/chat`.
+- [x] [GWT] CA-14 — Dada la configuración por defecto, Cuando se ingiere un evento `summary` con `generate: true`, Entonces la respuesta es 202, no se crea ningún trabajo `extract`, el recibo lo indica según P-03 y el worker no instancia el proveedor `extract`.
+- [x] CA-15 — Con la configuración por defecto, `corpus_answer` devuelve `corpus_answer_disabled` y el proveedor simulado recibe 0 llamadas; con `MEMORY_CORPUS_ANSWER=on` y un modelo configurado, los 21 tests actuales de `test_corpus_answers.py` pasan.
+- [x] CA-16 — `grep -n "beam"` en `memory_platform/config.py`, `docker-compose.yml` y `docs/configuration.md` no devuelve nada; activar `extract` o `corpus_answer` sin `MEMORY_LLM_MODEL` hace fallar `Settings.from_env()` con un mensaje que nombra la variable.
+- [x] [GWT] CA-17 — Dado el proxy de Ollama con un upstream simulado, Cuando se piden `/api/embed` y `/api/version`, Entonces llegan al upstream; y `/api/pull`, `/api/delete`, `/api/create`, `/api/chat` y `/api/generate` responden 403 sin llegar a él. Con `OLLAMA_ALLOW_CHAT=1`, `/api/chat` llega.
+- [x] CA-18 — La suite backend completa pasa con `MEMORY_LLM_MODEL` sin definir y un espía que falla ante cualquier llamada a `/api/chat`; el arranque de `memory-api` y `memory-worker` en el proyecto aislado tampoco llama a `/api/chat`.
 
 **C-05 · Esquema de observación**
 
-- [ ] CA-19 — Existen `docs/contracts/observation.v1.schema.json` y `docs/contracts/session-summary.v1.schema.json` (JSON Schema 2020-12) con `schema_version`. La observación declara tipo, título, hechos con cita literal, narrativa, conceptos, ficheros leídos y modificados. El resumen declara petición, investigado, aprendido, hecho y siguiente.
-- [ ] [GWT] CA-20 — Dada una observación con `schema_version: "observation.v1"`, Cuando se envía a `POST /v1/observations`, Entonces es 202 si valida y 422 `invalid_observation` (con la ruta del error y sin eco del contenido) si falta un campo, sobra uno o excede un límite. Un evento sin `schema_version` se trata según P-11.
-- [ ] CA-21 — Un conjunto de ejemplos válidos e inválidos versionado junto al esquema se valida igual en el test del servidor y con un validador independiente del servidor.
-- [ ] CA-22 — Si hacen falta columnas o índices (por ejemplo, para filtrar por conceptos o ficheros), la migración es aditiva: `test_migrations_additive.py` pasa y `content_manifest().sha256` es igual antes y después de migrar.
+- [x] CA-19 — Existen `docs/contracts/observation.v1.schema.json` y `docs/contracts/session-summary.v1.schema.json` (JSON Schema 2020-12) con `schema_version`. La observación declara tipo, título, hechos con cita literal, narrativa, conceptos, ficheros leídos y modificados. El resumen declara petición, investigado, aprendido, hecho y siguiente.
+- [x] [GWT] CA-20 — Dada una observación con `schema_version: "observation.v1"`, Cuando se envía a `POST /v1/observations`, Entonces es 202 si valida y 422 `invalid_observation` (con la ruta del error y sin eco del contenido) si falta un campo, sobra uno o excede un límite. Un evento sin `schema_version` se trata según P-11.
+- [x] CA-21 — Un conjunto de ejemplos válidos e inválidos versionado junto al esquema se valida igual en el test del servidor y con un validador independiente del servidor.
+- [x] CA-22 — Si hacen falta columnas o índices (por ejemplo, para filtrar por conceptos o ficheros), la migración es aditiva: `test_migrations_additive.py` pasa y `content_manifest().sha256` es igual antes y después de migrar.
 
 **C-06 · Estructura del repositorio**
 
-- [ ] CA-23 — Existen `server/`, `mcp/`, `client/` y `web/`; ya no existen `memory_platform/` ni `packages/kairos-cli/` en la raíz, y `git log --follow` conserva la historia de un fichero movido de cada uno.
-- [ ] CA-24 — Cada componente tiene su Dockerfile (o imagen), su orden de tests, que la CI ejecuta, y su versión declarada (P-07).
-- [ ] CA-25 — `memory_platform/tests/store_surface.json` (en su nueva ruta) no cambia y `test_store_surface` pasa; el recuento de la suite es igual antes y después de cada paso de movimiento, con recibo de la puerta congelada actualizada.
-- [ ] CA-26 — `npm pack` del cliente produce la misma lista de ficheros que antes del movimiento y `release:check` pasa.
+- [x] CA-23 — Existen `server/`, `mcp/`, `client/` y `web/`; ya no existen `memory_platform/` ni `packages/kairos-cli/` en la raíz, y `git log --follow` conserva la historia de un fichero movido de cada uno.
+- [x] CA-24 — Cada componente tiene su Dockerfile (o imagen), su orden de tests, que la CI ejecuta, y su versión declarada (P-07).
+- [x] CA-25 — `memory_platform/tests/store_surface.json` (en su nueva ruta) no cambia y `test_store_surface` pasa; el recuento de la suite es igual antes y después de cada paso de movimiento, con recibo de la puerta congelada actualizada.
+- [x] CA-26 — `npm pack` del cliente produce la misma lista de ficheros que antes del movimiento y `release:check` pasa.
 
 **C-07 · Compatibilidad**
 
-- [ ] [GWT] CA-27 — Dado `MEMORY_MOUNT_MCP=1` (valor por defecto durante la versión de transición), Cuando se usa el MCP interno, Entonces los tests actuales del MCP interno pasan y cada respuesta lleva las cabeceras `Deprecation` y `Sunset` con la versión de retirada documentada; con `MEMORY_MOUNT_MCP=0`, `/mcp` en `memory-api` responde 404.
-- [ ] CA-28 — El puente stdio del CLI (`kairos doctor` y el puente) funciona contra kairos-mcp en el proyecto aislado: el target `lifecycle-test` pasa y `REQUIRED_TOOLS` (`packages/kairos-cli/lib/mcp.mjs:7-8`) está presente.
+- [x] [GWT] CA-27 — Dado `MEMORY_MOUNT_MCP=1` (valor por defecto durante la versión de transición), Cuando se usa el MCP interno, Entonces los tests actuales del MCP interno pasan y cada respuesta lleva las cabeceras `Deprecation` y `Sunset` con la versión de retirada documentada; con `MEMORY_MOUNT_MCP=0`, `/mcp` en `memory-api` responde 404.
+- [x] CA-28 — El puente stdio del CLI (`kairos doctor` y el puente) funciona contra kairos-mcp en el proyecto aislado: el target `lifecycle-test` pasa y `REQUIRED_TOOLS` (`packages/kairos-cli/lib/mcp.mjs:7-8`) está presente.
 
 **Transversales**
 
-- [ ] CA-29 — El contrato `docs/contracts/kairos-mcp.json` regenerado solo tiene adiciones respecto de `contracts_base` del commit de inicio de la iniciativa (`23ced03`): 34 herramientas, mismo orden, ningún campo, valor por defecto ni `required` eliminado o cambiado.
-- [ ] CA-30 — Ninguna migración nueva contiene `DROP`, `TRUNCATE`, `DELETE` ni `ALTER … TYPE`, y ningún test ni script referencia contenedores, volúmenes o redes `knowledge-graphs-*` salvo para rechazarlos.
-- [ ] [GWT] CA-31 — Dado un proyecto Compose aislado con `memory-postgres`, `memory-api`, `memory-worker`, `memory-mcp`, `memory-web` y un proveedor de embeddings simulado, Cuando un cliente MCP escribe una observación, espera su indexado y la busca, Entonces la encuentra por kairos-mcp sin que el servidor haya llamado a ningún modelo de lenguaje.
-- [ ] CA-32 — Al cerrar, la suite backend pasa con 0 fallos y 0 omitidos, `retrieval-eval` pasa con los umbrales vigentes y los manuales afectados (`docs/architecture.md`, `docs/configuration.md`, `docs/operations.md`, `docs/install.md`, `docs/integration.md`, `README.md`) describen los tres componentes y la retirada del MCP interno.
+- [x] CA-29 — El contrato `docs/contracts/kairos-mcp.json` regenerado solo tiene adiciones respecto de `contracts_base` del commit de inicio de la iniciativa (`23ced03`): 34 herramientas, mismo orden, ningún campo, valor por defecto ni `required` eliminado o cambiado.
+- [x] CA-30 — Ninguna migración nueva contiene `DROP`, `TRUNCATE`, `DELETE` ni `ALTER … TYPE`, y ningún test ni script referencia contenedores, volúmenes o redes `knowledge-graphs-*` salvo para rechazarlos.
+- [x] [GWT] CA-31 — Dado un proyecto Compose aislado con `memory-postgres`, `memory-api`, `memory-worker`, `memory-mcp`, `memory-web` y un proveedor de embeddings simulado, Cuando un cliente MCP escribe una observación, espera su indexado y la busca, Entonces la encuentra por kairos-mcp sin que el servidor haya llamado a ningún modelo de lenguaje.
+- [x] CA-32 — Al cerrar, la suite backend pasa con 0 fallos y 0 omitidos, `retrieval-eval` pasa con los umbrales vigentes y los manuales afectados (`docs/architecture.md`, `docs/configuration.md`, `docs/operations.md`, `docs/install.md`, `docs/integration.md`, `README.md`) describen los tres componentes y la retirada del MCP interno.
 
 ## Pruebas
 

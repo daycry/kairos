@@ -232,6 +232,27 @@ class RevocationTests(unittest.TestCase):
             self.assertIn('revoke it by hand', text)
             self.assertNotIn('synthetic-token', text)
 
+    def test_a_failed_logout_never_hides_the_error_that_was_propagating(self):
+        base = self.portal(fail_mcp=True, fail_delete=True)
+
+        class Portal(base):
+            def logout(self):
+                self.calls.append(('logout', None))
+                raise deploy.DeploymentError('logout failed')
+        _, error, _ = self.verify(Portal, warnings=[])
+        self.assertIn('protocol or tool error', str(error))  # not the error of the DELETE nor of the logout
+
+    def test_a_failed_logout_after_a_good_check_is_reported(self):
+        base = self.portal()
+
+        class Portal(base):
+            def logout(self):
+                self.calls.append(('logout', None))
+                raise deploy.DeploymentError('logout failed')
+        report, error, _ = self.verify(Portal, warnings=[])
+        self.assertIsNone(report)
+        self.assertIn('logout failed', str(error))
+
     def test_a_failed_revocation_after_a_good_check_is_in_the_returned_report(self):
         report, error, stderr = self.verify(self.portal(fail_delete=True), warnings=[])
         self.assertIsNone(error)
@@ -279,6 +300,7 @@ class ConsoleMessageTests(unittest.TestCase):
         self.assertEqual(deploy.verified_message({'mcp_checked': True}), 'Kairos deployment verified.')
         self.assertEqual(deploy.verified_message({'projects': 2}), 'Kairos deployment verified.')
         self.assertIn('/mcp not checked', deploy.verified_message({'mcp_checked': False}))
+        self.assertIn('/mcp not checked for 20 projects', deploy.verified_message({'projects': 100, 'projects_not_checked': 20}))
 
 
 class EmbeddingStubTests(unittest.TestCase):
