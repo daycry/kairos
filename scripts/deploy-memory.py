@@ -15,7 +15,11 @@ import re
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
+import time
+import urllib.error
 import urllib.request
+import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PROJECT = 'knowledge-graphs'
@@ -27,6 +31,9 @@ SERVICES = ('memory-api', 'memory-worker', 'memory-mcp', 'memory-web')
 NEW_NETWORKS = ('mcp',)  # networks that an installation made before this release does not have yet: the start creates them, a missing one is not an error
 BACKFILL_TIMEOUT_SECONDS = 1800  # queues jobs in short transactions; the worker does the embedding after `start`
 BACKFILL_REPORT_KEYS = ('status', 'reason', 'enqueued', 'derived', 'failed', 'pending', 'remaining', 'batches', 'embedding_filled', 'stale_marked')  # counts only, never anything else
+STUB_SERVICE, STUB_PORT, STUB_DIMENSIONS = 'embed-stub', 11434, 768  # the simulated embedding provider of an isolated rehearsal (T-71, T-72); 768 = nomic-embed-text, the vector index
+REHEARSAL_PROJECT_ID = 'rehearsal'
+SPY_QUERY = f"import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:{STUB_PORT}/__spy',timeout=5).read().decode())"
 PHASES = ('engine', 'configuration', 'build', 'database', 'inspect', 'backup',
           'migrate', 'bootstrap', 'backfill', 'start', 'verify')
 
@@ -71,9 +78,37 @@ def project_volumes(project):
     return (project + '_memory-postgres-data', project + '_memory-backups')
 
 
-def isolation_override(project, api_port, web_port):
+def embed_stub_services(project):
+    """Services of the simulated embedding provider: the `api` image running `memory_platform.tests.llm_spy` on the networks the proxy `ollama` uses.
+
+    `ollama` (the allow-list proxy) forwards to it instead of the Ollama of the host, and `/api/chat` is let through the proxy (`OLLAMA_ALLOW_CHAT=1`, set by
+    the deployment) so that a language-model call would reach the stub, be refused with a 500 and be counted instead of being hidden by the proxy's own 403.
+    """
+    return f"""  {STUB_SERVICE}:
+    image: {isolated_image(project, 'api')}
+    pull_policy: never
+    entrypoint: [python, -m, memory_platform.tests.llm_spy, --serve, '0.0.0.0:{STUB_PORT}', --dimensions, '{STUB_DIMENSIONS}']
+    user: '10001:10001'
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [inference, egress]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request;urllib.request.urlopen('http://127.0.0.1:{STUB_PORT}/api/version',timeout=4)"]
+      interval: 5s
+      timeout: 6s
+      retries: 12
+  ollama:
+    depends_on:
+      {STUB_SERVICE}: {{condition: service_healthy}}
+"""
+
+
+def isolation_override(project, api_port, web_port, embed_stub=False):
     """Compose override that moves one deployment away from every installed name and port."""
     image = lambda name: isolated_image(project, name)
+    stub = embed_stub_services(project) if embed_stub else ''
     return f"""# Generated for the isolated project {project}; it replaces every fixed name of docker-compose.yml.
 services:
   memory-postgres: {{image: {image('postgres')}}}
@@ -89,7 +124,7 @@ services:
     image: {image('web')}
     ports: !override ['127.0.0.1:{web_port}:8080']
   memory-admin: {{image: {image('operator')}}}
-networks:
+{stub}networks:
   inference: {{name: {project}_inference}}
   webui: {{name: {project}_webui}}
   mcp: {{name: {project}_mcp}}
@@ -172,6 +207,12 @@ class Deployment:
         self.web_port = getattr(args, 'web_port', None) or DEFAULT_WEB_PORT
         validate_isolation(self.project, self.api_port, self.web_port)
         self.isolated = self.project != DEFAULT_PROJECT
+        self.embed_stub = bool(getattr(args, 'embed_stub', False))
+        self.roundtrip = bool(getattr(args, 'roundtrip', False))
+        if (self.embed_stub or self.roundtrip) and not self.isolated:
+            raise DeploymentError('--embed-stub and --roundtrip are only for an isolated --project-name: the installed project keeps its own embedding provider')
+        if self.roundtrip and not self.embed_stub:
+            raise DeploymentError('--roundtrip needs --embed-stub: the rehearsal must prove that no language model was asked for')
         self.volumes = project_volumes(self.project)
         self.private = safe_path(root / '.private' / ('rehearsal-' + self.project) if self.isolated else root / '.private')
         if self.isolated:
@@ -181,6 +222,9 @@ class Deployment:
             # Nothing MEMORY_*/COMPOSE_*/KAIROS* of the caller's shell reaches Compose: the project's own env file decides.
             clean = {k: v for k, v in os.environ.items() if not k.upper().startswith(('MEMORY_', 'COMPOSE_', 'KAIROS'))}
             self.environment = dict(clean, MEMORY_ALLOWED_ORIGINS=f'http://127.0.0.1:{self.web_port},http://localhost:{self.web_port}')
+            if self.embed_stub:
+                # Never the Ollama of the host: the proxy of the project points at the stub of the project, and lets chat through so the stub can count it.
+                self.environment.update(OLLAMA_UPSTREAM=f'{STUB_SERVICE}:{STUB_PORT}', OLLAMA_ALLOW_CHAT='1')
         else:
             self.environment = None
         self.report = {'status': 'pending', 'phases': [], 'backup': None,
@@ -212,6 +256,35 @@ class Deployment:
 
     def operator(self, *args, timeout=120):
         return decode_json(self.run(self.compose + ['run', '--rm', '--no-deps', '-T', 'memory-admin', *args], timeout=timeout))
+
+    def spy_report(self):
+        report = decode_json(self.run(self.compose + ['exec', '-T', STUB_SERVICE, 'python', '-c', SPY_QUERY]))
+        if set(report) != {'chat_calls', 'embed_calls', 'requests'}:
+            raise DeploymentError('The embedding stub returned an unexpected report')
+        return report
+
+    def check_no_language_model(self):
+        """The oracle of CA-18 over the running stack: whatever the services did, the stub saw no `/api/chat` or `/api/generate` call."""
+        report = self.spy_report()
+        if report['chat_calls']:
+            raise DeploymentError(f"The server asked a language model {report['chat_calls']} time(s); there must be none")
+        print(f"PASS no language model: chat calls {report['chat_calls']}; embed calls {report['embed_calls']}", flush=True)
+        return report
+
+    def run_roundtrip(self):
+        """CLI -> memory-web (`/mcp/`) -> kairos-mcp -> `/v1` -> PostgreSQL, then the worker and the stub: write one observation and find it by search (T-72, CA-31)."""
+        password = safe_path(self.secret_dir / 'bootstrap_password').read_text(encoding='utf-8').strip()
+        origin = f'http://127.0.0.1:{self.web_port}'
+        before = self.spy_report()
+        result = roundtrip(origin, password, self.private, self.root)
+        after = self.spy_report()
+        if after['chat_calls']:
+            raise DeploymentError(f"The server asked a language model {after['chat_calls']} time(s) during the round trip; there must be none")
+        if after['embed_calls'] <= before['embed_calls']:
+            raise DeploymentError('The worker never asked the simulated provider for the vector of the observation')
+        result.update(chat_calls=after['chat_calls'], embed_calls=after['embed_calls'])
+        print('PASS roundtrip: ' + json.dumps(result, sort_keys=True), flush=True)
+        return result
 
     def save_report(self):
         self.private.mkdir(parents=True, exist_ok=True)
@@ -260,7 +333,7 @@ class Deployment:
             self.private.mkdir(parents=True, exist_ok=True)
             check_isolation_names(self.project, (self.root / 'docker-compose.yml').read_text(encoding='utf-8'))
             override = safe_path(self.private / 'compose.override.yml')
-            override.write_text(isolation_override(self.project, self.api_port, self.web_port), encoding='utf-8')
+            override.write_text(isolation_override(self.project, self.api_port, self.web_port, self.embed_stub), encoding='utf-8')
             self.compose.extend(['-f', str(override)])
         self.compose.extend(['--profile', 'memory', '--profile', 'memory-admin'])
         self.run(self.compose + ['config', '--quiet'])
@@ -332,52 +405,94 @@ class Deployment:
         self.report['backfill'] = {key: result[key] for key in BACKFILL_REPORT_KEYS if key in result}
         self.step('start')
         self.run(self.compose + ['up', '-d', '--no-deps', '--wait', '--wait-timeout', '90',
-                                 'ollama', *SERVICES])
+                                 *((STUB_SERVICE,) if self.embed_stub else ()), 'ollama', *SERVICES])
         self.step('verify')
         final = self.operator('content-manifest')
         if before:
             compare_content(before, final)
         self.report['verification'] = verify_runtime(final, self.secret_dir,
                                                     self.args.verify_key_file, f'http://127.0.0.1:{self.web_port}')
+        if self.roundtrip:
+            self.step('roundtrip')
+            self.report['roundtrip'] = self.run_roundtrip()
+        if self.embed_stub:
+            self.report['model_calls'] = self.check_no_language_model()
         self.report.update(status='complete', content_sha256=final['sha256'],
                            documents=len(final['documents']), projects=len(final['projects']))
         self.save_report()
         print('Kairos deployment verified. Report: ' + ('.private/rehearsal-' + self.project + '/' if self.isolated else '.private/') + 'deployment-status.json')
 
 
-def verify_runtime(manifest, secret_dir, key_file=None, origin='http://127.0.0.1:5173'):
-    """Read actual MCP tools, projects and complete paginated document manifests."""
-    client = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
-    headers = {'Accept': 'application/json, text/event-stream', 'Origin': origin}
+class Portal:
+    """The web entry as a browser or a client uses it: HTTP to the published port, a session cookie with its CSRF token, or a Bearer for `/mcp/`."""
 
-    def request(path, value=None):
+    def __init__(self, origin):
+        self.origin = origin
+        self.client = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+        self.headers = {'Accept': 'application/json, text/event-stream', 'Origin': origin}
+
+    def exchange(self, path, value=None, method=None, bearer=None, host=None):
+        """(status, body) of one request; an HTTP error status is an answer here, not an exception."""
         data = json.dumps(value).encode() if value is not None else None
-        req = urllib.request.Request(origin + path, data=data, headers=dict(headers, **({'Content-Type': 'application/json'} if data else {})))
+        headers = dict(self.headers, **({'Content-Type': 'application/json'} if data else {}))
+        if bearer:
+            headers['Authorization'] = 'Bearer ' + bearer
+        if host:
+            headers['Host'] = host
+        request = urllib.request.Request(self.origin + path, data=data, headers=headers, method=method)
         try:
-            with client.open(req, timeout=15) as response:
-                content = response.read(4_194_305)
-            if len(content) > 4_194_304:
-                raise DeploymentError('Runtime verification exceeded its response limit')
-            return json.loads(content)
+            with self.client.open(request, timeout=15) as response:
+                status, content = response.status, response.read(4_194_305)
+        except urllib.error.HTTPError as error:
+            status, content = error.code, error.read(4_194_305)
+        if len(content) > 4_194_304:
+            raise DeploymentError('Runtime verification exceeded its response limit')
+        return status, content
+
+    def request(self, path, value=None, method=None, bearer=None, host=None):
+        try:
+            status, content = self.exchange(path, value, method, bearer, host)
+            if status >= 400:
+                raise ValueError(status)
+            return json.loads(content) if content else {}
         except DeploymentError:
             raise
         except Exception:
             raise DeploymentError('Runtime verification failed; check access and service status without resending data') from None
 
+    def login(self, password):
+        self.headers['X-CSRF-Token'] = self.request('/v1/auth/login', {'username': 'admin', 'password': password})['csrf_token']
+
+    def logout(self):
+        self.request('/v1/auth/logout', {})
+
+
+def verify_runtime(manifest, secret_dir, key_file=None, origin='http://127.0.0.1:5173'):
+    """Read actual MCP tools, projects and complete paginated document manifests.
+
+    `/mcp/` of the web entry is kairos-mcp, which takes a Bearer and never the portal cookie: with a session login the check first creates a read key
+    for the projects of the manifest and revokes it at the end.
+    """
+    portal = Portal(origin)
+    request = portal.request
+    bearer, temporary_key = None, None
     if key_file:
-        key = safe_path(Path(key_file)).read_text(encoding='utf-8').strip()
-        headers['Authorization'] = 'Bearer ' + key
+        bearer = safe_path(Path(key_file)).read_text(encoding='utf-8').strip()
     else:
-        password = safe_path(secret_dir / 'bootstrap_password').read_text(encoding='utf-8').strip()
-        login = request('/v1/auth/login', {'username': 'admin', 'password': password})
-        headers['X-CSRF-Token'] = login['csrf_token']
+        portal.login(safe_path(secret_dir / 'bootstrap_password').read_text(encoding='utf-8').strip())
+        if not manifest['projects']:
+            # A key needs at least one project to be granted on, and an installation without projects has nothing to read: the `/mcp/` check is not possible (and is reported as such).
+            portal.logout()
+            return {'transport': 'MCP HTTP', 'tools': [], 'projects': 0, 'documents_verified': 0, 'mcp_checked': False, 'reason': 'the installation has no project to authorize a key on'}
+        created = request('/v1/keys', {'name': 'deployment-verify-' + uuid.uuid4().hex[:8], 'project_ids': [p['id'] for p in manifest['projects']], 'scopes': ['read']})
+        bearer, temporary_key = created['token'], created['id']
     try:
         serial = 0
 
         def rpc(method, params):
             nonlocal serial
             serial += 1
-            result = request('/mcp/', {'jsonrpc': '2.0', 'id': serial, 'method': method, 'params': params})
+            result = request('/mcp/', {'jsonrpc': '2.0', 'id': serial, 'method': method, 'params': params}, bearer=bearer)
             if result.get('error') or 'result' not in result or result['result'].get('isError'):
                 raise DeploymentError('MCP verification returned a protocol or tool error')
             return result['result']
@@ -439,7 +554,125 @@ def verify_runtime(manifest, secret_dir, key_file=None, origin='http://127.0.0.1
                 'projects': len(projects), 'documents_verified': len(actual)}
     finally:
         if not key_file:
-            request('/v1/auth/logout', {})
+            try:
+                if temporary_key:
+                    request('/v1/keys/' + temporary_key, method='DELETE')
+            finally:
+                portal.logout()
+
+
+class CliBridge:
+    """`kairos mcp --url <web entry> --key-file <file>` as an MCP client launches it: JSON-RPC lines on stdin and stdout (the CLI of `client/`)."""
+
+    def __init__(self, root, origin, key_file):
+        import queue
+        import shutil
+        import threading
+        node = shutil.which('node')
+        if not node:
+            raise DeploymentError('The round trip needs Node.js to run the CLI of client/')
+        self.child = subprocess.Popen([node, str(root / 'client' / 'bin' / 'kairos.mjs'), 'mcp', '--url', origin, '--key-file', str(key_file)], stdin=subprocess.PIPE,
+                                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, encoding='utf-8', cwd=root)
+        self.lines, self.serial = queue.Queue(), 0
+        threading.Thread(target=lambda: [self.lines.put(line) for line in self.child.stdout], daemon=True).start()
+
+    def send(self, method, params=None, notification=False):
+        import queue
+        self.serial += 1
+        message = {'jsonrpc': '2.0', 'method': method, 'params': params or {}}
+        if not notification:
+            message['id'] = self.serial
+        self.child.stdin.write(json.dumps(message) + '\n')
+        self.child.stdin.flush()
+        if notification:
+            return None
+        try:
+            answer = json.loads(self.lines.get(timeout=60))
+        except queue.Empty:
+            raise DeploymentError('The CLI bridge did not answer ' + method + ' in 60 s') from None
+        if answer.get('id') != self.serial or 'result' not in answer:
+            raise DeploymentError('The CLI bridge answered ' + method + ' with an error')
+        return answer['result']
+
+    def tool(self, name, arguments):
+        result = self.send('tools/call', {'name': name, 'arguments': arguments})
+        if result.get('isError'):
+            raise DeploymentError('The tool ' + name + ' returned an error')
+        if 'structuredContent' in result:
+            return result['structuredContent']
+        return decode_json(next(block['text'] for block in result['content'] if block.get('type') == 'text'))
+
+    def close(self):
+        try:
+            self.child.stdin.close()
+            self.child.wait(timeout=10)
+        except Exception:
+            self.child.kill()
+            self.child.wait()
+        self.child.stdout.close()
+
+
+def roundtrip(origin, password, private, root, wait_seconds=90):
+    """The three components end to end through the web entry (T-72, CA-31): the CLI talks to `/mcp/` of nginx, which is kairos-mcp, which calls `/v1`.
+
+    A project and a read/write key are created through the portal; the CLI bridge writes one observation with `remember` and searches for it until the worker
+    has indexed it. `allowed_hosts` parity: nginx forwards the `Host` it received, so kairos-mcp must accept the host names of the published origins and refuse any other.
+    """
+    portal = Portal(origin)
+    portal.login(password)
+    key_id = key_file = bridge = None
+    try:
+        portal.request('/v1/projects', {'id': REHEARSAL_PROJECT_ID, 'title': 'Three-component rehearsal', 'capture_mode': 'full'})
+        created = portal.request('/v1/keys', {'name': 'rehearsal-roundtrip', 'project_ids': [REHEARSAL_PROJECT_ID], 'scopes': ['read', 'write']})
+        key_id, token = created['id'], created['token']
+        private.mkdir(parents=True, exist_ok=True)
+        key_file = safe_path(private / 'roundtrip.key')
+        key_file.write_text(token + '\n', encoding='utf-8')
+        if os.name != 'nt':
+            key_file.chmod(0o600)
+        host = origin.split('//', 1)[1]
+        listing = {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list', 'params': {}}
+        hosts = {}
+        for name, value in (('ip', host), ('localhost', 'localhost:' + host.rsplit(':', 1)[1]), ('foreign', 'evil.example')):
+            status, _ = portal.exchange('/mcp/', listing, bearer=token, host=value)
+            hosts[name] = status
+        if hosts['ip'] != 200 or hosts['localhost'] != 200 or hosts['foreign'] not in (400, 403, 421):
+            raise DeploymentError('allowed_hosts of kairos-mcp does not match the Host that nginx forwards: ' + json.dumps(hosts, sort_keys=True))
+        bridge = CliBridge(root, origin, key_file)
+        info = bridge.send('initialize', {'protocolVersion': '2025-03-26', 'capabilities': {}, 'clientInfo': {'name': 'kairos-rehearsal', 'version': '1'}})
+        bridge.send('notifications/initialized', notification=True)
+        tools = {tool['name'] for tool in bridge.send('tools/list')['tools']}
+        if len(tools) != 34 or not {'remember', 'search', 'event_status'} <= tools:
+            raise DeploymentError(f'kairos-mcp listed {len(tools)} tools through nginx; expected 34')
+        marker = 'rehearsal-' + uuid.uuid4().hex
+        item_id = str(uuid.uuid4())
+        event = {'event_id': str(uuid.uuid4()), 'project_id': REHEARSAL_PROJECT_ID, 'session_id': 'rehearsal-session', 'agent_id': 'kairos-rehearsal', 'event_type': 'note',
+                 'occurred_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'item_id': item_id, 'version': 1, 'generate': False,
+                 'payload': {'title': 'Rehearsal observation ' + marker, 'content': 'The observation ' + marker + ' was written through kairos-mcp and the web entry.',
+                             'source': {'uri': 'fixture://rehearsal'}}}
+        receipt = bridge.tool('remember', {'event': event})
+        deadline, found = time.monotonic() + wait_seconds, None
+        while time.monotonic() < deadline and not found:
+            hits = bridge.tool('search', {'project_ids': [REHEARSAL_PROJECT_ID], 'q': marker, 'limit': 5})
+            found = next((hit for hit in hits.get('items', []) if hit.get('item_id') == item_id), None)
+            if not found:
+                time.sleep(2)
+        if not found:
+            raise DeploymentError(f'The observation written through kairos-mcp was not found by search in {wait_seconds} s')
+        return {'server': info.get('serverInfo', {}).get('name'), 'tools': len(tools), 'hosts': hosts, 'receipt': sorted(receipt) if isinstance(receipt, dict) else None,
+                'found_ref': found.get('ref'), 'found_layer': found.get('layer')}
+    finally:
+        try:
+            if bridge:
+                bridge.close()
+        finally:
+            try:
+                if key_id:
+                    portal.request('/v1/keys/' + key_id, method='DELETE')
+            finally:
+                if key_file and key_file.exists():
+                    key_file.unlink()
+                portal.logout()
 
 
 def failure_hints(report, phase):
@@ -457,6 +690,7 @@ def failure_hints(report, phase):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply', action='store_true')
+    parser.add_argument('--dry-run', action='store_true', help='Print the plan only (the default; it cannot be combined with --apply)')
     parser.add_argument('--fresh', action='store_true', help='Allow first installation; never replace existing secrets')
     parser.add_argument('--secret-dir', help='Existing private secret directory outside the repository')
     parser.add_argument('--verify-key-file', help='Optional existing read key for all projects, if the admin password was changed')
@@ -464,16 +698,27 @@ def main(argv=None):
                         help='Isolated rehearsal: own compose project, volumes, networks, image tags, ports and private directory (never the installed project)')
     parser.add_argument('--api-port', type=int, default=DEFAULT_API_PORT, help='Isolated rehearsal only: host port of the API')
     parser.add_argument('--web-port', type=int, default=DEFAULT_WEB_PORT, help='Isolated rehearsal only: host port of the portal')
+    parser.add_argument('--embed-stub', action='store_true',
+                        help='Isolated rehearsal only: a simulated embedding provider instead of the Ollama of the host; it also counts any language-model call (must be 0)')
+    parser.add_argument('--roundtrip', action='store_true',
+                        help='Isolated rehearsal only (needs --embed-stub): the CLI writes an observation through memory-web -> kairos-mcp -> /v1 and finds it by search')
     parser.add_argument('--stop-services-before-migrate', action='store_true',
                         help='Stop memory-api and memory-worker before the migrate phase (they are started again by the start phase); default: leave them running')
     args = parser.parse_args(argv)
+    if args.apply and args.dry_run:
+        parser.error('--dry-run and --apply exclude each other')
     if not args.apply:
         try:
             validate_isolation(args.project_name, args.api_port, args.web_port)
+            if (args.embed_stub or args.roundtrip) and args.project_name == DEFAULT_PROJECT:
+                raise DeploymentError('--embed-stub and --roundtrip are only for an isolated --project-name')
+            if args.roundtrip and not args.embed_stub:
+                raise DeploymentError('--roundtrip needs --embed-stub')
         except DeploymentError as exc:
             parser.error(str(exc))
-        print(json.dumps({'mode': 'dry-run', 'phases': PHASES, 'services': SERVICES, 'fresh': args.fresh, 'project': args.project_name,
-                          'volumes': project_volumes(args.project_name), 'models': 'preserve configuration',
+        phases = PHASES + (('roundtrip',) if args.roundtrip else ())
+        print(json.dumps({'mode': 'dry-run', 'phases': phases, 'services': SERVICES + ((STUB_SERVICE,) if args.embed_stub else ()), 'fresh': args.fresh, 'project': args.project_name,
+                          'volumes': project_volumes(args.project_name), 'models': 'simulated embedding provider; no language model' if args.embed_stub else 'preserve configuration',
                           'data_removed': False}, indent=2))
         return 0
     try:

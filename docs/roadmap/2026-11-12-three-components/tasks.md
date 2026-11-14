@@ -2330,31 +2330,33 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 ### T-71 — Servidor arrancado y suite pasada sin ningún modelo de lenguaje (cierre)
 
 - **Descripción**: En el árbol final, ejecutar la suite completa con `MEMORY_LLM_MODEL` sin definir y el espía de `/api/chat`, y comprobar el arranque aislado de `memory-api` y `memory-worker` sin llamadas a `/api/chat`. Fuente: CA-18, cierre del plan director.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: El servidor arranca, ingiere e indexa sin ningún modelo de lenguaje configurado, y un ensayo aislado lo demuestra: el proveedor simulado no recibió ni una llamada de chat.
+- **Estado**: completado
+- **Cerrada**: 2026-11-14
 - **Tiempo humano**: est. 1.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.22h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.22h (estimado) · real 0.46h (medido)
 - **Supervisión**: est. 0.06h (≈25 % IA) · real —
 - **Previsión IA**: 60 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-70
 - **Tipo**: test
-- **Archivos**: `server/memory_platform/tests/test_no_llm.py`
+- **Archivos**: `server/memory_platform/tests/test_no_llm.py`, `scripts/deploy-memory.py`, `server/memory_platform/tests/llm_spy.py`, `scripts/tests/test_rehearsal_three_components.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:t71 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
   - `env -u MEMORY_LLM_MODEL docker compose -p kairos-nollm-t71 up -d memory-api memory-worker` (con override aislado) y consulta del espía → 0 llamadas
+  - Evidencia (2026-11-14): `env -u MEMORY_LLM_MODEL docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:t71 .` → `MEMORY_TEST_RESULT` passed true, tests 764, failures 0, errors 0, skipped 0, `llm_chat_calls` 0. Arranque aislado: `python scripts/deploy-memory.py --apply --fresh --project-name kairos-nollm-t71 --api-port 18791 --web-port 15174 --secret-dir <temporal> --embed-stub` → fases engine…verify, `PASS no language model: chat calls 0; embed calls 0`, exit 0 (en el intento 1 la fase verify falló: ver Notas). Con la pila arriba: `MEMORY_LLM_MODEL` vacío y `MEMORY_EXTRACT_ENABLED=0` en memory-api y memory-worker; espía `{"chat_calls": 0, "embed_calls": 0, "requests": 71}` (los 71 son las sondas de salud `/api/version` del proxy); el proxy apuntaba a `embed-stub:11434` con `OLLAMA_ALLOW_CHAT=1`, de modo que una llamada de chat habría llegado al espía y se habría contado. Limpieza: 0 contenedores, redes, volúmenes e imágenes `kairos-nollm-t71`; `docker volume ls -q --filter name=knowledge-graphs_` (7) y `docker ps --filter name=knowledge-graphs` (4) idénticos antes y después. `scripts/tests` 124 OK.
 
 **Criterios de aceptación**
-- [ ] La suite pasa con 0 fallos y 0 omitidos sin modelo configurado
-- [ ] El espía registra 0 llamadas a `/api/chat`, también durante el arranque aislado de `memory-api` y `memory-worker`
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] La suite pasa con 0 fallos y 0 omitidos sin modelo configurado
+- [x] El espía registra 0 llamadas a `/api/chat`, también durante el arranque aislado de `memory-api` y `memory-worker`
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Ejecutar la suite con el espía
-- [ ] Arrancar `api` y `worker` en el proyecto aislado `kairos-nollm-t71` y anotar el espía
-- [ ] `usage-meter start/close`
+- [x] Ejecutar la suite con el espía
+- [x] Arrancar `api` y `worker` en el proyecto aislado `kairos-nollm-t71` y anotar el espía
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-18, cierre del plan director. Prohibido: base desplegada y recursos `knowledge-graphs-*`; todo en el proyecto aislado con el override que renombra redes y volúmenes (R-09). Clase: verificación de cierre.
+**Notas**: Procedencia: spec CA-18, cierre del plan director. Prohibido: base desplegada y recursos `knowledge-graphs-*`; todo en el proyecto aislado con el override que renombra redes y volúmenes (R-09). Clase: verificación de cierre. usage-meter three-components/T-71: 0.46 h IA (medido, win-57be818ae623470baa823d697c2b7531). Hallazgos del ensayo, corregidos aquí porque T-72 los necesita: (1) el compose base pone `OLLAMA_UPSTREAM` en `host.docker.internal:11434` (el Ollama del host) y un ensayo aislado lo habría usado; `deploy-memory.py --embed-stub` (solo proyectos aislados) añade un servicio `embed-stub` (imagen api, `memory_platform.tests.llm_spy`, vectores deterministas de 768 dimensiones, `GET /__spy`) en las redes `inference` y `egress` y pasa `OLLAMA_UPSTREAM`/`OLLAMA_ALLOW_CHAT=1` solo en el entorno de ese proceso; (2) `verify_runtime` iba por sesión de portal, pero `/mcp/` de nginx es kairos-mcp, que solo admite Bearer y no recibe la cookie: ahora crea una clave de lectura temporal para los proyectos del manifiesto, la usa en `/mcp/` y la revoca antes de cerrar la sesión; sin proyectos informa `mcp_checked: false`; (3) `--dry-run` existe como sinónimo explícito del valor por defecto (el plan por defecto ya era dry-run; sin `--apply` no se ejecuta nada). Archivos añadidos con nota: `scripts/deploy-memory.py`, `server/memory_platform/tests/llm_spy.py`, `scripts/tests/test_rehearsal_three_components.py`. Cambios visibles para el despliegue: nuevas opciones `--embed-stub`, `--roundtrip` (T-72) y `--dry-run` de `deploy-memory.py` y verificación por Bearer; el proyecto instalado no cambia (las opciones nuevas lo rechazan).
 
 ### T-72 — Ensayo aislado con `scripts/deploy-memory.py --project-name` y los tres componentes (CA-31)
 
