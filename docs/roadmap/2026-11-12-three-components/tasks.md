@@ -1243,7 +1243,7 @@ RED: los casos de límites son cobertura de una capacidad ya implementada en T-3
 
 ## Fase 5 — kairos-mcp (C-03)
 
-**Estado**: borrador · **Estimado**: 68.4h (57.0h base) · **Real**: — · **Coste est.**: 3.420 € · **Tokens est.**: 2532 k
+**Estado**: en-progreso · **Estimado**: 68.4h (57.0h base) · **Real**: — · **Coste est.**: 3.420 € · **Tokens est.**: 2532 k
 
 ### T-36 — Andamiaje del paquete `mcp/` (`kairos_mcp`), Dockerfile sin base de datos y `health`
 
