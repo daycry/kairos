@@ -84,7 +84,11 @@ class LargeCallsWaitABoundedTimeTests(unittest.TestCase):
 
         async def scenario():
             first = asyncio.create_task(call(server, 'remember', remember_with_tags(20000)))
+            deadline = time.perf_counter() + 10
             while not entered.is_set():  # the first one is validating, so it owns the turn
+                if first.done() or time.perf_counter() > deadline:
+                    release.set()
+                    raise AssertionError('the first large call never reached the validation')
                 await asyncio.sleep(0.005)
             started = time.perf_counter()
             try:

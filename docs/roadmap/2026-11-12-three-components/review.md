@@ -127,3 +127,22 @@ Las cinco deudas del intento 3 exigen editar el workflow a propósito, y cualqui
 | 1 | Minor | El MCP interno sigue accesible en `/memory-api/mcp/` y los textos decían lo contrario; la cookie del portal llegaba a kairos-mcp | Corregidos al cerrar |
 | 1 | Minor | Formato no estándar de `Deprecation`/`Sunset`; 307 de `POST /mcp` sin cabeceras | Documentados; la fecha de retirada la decide el usuario |
 | 1 | Minor | Sin prueba de extremo a extremo CLI → nginx → kairos-mcp | Deuda para la Fase 8 (T-72) |
+
+## Fase 7 — Estructura del repositorio (T-57 a T-67)
+
+- **Fecha**: 2026-11-14
+- **Lentes**: intento 1, A+B y C+D en dos revisores (el selector activa C y D por la CI, el Compose y los Dockerfiles); intento 2, A+B sobre las correcciones.
+- **Veredicto**: cerrada en el intento 2 de 3, sin hallazgos Critical ni Important abiertos.
+- **Evidencia**:
+  - Movimientos solo de movimiento: 128, 53 y 2 renombrados al 100 % sin líneas cambiadas; EOL sin cambios.
+  - Suite del servidor: 757 tests en la línea base y 759 al cerrar; 0 omitidos y 0 llamadas a `/api/chat`. `store_surface.json` idéntico; `npm pack` con los mismos 34 ficheros.
+  - `docker compose config` frente a la base: solo cambian las 6 líneas `dockerfile:`; redes, volúmenes, nombres y puertos iguales.
+  - CI en verde en los runs 43617300808 y 43620955201; cierre: la ejecución del push del commit de cierre.
+  - Contrato MCP sin cambios.
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Important | Órdenes de los manuales que ya no funcionaban desde la raíz con el paquete en `server/` | Corregido en fix1 (`PYTHONPATH=server`) |
+| 1 | Minor | Verificación de T-60 con la puerta antigua; test de tiempos de la Fase 5 inestable en CI; sin test de actualización desde 0.3.0 | Corregidos en fix1 |
+| 1 | Minor | Merge de `main` en lugar de rebase; `client/.npm-cache` en la imagen de tests (anterior a la fase) | Deuda aceptada |
+| 2 | Minor | Evidencia de T-60 con `python -I`; bucle de espera sin tope en el test nuevo | Corregidos al cerrar |

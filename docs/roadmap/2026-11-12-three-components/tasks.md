@@ -43,9 +43,9 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 15 | 15 | 100% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 6 | 6 | 100% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
-| Fase 7 — Estructura del repositorio (C-06) | 11 | 12 | 91.7% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
+| Fase 7 — Estructura del repositorio (C-06) | 12 | 12 | 100% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **67** | **74** | **90.5%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **68** | **74** | **91.9%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1887,7 +1887,7 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 
 ## Fase 7 — Estructura del repositorio (C-06)
 
-**Estado**: en-progreso · **Estimado**: 46.8h (39.0h base) · **Real**: — · **Coste est.**: 2.340 € · **Tokens est.**: 1614 k
+**Estado**: completado · **Estimado**: 46.8h (39.0h base) · **Real**: — · **Coste est.**: 2.340 € · **Tokens est.**: 1614 k
 
 ### T-57 — Línea base previa al movimiento: recibo de la puerta congelada y recuento
 
@@ -2007,7 +2007,7 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 - [x] Ejecutar la puerta
 - [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec §Arquitectura (estructura final) y CA-25. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `3deb2e0cf44a`. Corrección de la revisión (intento 1, fix1): la `Verificación` apunta ahora a la copia de `scripts/`. La puerta importa `frozen_evidence` (guarda el recibo con hash y escritura exclusiva); su original vive en `testing/` de la iniciativa cerrada de paridad funcional, carpeta de `qa` que el hook impide escribir, así que se copió a `scripts/frozen_evidence.py` (copia exacta) y el import ya no necesita `PYTHONPATH` (el directorio del script es `sys.path[0]`). Evidencia: `cd scripts && python -I -c "import ast;ast.parse(open('frozen-source-gate.py').read());import frozen_evidence"` → ok.
+**Notas**: Procedencia: spec §Arquitectura (estructura final) y CA-25. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `3deb2e0cf44a`. Corrección de la revisión (intento 1, fix1): la `Verificación` apunta ahora a la copia de `scripts/`. La puerta importa `frozen_evidence` (guarda el recibo con hash y escritura exclusiva); su original vive en `testing/` de la iniciativa cerrada de paridad funcional, carpeta de `qa` que el hook impide escribir, así que se copió a `scripts/frozen_evidence.py` (copia exacta) y el import ya no necesita `PYTHONPATH` (el directorio del script es `sys.path[0]`). Evidencia: `cd scripts && python -c "import ast;ast.parse(open('frozen-source-gate.py').read());import frozen_evidence"` → ok (sin `-I`: en Python 3.13 `-I` implica `-P` y no añade el directorio actual a `sys.path`; dentro de la puerta, `python /gate/frozen-source-gate.py` añade `/gate` y no le afecta).
 
 ### T-61 — `git mv packages/kairos-cli client` en un commit solo de movimiento
 
@@ -2226,8 +2226,9 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 ### T-68 — Revisión adversarial de la Fase 7
 
 - **Descripción**: Revisión adversarial: referencias a rutas antiguas en scripts, Dockerfiles, hooks, CI y docs; `git mv` con cambios de contenido camuflados; EOL alterados; ficheros que dejaron de empaquetarse; recursos `knowledge-graphs-*` referenciados. Fuente: retro, R-07, R-06.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: La nueva estructura del repositorio (`server/`, `mcp/`, `client/`, `web/`) se revisó de forma adversarial: los manuales indican `PYTHONPATH=server` en las órdenes que se lanzan desde la raíz y la CI vuelve a ser estable.
+- **Estado**: completado
+- **Cerrada**: 2026-11-14
 - **Tiempo humano**: est. 13.0h (base) · real —
 - **Tiempo IA (ejec.)**: est. 1.79h (estimado) · real —
 - **Supervisión**: est. 0.45h (≈25 % IA) · real —
@@ -2240,18 +2241,19 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
   - `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:t68 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
   - `grep -rln "packages/kairos-cli" --include=*.py --include=*.mjs --include=*.yml --include=Dockerfile* . ` fuera de `docs/roadmap` → vacío
   - lectura: `review.md`, sección «Fase 7», sin hallazgos Critical/Important abiertos
+  - Evidencia (2026-11-14): `review.md` sección «Fase 7»; 2 intentos. Intento 1 (A+B y C+D en dos revisores): 1 Important (órdenes de los manuales sin `PYTHONPATH=server`) y 5 Minor; C+D sin hallazgos. fix1 (86b8d7a, 70c8f25, e9ff45d, b9c2c3a, 7ab69ad) corrige el Important y 3 Minor; 2 Minor quedan como deuda aceptada (merge en lugar de rebase; `client/.npm-cache` en la imagen de tests, anterior a la fase). Intento 2 (A+B): todo lo corregido ✓, sin Critical/Important; los 2 Minor nuevos (evidencia de T-60 con `-I`, bucle de espera sin tope en `test_review5`) los corrigió el orquestador en el commit de cierre. Suite del servidor: 759 tests, 0 failures, 0 errors, 0 skipped, `llm_chat_calls` 0 (trabajo `server` de CI 43620955201 sobre 7ab69ad; el cierre no toca `server/`). `npm pack` 34 ficheros; `scripts/tests` 112 OK; mcp 136 OK; `test_review5` 8 OK tras el cierre. CI del cierre: la ejecución del push del commit de cierre. Rutas antiguas: `grep` de `packages/kairos-cli` fuera de `docs/roadmap` vacío. EOL: 0 cambios en los ficheros tocados (`git ls-files --eol`).
 
 **Criterios de aceptación**
-- [ ] `review.md` tiene la sección «Fase 7»
-- [ ] 0 hallazgos Critical o Important abiertos
-- [ ] Suite, puerta y `npm pack` en verde tras cada arreglo
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] `review.md` tiene la sección «Fase 7»
+- [x] 0 hallazgos Critical o Important abiertos
+- [x] Suite, puerta y `npm pack` en verde tras cada arreglo
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar — EXCEPCIÓN: los intentos de revisión no se midieron con usage-meter; los tokens de los revisores constan solo en la telemetría de los subagentes (estimado); la corrección sí (T-66-fix1, 0.16 h medido)
 
 **Subtareas**
-- [ ] `git diff -M --stat 23ced03..HEAD` y búsqueda de rutas antiguas
-- [ ] Comparar EOL con `git ls-files --eol`
-- [ ] Cerrar hallazgos
-- [ ] `usage-meter start/close` por intento
+- [x] `git diff -M --stat 23ced03..HEAD` y búsqueda de rutas antiguas
+- [x] Comparar EOL con `git ls-files --eol`
+- [x] Cerrar hallazgos
+- [x] `usage-meter start/close` por intento — EXCEPCIÓN: ver el criterio anterior
 
 **Notas**: Procedencia: retro. No escribe en `testing/`.
 
@@ -2694,4 +2696,22 @@ Veredicto: **sin Critical ni Important; la Fase 6 cierra en el intento 1 de 3**.
 
 ## Revisión de dos lentes — intento 1: Fase 7 estructura del repositorio (T-57, T-58, T-59, T-60, T-61, T-62, T-63, T-64, T-65, T-66, T-67)
 
-Pendiente de revisión; sin veredicto.
+Veredicto: **1 Important (T-66) y 5 Minor; sin Critical**. Lentes: A+B en un revisor y C+D en otro (el selector activa C y D por `ci.yml`, `docker-compose.yml` y los Dockerfiles). A+B: movimientos R100 con 0 líneas (66677ae 128, ba954b4 53, f00c763 2); EOL sin cambios en los 28 ficheros tocados; T-68..T-74 idénticos a 788682d y `execution-history.md` solo crece; `docker compose config` resuelve las rutas nuevas; `scripts/tests` 112 OK; CI 43617300808 6/6. C+D: sin hallazgos: `.dockerignore` y contextos sin cambios, imágenes sin root y sin ficheros nuevos, `web/nginx.conf` R100, `compose config` frente a 788682d difiere solo en 6 líneas `dockerfile:`, CI con los mismos permisos y acciones fijadas, `npm pack` 34 ficheros.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | Órdenes de los manuales que ya no funcionan desde la raíz con el paquete en `server/` (`python -m memory_platform.tests.ollama_proxy_probe` → `ModuleNotFoundError`) | T-66 | corregido (86b8d7a): `PYTHONPATH=server` como en la CI en `operations.md`, `extended-workflows.md` y el README de `retrieval_eval` | Lente A+B: `docs/operations.md:243,262`, `docs/extended-workflows.md:136`, `retrieval_eval/README.md:23` |
+| 2 | Minor | La `Verificación` de T-60 mandaba ejecutar la puerta de `functional-parity/testing/`, que falla con la estructura nueva; la copia de `scripts/` dependía de `frozen_evidence` del `testing/` de qa | T-60 | corregido (70c8f25): `Verificación` con la copia de `scripts/` y `frozen_evidence.py` copiado junto a ella | Lente A+B: `tasks.md:1996`, `scripts/frozen-source-gate.py:20-21` |
+| 3 | Minor | `test_review5` (plazo de cola) dependía del tiempo: run 43617679410 rojo en `mcp` | T-65 | corregido (e9ff45d): la primera llamada retiene el turno con un `threading.Event`; rojo sin el plazo, 5/5 verde | Lente A+B: `mcp/tests/test_review5.py:70-85` |
+| 4 | Minor | T-57 pedía rebasar la rama sobre el PR #2; se fusionó `main` (788682d) para no forzar el push | T-57 | deuda aceptada: anotado en T-57; el árbol es el mismo | Lente A+B: `tasks.md:1910` |
+| 5 | Minor | Ningún test cubría la actualización 0.3.0 → 0.4.0 anunciada | T-64 | corregido (b9c2c3a): 0.3.0 en el bucle de `lifecycle.test.mjs`; `npm test` 91 OK | Lente A+B: `client/tests/lifecycle.test.mjs:86` |
+| 6 | Minor | `client/.npm-cache/` entra en la imagen de tests (`COPY client/`) porque ningún `.dockerignore` lo excluye; existía antes de la fase y no contiene tokens | T-62 | deuda aceptada (fuera de las lentes; anterior a 788682d) | Lente C+D: `client/Dockerfile.test` |
+
+## Revisión de dos lentes — intento 2: Fase 7 correcciones del intento 1 (T-60, T-64, T-65, T-66)
+
+Veredicto: **sin Critical ni Important; la Fase 7 cierra en el intento 2 de 3**. Lente A+B (C/D no aplican: las correcciones no tocan seguridad ni rendimiento). Los cuatro gaps corregidos ✓: sin órdenes `python -m memory_platform` ejecutables desde la raíz sin `PYTHONPATH=server` (las restantes corren en la imagen, `PYTHONPATH=/app/server`); `check_dataset` OK total=72; CRLF conservado; `scripts/frozen_evidence.py` con el mismo SHA-256 que el de `testing/`; `test_review5` determinista (5/5 OK, `release.set()` en `finally`) y `tools.py` sin cambios; `upgrade from 0.3.0` en verde (91/91); CI 43620955201 6/6; ningún criterio `[x]` reescrito.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Minor | La evidencia de las Notas de T-60 (`python -I -c "...import frozen_evidence"`) no se reproduce en Python 3.13: `-I` implica `-P` y no añade el directorio actual | T-60 | corregido (commit de cierre): la nota usa `python -c` y explica por qué la puerta real no se ve afectada | Lente A+B: `tasks.md:2010` |
+| 2 | Minor | `while not entered.is_set()` en el test nuevo no tenía tope: si la primera llamada terminara sin validar, el test se colgaría hasta el límite del trabajo de CI | T-65 | corregido (commit de cierre): tope de 10 s y fallo explícito si la primera llamada termina antes de validar | Lente A+B: `mcp/tests/test_review5.py:87` |
