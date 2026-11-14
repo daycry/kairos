@@ -68,23 +68,29 @@ ENDPOINTS = {
     'list_corpora': ('GET', C, PROJECT),
     # The endpoint requires `expected_version` (>= 1, a field the published schema already marks `required`, which cannot be relaxed
     # additively); the tool makes it optional and, without it, rebuilds whatever version the corpus has (it only takes the row lock). So a call
-    # without it (absent or null) reads the corpus by name (`GET .../corpus?name=`, not the list: that one stops at 100) and sends that version:
-    # the same guard the endpoint wants, with the version the tool would have compared against. An unknown name is the 404 of the tool: the
-    # error of the read is the answer of the call (the read asks for `write` before `read`, as the rebuild does, so a key without write gets the tool's 403). A rebuild that lands between the read and the POST makes the POST answer 409; the tool has
-    # no such conflict, so the client reads again and, only if the version changed, sends again (`retry`); an unchanged version means the
-    # 409 is real (a rebuild that would remove more than half the corpus without `force`) and it is the answer. `untranslatable`: a value
-    # the endpoint cannot receive, answered by the client without sending the request (`after_read`: after the read that checks access and existence).
+    # without it (absent or null) reads the corpus by name (`GET .../corpus?name=`, not the list: that one stops at 100; the read asks for `read`
+    # only, like every other read) and sends that version: the same guard the endpoint wants, with the version the tool would have compared against.
+    # A read that answers 404 or 422 (no corpus of that name for the caller, a name the tool refuses) is not the answer: the request is sent with a
+    # version no corpus can have (`send_instead_on_status`) and the rebuild endpoint refuses in the order of the tool, write permission first (a
+    # read-only key gets the tool's 403 for any name, existing or not), then the name, then the corpus. Any other failure of the read is the answer of the call. A
+    # rebuild that lands between the read and the POST makes the POST answer 409; the tool has no such conflict, so the client reads again and, only
+    # if the version changed, sends again (`retry`); an unchanged version means the 409 is real (a rebuild that would remove more than half the
+    # corpus without `force`) and it is the answer. `untranslatable`: a value the endpoint cannot receive (0 is a version no corpus has; the endpoint
+    # refuses it with 422): the client sends `send_instead`, a version no corpus can have, so the endpoint answers in the order of the tool (403, 404
+    # or 422 first) and, when the corpus is the caller's, with the conflict the tool gives for a version that is not the corpus's.
     'rebuild_corpus': ('POST', C + '/{name}/rebuild', {**CORPUS, **same('body', 'force'), 'expected_version': body('expected_version', when_absent={
         'read': {'method': 'GET', 'path': P + '/corpus', 'args': {'project': path('project_id'), 'name': query('name')}},
-        'take': 'version', 'on_read_error': 'answer',
+        'take': 'version', 'on_read_error': 'answer', 'send_instead_on_status': {'statuses': [404, 422], 'value': 2147483646},
         'retry': {'on_status': 409, 'reread': True, 'only_if_value_changed': True, 'max': 3}})},
-        {'untranslatable': [{'argument': 'expected_version', 'value': 0, 'after_read': True,
+        {'untranslatable': [{'argument': 'expected_version', 'value': 0, 'send_instead': 2147483646,
                              'reason': 'the endpoint refuses a version below 1 with 422, the tool answers a conflict because no corpus has version 0; the '
-                                       'read comes first so that a corpus the caller cannot see or does not have is the 403 or 404 the tool gives, not that conflict',
-                             'answer': {'status': 409, 'error': {'code': 'conflict', 'message': 'Corpus version changed'}}}]}),
+                                       'request goes with a version no corpus can have, so the 403 or 404 the tool gives for a corpus the caller cannot see or '
+                                       'does not have comes first and the conflict is the answer for the own corpus of the caller'}]}),
     'prime_corpus': ('POST', C + '/{name}/prime', CORPUS),
     'reprime_corpus': ('POST', C + '/{name}/prime', CORPUS, {'fixed': [{'in': 'body', 'name': 'fresh', 'value': True}]}),
-    'query_corpus': ('POST', C + '/{name}/query', {**CORPUS, **same('body', 'question', 'limit')}),
+    # Annotated as a write, but its answer is retrieved content (S-05): the internal MCP puts the untrusted-data envelope on it (`reading=True`), and
+    # `untrusted` in the endpoint says the same to a client of `/v1` (the annotation of the tool cannot change).
+    'query_corpus': ('POST', C + '/{name}/query', {**CORPUS, **same('body', 'question', 'limit')}, {'untrusted': True}),
     'get_observations': ('POST', P + '/observations/get', {'projectId': path('project_id'), 'ids': body('ids')}),
     'observation_search': ('GET', P + '/observations/search', {'projectId': path('project_id'), **same('query', 'query', 'limit')}),
     'observation_context': ('GET', P + '/observations/context', {'projectId': path('project_id'), **same('query', 'query', 'limit')}),
@@ -105,11 +111,12 @@ TRANSLATION = [
     'Each tool argument that is present and not null is placed by its entry in `args`: `in: path` replaces `{name}` in the path with the value URL-encoded in full (a `/` becomes `%2F`), `in: query` adds a query parameter, `in: body` adds a JSON body field; an `in: body` entry without `name` makes the value the whole body.',
     'An absent or null argument is omitted: the server applies its default. A boolean query value is written `true` or `false`; a list query value repeats the parameter.',
     '`transform: csv-list` turns a string into a list (split on commas, trimmed, empties dropped, duplicates removed) and passes a list as it is.',
-    '`when_absent` fills an argument that is absent or null (both count as omitted): `read` is one request (same rules, over the arguments of the call that it names in its `args`), `take` is the field of its JSON answer that becomes the argument. `on_read_error: answer` means a read that fails answers the call with that status and error. `retry` (`on_status`, `reread`, `only_if_value_changed`, `max`): if the request carrying a value obtained with `when_absent` answers that status, read again; if the value read differs from the one sent, send the request again with it (at most `max` more times), otherwise the answer is the real one.',
-    '`untranslatable` lists argument values that the endpoint cannot receive: the client does not send the request and answers with `answer` (`status` and `error`). With `after_read: true` it first makes the `when_absent` read of the same call, so that the server checks access and existence in the order the tool does (a read that fails answers the call, as in `when_absent`), and answers with `answer` only when the read succeeds.',
+    '`when_absent` fills an argument that is absent or null (both count as omitted): `read` is one request (same rules, over the arguments of the call that it names in its `args`), `take` is the field of its JSON answer that becomes the argument. `on_read_error: answer` means a read that fails answers the call with that status and error, except a status listed in `send_instead_on_status.statuses`: the request is then sent with `send_instead_on_status.value` (a value no resource can have) as the argument, and the server answers in its own order of checks. `retry` (`on_status`, `reread`, `only_if_value_changed`, `max`): if the request carrying a value obtained with `when_absent` answers that status, read again; if the value read differs from the one sent, send the request again with it (at most `max` more times), otherwise the answer is the real one.',
+    '`untranslatable` lists argument values that the endpoint cannot receive: the client sends the request with `send_instead` as the value of the argument (a value no resource can have), so that the server refuses in the order the tool does (access, name and existence first) and, when none of those applies, with the answer the tool gives for a value that is not the current one.',
     '`without_project_id` (`event_status` without `project_id`) is a composition. Step `receipt` is one request as any entry. Step `jobs` is repeated: `for_each` is a dotted path into the scope (`receipt` is the answer of the first step), each element is the value of the argument its `args` names (`job_id`), and the answers form the list `jobs` (a failed request answers the call). `result` builds the answer: each key is `{from: receipt|jobs}` (that value as it is) or `{all_of: [condition, ...]}`, a boolean true when every condition holds; a condition is `{path, is}` (the value at the dotted `path` of the scope equals `is`), `{path, is_not}` (it differs) or `{each, path, is}` (every item of the list `each` has, at `path`, the value `is`; an empty list holds).',
     '`fixed` entries are always added (`in: body`, `name`, `value`). A POST or PUT always carries a JSON object body, `{}` when no field is set.',
-    'The response of the endpoint is the result of the tool; an error status carries `{"error": {"code", "message"}}`.',
+    'The response of the endpoint is the result of the tool; an error status carries `{"error": {"code", "message"}}`. A success status whose body is not a JSON object is a failure of the call.',
+    '`untrusted: true` in an `x-kairos-endpoint` marks an answer that carries retrieved content although the tool is annotated as a write (`query_corpus`): its answer gets the untrusted-data envelope (`untrusted: true` and `warning`) like the tools annotated read-only; a `warning` already in the answer stays as it is.',
 ]
 
 

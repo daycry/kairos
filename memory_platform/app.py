@@ -48,6 +48,15 @@ class BodyLimit:
         await self.app(scope, replay, send)
 
 
+def canonical_id(value):
+    """An identifier in any form `uuid.UUID` accepts (upper case, no hyphens, braces, `urn:uuid:`) as the canonical lowercase one the stores hold, as the
+    MCP tools do with their `UUID` parameters; a value that is not a UUID is left as it is and is not found, as before."""
+    try:
+        return str(uuid.UUID(value))
+    except ValueError:
+        return value
+
+
 def public_actor(actor):
     return {k: actor[k] for k in ('id', 'username', 'scopes', 'project_ids') if k in actor}
 
@@ -348,7 +357,7 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
 
     @app.get('/v1/events/{event_id}', operation_id='memory_event_receipt')
     def event_receipt(event_id: str, actor=Depends(identity)):
-        return store.get_event_receipt(actor, event_id)
+        return store.get_event_receipt(actor, canonical_id(event_id))
 
     @app.get('/v1/projects/{project_id}/events/{event_id}/status', operation_id='kairos_event_status')
     def event_status(project_id: str, event_id: uuid.UUID, actor=Depends(identity)):
@@ -366,7 +375,7 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
 
     @app.get('/v1/projects/{project_id}/documents/{document_id}', operation_id='memory_document_status')
     def document_status(project_id: str, document_id: str, actor=Depends(identity)):
-        return store.document_status(actor, project_id, document_id)
+        return store.document_status(actor, project_id, canonical_id(document_id))
 
     @app.get('/v1/projects/{project_id}/manifest', operation_id='memory_document_manifest')
     def manifest(project_id: str, limit: int = Query(default=50, ge=1, le=100), cursor: str | None = None, actor=Depends(identity)):

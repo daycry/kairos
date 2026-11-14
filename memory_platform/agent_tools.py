@@ -111,7 +111,7 @@ def register_agent_tools(server, actor, safe, store):
         refused until rebuild and reprime. Query history is limited to 100 calls
         per session; repeat questions reuse the persisted result.
         """
-        return await call('query_corpus', project, name, question, limit)
+        return await call('query_corpus', project, name, question, limit, reading=True)  # annotated as a write, but its answer is retrieved content (S-05)
 
     @server.tool(name='get_observations', annotations=read)
     async def get_observations(projectId: Project, ids: Annotated[list[str], Field(min_length=1, max_length=100)]) -> str:

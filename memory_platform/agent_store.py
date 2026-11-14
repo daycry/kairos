@@ -246,11 +246,8 @@ class AgentStore:
         # One corpus by exact name, with the read authorization of `list_corpora`: what a client of `/v1` reads to learn the version a tool call that left
         # `expected_version` out would have compared against. The name is validated like the tool's (`text`: blank, too long or NUL is 422), and every
         # corpus operation needs `read` (`_corpus`), so a write-only key gets 403 here as it does on rebuild. Unknown name or another actor's corpus: `NotFound`.
-        # It asks for `write` first, as `rebuild_corpus` does, so that the read that precedes a rebuild fails the way the rebuild would: a read-only key is
-        # refused (403) for any name, existing or not, instead of learning 404 for a name it does not have.
         text(name, 'name')
         with self.store.transaction() as c:
-            self.store._require(c, actor, project, 'write')
             self.store._require(c, actor, project, 'read')
             row = c.execute('SELECT * FROM memory.agent_corpora WHERE project_id=%s AND actor_id=%s AND name=%s', (project, actor['id'], name)).fetchone()
             if not row:
