@@ -43,9 +43,9 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 15 | 15 | 100% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 6 | 6 | 100% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
-| Fase 7 — Estructura del repositorio (C-06) | 1 | 12 | 8.3% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
+| Fase 7 — Estructura del repositorio (C-06) | 2 | 12 | 16.7% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **57** | **74** | **77.0%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **58** | **74** | **78.4%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1924,10 +1924,11 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 ### T-58 — `git mv memory_platform server/memory_platform` en un commit solo de movimiento
 
 - **Descripción**: Mover el directorio con `git mv` en un commit que no cambia contenido, conservando el nombre del paquete (P-06) y los finales de línea. Este commit deja el árbol sin compilar a propósito; T-59 lo repara en el paso siguiente. Fuente: CA-23, P-06, R-07.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: El servidor pasa a vivir en `server/` (movimiento sin cambios de contenido; el paquete Python sigue llamándose `memory_platform`).
+- **Estado**: completado
+- **Cerrada**: 2026-11-14
 - **Tiempo humano**: est. 1.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.14h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.14h (estimado) · real 0.02h (medido)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 38 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: T-57
@@ -1937,19 +1938,20 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 - **Verificación**:
   - `git diff --cached -M --stat | tail -1` → solo renombrados, 0 inserciones y 0 borrados
   - `git log --follow --oneline -1 -- server/memory_platform/app.py` → muestra historia anterior al movimiento
+  - Evidencia (2026-11-14): Commit 66677ae: `git show -M --stat` → 128 files changed, 0 insertions(+), 0 deletions(-), todos `rename … (100%)` (0 con similitud menor); `git log --follow --oneline -2 -- server/memory_platform/app.py` → 66677ae y 5b54d5e (T-51, anterior al movimiento). EOL intactos: similitud 100 % byte a byte y `.gitattributes` `* -text`. Oráculo: similitud 100 %; el árbol queda sin construir a propósito hasta T-59 (que cierra con la suite en verde).
 
 **Criterios de aceptación**
-- [ ] `git log --follow` conserva la historia de un fichero movido
-- [ ] `git diff --stat -M` del commit muestra solo renombrados (100 % de similitud) y 0 líneas cambiadas
-- [ ] Los EOL de cada fichero no cambian (`.gitattributes` es `* -text`)
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] `git log --follow` conserva la historia de un fichero movido
+- [x] `git diff --stat -M` del commit muestra solo renombrados (100 % de similitud) y 0 líneas cambiadas
+- [x] Los EOL de cada fichero no cambian (`.gitattributes` es `* -text`)
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] `git mv memory_platform server/memory_platform`
-- [ ] Comprobar similitud y EOL
-- [ ] `usage-meter start/close`
+- [x] `git mv memory_platform server/memory_platform`
+- [x] Comprobar similitud y EOL
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-23, P-06, R-07. Los commits de movimiento y de ajuste se separan para que la revisión vea un renombrado limpio. Sin copias del código ni de `.pyc`. Clase: refactor (oráculo: similitud 100 %). Pasos T-58 y T-59 se cierran como un único paso verde de suite.
+**Notas**: Procedencia: spec CA-23, P-06, R-07. Los commits de movimiento y de ajuste se separan para que la revisión vea un renombrado limpio. Sin copias del código ni de `.pyc`. Clase: refactor (oráculo: similitud 100 %). Pasos T-58 y T-59 se cierran como un único paso verde de suite. Movimiento en un único commit (66677ae) solo de renombrados; el índice se preparó con `git reset` de ruta + `git add -N` para pasar `commit-selection.py` (que rechaza rutas ya en staging). usage-meter three-components/T-58: 0.02 h IA (medido, win-cc2aca062679499d926eeec4471f2000).
 
 ### T-59 — Dockerfiles, Compose y rutas del servidor tras el movimiento
 
