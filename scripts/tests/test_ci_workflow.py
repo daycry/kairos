@@ -217,6 +217,29 @@ class McpJobTests(unittest.TestCase):
             self.assertNotIn(forbidden, block)
 
 
+class ComponentTests(unittest.TestCase):
+    """CA-24 (C-06): each component has its image or Dockerfile and the command the CI runs for its tests."""
+    ROOT = WORKFLOW.parents[2]
+    COMPONENTS = {
+        'server': ('server/memory_platform/Dockerfile', 'server', 'docker build --target test -f server/memory_platform/Dockerfile'),
+        'mcp': ('mcp/Dockerfile', 'mcp', 'docker run --rm kairos-mcp:ci python -m unittest discover -s tests'),
+        'client': ('client/Dockerfile.test', 'client', 'npm test'),
+        'web': ('web/Dockerfile', 'web', 'docker build --target test -f web/Dockerfile'),
+    }
+
+    def test_every_component_has_a_dockerfile_and_its_test_command_in_the_ci(self):
+        job_blocks = jobs(read())
+        for component, (dockerfile, job, command) in self.COMPONENTS.items():
+            with self.subTest(component=component):
+                self.assertTrue((self.ROOT / dockerfile).is_file(), dockerfile)
+                self.assertIn(command, job_blocks[job])
+
+    def test_the_old_locations_are_gone(self):
+        for old in ('memory_platform', 'packages/kairos-cli'):
+            with self.subTest(path=old):
+                self.assertFalse((self.ROOT / old).exists(), old)
+
+
 class PipeFailureTests(unittest.TestCase):
     """A piped build must fail the step: GitHub's default `bash -e` has no pipefail, so `docker build | tee` would stay green."""
 
@@ -264,7 +287,7 @@ class ContractsJobTests(unittest.TestCase):
 
 
 GATE_STEP = 'The suite really ran and nothing was skipped'
-MIN_FLOOR = 756  # the suite with the kairos-mcp chain tests, the review corrections and the C-07 tests (T-01 began at 483, 639 when kairos-mcp started, 727 with the chain tests, 743 after phase 5, 756 with the MCP legacy and route tests); raise it when the suite grows, never lower it
+MIN_FLOOR = 759  # the suite with the kairos-mcp chain tests, the review corrections and the C-07 tests (T-01 began at 483, 639 when kairos-mcp started, 727 with the chain tests, 743 after phase 5, 756 with the MCP legacy and route tests, 759 with the phase 7 version tests); raise it when the suite grows, never lower it
 GOOD = 'MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": %d}' % MIN_FLOOR
 
 

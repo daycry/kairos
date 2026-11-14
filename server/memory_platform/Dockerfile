@@ -56,6 +56,10 @@ COPY --chown=postgres:postgres docker-compose.yml /app/docker-compose.yml
 # The portal's nginx.conf and Dockerfile are read as text by the nginx route tests.
 COPY --chown=postgres:postgres web/nginx.conf /app/web/nginx.conf
 COPY --chown=postgres:postgres web/Dockerfile /app/web/Dockerfile
+# Versions of the three components and the changelogs, read as text by test_versions.
+COPY --chown=postgres:postgres server/VERSION /app/server/VERSION
+COPY --chown=postgres:postgres client/package.json /app/client/package.json
+COPY --chown=postgres:postgres CHANGELOG.md CHANGELOG.es.md /app/
 COPY --chown=postgres:postgres ollama-proxy /app/ollama-proxy
 USER postgres
 ENV PYTHONPATH=/app/server

@@ -2,7 +2,7 @@
 
 All notable changes to Kairos are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Each section comes from a closed ledger in `docs/roadmap/`, which holds the full detail and evidence. The Spanish version is [CHANGELOG.es.md](CHANGELOG.es.md).
 
-Kairos has no tagged releases yet. Everything below is unreleased. The `@daycry/kairos` CLI is at 0.3.0 and has not been published to npm.
+Kairos has no tagged releases yet. Everything below is unreleased. The three components (server, kairos-mcp and the `@daycry/kairos` CLI) are at 0.4.0 and nothing has been published: the CLI is not on npm and no image is in a registry.
 
 ## [Unreleased]
 
@@ -10,6 +10,7 @@ Kairos has no tagged releases yet. Everything below is unreleased. The `@daycry/
 
 The server no longer needs a language model. [Ledger](docs/roadmap/2026-11-12-three-components/tasks.md)
 
+- **Three components in one repository.** The server lives in `server/` (the Python package is still `memory_platform`, built with `server/memory_platform/Dockerfile`), kairos-mcp in `mcp/`, the CLI in `client/` (was `packages/kairos-cli/`) and the portal image in `web/` (`web/Dockerfile`, `web/nginx.conf`). Compose keeps the same services, names, volumes and networks; only the build paths changed. `npm pack` of the CLI lists the same files. Server, kairos-mcp and CLI are all 0.4.0.
 - **No extraction in the server by default.** `MEMORY_EXTRACT_ENABLED` is `0`: an event with `generate: true` (the CLI sends it with summaries) is accepted with 202 and creates no `extract` job. The receipt gains an additive `extraction: "disabled"` field. Jobs already queued are kept and marked `extraction_disabled`; `POST /v1/jobs/{id}/retry` queues them again once extraction is on.
 - **`corpus_answer` is off by default.** `MEMORY_CORPUS_ANSWER=off` keeps the tool in the list of 34 and rejects a new request with `corpus_answer_disabled` without calling any provider (repeating a saved `request_id` returns the saved answer while `MEMORY_LLM_MODEL` is unchanged, or a conflict if the request or the model differs); `corpus_answer_status` still reads saved answers.
 - **No default model.** `MEMORY_LLM_MODEL` has no value any more; turning on extraction or generated answers without it stops the startup with a message that names the variable. An installation that relied on the previous default must set it.

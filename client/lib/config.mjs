@@ -6,8 +6,8 @@ import { fail } from './errors.mjs';
 
 export const CLIENT_PATHS = { claude: '.mcp.json', codex: '.codex/config.toml', opencode: 'opencode.json' };
 export const MANIFEST = '.kairos/installation.json';
-export const VERSION = '0.3.0';
-export const COMPATIBLE_VERSIONS = ['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.1.6', '0.2.0', VERSION];
+export const VERSION = '0.4.0';
+export const COMPATIBLE_VERSIONS = ['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.1.6', '0.2.0', '0.3.0', VERSION];
 export const RUNTIME_FILES = ['package.json','bin/kairos.mjs','lib/errors.mjs','lib/files.mjs','lib/config.mjs','lib/install.mjs','lib/mcp.mjs','lib/cli.mjs',
   'lib/privacy.mjs','lib/capture.mjs','lib/outbox.mjs','lib/dispatcher.mjs','lib/lifecycle-config.mjs','lib/lifecycle.mjs','lib/hooks.mjs','lib/opencode.mjs',
   'lib/code-analysis.mjs','lib/code-worker.mjs',

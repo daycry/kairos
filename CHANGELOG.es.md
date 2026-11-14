@@ -2,7 +2,7 @@
 
 Aquí se recogen los cambios relevantes de Kairos. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). Cada sección sale de un ledger cerrado de `docs/roadmap/`, que tiene el detalle y la evidencia completos. La versión en inglés es [CHANGELOG.md](CHANGELOG.md).
 
-Kairos aún no tiene versiones etiquetadas. Todo lo que sigue está sin publicar. El CLI `@daycry/kairos` está en la 0.3.0 y no se ha publicado en npm.
+Kairos aún no tiene versiones etiquetadas. Todo lo que sigue está sin publicar. Los tres componentes (servidor, kairos-mcp y el CLI `@daycry/kairos`) están en la 0.4.0 y no se ha publicado nada: el CLI no está en npm ni hay imágenes en ningún registro.
 
 ## [Sin publicar]
 
@@ -10,6 +10,7 @@ Kairos aún no tiene versiones etiquetadas. Todo lo que sigue está sin publicar
 
 El servidor ya no necesita un modelo de lenguaje. [Ledger](docs/roadmap/2026-11-12-three-components/tasks.md)
 
+- **Tres componentes en un repositorio.** El servidor vive en `server/` (el paquete Python sigue siendo `memory_platform`, construido con `server/memory_platform/Dockerfile`), kairos-mcp en `mcp/`, el CLI en `client/` (antes `packages/kairos-cli/`) y la imagen del portal en `web/` (`web/Dockerfile`, `web/nginx.conf`). Compose mantiene los mismos servicios, nombres, volúmenes y redes; solo cambian las rutas de construcción. El `npm pack` del CLI lista los mismos ficheros. Servidor, kairos-mcp y CLI están todos en la 0.4.0.
 - **Sin extracción en el servidor por defecto.** `MEMORY_EXTRACT_ENABLED` es `0`: un evento con `generate: true` (el CLI lo envía con los resúmenes) se acepta con 202 y no crea trabajo `extract`. El recibo añade el campo `extraction: "disabled"`. Los trabajos que ya estaban en cola se conservan y quedan marcados `extraction_disabled`; `POST /v1/jobs/{id}/retry` los vuelve a encolar cuando actives la extracción.
 - **`corpus_answer` viene apagada.** `MEMORY_CORPUS_ANSWER=off` mantiene la herramienta en la lista de 34 y rechaza una petición nueva con `corpus_answer_disabled` sin llamar a ningún proveedor (repetir un `request_id` guardado devuelve la respuesta guardada mientras `MEMORY_LLM_MODEL` no cambie, o un conflicto si cambian la petición o el modelo); `corpus_answer_status` sigue leyendo las respuestas guardadas.
 - **Sin modelo por defecto.** `MEMORY_LLM_MODEL` ya no tiene valor; activar la extracción o las respuestas generadas sin él detiene el arranque con un mensaje que nombra la variable. Una instalación que dependía del valor anterior debe fijarlo.

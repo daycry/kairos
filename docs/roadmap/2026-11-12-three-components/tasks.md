@@ -43,9 +43,9 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 15 | 15 | 100% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 6 | 6 | 100% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
-| Fase 7 — Estructura del repositorio (C-06) | 7 | 12 | 58.3% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
+| Fase 7 — Estructura del repositorio (C-06) | 8 | 12 | 66.7% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **63** | **74** | **85.1%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **64** | **74** | **86.5%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2106,32 +2106,37 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 ### T-64 — Versión, imagen y orden de tests de cada componente (CA-24)
 
 - **Descripción**: Declarar versión 0.4.0 en `server`, `mcp` y `client` (sin publicar, P-07) y dejar para cada componente su imagen o Dockerfile y el comando de tests que ejecuta la CI. Fuente: CA-24, P-07.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: Servidor, kairos-mcp y CLI declaran la versión 0.4.0 (sin publicar nada); el CLI 0.4.0 sigue aceptando instalaciones de la 0.3.0 y anteriores, y la CI sube el mínimo de tests a 759.
+- **Estado**: completado
+- **Cerrada**: 2026-11-14
 - **Tiempo humano**: est. 3.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.41h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.41h (estimado) · real 0.34h (medido)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 115 k in / 9 k out tok · ⚠️ verificar €
 - **Dependencias**: T-63
 - **Tipo**: refactor
-- **Archivos**: `server/VERSION`, `mcp/VERSION`, `client/package.json`, `web/package.json`, `CHANGELOG.md`, `CHANGELOG.es.md`, `server/memory_platform/tests/test_versions.py`
+- **Archivos**: `server/VERSION`, `mcp/VERSION`, `client/package.json`, `web/package.json`, `CHANGELOG.md`, `CHANGELOG.es.md`, `server/memory_platform/tests/test_versions.py`, `client/lib/config.mjs`, `scripts/tests/test_ci_workflow.py`, `.github/workflows/ci.yml`, `server/memory_platform/Dockerfile`, `scripts/frozen-source-gate.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:t64 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
   - `cd client && node -p "require('./package.json').version"` → `0.4.0`
+  - Evidencia (2026-11-14): RED (antes de implementar): `PYTHONPATH=server python -m unittest memory_platform.tests.test_versions.ComponentVersionTests` → 2 errores, FileNotFoundError server/VERSION. Luego `server/VERSION`=0.4.0, `client/package.json` y `client/lib/config.mjs` VERSION=0.4.0 (`COMPATIBLE_VERSIONS` añade 0.3.0), changelogs EN/ES: los 2 tests pasan. `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:i2p7 .` rc 0 y `docker run --rm --network=none … run_postgres` rc 0: MEMORY_TEST_RESULT tests 759 (757 + 2 nuevos), failures 0, errors 0, skipped 0, llm_chat_calls 0; `KAIROS_MIN_TESTS` y `MIN_FLOOR` pasan a 759. `cd client && node -p "require('./package.json').version"` → 0.4.0; `npm test` 90 pass; `npm run release:check` rc 0; `npm pack --dry-run --json` → 0.4.0, 34 ficheros, sha256 de la lista f879ab10…882f = línea base. mcp: `docker run --rm kairos-mcp:i2p7 python -m unittest discover -s tests` → Ran 136 OK, sin psycopg. `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → Ran 45 OK (2 nuevos, `ComponentTests`: cada componente tiene Dockerfile y su orden de tests en la CI; las rutas antiguas no existen).
 
 **Criterios de aceptación**
-- [ ] Cada componente declara su versión (server 0.4.0, mcp 0.4.0, client 0.4.0)
-- [ ] Cada componente tiene Dockerfile (o imagen) y un comando de tests documentado y presente en la CI
-- [ ] `test_versions.py` comprueba coherencia entre versión y changelog
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] Cada componente declara su versión (server 0.4.0, mcp 0.4.0, client 0.4.0)
+- [x] Cada componente tiene Dockerfile (o imagen) y un comando de tests documentado y presente en la CI
+- [x] `test_versions.py` comprueba coherencia entre versión y changelog
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Test de versiones en rojo
-- [ ] Fijar versiones y changelogs
-- [ ] `usage-meter start/close`
+- [x] Test de versiones en rojo
+- [x] Fijar versiones y changelogs
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-24/P-07. Patrón: versión actual del CLI `packages/kairos-cli/package.json:3` (0.3.0) y `memory_platform/tests/test_versions.py`. Nada se publica. Clase: cambio (oráculo: test de versiones).
+**Notas**: Procedencia: spec CA-24/P-07. Patrón: versión actual del CLI `packages/kairos-cli/package.json:3` (0.3.0) y `memory_platform/tests/test_versions.py`. Nada se publica. Clase: cambio (oráculo: test de versiones). mcp ya estaba en 0.4.0 (`mcp/VERSION`); `server/VERSION` es nuevo. El `test_versions.py` existente era de versiones de documentos del almacén: la clase `ComponentVersionTests` se añade ahí (versión de los tres componentes y changelogs) y la comprobación de Dockerfile+CI va en `scripts/tests/test_ci_workflow.py` (`ComponentTests`). `web/package.json` no cambia: el criterio pide solo server, mcp y client, y su versión (0.1.0, `private`) está también en el lockfile. La imagen de test copia `server/VERSION`, `client/package.json` y los changelogs; la copia de la puerta congelada añade `web/nginx.conf`, `web/Dockerfile` y los changelogs. Los manuales con `0.3.0` (README, `docs/install.md`, `docs/release-cli.md`, `client/README.md`…) se actualizan en T-66. Archivos añadidos con nota: `client/lib/config.mjs`, `scripts/tests/test_ci_workflow.py`, `.github/workflows/ci.yml`, `server/memory_platform/Dockerfile`, `scripts/frozen-source-gate.py`. El usage-meter arrancó tras empezar el RED (parte del tiempo cae en la ventana de T-63). usage-meter three-components/T-64: 0.34 h IA (medido, win-34111dc993bd40c490cf56df2143831d).
+
+
+RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` falló con FileNotFoundError: server/VERSION (2 errores) antes de declarar las versiones · 2026-11-14.
 
 ### T-65 — Rutas de la CI tras el movimiento
 

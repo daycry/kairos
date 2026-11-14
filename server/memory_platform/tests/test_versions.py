@@ -1,4 +1,7 @@
 import hashlib
+import json
+from pathlib import Path
+import re
 import unittest
 import uuid
 
@@ -115,3 +118,30 @@ class VersionTests(unittest.TestCase):
         with store.transaction() as c:
             self.assertIsNone(c.execute('SELECT id FROM memory.events WHERE id=%s',(value['event_id'],)).fetchone())
             self.assertEqual(c.execute('SELECT count(*) AS n FROM memory.jobs WHERE item_id=%s',(value['item_id'],)).fetchone()['n'],0)
+
+
+class ComponentVersionTests(unittest.TestCase):
+    """C-06 / CA-24: server, mcp and client carry the same version (nothing is published) and the changelogs name it."""
+    ROOT = Path(__file__).resolve().parents[3]
+    EXPECTED = '0.4.0'
+
+    def declared(self):
+        return {
+            'server': (self.ROOT / 'server' / 'VERSION').read_text(encoding='utf-8').strip(),
+            'mcp': (self.ROOT / 'mcp' / 'VERSION').read_text(encoding='utf-8').strip(),
+            'client': json.loads((self.ROOT / 'client' / 'package.json').read_text(encoding='utf-8'))['version'],
+        }
+
+    def test_each_component_declares_the_release_version(self):
+        for component, version in self.declared().items():
+            with self.subTest(component=component):
+                self.assertRegex(version, r'^\d+\.\d+\.\d+$')
+                self.assertEqual(version, self.EXPECTED)
+
+    def test_the_changelogs_name_the_client_version_and_no_stale_one(self):
+        version = self.declared()['client']
+        for name in ('CHANGELOG.md', 'CHANGELOG.es.md'):
+            with self.subTest(changelog=name):
+                head = (self.ROOT / name).read_text(encoding='utf-8').split('## [Unreleased]')[0]
+                self.assertRegex(head, r'@daycry/kairos`[^\n]*\b' + re.escape(version) + r'\b')
+                self.assertNotRegex(head, r'@daycry/kairos`[^\n]*\b0\.3\.0\b')
