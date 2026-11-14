@@ -43,9 +43,9 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 15 | 15 | 100% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 6 | 6 | 100% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
-| Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
+| Fase 7 — Estructura del repositorio (C-06) | 1 | 12 | 8.3% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **56** | **74** | **75.7%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **57** | **74** | **77.0%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1892,8 +1892,9 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 ### T-57 — Línea base previa al movimiento: recibo de la puerta congelada y recuento
 
 - **Descripción**: Antes de mover nada, registrar en el ledger: recuento de la suite, hash de `store_surface.json`, lista de `npm pack --dry-run` del cliente y resultado de la puerta congelada. Es el oráculo de todo el bloque. Fuente: CA-25, CA-26, P-09.
-- **Changelog**: 
-- **Estado**: en-progreso
+- **Changelog**: Se registró la línea base (tests, superficie del almacén, contenido del paquete del CLI) antes de reorganizar el repositorio; sin cambios de comportamiento.
+- **Estado**: completado
+- **Cerrada**: 2026-11-14
 - **Tiempo humano**: est. 1.0h (base) · real —
 - **Tiempo IA (ejec.)**: est. 0.14h (estimado) · real 0.25h (medido)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
@@ -1906,18 +1907,19 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
   - `gh pr view 2 --json state --jq .state` → `MERGED`
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t57 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
   - `sha256sum memory_platform/tests/store_surface.json` → valor anotado
+  - Evidencia (2026-11-14): `gh pr view 2 --json state --jq .state` → MERGED (merge commit 153e49d). `docker build --target test -f memory_platform/Dockerfile -t kairos-test:i2p7 .` rc 0 y `docker run --rm --network=none kairos-test:i2p7 python -m memory_platform.tests.run_postgres` rc 0: MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 757}. `sha256sum memory_platform/tests/store_surface.json` → 83c27763460c342acac9a1deda71a75dbd3cc94b0fa0d1fcc2e12c04e80e4b00. `npm pack --dry-run --json` (packages/kairos-cli): @daycry/kairos 0.3.0, 34 ficheros, 669212 bytes, sha256 de la lista de rutas ordenada f879ab102c400ac1896db67c2783d5bcf4513e3d278d43d648017744b969882f (LICENSE, README.md, bin/kairos.mjs, 16 lib/*.mjs, 14 lib/vendor/tree-sitter/*, package.json). Puerta congelada sobre `git archive HEAD` (788682d), `--network=none`, candidato en solo lectura, salida a un directorio temporal fuera del repo: (a) tal cual (`frozen-source-gate.py` sin modificar): ROJA de partida, source_sha256 553c94cb3a26f4589426ebfb095a5339671318403162c6bb52e31c795111e7c3, file_count 195, MEMORY_TEST_RESULT tests 669, failures 3, errors 195 (la puerta solo copia memory_platform, scripts, packages y docker-compose.yml y faltan docs/contracts, mcp y ollama-proxy desde las Fases 2-5: FileNotFoundError docs/contracts/observation.v1.schema.json); T-60 la repara. (b) copia temporal fuera del repo con esos tres directorios añadidos (línea base comparable): source_sha256 2747f5ea82c9ef33a21a2a24c99df269049f590bbc6f9f7a1495d4c414456dd5, file_count 271, MEMORY_TEST_RESULT tests 757, failures 0, errors 1, skipped 0: el error es test_retrieval.test_timed_out_vectors_keep_bounded_slots_without_starving_authentication (CancelledError en un bucle de espera por tiempo, flaky bajo la carga del host); ejecutado solo con KAIROS_TEST_MODULES=memory_platform.tests.test_retrieval: 38 tests, 0 failures, 0 errors, passed true.
 
 **Criterios de aceptación**
-- [ ] Quedan anotados `tests`, `sha256` de `store_surface.json`, la lista de `npm pack --dry-run` y el recibo de la puerta congelada
-- [ ] El PR #2 consta como fusionado en `main` y la rama está rebasada sobre él
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] Quedan anotados `tests`, `sha256` de `store_surface.json`, la lista de `npm pack --dry-run` y el recibo de la puerta congelada
+- [x] El PR #2 consta como fusionado en `main` y la rama parte de `main` por merge (788682d fusiona `origin/main`; no rebase: evita reescribir historia y el push forzado)
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Comprobar la fusión del PR #2 (`gh pr view 2 --json state`)
-- [ ] Ejecutar la suite y la puerta y anotar los valores
-- [ ] `usage-meter start/close`
+- [x] Comprobar la fusión del PR #2 (`gh pr view 2 --json state`)
+- [x] Ejecutar la suite y la puerta y anotar los valores
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-25/CA-26, P-09. Dependencia externa (no tarea): fusión del PR #2; si no está fusionado, el bloque no empieza. Patrón: puerta congelada `docs/roadmap/2026-11-06-functional-parity/testing/frozen-source-gate.py:26`, `:45`, `:77`. Clase: refactor (línea base del oráculo).
+**Notas**: Procedencia: spec CA-25/CA-26, P-09. Dependencia externa (no tarea): fusión del PR #2; si no está fusionado, el bloque no empieza. Patrón: puerta congelada `docs/roadmap/2026-11-06-functional-parity/testing/frozen-source-gate.py:26`, `:45`, `:77`. Clase: refactor (línea base del oráculo). Oráculo del bloque: 757 tests, store_surface 83c27763…4b00, npm pack 34 ficheros, mismo resultado esperado en T-67. La rama parte de `main` por MERGE, no por rebase: el PR #2 se fusionó (153e49d) y `origin/main` se fusionó en la rama (788682d, árbol idéntico, `main` es ancestro de HEAD); no se rebasó para no reescribir la historia ni forzar un push. Ledger archivado (commit propio previo; 250 KB, tope 256 KiB; el archivo con umbrales bajos recorta también Verificación de tareas pendientes: se restauraron a mano). usage-meter three-components/T-57: 0.25 h IA (medido).
 
 ### T-58 — `git mv memory_platform server/memory_platform` en un commit solo de movimiento
 
