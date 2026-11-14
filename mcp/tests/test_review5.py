@@ -5,8 +5,10 @@ Every call used to go through one FIFO limiter of worker threads, so a legitimat
 loop (about 5 ms at the most for the worst schema of the contract, measured), a larger one goes to the single worker thread, and waits at most
 `queue_seconds` for its turn before the service answers that it is unavailable, without reaching `/v1`."""
 import asyncio
+import threading
 import time
 import unittest
+from unittest import mock
 
 from mcp import types
 
@@ -68,22 +70,36 @@ class SmallCallsDoNotQueueTests(unittest.TestCase):
 
 class LargeCallsWaitABoundedTimeTests(unittest.TestCase):
     def test_a_large_call_that_waits_too_long_gets_the_unavailable_error_and_never_reaches_the_api(self):
+        """Deterministic: the first large call holds the only turn (its validation blocks on an event) until the others have been answered, so nothing
+        depends on how long the runner takes to validate a body. Without the queue deadline the other three would wait for ever and the guard fails."""
         calls = []
         server = make_server(calls, validation_threads=1, queue_seconds=0.3)
+        entered, release = threading.Event(), threading.Event()
+        real_check = Checks.check
+
+        def blocked_check(self, arguments):
+            entered.set()
+            release.wait(30)
+            return real_check(self, arguments)
 
         async def scenario():
+            first = asyncio.create_task(call(server, 'remember', remember_with_tags(20000)))
+            while not entered.is_set():  # the first one is validating, so it owns the turn
+                await asyncio.sleep(0.005)
             started = time.perf_counter()
-            results = await asyncio.gather(*[call(server, 'remember', remember_with_tags(86000)) for _ in range(4)])
-            return results, time.perf_counter() - started
-        results, seconds = asyncio.run(scenario())
-        texts = [result.content[0].text for result in results]
-        busy = [text for text in texts if text.endswith(UNAVAILABLE)]
-        self.assertTrue(all(result.isError for result in results))
-        self.assertEqual(texts[0].startswith('Input validation error: '), True)  # the first one was validated
-        self.assertEqual(len(busy), 3, texts)
-        self.assertEqual(busy[0], 'Error executing tool remember: ' + UNAVAILABLE)
+            try:
+                waiting = await asyncio.wait_for(asyncio.gather(*[call(server, 'remember', remember_with_tags(20000)) for _ in range(3)]), 10)
+            finally:
+                release.set()
+            return await first, waiting, time.perf_counter() - started
+        with mock.patch.object(Checks, 'check', blocked_check):
+            first, waiting, seconds = asyncio.run(scenario())
+        self.assertTrue(first.isError and first.content[0].text.startswith('Input validation error: '))  # the first one was validated, in its turn
+        texts = [result.content[0].text for result in waiting]
+        self.assertTrue(all(result.isError for result in waiting))
+        self.assertEqual(texts, ['Error executing tool remember: ' + UNAVAILABLE] * 3)
         self.assertEqual(calls, [])
-        self.assertLess(seconds, 6.0)  # the waiting ones left after 0.3 s, they did not wait for each other's validation
+        self.assertLess(seconds, 6.0)  # the waiting ones left after 0.3 s, they did not wait for the validation of the first
 
     def test_large_calls_inside_the_deadline_are_all_validated_in_turn(self):
         calls = []
