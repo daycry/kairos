@@ -2361,10 +2361,11 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 ### T-72 — Ensayo aislado con `scripts/deploy-memory.py --project-name` y los tres componentes (CA-31)
 
 - **Descripción**: Ensayo completo en proyecto Compose aislado con `memory-postgres`, `memory-api`, `memory-worker`, `memory-mcp`, `memory-web` y un proveedor de embeddings simulado: un cliente MCP escribe una observación, espera su indexado y la busca por kairos-mcp, sin que el servidor llame a ningún modelo de lenguaje. Fuente: CA-31, CA-30.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: Un ensayo aislado recorre los tres componentes de punta a punta: el CLI escribe una observación por la entrada web y kairos-mcp, la encuentra por búsqueda y el servidor no llama a ningún modelo de lenguaje.
+- **Estado**: completado
+- **Cerrada**: 2026-11-14
 - **Tiempo humano**: est. 2.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.29h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.29h (estimado) · real 0.03h (medido)
 - **Supervisión**: est. 0.07h (≈25 % IA) · real —
 - **Previsión IA**: 80 k in / 8 k out tok · ⚠️ verificar €
 - **Dependencias**: T-71
@@ -2375,21 +2376,22 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
   - `python scripts/deploy-memory.py --project-name kairos-three-t72 --api-port 18790 --web-port 15173 --dry-run` → lista fases y nombres `kairos-three-t72_*`
   - `python scripts/deploy-memory.py --project-name kairos-three-t72 --api-port 18790 --web-port 15173` → salida con `PASS` de la ida y vuelta y exit 0
   - `docker volume ls -q --filter name=knowledge-graphs_memory` antes y después → idéntico
+  - Evidencia (2026-11-14): `python scripts/deploy-memory.py --project-name kairos-three-t72 --api-port 18790 --web-port 15173 --dry-run --embed-stub --roundtrip` → plan con las fases engine…verify, roundtrip y el servicio `embed-stub`, volúmenes `kairos-three-t72_*` (el comando del plan sin `--apply` ya era dry-run; no existía `--dry-run`, ahora es un sinónimo explícito). Ensayo: `python scripts/deploy-memory.py --apply --fresh --project-name kairos-three-t72 --api-port 18790 --web-port 15173 --secret-dir <temporal> --embed-stub --roundtrip` → exit 0, salida: `PASS roundtrip: {"chat_calls": 0, "embed_calls": 1, "found_layer": "episodic", "found_ref": "episodic:rehearsal:<item>:1", "hosts": {"foreign": 421, "ip": 200, "localhost": 200}, "receipt": ["event_id", "item_id", "jobs", "status", "version"], "server": "Kairos", "tools": 34}` y `PASS no language model: chat calls 0; embed calls 1`. Espía final `{"chat_calls": 0, "embed_calls": 1, "requests": 71}` (el resto, sondas de salud del proxy). `memory-mcp` solo en la red `kairos-three-t72_mcp`. Antes y después: `docker volume ls -q --filter name=knowledge-graphs_` (7 volúmenes) y `docker ps --filter name=knowledge-graphs` (4 contenedores) idénticos; 0 contenedores, redes, volúmenes e imágenes `kairos-three-t72` y `rehearsal-kairos-three-t72-*` al terminar; `.private/rehearsal-kairos-three-t72` y los secretos sintéticos borrados. `scripts/tests` 124 OK.
 
 **Criterios de aceptación**
-- [ ] La observación escrita por kairos-mcp se encuentra por búsqueda tras el indexado
-- [ ] El servidor no hizo ninguna llamada a un modelo de lenguaje (espía en 0)
-- [ ] Ningún contenedor, volumen o red `knowledge-graphs-*` fue direccionado; el proyecto se elimina al terminar
-- [ ] La evidencia queda anotada en el ledger y junto al test, no en `testing/`
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] La observación escrita por kairos-mcp se encuentra por búsqueda tras el indexado
+- [x] El servidor no hizo ninguna llamada a un modelo de lenguaje (espía en 0)
+- [x] Ningún contenedor, volumen o red `knowledge-graphs-*` fue direccionado; el proyecto se elimina al terminar
+- [x] La evidencia queda anotada en el ledger y junto al test, no en `testing/`
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Comprobar con `--dry-run` los comandos y nombres aislados
-- [ ] Ejecutar el ensayo con `--project-name kairos-three-t72` y puertos distintos de los reales
-- [ ] Anotar el resultado y limpiar
-- [ ] `usage-meter start/close`
+- [x] Comprobar con `--dry-run` los comandos y nombres aislados
+- [x] Ejecutar el ensayo con `--project-name kairos-three-t72` y puertos distintos de los reales
+- [x] Anotar el resultado y limpiar
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-31/CA-30, R-09. Patrón: `scripts/deploy-memory.py:45-66` (validación de aislamiento y rechazo del nombre de la instalación) y `:460-472` (`--project-name`, `--dry-run`); `memory_platform/tests/test_deploy_isolation.py:29-48`. Nunca contra la instalación local. Clase: capacidad nueva (verificación de cierre).
+**Notas**: Procedencia: spec CA-31/CA-30, R-09. Patrón: `scripts/deploy-memory.py:45-66` (validación de aislamiento y rechazo del nombre de la instalación) y `:460-472` (`--project-name`, `--dry-run`); `memory_platform/tests/test_deploy_isolation.py:29-48`. Nunca contra la instalación local. Clase: capacidad nueva (verificación de cierre). usage-meter three-components/T-72: 0.03 h IA (medido, win-ae5a2d8b43624918bd503ba948be354a). SALDA LA DEUDA DE LA FASE 6 (review.md, «Fase 6», hallazgo 5): hay una prueba CLI → nginx (`memory-web`, `/mcp`) → kairos-mcp real → `/v1` → PostgreSQL con procesos reales (`kairos mcp --url http://127.0.0.1:15173` lanzado desde `client/`), y la paridad de `allowed_hosts` con el `Host` que reenvía nginx se comprueba por petición: `127.0.0.1:15173` y `localhost:15173` → 200, `evil.example` → 421. Primer intento del ensayo: `remember` devolvió «Capture is disabled for this project» porque la política de captura por defecto es `off` (un proyecto nuevo no captura): el ensayo ahora fija `capture_mode: full` con `PUT /v1/projects/rehearsal/policy` (la creación del proyecto no la fija) y tolera el proyecto ya existente en un reintento. Corregido también (T-71): `verify_runtime` pasaba por sesión de portal, que `nginx` no reenvía a kairos-mcp. docs/operations.md documenta `--embed-stub`, `--roundtrip` y la verificación por Bearer; advierte de no usar `docker compose -p … down` desde la raíz porque el compose base fija los nombres `knowledge-graphs_inference|webui|mcp`. La limpieza se hizo por etiqueta/nombre del proyecto del ensayo, nunca con el compose base. Sin cambios visibles para clientes; despliegue: opciones nuevas del script (ver T-71).
 
 ### T-73 — Cierre: suite, `retrieval-eval` y manuales (CA-32)
 

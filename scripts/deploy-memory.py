@@ -622,7 +622,9 @@ def roundtrip(origin, password, private, root, wait_seconds=90):
     portal.login(password)
     key_id = key_file = bridge = None
     try:
-        portal.request('/v1/projects', {'id': REHEARSAL_PROJECT_ID, 'title': 'Three-component rehearsal', 'capture_mode': 'full'})
+        if REHEARSAL_PROJECT_ID not in {project['id'] for project in portal.request('/v1/projects')['projects']}:  # a retry of a failed rehearsal finds it
+            portal.request('/v1/projects', {'id': REHEARSAL_PROJECT_ID, 'title': 'Three-component rehearsal'})
+        portal.request('/v1/projects/' + REHEARSAL_PROJECT_ID + '/policy', {'capture_mode': 'full', 'temporal_projection': False}, method='PUT')  # capture is off by default
         created = portal.request('/v1/keys', {'name': 'rehearsal-roundtrip', 'project_ids': [REHEARSAL_PROJECT_ID], 'scopes': ['read', 'write']})
         key_id, token = created['id'], created['token']
         private.mkdir(parents=True, exist_ok=True)

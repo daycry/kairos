@@ -68,7 +68,7 @@ Sin `--apply`, el script sólo imprime un plan (incluida la fase `backfill`, que
 
 Al final realiza llamadas MCP reales: inicialización, catálogo, proyectos y manifiestos documentales completos con paginación, UUID, versión, hash y retirada. La copia y el resultado quedan en `.private/deployment-status.json`, excluido de Git. Un fallo detiene las fases siguientes y no declara éxito parcial. No modifica políticas de captura, modelos o puertos. Si la base cambia durante la comprobación, exige conciliación en vez de atribuir automáticamente la discrepancia al despliegue.
 
-La verificación usa una sesión temporal de `admin`, leída del archivo privado de bootstrap, y la cierra. Si cambiaste esa contraseña, usa `--verify-key-file C:\\ruta-privada\\clave` con una clave existente de lectura para todos los proyectos. El script no crea una clave adicional ni imprime su contenido.
+La verificación usa una sesión temporal de `admin`, leída del archivo privado de bootstrap, y la cierra. Como `/mcp/` de la entrada web es kairos-mcp, que solo admite un Bearer y no recibe la cookie del portal, la sesión crea antes una clave de lectura temporal para los proyectos del manifiesto, la usa en las llamadas MCP y la revoca antes de cerrar la sesión; una instalación sin proyectos no tiene sobre qué conceder esa clave y el informe lo marca con `mcp_checked: false`. Si cambiaste la contraseña de `admin`, usa `--verify-key-file C:\\ruta-privada\\clave` con una clave existente de lectura para todos los proyectos: entonces no se crea ninguna clave. Ninguna clave se imprime.
 
 Sólo para una instalación realmente nueva, utiliza `--fresh --secret-dir <directorio-privado>` junto con `--apply`. Esto permite preparar archivos que no existan y hacer el bootstrap una sola vez; no reemplaza contraseñas existentes. No uses `--fresh` para eludir un problema con los volúmenes de la instalación actual.
 
@@ -87,6 +87,19 @@ python scripts/deploy-memory.py --apply --project-name kairos-rehearsal --secret
 ```
 
 Un `--project-name` distinto de `knowledge-graphs` genera un override de Compose en `.private/rehearsal-<proyecto>/` que cambia el nombre del proyecto, volúmenes, redes, imágenes (siempre `rehearsal-<proyecto>-<servicio>:latest`, nunca una etiqueta de la instalación) y puertos. Usa solo el fichero `memory-platform.env` de esa carpeta (obligatorio; se prepara con `scripts/memory-admin.py prepare --env-output`), pasa siempre `--env-file` para que Compose no cargue el `.env` raíz, y descarta del entorno del proceso toda variable `MEMORY_*`, `COMPOSE_*` y `KAIROS*`. El script rechaza nombres que coincidan con (o contengan) `knowledge-graphs`, los puertos 5173 y 8790, una carpeta `.private/rehearsal-<proyecto>` que contenga ficheros que el ensayo no creó, y cualquier etiqueta generada que coincida con una del Compose. Para ensayar una actualización, prepara antes el estado anterior (imagen y código previos con datos sintéticos) en ese mismo proyecto; para destruirlo, comprueba primero con `docker compose -p <proyecto> config` que todos los nombres empiezan por el proyecto y ejecuta `down -v` solo con ese `-p`.
+
+#### Ensayo de los tres componentes (CLI, kairos-mcp y servidor)
+
+Con `--embed-stub` y `--roundtrip` (solo en un `--project-name` aislado; la instalación real los rechaza) el ensayo recorre la cadena completa sin ningún modelo ni el Ollama del equipo:
+
+```powershell
+python scripts/deploy-memory.py --apply --fresh --project-name kairos-three-t72 --api-port 18790 --web-port 15173 --secret-dir <directorio-privado-sintetico> --embed-stub --roundtrip
+```
+
+- `--embed-stub` añade el servicio `embed-stub` (la imagen `api` ejecutando `memory_platform.tests.llm_spy`: vectores deterministas de 768 dimensiones y `GET /__spy`) en las redes `inference` y `egress` del proyecto, y pasa `OLLAMA_UPSTREAM=embed-stub:11434` y `OLLAMA_ALLOW_CHAT=1` solo al entorno de ese proceso: el proxy `ollama` apunta al simulado, nunca a `host.docker.internal:11434`, y una llamada de chat llegaría al simulado, que la rechaza y la cuenta en lugar de quedar oculta por el 403 del proxy. Al terminar imprime `PASS no language model: chat calls 0; embed calls N` y falla si las llamadas de chat no son 0.
+- `--roundtrip` crea el proyecto `rehearsal` (captura `full`) y una clave de lectura y escritura por el portal, comprueba que kairos-mcp acepta los `Host` que reenvía nginx (`127.0.0.1:<puerto web>` y `localhost:<puerto web>`) y rechaza otro (`allowed_hosts`), lanza el CLI de `client/` (`kairos mcp --url http://127.0.0.1:<puerto web> --key-file …`), lista las 34 herramientas, escribe una observación con `remember` y la busca con `search` hasta que el trabajador la indexa. Imprime `PASS roundtrip: {…}`; la clave se revoca y su archivo se borra al terminar, también si falla.
+
+El script no desmonta nada: al terminar, elimina solo lo del proyecto del ensayo (sus contenedores, redes y volúmenes `kairos-three-t72*`, las imágenes `rehearsal-kairos-three-t72-*`, `.private/rehearsal-kairos-three-t72/` y el directorio de secretos sintético). No uses `docker compose down` desde la raíz del repositorio con `-p`: el `docker-compose.yml` fija los nombres `knowledge-graphs_inference`, `knowledge-graphs_webui` y `knowledge-graphs_mcp`, que solo el override aislado reemplaza.
 
 ### Si el despliegue se detiene en `start`
 
