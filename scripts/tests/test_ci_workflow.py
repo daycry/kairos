@@ -667,5 +667,14 @@ class HygieneTests(unittest.TestCase):
                 self.assertTrue(hygiene_violations(text))
 
 
+class ComposeLimitsTests(unittest.TestCase):
+    def test_memory_mcp_has_a_memory_limit(self):
+        """A response of tens of MB is held several times over while it is parsed and cut (review of phase 5, N2): the container is bounded."""
+        compose = (WORKFLOW.parents[2] / 'docker-compose.yml').read_text(encoding='utf-8')
+        block = re.search(r'^  memory-mcp:\n((?:    .*\n|\s*\n)+)', compose, re.M)
+        self.assertIsNotNone(block)
+        self.assertRegex(block.group(1), r'(?m)^    mem_limit: \d+[mg]\b')
+
+
 if __name__ == '__main__':
     unittest.main()

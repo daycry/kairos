@@ -150,6 +150,7 @@ services:
     build: {context: ./mcp, dockerfile: Dockerfile}
     profiles: [memory]
     restart: unless-stopped
+    mem_limit: 1g  # one answer of up to 64 MiB is held about five times over while it is cut; see docs/configuration.md
     environment:
       KAIROS_API_URL: http://memory-api:8790
       KAIROS_API_TIMEOUT: ${KAIROS_API_TIMEOUT:-30}

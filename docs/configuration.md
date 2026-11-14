@@ -88,6 +88,8 @@ El servicio `memory-mcp` del Compose (imagen `kairos-mcp`, puerto `8791` en una 
 | `KAIROS_ALLOWED_ORIGINS` | el valor de `MEMORY_ALLOWED_ORIGINS` | Orígenes exactos cuyos nombres de host acepta la cabecera `Host` (protección frente a DNS rebinding), además de `localhost`, `127.0.0.1`, `[::1]` y `memory-mcp` |
 | `KAIROS_MAX_BODY_BYTES` | `262144` bytes | Tamaño máximo de cuerpo de una petición MCP; iguálalo a `MEMORY_MAX_BODY_BYTES` |
 
+El contenedor `memory-mcp` lleva `mem_limit: 1g` en el Compose: una respuesta de `/v1` de decenas de MB (hasta 64 MiB; el servidor produce unos 52 MB como máximo) se mantiene unas cinco veces en memoria mientras se une, se interpreta y se recorta, y el límite acota el daño de varias llamadas grandes simultáneas (el contenedor se reinicia solo, `restart: unless-stopped`). Ajusta `mem_limit` si subes los límites de cuerpo y de respuesta del servidor.
+
 El resto de lo que ve un cliente (credencial, dato no fiable, errores y topes de salida) está en [Integración](integration.md#conectar-con-kairos-mcp).
 
 ## Búsqueda vectorial (pgvector)

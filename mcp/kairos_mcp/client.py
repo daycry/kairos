@@ -7,10 +7,13 @@ import httpx
 from .errors import UNAVAILABLE, ToolError
 from .logs import log_event
 
-# The largest answer `/v1` can produce is `observation_search` with 200 observations of up to 100 000 characters (at most 4 bytes each in UTF-8: 80 MB,
-# `get_observations` with 100 ids is half of it). The bound sits above that, so that an answer the server produced is cut with the marker of the tool's
-# byte budget, never turned into UNAVAILABLE; it only guards against a server that answers without end.
-MAX_RESPONSE_BYTES = 96 * 1024 * 1024
+# The largest answer `/v1` produces with its default limits is about 52 MB: `observation_search` with 200 observations, each with its text, its `facts`
+# and its `evidence` (measured by the review of phase 5; the 80 MB of 200 x 100 000 characters x 4 bytes is not reachable); `get_observations` with 100
+# ids is half of it. The bound sits above that, so that an answer the server produced is cut with the marker of the tool's byte budget, never turned
+# into UNAVAILABLE; it only guards against a server that answers without end. Such an answer is held about five times over while it is joined, parsed,
+# serialized and cut, and parsing and serializing it blocks the event loop for one to two seconds (`json` holds the GIL during a call, so a thread would
+# not free the loop: measured). That is why the bound is no higher and why the container has `mem_limit` in the Compose file.
+MAX_RESPONSE_BYTES = 64 * 1024 * 1024
 GENERIC_5XX_CODES = frozenset({'service_unavailable'})
 
 
