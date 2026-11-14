@@ -8,7 +8,7 @@ from pydantic import Field
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from .errors import MemoryError, Unauthorized
-from .observability import enforce_logging, log_failure
+from .observability import enforce_logging, log_event, log_failure
 from . import models as m
 from .agent_tools import untrusted
 
@@ -212,6 +212,29 @@ class AuthenticatedMCP:
             _actor.reset(token)
 
 
+LEGACY_REMOVAL = '0.5.0'  # the version that removes the internal MCP (P-07)
+
+
+class LegacyNotice:
+    """Marks every response of the internal MCP as deprecated (`Deprecation`, `Sunset` with the version of removal; also errors and the first byte of a
+    stream) and records one `mcp_legacy_used` event with the method and the status only: never the credential, the arguments or the content."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope['type'] != 'http':
+            return await self.app(scope, receive, send)
+        method = scope.get('method', '')
+
+        async def marked(message):
+            if message['type'] == 'http.response.start':
+                message = {**message, 'headers': [*message.get('headers', []), (b'deprecation', b'true'), (b'sunset', LEGACY_REMOVAL.encode('ascii'))]}
+                log_event('mcp_legacy_used', 'info', method=method, status=message['status'])
+            await send(message)
+        await self.app(scope, receive, marked)
+
+
 def mount_mcp(app, auth, retrieval, store=None):
     server = create_mcp(retrieval, auth.allowed_origins if isinstance(getattr(auth, 'allowed_origins', None), (list, tuple, set, frozenset)) else (), store, getattr(app.state, 'settings', None))
     transport = server.streamable_http_app()
@@ -222,5 +245,5 @@ def mount_mcp(app, auth, retrieval, store=None):
             async with server.session_manager.run():
                 yield
     app.router.lifespan_context = lifespan
-    app.mount('/mcp', AuthenticatedMCP(transport, auth))
+    app.mount('/mcp', LegacyNotice(AuthenticatedMCP(transport, auth)))
     app.state.mcp = server

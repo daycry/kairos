@@ -247,6 +247,7 @@ class Settings:
     fusion_validated_bonus: float = DEFAULT_FUSION_VALIDATED_BONUS
     fusion_weights: dict = field(default_factory=dict)
     metrics_mode: str = 'internal'
+    mount_mcp: bool = True  # MEMORY_MOUNT_MCP: the internal MCP at `/mcp`, deprecated since 0.4.0 and removed in 0.5.0 (P-07)
 
     def __post_init__(self):
         if self.metrics_mode not in METRICS_MODES:
@@ -277,6 +278,7 @@ class Settings:
         metrics_mode = metrics_mode_from_env()
         extract_enabled = switch_from_env('MEMORY_EXTRACT_ENABLED', ('1',), ('0',), '0')
         corpus_answer_enabled = switch_from_env('MEMORY_CORPUS_ANSWER', ('on',), ('off',), 'off')
+        mount_mcp = switch_from_env('MEMORY_MOUNT_MCP', ('1',), ('0',), '1')
         llm_model = os.environ.get('MEMORY_LLM_MODEL', '').strip()
         if (extract_enabled or corpus_answer_enabled) and not llm_model:
             raise ValueError('MEMORY_LLM_MODEL must name a model when MEMORY_EXTRACT_ENABLED=1 or MEMORY_CORPUS_ANSWER=on')
@@ -298,5 +300,5 @@ class Settings:
             chunk_chars=chunk_chars, chunk_overlap=chunk_overlap, chunk_max=chunk_max, embedding_batch_size=batch_size,
             embedding_batch_timeout=batch_timeout, embedding_job_timeout_max=job_timeout_max,
             fusion_k=fusion_k, fusion_validated_bonus=fusion_bonus, fusion_weights=fusion_weights,
-            metrics_mode=metrics_mode,
+            metrics_mode=metrics_mode, mount_mcp=mount_mcp,
         )

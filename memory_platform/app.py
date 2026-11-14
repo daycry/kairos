@@ -464,8 +464,9 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
     def retry(job_id: str, actor=Depends(identity)):
         return store.retry_job(actor, job_id)
 
-    from .mcp import mount_mcp
-    mount_mcp(app, auth, retrieval, store)
+    if settings.mount_mcp:  # MEMORY_MOUNT_MCP=0: nothing is mounted and every `/mcp` route is the plain 404
+        from .mcp import mount_mcp
+        mount_mcp(app, auth, retrieval, store)
     return app
 
 

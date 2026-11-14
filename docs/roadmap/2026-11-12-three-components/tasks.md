@@ -42,10 +42,10 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 3 — Paridad REST /v1 (C-02) | 10 | 10 | 100% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 15 | 15 | 100% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
-| Fase 6 — Compatibilidad (C-07) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
+| Fase 6 — Compatibilidad (C-07) | 1 | 6 | 16.7% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **50** | **74** | **67.6%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **51** | **74** | **68.9%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1783,10 +1783,11 @@ RED: `memory_platform/tests/test_mcp_write.py::MCPBoundaryChainTests` falló con
 ### T-51 — `MEMORY_MOUNT_MCP` y cabeceras `Deprecation`/`Sunset` del MCP interno
 
 - **Descripción**: Añadir `MEMORY_MOUNT_MCP` (por defecto `1`). Montado, cada respuesta del MCP interno lleva `Deprecation` y `Sunset` con la versión de retirada (0.5.0, P-07) y se emite el evento de log `mcp_legacy_used` sin datos del usuario; con `0`, `/mcp` en `memory-api` responde 404. Fuente: CA-27, P-07.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: El MCP interno deja de ser obligatorio: con MEMORY_MOUNT_MCP=0 /mcp de la API responde 404, y mientras siga montado (valor por defecto) marca cada respuesta como en desuso (Deprecation, Sunset 0.5.0).
+- **Estado**: completado
+- **Cerrada**: 2026-11-14
 - **Tiempo humano**: est. 3.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.38h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.38h (estimado) · real 0.37h (medido)
 - **Supervisión**: est. 0.09h (≈25 % IA) · real —
 - **Previsión IA**: 104 k in / 9 k out tok · ⚠️ verificar €
 - **Dependencias**: T-50
@@ -1795,19 +1796,23 @@ RED: `memory_platform/tests/test_mcp_write.py::MCPBoundaryChainTests` falló con
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t51 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+  - Evidencia (2026-11-14): suite backend `MEMORY_TEST_RESULT` tests 749, failures 0, errors 0, skipped 0, passed true, `llm_chat_calls` 0 (kairos-test:i2p6; 743 + 6 de test_mcp_legacy); tests de mcp/ en la imagen: 136 OK; test_mcp, test_observability y test_mcp_write en verde.
 
 **Criterios de aceptación**
-- [ ] Con el valor por defecto, los tests actuales del MCP interno pasan y las respuestas llevan `Deprecation` y `Sunset`
-- [ ] Con `MEMORY_MOUNT_MCP=0`, `/mcp` responde 404
-- [ ] El log `mcp_legacy_used` no contiene credencial, argumentos ni contenido
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] Con el valor por defecto, los tests actuales del MCP interno pasan y las respuestas llevan `Deprecation` y `Sunset`
+- [x] Con `MEMORY_MOUNT_MCP=0`, `/mcp` responde 404
+- [x] El log `mcp_legacy_used` no contiene credencial, argumentos ni contenido
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Tests en rojo (cabeceras, 404, log)
-- [ ] Implementar interruptor y cabeceras en el montaje
-- [ ] `usage-meter start/close`
+- [x] Tests en rojo (cabeceras, 404, log)
+- [x] Implementar interruptor y cabeceras en el montaje
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-27/P-07. Patrón: montaje en `memory_platform/app.py:400-401` y `memory_platform/mcp.py:214-225`; etiquetas de montaje del log en `app.py:54-62`. Clase: cambio de comportamiento → primer oráculo: test en rojo que fija el comportamiento nuevo; los tests que asumían el anterior se ajustan en la misma tarea.
+**Notas**: Procedencia: spec CA-27/P-07. Patrón: montaje en `memory_platform/app.py:400-401` y `memory_platform/mcp.py:214-225`; etiquetas de montaje del log en `app.py:54-62`. Clase: cambio de comportamiento → primer oráculo: test en rojo que fija el comportamiento nuevo; los tests que asumían el anterior se ajustan en la misma tarea. Decisiones: `Deprecation: true` y `Sunset: 0.5.0` (versión, no fecha HTTP: P-07 no fija fecha; RFC 8594 pide fecha, queda abierto); el evento `mcp_legacy_used` lleva solo method y status (y request_id) y se emite al empezar cada respuesta, también 401 y errores; con =0 no se monta nada (404 en cualquier subruta); valor inválido falla al arrancar (switch_from_env). El log de acceso etiqueta /mcp como `mcp` solo si está montado. usage-meter three-components/T-51: 0.37 h IA (medido, win-5f0a0ba04f974311b70a53a259a67576).
+
+
+RED: `memory_platform/tests/test_mcp_legacy.py` falló con 6 tests: 3 failures y 2 errors (sin cabeceras Deprecation/Sunset, sin evento mcp_legacy_used, Settings sin mount_mcp) · 2026-11-14.
 
 ### T-52 — `/mcp` del proxy web hacia kairos-mcp y Compose
 
