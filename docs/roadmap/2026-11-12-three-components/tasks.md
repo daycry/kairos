@@ -43,9 +43,9 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 15 | 15 | 100% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 6 | 6 | 100% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
-| Fase 7 — Estructura del repositorio (C-06) | 9 | 12 | 75.0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
+| Fase 7 — Estructura del repositorio (C-06) | 10 | 12 | 83.3% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **65** | **74** | **87.8%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **66** | **74** | **89.2%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2169,31 +2169,33 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 ### T-66 — Manuales con la estructura de tres componentes
 
 - **Descripción**: Actualizar rutas y descripciones en los manuales a `server/`, `mcp/`, `client/` y `web/`. Fuente: CA-32, evaluación C-06.
-- **Changelog**: 
-- **Estado**: en-progreso
+- **Changelog**: Los manuales describen la estructura de tres componentes (`server/`, `mcp/`, `client/`, `web/`): rutas, órdenes de construcción y pruebas, y la versión 0.4.0 del CLI, con una tabla de componentes en el README.
+- **Estado**: completado
+- **Cerrada**: 2026-11-14
 - **Tiempo humano**: est. 4.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.55h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.55h (estimado) · real 0.03h (medido)
 - **Supervisión**: est. 0.14h (≈25 % IA) · real —
 - **Previsión IA**: 154 k in / 12 k out tok · ⚠️ verificar €
 - **Dependencias**: T-65
 - **Tipo**: docs
-- **Archivos**: `README.md`, `docs/architecture.md`, `docs/install.md`, `docs/operations.md`, `docs/integration.md`, `docs/configuration.md`, `docs/server-install.md`, `docs/release-cli.md`
+- **Archivos**: `README.md`, `docs/architecture.md`, `docs/install.md`, `docs/operations.md`, `docs/integration.md`, `docs/configuration.md`, `docs/server-install.md`, `docs/release-cli.md`, `client/README.md`, `docs/RAG-INDEX.md`, `docs/code-analysis.md`, `docs/corpus-generated-answers.md`, `docs/extended-workflows.md`, `docs/manual.md`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `grep -rn "packages/kairos-cli" README.md docs/*.md` → sin salida
   - lectura: comandos citados válidos contra el árbol nuevo
+  - Evidencia (2026-11-14): `grep -rn "packages/kairos-cli" README.md docs/*.md client/README.md mcp/README.md` → sin salida. `git grep -nIP "(?<![\w/])memory_platform/" -- README.md 'docs/*.md' client mcp web` → solo recibos históricos de `docs/roadmap` (no se reescriben). Comprobación de comandos y enlaces con un script sobre README.md, client/README.md, mcp/README.md y docs/*.md: 0 enlaces relativos rotos y 0 rutas `server/`, `client/`, `web/`, `mcp/`, `scripts/` inexistentes. El README ganó la tabla Componente · carpeta y versión · Dockerfile · pruebas (las mismas órdenes que ejecuta la CI). `0.3.0` → `0.4.0` en nombres de tarball y runtime; se conservan como históricos los textos sobre cambios de la 0.3.0.
 
 **Criterios de aceptación**
-- [ ] Ningún manual vigente cita `memory_platform/` ni `packages/kairos-cli` como ruta actual (los recibos de iniciativas cerradas quedan como históricos)
-- [ ] Los comandos citados existen
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] Ningún manual vigente cita `memory_platform/` ni `packages/kairos-cli` como ruta actual (los recibos de iniciativas cerradas quedan como históricos)
+- [x] Los comandos citados existen
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] `grep -rn "packages/kairos-cli\|memory_platform/" README.md docs --include=*.md` fuera de `docs/roadmap`
-- [ ] Corregir y comprobar comandos
-- [ ] `usage-meter start/close`
+- [x] `grep -rn "packages/kairos-cli\|memory_platform/" README.md docs --include=*.md` fuera de `docs/roadmap`
+- [x] Corregir y comprobar comandos
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-32. Clase: documentación (oráculo: grep + lectura).
+**Notas**: Procedencia: spec CA-32. Clase: documentación (oráculo: grep + lectura). Cambios por script con edición por bytes (los docs son CRLF; EOL conservados). Rutas de nginx y del Dockerfile web → `web/nginx.conf` y `web/Dockerfile`; `../packages/kairos-cli/...` → `../client/...`; `../../docs/` → `../docs/` en `client/README.md`. `release-cli.md` abre con la versión 0.4.0 (preparada el 2026-11-14, sin tarball revisado ni publicación). Recuento de pruebas de la tabla de CI: 525 → 759. Archivos añadidos con nota: `client/README.md`, `docs/RAG-INDEX.md`, `docs/code-analysis.md`, `docs/corpus-generated-answers.md`, `docs/extended-workflows.md`, `docs/manual.md`. usage-meter three-components/T-66: 0.03 h IA (medido, win-514807194b9a44dc85e14bce279d8eb9).
 
 ### T-67 — Recibo final de la estructura: suite, `store_surface.json`, historia y `npm pack`
 
