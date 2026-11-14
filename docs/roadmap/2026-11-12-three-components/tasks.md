@@ -43,9 +43,9 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 15 | 15 | 100% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 6 | 6 | 100% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
-| Fase 7 — Estructura del repositorio (C-06) | 4 | 12 | 33.3% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
+| Fase 7 — Estructura del repositorio (C-06) | 5 | 12 | 41.7% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **60** | **74** | **81.1%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **61** | **74** | **82.4%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2023,10 +2023,11 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 ### T-61 — `git mv packages/kairos-cli client` en un commit solo de movimiento
 
 - **Descripción**: Mover el CLI con `git mv` en un commit sin cambios de contenido. Fuente: CA-23, CA-26.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: El CLI de Kairos pasa a vivir en `client/` (movimiento sin cambios de contenido; el paquete sigue siendo `@daycry/kairos`).
+- **Estado**: completado
+- **Cerrada**: 2026-11-14
 - **Tiempo humano**: est. 0.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.07h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.07h (estimado) · real 0.02h (medido)
 - **Supervisión**: est. 0.02h (≈25 % IA) · real —
 - **Previsión IA**: 19 k in / 2 k out tok · ⚠️ verificar €
 - **Dependencias**: T-60
@@ -2036,18 +2037,19 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 - **Verificación**:
   - `git diff --cached -M --stat | tail -1` → solo renombrados
   - `git log --follow --oneline -1 -- client/lib/mcp.mjs` → historia anterior al movimiento
+  - Evidencia (2026-11-14): Commit ba954b4: `git show -M --stat` → 53 files changed, 0 insertions(+), 0 deletions(-); `git show -M --summary --format=` → todos `rename … (100%)` (0 con similitud menor; los 6 binarios `.wasm` figuran con `- -` en numstat y también al 100 %); `git log --follow --oneline -2 -- client/lib/mcp.mjs` → ba954b4 y 7f116d0 (anterior al movimiento). EOL intactos (100 % byte a byte, `.gitattributes` `* -text`). Oráculo: similitud 100 %; el árbol queda sin ajustar a propósito hasta T-62.
 
 **Criterios de aceptación**
-- [ ] `git log --follow` conserva la historia de un fichero movido
-- [ ] El commit muestra solo renombrados al 100 %
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] `git log --follow` conserva la historia de un fichero movido
+- [x] El commit muestra solo renombrados al 100 %
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] `git mv packages/kairos-cli client`
-- [ ] Comprobar similitud
-- [ ] `usage-meter start/close`
+- [x] `git mv packages/kairos-cli client`
+- [x] Comprobar similitud
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-23/CA-26. Clase: refactor (oráculo: similitud 100 %). Se cierra junto con T-62 en un único paso verde.
+**Notas**: Procedencia: spec CA-23/CA-26. Clase: refactor (oráculo: similitud 100 %). Se cierra junto con T-62 en un único paso verde. Movimiento en un único commit (ba954b4) con la misma preparación del índice que T-58. `packages/` queda sin contenido y se elimina del árbol. `client/artifacts/` y `client/.npm-cache/` (ignorados bajo la ruta antigua) quedan sin ignorar hasta que T-62 actualice `.gitignore`; no entraron en el commit. usage-meter three-components/T-61: 0.02 h IA (medido, win-1f062d7b6c894813842299032323d6cb).
 
 ### T-62 — Rutas del cliente: `RUNTIME_FILES`, Dockerfile.test, `release:check` y `npm pack` idéntico
 
