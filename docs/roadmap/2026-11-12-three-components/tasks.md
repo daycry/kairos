@@ -2396,10 +2396,11 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 ### T-73 — Cierre: suite, `retrieval-eval` y manuales (CA-32)
 
 - **Descripción**: Ejecutar la suite completa y `retrieval-eval` con los umbrales vigentes, regenerar los contratos y comprobar que los manuales describen los tres componentes y la retirada del MCP interno. Fuente: CA-32, cierre del plan director.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: Los manuales de instalación y configuración explican ya los tres componentes (servidor, kairos-mcp y cliente) y la retirada del MCP interno en la 0.5.0, y la suite y la evaluación de recuperación pasan.
+- **Estado**: completado
+- **Cerrada**: 2026-11-14
 - **Tiempo humano**: est. 1.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.22h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.22h (estimado) · real 0.07h (medido)
 - **Supervisión**: est. 0.06h (≈25 % IA) · real —
 - **Previsión IA**: 60 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-72
@@ -2410,19 +2411,20 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
   - `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:t73 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
   - `docker build --target retrieval-eval -f server/memory_platform/Dockerfile -t kairos-eval:t73 .` → exit 0
   - `python scripts/export-contracts.py && git diff --stat docs/contracts` → sin diff
+  - Evidencia (2026-11-14): `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:t73 .` → `MEMORY_TEST_RESULT` passed true, tests 764, failures 0, errors 0, skipped 0, `llm_chat_calls` 0. `docker build --target retrieval-eval -f server/memory_platform/Dockerfile -t kairos-eval:t73 .` → exit 0, `RETRIEVAL_EVAL_RESULT` gate passed true, failures [], capa fusionada recall@5 1.0 (umbral 0.80) y MRR 0.9715 (umbral 0.60) sobre 72 consultas, `product_database_accessed` false. Contratos: la exportación en la imagen de pruebas (Python 3.11/3.12, no 3.13) de `memory-platform.openapi.json` es idéntica byte a byte (sin CR) a la versionada, y la de `kairos-mcp.json` es igual salvo el formato de los docstrings (esperado: la CI exporta con 3.13 y compara con `git diff --ignore-cr-at-eol`); `git status --short docs/contracts` vacío (sin cambios) y las pruebas aditivas contra `6008da0` y `23ced03` están en la suite. Manuales contra CA-32: README.md («Los tres componentes… 0.4.0»), docs/architecture.md («Tres componentes») y docs/integration.md («Migración: el MCP interno queda en desuso y se retira en la 0.5.0») y docs/operations.md ya los describían; docs/install.md no mencionaba kairos-mcp ni la retirada y docs/configuration.md no nombraba los tres componentes: ambos ganan un apartado/párrafo.
 
 **Criterios de aceptación**
-- [ ] Suite con 0 fallos y 0 omitidos; `retrieval-eval` cumple recall@5 ≥ 0,80 y MRR ≥ 0,60
-- [ ] Los seis manuales describen los tres componentes y la retirada del MCP interno
-- [ ] Contratos regenerados sin diff y solo aditivos
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] Suite con 0 fallos y 0 omitidos; `retrieval-eval` cumple recall@5 ≥ 0,80 y MRR ≥ 0,60
+- [x] Los seis manuales describen los tres componentes y la retirada del MCP interno
+- [x] Contratos regenerados sin diff y solo aditivos
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Ejecutar suite y evaluación
-- [ ] Revisar los manuales contra CA-32
-- [ ] `usage-meter start/close`
+- [x] Ejecutar suite y evaluación
+- [x] Revisar los manuales contra CA-32
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-32. Clase: verificación de cierre.
+**Notas**: Procedencia: spec CA-32. Clase: verificación de cierre. usage-meter three-components/T-73: 0.07 h IA (medido, win-ba66daafe6bf47098080ea9eef8626f5). `docs/install.md` (CRLF conservado): sección «Los tres componentes y la ruta MCP» (el instalador sigue necesitando solo la dirección base y la clave; el MCP interno `:8790/mcp/` y `/memory-api/mcp/` se retira en la 0.5.0; reinstalar con `install --replace`). `docs/configuration.md`: párrafo de apertura con los tres componentes. Sin cambios en contratos ni visibles para clientes. La línea base del servidor de la imagen de pruebas sigue siendo 764 tests (759 + 5 de T-69).
 
 ### T-74 — Revisión final de la iniciativa
 

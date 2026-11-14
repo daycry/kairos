@@ -1,6 +1,6 @@
 # Conectar un cliente mediante MCP
 
-Última actualización: 2026-11-09.
+Última actualización: 2026-11-14.
 
 ## Requisitos
 
@@ -69,6 +69,12 @@ node .kairos/runtime/0.4.0/bin/kairos.mjs doctor --root . --online
 La primera comprobación valida archivos, hashes y configuración local. La segunda inicializa MCP y consulta herramientas y proyectos. Es de lectura: no crea memorias, no publica documentos y no prueba al trabajador de generación. Un estado `ready` significa que esas comprobaciones terminaron; no certifica la aceptación completa de tu cliente.
 
 Reabre el cliente si necesita recargar sus servidores. Revisa que aparece `kairos`, autoriza su conexión conforme a las reglas del cliente y pide listar proyectos. Después haz una búsqueda sobre un proyecto autorizado y abre un detalle. Para comprobar escritura, usa sólo un proyecto de prueba con captura permitida, registra un resumen autorizado, espera `event_status` y recupéralo. El recorrido está descrito en [integración](integration.md).
+
+## Los tres componentes y la ruta MCP
+
+Kairos son tres componentes que comparten la versión 0.4.0: el servidor (`memory-api` y `memory-worker`, único con acceso a PostgreSQL), **kairos-mcp** (`memory-mcp`, el servicio que publica las 34 herramientas MCP y las traduce a `/v1`) y el cliente (este paquete, el CLI y su puente stdio). Para instalar un cliente solo necesitas la dirección base del servidor y una clave: el puente construye `/mcp/` y el proxy de la entrada web la enruta a kairos-mcp, que usa tu misma clave contra `/v1`. No hay nada más que configurar en el cliente por este cambio, y `doctor --online` comprueba esa ruta.
+
+El MCP interno de `memory-api` (`:8790/mcp/`) está en desuso desde la 0.4.0 y se retira en la 0.5.0. Un cliente instalado con esta versión no lo usa. Si tienes una conexión antigua que apunta a `http://127.0.0.1:8790/mcp/` o a `/memory-api/mcp/`, vuelve a instalar con la dirección base de la entrada web (`install --replace`); la guía de migración y la forma de localizar a los rezagados están en [Integración](integration.md#migración-el-mcp-interno-queda-en-desuso-y-se-retira-en-la-050) y en [Operación](operations.md).
 
 ## Recuperar una instalación local
 

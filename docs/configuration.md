@@ -2,6 +2,8 @@
 
 La configuración del servidor, las políticas de proyecto y la configuración del cliente son capas distintas. Cambiar una no modifica automáticamente las otras.
 
+Kairos son tres componentes: el servidor (`memory-api` y `memory-worker`), kairos-mcp (`memory-mcp`, con su propia configuración mínima, ver [kairos-mcp](#kairos-mcp)) y el cliente. El MCP interno del servidor está en desuso y se retira en la 0.5.0 (`MEMORY_MOUNT_MCP`, en la tabla de abajo).
+
 ## Archivos que se conservan
 
 | Archivo | Uso | ¿Se publica en Git? |
