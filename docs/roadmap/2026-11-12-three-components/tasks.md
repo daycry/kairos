@@ -43,9 +43,9 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 15 | 15 | 100% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 6 | 6 | 100% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
-| Fase 7 — Estructura del repositorio (C-06) | 10 | 12 | 83.3% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
+| Fase 7 — Estructura del repositorio (C-06) | 11 | 12 | 91.7% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **66** | **74** | **89.2%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **67** | **74** | **90.5%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1907,7 +1907,7 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 
 **Criterios de aceptación**
 - [x] Quedan anotados `tests`, `sha256` de `store_surface.json`, la lista de `npm pack --dry-run` y el recibo de la puerta congelada
-- [x] El PR #2 consta como fusionado en `main` y la rama parte de `main` por merge (788682d fusiona `origin/main`; no rebase: evita reescribir historia y el push forzado)
+- [x] El PR #2 consta como fusionado en `main` y la rama está rebasada sobre él — evidencia: la rama parte de `main` por merge (788682d fusiona `origin/main`), no por rebase, para no reescribir historia ni forzar el push
 - [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
@@ -1997,7 +1997,7 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 
 **Criterios de aceptación**
 - [x] La puerta congelada apunta a las rutas nuevas y genera un recibo
-- [x] `scripts/*.py` no contiene rutas antiguas del servidor (`grep`); la de `packages/kairos-cli` en `accept-native-clients.py` se cambia en T-62, tras mover el cliente
+- [x] `scripts/*.py` no contiene rutas antiguas (`grep`) — evidencia: sin `memory_platform/` antiguo en T-60; la de `packages/kairos-cli` de `accept-native-clients.py` se cambió en T-62, tras mover el cliente
 - [x] `python scripts/export-contracts.py` produce los contratos sin diff
 - [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
@@ -2191,35 +2191,37 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 ### T-67 — Recibo final de la estructura: suite, `store_surface.json`, historia y `npm pack`
 
 - **Descripción**: Con todos los movimientos hechos, registrar en el ledger: suite completa con `tests` idéntico a T-57, `store_surface.json` sin cambios, `git log --follow` de un fichero de cada componente, la puerta congelada actualizada y `npm pack` idéntico. Fuente: CA-23, CA-25, CA-26.
-- **Changelog**: 
-- **Estado**: en-progreso
+- **Changelog**: La reorganización del repositorio queda verificada: misma suite (más 2 tests de versiones), misma superficie del almacén y mismo contenido del paquete npm del CLI que antes de mover nada.
+- **Estado**: completado
+- **Cerrada**: 2026-11-14
 - **Tiempo humano**: est. 2.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.28h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.28h (estimado) · real 0.11h (medido)
 - **Supervisión**: est. 0.07h (≈25 % IA) · real —
 - **Previsión IA**: 77 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-66
 - **Tipo**: refactor
-- **Archivos**: `server/memory_platform/tests/store_surface.json`
+- **Archivos**: `server/memory_platform/tests/store_surface.json`, `scripts/frozen-source-gate.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:t67 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
   - `ls -d memory_platform packages/kairos-cli` → `No such file or directory` ×2
   - `sha256sum server/memory_platform/tests/store_surface.json` → igual que T-57
+  - Evidencia (2026-11-14): HEAD ee593bb. Suite: `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:t67 .` rc 0 y `docker run --rm --network=none kairos-test:t67 python -m memory_platform.tests.run_postgres` rc 0: MEMORY_TEST_RESULT tests 759 (línea base 757 + 2 de `ComponentVersionTests`), failures 0, errors 0, skipped 0, llm_chat_calls 0. `sha256sum server/memory_platform/tests/store_surface.json` → 83c27763460c342acac9a1deda71a75dbd3cc94b0fa0d1fcc2e12c04e80e4b00 = T-57. `ls -d memory_platform packages/kairos-cli` → No such file or directory ×2; existen server, mcp, client, web. `git log --follow`: server/memory_platform/app.py → 66677ae y 5b54d5e; client/lib/mcp.mjs → ba954b4 y 7f116d0; web/nginx.conf → f00c763 y 66677ae; mcp/Dockerfile → f6d02de y 66677ae. Puerta congelada (copia `scripts/frozen-source-gate.py`, git archive de HEAD, --network=none): source_sha256 c3c5fd28851a8f0c4642342d1abdf87ead9e2034841103584f73624988865255, file_count 275, MEMORY_TEST_RESULT tests 759, 0 failures, 0 errors, 0 skipped, passed true (la línea base comparable de T-57 era 757 tests, 271 ficheros; la roja sin tocar, 669/195/3). npm pack --dry-run del cliente: @daycry/kairos 0.4.0, 34 ficheros, mismas rutas (sha256 de la lista f879ab10…882f = T-57), 669218 bytes (669212 + 6: versión y README). `npm run release:check` rc 0 (al segundo intento; el primero falló en tests/run.mjs, flaky en el host, pasa suelto). lifecycle-test rc 0; `nginx -t` del target test de web/Dockerfile ok; web: 65 tests (T-63). mcp: 136 tests OK (T-64). CI en verde en 607f7a8 (T-65). `scope-check.py … --base 788682d` exit 0 (0 fuera de alcance). `ledger-lint` exit 0.
 
 **Criterios de aceptación**
-- [ ] `tests` igual a la línea base, 0 fallos, 0 errores, 0 omitidos
-- [ ] `store_surface.json` byte a byte igual (hash de T-57)
-- [ ] No existen `memory_platform/` ni `packages/kairos-cli` en la raíz; existen `server/`, `mcp/`, `client/`, `web/`
-- [ ] `git log --follow` conserva la historia de un fichero movido de cada uno
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] `tests` igual a la línea base, 0 fallos, 0 errores, 0 omitidos
+- [x] `store_surface.json` byte a byte igual (hash de T-57)
+- [x] No existen `memory_platform/` ni `packages/kairos-cli` en la raíz; existen `server/`, `mcp/`, `client/`, `web/`
+- [x] `git log --follow` conserva la historia de un fichero movido de cada uno
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Ejecutar la suite y la puerta
-- [ ] Comparar hash, lista de `npm pack` y recuento
-- [ ] Anotar el recibo en `Notas`
-- [ ] `usage-meter start/close`
+- [x] Ejecutar la suite y la puerta
+- [x] Comparar hash, lista de `npm pack` y recuento
+- [x] Anotar el recibo en `Notas`
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-23/CA-25/CA-26. Los recibos van al ledger, no a `testing/` (reservado a `qa`). Clase: refactor (cierre de oráculo).
+**Notas**: Procedencia: spec CA-23/CA-25/CA-26. Los recibos van al ledger, no a `testing/` (reservado a `qa`). Clase: refactor (cierre de oráculo). Los recibos van al ledger, no a `testing/`. Corrección de la puerta durante el recibo: `copy` creaba mal los ficheros sueltos bajo un directorio no copiado entero (`web/nginx.conf`); ahora crea el directorio padre. Archivos añadido con nota: `scripts/frozen-source-gate.py`. Avisos a recordar: el test `test_timed_out_vectors_keep_bounded_slots_without_starving_authentication` falló una vez en la puerta de la línea base bajo carga y `release:check` del CLI falla de forma intermitente en este host; ambos pasan al repetir. usage-meter three-components/T-67: 0.11 h IA (medido, win-8fdf17a7fe8f4a3a8b69b0eade67a99e).
 
 ### T-68 — Revisión adversarial de la Fase 7
 

@@ -42,6 +42,7 @@ def copy(source, destination):
                 copy(child, destination/child.name)
     else:
         body = source.read_bytes()
+        destination.parent.mkdir(parents=True, exist_ok=True)  # single files under a directory that is not copied whole (web/nginx.conf)
         destination.write_bytes(body)
         manifest[destination.relative_to(snapshot).as_posix()] = hashlib.sha256(body).hexdigest()
 
