@@ -2164,7 +2164,7 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 - [x] Empujar y comprobar la ejecución
 - [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-24. Dependencia: Actions activas (P-01). Clase: cambio (oráculo: ejecución en verde). NO se ha abierto ningún PR (requiere autorización del usuario): como evidencia de «verde en el PR» se usa el run que dispara el push de la rama; el PR queda para la Fase 8, con autorización. Actions activas (P-01). Las rutas ya se habían ido actualizando en T-59, T-62, T-63 y T-64; aquí se verifica el conjunto con la ejecución real. Nada se publica: la CI no tiene pasos de publicación (comprobado por `SupplyChainTests`). usage-meter three-components/T-65: 0.13 h IA (medido, win-281ac31fe9ef48b9b795e3106f53f866).
+**Notas**: Procedencia: spec CA-24. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `e08f4fe533e7`.
 
 ### T-66 — Manuales con la estructura de tres componentes
 
@@ -2195,13 +2195,13 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 - [x] Corregir y comprobar comandos
 - [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-32. Clase: documentación (oráculo: grep + lectura). Cambios por script con edición por bytes (los docs son CRLF; EOL conservados). Rutas de nginx y del Dockerfile web → `web/nginx.conf` y `web/Dockerfile`; `../packages/kairos-cli/...` → `../client/...`; `../../docs/` → `../docs/` en `client/README.md`. `release-cli.md` abre con la versión 0.4.0 (preparada el 2026-11-14, sin tarball revisado ni publicación). Recuento de pruebas de la tabla de CI: 525 → 759. Archivos añadidos con nota: `client/README.md`, `docs/RAG-INDEX.md`, `docs/code-analysis.md`, `docs/corpus-generated-answers.md`, `docs/extended-workflows.md`, `docs/manual.md`. usage-meter three-components/T-66: 0.03 h IA (medido, win-514807194b9a44dc85e14bce279d8eb9).
+**Notas**: Procedencia: spec CA-32. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `745f31637737`.
 
 ### T-67 — Recibo final de la estructura: suite, `store_surface.json`, historia y `npm pack`
 
 - **Descripción**: Con todos los movimientos hechos, registrar en el ledger: suite completa con `tests` idéntico a T-57, `store_surface.json` sin cambios, `git log --follow` de un fichero de cada componente, la puerta congelada actualizada y `npm pack` idéntico. Fuente: CA-23, CA-25, CA-26.
 - **Changelog**: 
-- **Estado**: borrador
+- **Estado**: en-progreso
 - **Tiempo humano**: est. 2.0h (base) · real —
 - **Tiempo IA (ejec.)**: est. 0.28h (estimado) · real —
 - **Supervisión**: est. 0.07h (≈25 % IA) · real —
