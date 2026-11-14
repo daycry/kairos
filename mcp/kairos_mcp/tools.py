@@ -1,4 +1,5 @@
 """The MCP server: a low-level `Server` whose tools are the ones of the contract, each call becoming requests to `/v1` as the contract says."""
+from itertools import islice
 from uuid import UUID
 
 from jsonschema.exceptions import best_match
@@ -11,6 +12,11 @@ from . import __version__
 from .auth import current_authorization
 from .errors import UNAVAILABLE, ToolError
 from .logs import log_event
+
+# `best_match` is given at most this many errors: `iter_errors` is lazy, and consuming all of them costs ~190 microseconds per element of an invalid array,
+# on the event loop, for any caller with a Bearer (60 000 elements under the body limit: seconds). The first ones decide the message in every case the
+# contract can produce by hand; only for an input with more failures than this can the text name a different one than the SDK's, never a different kind.
+ERROR_LIMIT = 16
 
 # The text the internal MCP gives clients at `initialize` of the server; kairos-mcp is a drop-in front, so it says the same.
 INSTRUCTIONS = (
@@ -49,7 +55,7 @@ class Checks:
 
     The input schema is compiled one time: the SDK's own validation (`jsonschema.validate`) checks the schema again and compiles it on every call, 40 to
     56 ms of synchronous CPU on a single event loop, which any caller with a Bearer could ask for with arguments that fail. The message is the SDK's
-    (`best_match` of the errors). Then the arguments the contract declares `format: uuid` are parsed like the internal MCP parses its `UUID` parameters
+    (`best_match` of the errors, at most `ERROR_LIMIT` of them, so that a huge invalid input costs milliseconds). Then the arguments the contract declares `format: uuid` are parsed like the internal MCP parses its `UUID` parameters
     (any form `UUID` accepts, the canonical lowercase one on the wire; an invalid one has the same text), and integers sent as `20.0` are integers."""
 
     def __init__(self, name, schema):
@@ -66,8 +72,8 @@ class Checks:
         self.model = create_model(name + 'Arguments', **fields) if fields else None
 
     def refusal(self, arguments):
-        """The text of the first failure of the input schema, as the SDK words it, or `None`."""
-        error = best_match(self.validator.iter_errors(arguments))
+        """The text of the failure of the input schema, as the SDK words it (the best of the first `ERROR_LIMIT` errors), or `None`."""
+        error = best_match(islice(self.validator.iter_errors(arguments), ERROR_LIMIT))
         return 'Input validation error: ' + error.message if error is not None else None
 
     def normalized(self, arguments):
