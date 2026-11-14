@@ -1,7 +1,7 @@
 """T-52 (CA-27, CA-28, P-07): the proxy routes `/mcp` to kairos-mcp (`memory-mcp:8791`) and Compose orders and connects the services for it.
 
 Checked as text, without Docker; `nginx -t` runs in the `test` target of `Dockerfile.web`. The internal MCP stays reachable at `memory-api:8790/mcp` for
-the compatibility version, but no longer through the proxy.
+the compatibility version and, through the generic `/memory-api/` prefix of the proxy, at `/memory-api/mcp/` while `MEMORY_MOUNT_MCP=1`.
 """
 import re
 import unittest
@@ -37,6 +37,9 @@ class McpRouteTests(unittest.TestCase):
         mcp = directives(block('location /mcp {'))
         for line in ('proxy_set_header Host $http_host;', 'proxy_read_timeout 45s;', 'proxy_buffering off;'):
             self.assertIn(line, mcp)
+
+    def test_the_portal_session_cookie_is_not_forwarded_to_kairos_mcp(self):
+        self.assertIn('proxy_set_header Cookie "";', directives(block('location /mcp {')))
 
     def test_the_rest_of_the_routes_still_reach_the_api(self):
         self.assertIn('proxy_pass http://memory-api:8790;', directives(block('location /v1/ {')))

@@ -111,3 +111,19 @@ Las cinco deudas del intento 3 exigen editar el workflow a propósito, y cualqui
 | 5 | Important | Las llamadas pequeñas hacían cola detrás de las grandes | Corregido en fix5 (vía rápida hasta 1000 valores y plazo de cola de 5 s) |
 | 6 | Minor | Cifras de la doc que no eran de HTTP; test de tiempos frágil | Corregidos al cerrar |
 | — | Residual | El CPU de un solo proceso es un techo que un cliente con muchas peticiones grandes puede alcanzar | Documentado: corresponde al proxy o al rate limiting del operador |
+
+## Fase 6 — Compatibilidad (T-51 a T-55)
+
+- **Fecha**: 2026-11-14
+- **Lentes**: A+B y C (activada por `nginx.conf` y `docker-compose.yml`) en dos revisores.
+- **Veredicto**: cerrada en el intento 1 de 3, sin hallazgos Critical ni Important.
+- **Evidencia**:
+  - Suite: 756 tests al implementar y 757 al cerrar; 0 omitidos y 0 llamadas a `/api/chat`. CI 43591247077 en verde.
+  - nginx real con stubs (35 rutas crudas y la sonda de 17 casos): sin traversal ni smuggling por `/mcp`; `/metrics` cerrado; `nginx -t` en verde tras el cierre.
+  - Contrato MCP sin cambios; Compose solo añade una red, una dependencia y `MEMORY_MOUNT_MCP` con valor por defecto compatible.
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Minor | El MCP interno sigue accesible en `/memory-api/mcp/` y los textos decían lo contrario; la cookie del portal llegaba a kairos-mcp | Corregidos al cerrar |
+| 1 | Minor | Formato no estándar de `Deprecation`/`Sunset`; 307 de `POST /mcp` sin cabeceras | Documentados; la fecha de retirada la decide el usuario |
+| 1 | Minor | Sin prueba de extremo a extremo CLI → nginx → kairos-mcp | Deuda para la Fase 8 (T-72) |

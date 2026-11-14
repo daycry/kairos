@@ -42,10 +42,10 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 3 — Paridad REST /v1 (C-02) | 10 | 10 | 100% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 15 | 15 | 100% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
-| Fase 6 — Compatibilidad (C-07) | 5 | 6 | 83.3% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
+| Fase 6 — Compatibilidad (C-07) | 6 | 6 | 100% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **55** | **74** | **74.3%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **56** | **74** | **75.7%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1778,7 +1778,7 @@ RED: `memory_platform/tests/test_mcp_write.py::MCPBoundaryChainTests` falló con
 
 ## Fase 6 — Compatibilidad (C-07)
 
-**Estado**: borrador · **Estimado**: 23.4h (19.5h base) · **Real**: — · **Coste est.**: 1.170 € · **Tokens est.**: 757 k
+**Estado**: completado · **Estimado**: 23.4h (19.5h base) · **Real**: — · **Coste est.**: 1.170 € · **Tokens est.**: 757 k
 
 ### T-51 — `MEMORY_MOUNT_MCP` y cabeceras `Deprecation`/`Sunset` del MCP interno
 
@@ -1948,8 +1948,9 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 ### T-56 — Revisión adversarial de la Fase 6
 
 - **Descripción**: Revisión adversarial: ¿el 404 con `MEMORY_MOUNT_MCP=0` cubre subrutas? ¿las cabeceras salen también en errores y streaming? ¿el log filtra algo? ¿el puente del CLI sigue funcionando con la ruta antigua? Fuente: retro, R-06.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: La compatibilidad con el MCP interno se revisó de forma adversarial: `/mcp` de la web ya no reenvía la cookie de sesión del portal a kairos-mcp, y la documentación avisa de que el MCP interno sigue accesible en `/memory-api/mcp/` hasta poner `MEMORY_MOUNT_MCP=0`.
+- **Estado**: completado
+- **Cerrada**: 2026-11-14
 - **Tiempo humano**: est. 6.5h (base) · real —
 - **Tiempo IA (ejec.)**: est. 0.89h (estimado) · real —
 - **Supervisión**: est. 0.22h (≈25 % IA) · real —
@@ -1961,16 +1962,17 @@ RED: `memory_platform/tests/lifecycle_probe.py (caso doctor)` falló con TDD par
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t56 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
   - lectura: `review.md`, sección «Fase 6», sin hallazgos Critical/Important abiertos
+  - Evidencia (2026-11-14): `review.md` sección «Fase 6»; 1 intento (A+B y C en dos revisores). Sin Critical/Important. Minor corregidos por el orquestador en el commit de cierre: cookie de sesión del portal reenviada a kairos-mcp (`proxy_set_header Cookie "";` + test), afirmación falsa de que el MCP interno ya no pasa por el proxy (sigue en `/memory-api/mcp/`), formato no estándar de `Deprecation`/`Sunset` y 307 sin cabeceras documentados. `nginx -t` del target `test` de `Dockerfile.web`: exit 0. Suite tras el cierre: `MEMORY_TEST_RESULT` 757 tests, 0 failures, 0 errors, 0 skipped, `llm_chat_calls` 0 (`kairos-test:i2p6close`, `docker run --network=none`). Contrato sin cambios.
 
 **Criterios de aceptación**
-- [ ] `review.md` tiene la sección «Fase 6»
-- [ ] 0 hallazgos Critical o Important abiertos
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] `review.md` tiene la sección «Fase 6»
+- [x] 0 hallazgos Critical o Important abiertos
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar — EXCEPCIÓN: el intento de revisión no se midió con usage-meter; los tokens de los revisores constan solo en la telemetría de los subagentes (estimado)
 
 **Subtareas**
-- [ ] Probar subrutas y métodos con el interruptor apagado
-- [ ] Cerrar hallazgos
-- [ ] `usage-meter start/close` por intento
+- [x] Probar subrutas y métodos con el interruptor apagado
+- [x] Cerrar hallazgos
+- [x] `usage-meter start/close` por intento — EXCEPCIÓN: ver el criterio anterior
 
 **Notas**: Procedencia: retro. No escribe en `testing/`.
 
@@ -2773,3 +2775,15 @@ Veredicto: **sin Critical ni Important; la Fase 5 cierra en el intento 6 (3 de 3
 ## Historial archivado
 
 - 2026-11-14 · «Revisión de dos lentes — intento 5: Fase 5 kairos-mcp, validación fuera del event loop (T-41, T-49)» → [execution-history.md](execution-history.md) · SHA-256 `de257f7dcf5bcdcf26d183a712f4ec36bfaa72d12fda03e749a837580eac6925`
+
+## Revisión de dos lentes — intento 1: Fase 6 compatibilidad (T-51, T-52, T-53, T-54, T-55)
+
+Veredicto: **sin Critical ni Important; la Fase 6 cierra en el intento 1 de 3**. Lentes: A+B en un revisor y C en otro (el selector activa C por `nginx.conf`/`docker-compose.yml`). A+B: todos los criterios de T-51..T-55 con evidencia (el 2.º de T-53, compuesto); tests nuevos fallan con 977cc29 y pasan con HEAD; archivado del ledger sin pérdidas (10/10 líneas en `execution-history.md`); `compose config` refleja redes y dependencias. C: nginx real con stubs, 35 rutas crudas: sin traversal ni smuggling por `/mcp`, `/metrics` y `/health/ready` iguales en todas las grafías, límite de cuerpo 256k = `KAIROS_MAX_BODY_BYTES`, red `mcp` sigue `internal`, `MEMORY_MOUNT_MCP` falla en cerrado con valores raros, `mcp_legacy_used` sin credencial ni contenido. Suite tras el cierre: 757, 0 skipped, `llm_chat_calls` 0.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Minor | El comentario de `nginx.conf`, el docstring de `test_nginx_routes` y la doc afirmaban que el MCP interno ya no pasa por el proxy; sigue en `5173/memory-api/mcp/` (prefijo genérico, existente desde antes), con la sesión del portal (CWE-668) | T-52 | corregido (commit de cierre): comentario, docstring, `integration.md` y `operations.md` lo dicen y remiten a `MEMORY_MOUNT_MCP=0` | Lente C: nginx real, `/memory-api/mcp/` → api `/mcp/` con cookie |
+| 2 | Minor | `location /mcp` reenviaba la cookie `memory_session` a kairos-mcp, que no la usa (CWE-200, defensa en profundidad) | T-52 | corregido (commit de cierre): `proxy_set_header Cookie "";` y test `test_the_portal_session_cookie_is_not_forwarded_to_kairos_mcp`; `nginx -t` exit 0 | Lente C: `nginx.conf:67-72` |
+| 3 | Minor | `Deprecation: true` y `Sunset: 0.5.0` no siguen el formato de fecha de RFC 9745/8594 (CA-27 pide la versión; ningún cliente conocido lee la cabecera) | T-51 | documentado (commit de cierre) en `integration.md`; la elección de fecha queda para el usuario | Lente A+B: `mcp.py:215,232` |
+| 4 | Minor | `POST /mcp` sin barra da la 307 del router sin `Deprecation`/`Sunset` ni `mcp_legacy_used` | T-51 | documentado (commit de cierre); deuda aceptada: quien sigue la redirección recibe las cabeceras en `/mcp/` | Lente A+B: `mcp.py:248` |
+| 5 | Minor | Ninguna prueba recorre CLI → nginx → kairos-mcp real (el probe va directo; la sonda de nginx usa stubs); la paridad de `allowed_hosts` con el Host reenviado solo se ve leyendo el código | T-53 | deuda aceptada para la Fase 8 (ensayo de integración final, T-72) | Lente A+B: `lifecycle_probe.py:93,124`, `nginx_portal_probe.py:25-35` |
