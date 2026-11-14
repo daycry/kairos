@@ -12,7 +12,7 @@ from . import contract as contract_module
 from .auth import RequireBearer
 from .client import ApiClient
 from .errors import ToolError
-from .config import DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT, from_env, parse_api_url
+from .config import DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT, DEFAULT_VALIDATION_THREADS, from_env, parse_api_url
 from .limits import BodyLimit
 from .logs import configure_logging
 from .tools import build_server
@@ -35,14 +35,14 @@ def security(allowed_origins):
     return TransportSecuritySettings(enable_dns_rebinding_protection=True, allowed_hosts=list(dict.fromkeys(hosts)), allowed_origins=list(allowed_origins))
 
 
-def create_app(api_url=None, timeout=None, allowed_origins=(), transport=None, contract=None, max_body_bytes=DEFAULT_MAX_BODY_BYTES):
+def create_app(api_url=None, timeout=None, allowed_origins=(), transport=None, contract=None, max_body_bytes=DEFAULT_MAX_BODY_BYTES, validation_threads=DEFAULT_VALIDATION_THREADS):
     """`transport` replaces the network (an ASGI transport onto the server in the in-process chain tests); the credential is never configured here."""
     from .translate import Executor
     api_url = parse_api_url(api_url)
     client = ApiClient(api_url, DEFAULT_TIMEOUT if timeout is None else timeout, transport=transport)
     contract = contract or contract_module.load()
     executor = Executor(contract, client)
-    server = build_server(contract, executor.execute)
+    server = build_server(contract, executor.execute, validation_threads)
     manager = StreamableHTTPSessionManager(app=server, stateless=True, json_response=True, security_settings=security(allowed_origins))
 
     async def mcp_endpoint(scope, receive, send):
@@ -72,7 +72,7 @@ def main():
     import uvicorn
     configure_logging()
     config = from_env()
-    uvicorn.run(create_app(config.api_url, config.timeout, config.allowed_origins, max_body_bytes=config.max_body_bytes), host='0.0.0.0', port=PORT, log_config=None, access_log=False)
+    uvicorn.run(create_app(config.api_url, config.timeout, config.allowed_origins, max_body_bytes=config.max_body_bytes, validation_threads=config.validation_threads), host='0.0.0.0', port=PORT, log_config=None, access_log=False)
 
 
 if __name__ == '__main__':

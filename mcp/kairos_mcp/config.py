@@ -1,4 +1,4 @@
-"""Settings from the environment: `KAIROS_API_URL` (required), `KAIROS_API_TIMEOUT` (seconds, default 30), `KAIROS_ALLOWED_ORIGINS` and `KAIROS_MAX_BODY_BYTES`."""
+"""Settings from the environment: `KAIROS_API_URL` (required), `KAIROS_API_TIMEOUT` (seconds, default 30), `KAIROS_ALLOWED_ORIGINS`, `KAIROS_MAX_BODY_BYTES` and `KAIROS_VALIDATION_THREADS`."""
 from dataclasses import dataclass
 import os
 from urllib.parse import urlsplit
@@ -6,6 +6,8 @@ from urllib.parse import urlsplit
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_MAX_BODY_BYTES = 262144  # the server's own default (MEMORY_MAX_BODY_BYTES)
 MAX_BODY_BYTES_CEILING = 16 * 1024 * 1024
+DEFAULT_VALIDATION_THREADS = 2  # validations of the input that may run at once, each in a worker thread
+MAX_VALIDATION_THREADS = 64
 
 
 @dataclass(frozen=True)
@@ -14,6 +16,7 @@ class Config:
     timeout: float = DEFAULT_TIMEOUT
     allowed_origins: tuple = ()
     max_body_bytes: int = DEFAULT_MAX_BODY_BYTES
+    validation_threads: int = DEFAULT_VALIDATION_THREADS
 
 
 def parse_timeout(value):
@@ -40,6 +43,18 @@ def parse_max_body_bytes(value):
     return size
 
 
+def parse_validation_threads(value):
+    if value is None or str(value).strip() == '':
+        return DEFAULT_VALIDATION_THREADS
+    try:
+        count = int(value)
+    except ValueError:
+        raise ValueError('KAIROS_VALIDATION_THREADS must be a whole number') from None
+    if not 1 <= count <= MAX_VALIDATION_THREADS:
+        raise ValueError('KAIROS_VALIDATION_THREADS must be between 1 and %d' % MAX_VALIDATION_THREADS)
+    return count
+
+
 def parse_api_url(value):
     url = (value or '').strip().rstrip('/')
     parts = urlsplit(url)
@@ -52,4 +67,5 @@ def from_env(env=None):
     env = os.environ if env is None else env
     origins = tuple(value.strip() for value in env.get('KAIROS_ALLOWED_ORIGINS', '').split(',') if value.strip())
     return Config(parse_api_url(env.get('KAIROS_API_URL')), parse_timeout(env.get('KAIROS_API_TIMEOUT')), origins,
-                  parse_max_body_bytes(env.get('KAIROS_MAX_BODY_BYTES')))
+                  parse_max_body_bytes(env.get('KAIROS_MAX_BODY_BYTES')),
+                  parse_validation_threads(env.get('KAIROS_VALIDATION_THREADS')))

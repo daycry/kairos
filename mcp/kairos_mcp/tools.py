@@ -1,7 +1,10 @@
 """The MCP server: a low-level `Server` whose tools are the ones of the contract, each call becoming requests to `/v1` as the contract says."""
 from itertools import islice
+from functools import partial
 from uuid import UUID
 
+import anyio
+from anyio import to_thread
 from jsonschema.exceptions import ValidationError as SchemaError, best_match
 from jsonschema.validators import extend, validator_for
 from mcp import types
@@ -69,7 +72,7 @@ class Checks:
 
     The input schema is compiled one time: the SDK's own validation (`jsonschema.validate`) checks the schema again and compiles it on every call, 40 to
     56 ms of synchronous CPU on a single event loop, which any caller with a Bearer could ask for with arguments that fail. The message is the SDK's
-    (`best_match` of the errors, at most `ERROR_LIMIT` of them, and `anyOf` reads at most that many per alternative, so that a huge invalid input costs milliseconds). Then the arguments the contract declares `format: uuid` are parsed like the internal MCP parses its `UUID` parameters
+    (`best_match` of the errors, at most `ERROR_LIMIT` of them, and `anyOf` reads at most that many per alternative, so that the errors of a huge invalid input are not materialized; the cost of reading it is linear, as for a valid one, and `build_server` runs the check off the event loop). Then the arguments the contract declares `format: uuid` are parsed like the internal MCP parses its `UUID` parameters
     (any form `UUID` accepts, the canonical lowercase one on the wire; an invalid one has the same text), and integers sent as `20.0` are integers."""
 
     def __init__(self, name, schema):
@@ -104,12 +107,32 @@ class Checks:
         return arguments, None
 
 
-def build_server(contract, executor):
-    """`executor(name, arguments, authorization)` returns a `CallToolResult`, or raises `ToolError` (the message the client sees)."""
+    def check(self, arguments):
+        """`(refusal, arguments, failure)`: the whole check of a call in one piece, so that it can run in a worker thread."""
+        refusal = self.refusal(arguments)
+        if refusal:
+            return refusal, None, None
+        arguments, failure = self.normalized(arguments)
+        return None, arguments, failure
+
+
+def build_server(contract, executor, validation_threads=2):
+    """`executor(name, arguments, authorization)` returns a `CallToolResult`, or raises `ToolError` (the message the client sees).
+
+    The check of the input runs in a worker thread, at most `validation_threads` at once: its cost is linear in the size of the input (an array of 86 000
+    valid elements with one outer failure, such as `maxItems`, is 1.5-2.5 s of Python, the same as a valid one) and cannot be cut, but jsonschema is pure
+    Python and gives up the GIL every switch interval, so the event loop keeps answering while it works, and the limit bounds the CPU it can take."""
     server = Server('Kairos', version=__version__, instructions=INSTRUCTIONS)
     known = {tool['name'] for tool in contract['tools']}
     tools = listing(contract)
     checks = {tool['name']: Checks(tool['name'], tool['inputSchema']) for tool in contract['tools']}
+    limiter = []  # created in the first call: a `CapacityLimiter` belongs to the event loop that runs it
+
+    def validation_limiter():
+        if not limiter:
+            limiter.append(anyio.CapacityLimiter(validation_threads))
+        return limiter[0]
+    server.validation_threads = validation_threads
 
     @server.list_tools()
     async def list_tools():
@@ -119,10 +142,9 @@ def build_server(contract, executor):
     async def call_tool(name, arguments):
         if name not in known:
             return error_result(name, 'Unknown tool: ' + name)
-        refusal = checks[name].refusal(arguments)
+        refusal, arguments, failure = await to_thread.run_sync(partial(checks[name].check, arguments), limiter=validation_limiter())
         if refusal:
             return types.CallToolResult(content=[types.TextContent(type='text', text=refusal)], isError=True)
-        arguments, failure = checks[name].normalized(arguments)
         if failure:
             return error_result(name, failure)
         try:

@@ -87,6 +87,7 @@ El servicio `memory-mcp` del Compose (imagen `kairos-mcp`, puerto `8791` en una 
 | `KAIROS_API_TIMEOUT` | `30` segundos | Plazo de cada petición a `/v1` (mayor que 0 y como máximo 600); una llamada completa dura como máximo 4 veces este plazo |
 | `KAIROS_ALLOWED_ORIGINS` | el valor de `MEMORY_ALLOWED_ORIGINS` | Orígenes exactos cuyos nombres de host acepta la cabecera `Host` (protección frente a DNS rebinding), además de `localhost`, `127.0.0.1`, `[::1]` y `memory-mcp` |
 | `KAIROS_MAX_BODY_BYTES` | `262144` bytes | Tamaño máximo de cuerpo de una petición MCP; iguálalo a `MEMORY_MAX_BODY_BYTES` |
+| `KAIROS_VALIDATION_THREADS` | `2` | Validaciones de argumentos de herramientas MCP que corren a la vez, cada una en un hilo fuera del event loop (de 1 a 64); acota el CPU de validación de una entrada grande |
 
 El contenedor `memory-mcp` lleva `mem_limit: 1g` en el Compose: una respuesta de `/v1` de decenas de MB (hasta 64 MiB; el servidor produce unos 52 MB como máximo) se mantiene unas cinco veces en memoria mientras se une, se interpreta y se recorta, y el límite acota el daño de varias llamadas grandes simultáneas (el contenedor se reinicia solo, `restart: unless-stopped`). Ajusta `mem_limit` si subes los límites de cuerpo y de respuesta del servidor.
 
