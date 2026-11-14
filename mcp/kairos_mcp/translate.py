@@ -2,7 +2,7 @@
 
 Everything comes from `x-kairos-endpoint` and `x-kairos-translation` of `kairos-mcp.json`: where each argument goes (`in` path, query or body, under
 which `name`, with which `transform`), the `fixed` values, the read of a value left out (`when_absent` with its `retry`), the values that cannot
-travel (`untranslatable`) and the composition of `event_status` without a project (`without_project_id`). No tool is special-cased by name here.
+travel (`untranslatable`, sent as `send_instead`) and the composition of `event_status` without a project (`without_project_id`). No tool is special-cased by name here.
 """
 import asyncio
 import json
@@ -16,6 +16,7 @@ from .auth import credential_refused
 from .client import fail
 from .contract import read_only
 from .errors import UNAVAILABLE, ToolError
+from .logs import log_event
 from .untrusted import wrap
 
 LOCAL_TEXT = {
@@ -31,6 +32,12 @@ LOCAL_TEXT = {
 }
 PLACEHOLDER = re.compile(r'\{[A-Za-z_]+\}')
 DEADLINE_FACTOR = 4  # a whole tool call (its requests, a rebuild's rereads included) takes at most this many request timeouts
+
+
+def segment(value):
+    """A path value URL-encoded in full; `.` and `..` are encoded too, or a client and a proxy would take them for dot segments of another route."""
+    text = quote(str(value), safe='')
+    return text.replace('.', '%2E') if text in ('.', '..') else text
 
 
 def csv_list(value):
@@ -53,7 +60,7 @@ def translate(rule, arguments):
         if where.get('transform') == 'csv-list':
             value = csv_list(value)
         if where['in'] == 'path':
-            path = path.replace('{' + where['name'] + '}', quote(str(value), safe=''))
+            path = path.replace('{' + where['name'] + '}', segment(value))
         elif where['in'] == 'query':
             params[where['name']] = ('true' if value else 'false') if isinstance(value, bool) else value
         elif 'name' in where:
@@ -84,38 +91,38 @@ def holds(condition, scope):
 
 async def read_missing(rule, arguments, call):
     """`when_absent`: the values of the arguments the call left out (absent or null), each read as the contract says. `(values, None)`, or
-    `(None, (status, body))` when a read fails, which `on_read_error: answer` makes the answer of the call."""
+    `(None, (status, body))` when a read fails, which `on_read_error: answer` makes the answer of the call; a status of `send_instead_on_status.statuses`
+    gives the value `send_instead_on_status.value` (one no resource can have) instead: the request goes with it and the server answers in its own order of checks."""
     values = {}
     for argument, where in rule['args'].items():
         if 'when_absent' in where and arguments.get(argument) is None:
             how = where['when_absent']
             method, path, params, body = translate(how['read'], {key: value for key, value in arguments.items() if key in how['read']['args']})
             status, read = await call(method, path, params, body)
+            instead = how.get('send_instead_on_status')
+            if instead and status in instead['statuses']:
+                values[argument] = instead['value']
+                continue
             if status >= 400:
                 return None, (status, read)  # `on_read_error: answer`, the only value the contract allows
             values[argument] = read[how['take']]
     return values, None
 
 
-def refused_value(rule, arguments):
+def replaced(rule, arguments):
+    """`untranslatable`: a value the endpoint cannot receive goes as `send_instead`, and the server refuses in the order of the tool."""
     for refused in rule.get('untranslatable', []):
         value = arguments.get(refused['argument'])
         if value is not None and value == refused['value'] and type(value) is type(refused['value']):
-            return refused
-    return None
+            return {**arguments, refused['argument']: refused['send_instead']}
+    return arguments
 
 
 async def perform(rule, arguments, call):
-    """What a client of `/v1` does with one call: a value that cannot travel is answered, after the read that makes the server check access and
-    existence in its own order when the contract says so (`after_read`); a value left out is read and sent; a `retry` status over a value that changed
-    since it was read sends the request again, at most `max` more times, and with the value unchanged the conflict is the real answer."""
-    refused = refused_value(rule, arguments)
-    if refused:
-        if refused.get('after_read'):
-            _, failed = await read_missing(rule, {**arguments, refused['argument']: None}, call)
-            if failed:
-                return failed
-        return refused['answer']['status'], {'error': refused['answer']['error']}
+    """What a client of `/v1` does with one call: a value that cannot travel is replaced by the one the contract says (`send_instead`); a value left
+    out is read and sent; a `retry` status over a value that changed since it was read sends the request again, at most `max` more times, and with
+    the value unchanged the conflict is the real answer."""
+    arguments = replaced(rule, arguments)
     retry = next((where['when_absent'].get('retry') for where in rule['args'].values() if 'when_absent' in where), None)
     sent = last = None
     for _ in range(1 + (retry['max'] if retry else 0)):
@@ -177,11 +184,21 @@ class Executor:
         shape, budget = OUTPUT[name]
         tool = self.tools[name]
         endpoint = tool['x-kairos-endpoint']
-        if endpoint == 'local':
-            return result(LOCAL_TEXT[name], {'result': LOCAL_TEXT[name]})
 
         async def call(method, path, params=None, body=None):
             return await self.client.send(method, path, authorization, params, body)
+
+        if endpoint == 'local':
+            # Answered without a request of the tool, but not to any Bearer: the credential is checked with the API as `initialize` is (the internal
+            # MCP refuses an unknown credential before any tool). An API that cannot answer does not refuse it.
+            try:
+                status, _ = await call('GET', '/v1/auth/me')
+            except ToolError:
+                status = 200
+            if status == 401:
+                credential_refused()
+                raise ToolError(UNAVAILABLE)
+            return result(LOCAL_TEXT[name], {'result': LOCAL_TEXT[name]})
 
         try:
             async with asyncio.timeout(self.client.timeout * DEADLINE_FACTOR):
@@ -195,7 +212,11 @@ class Executor:
             credential_refused()  # the answer to the whole MCP request is that 401; the tool error below is what is left if no response can be rewritten
         if status >= 400:
             fail(status, body)
-        value = body if isinstance(body, dict) else {}
-        if read_only(tool) and shape != PLAIN:  # the contract's own annotation says which tools read: no list of names here
+        if not isinstance(body, dict):  # a success that is not an object (an array, nothing) is not an answer of the contract
+            log_event('tool_failed', 'error', tool=name, reason='answer_not_an_object')
+            raise ToolError(UNAVAILABLE)
+        value = body
+        # The contract's own annotation says which tools read, and `untrusted` in the endpoint which tools that write answer retrieved content: no list of names here.
+        if (read_only(tool) or endpoint.get('untrusted')) and shape != PLAIN:
             value = wrap(value)
         return shape_result(shape, budget, value)

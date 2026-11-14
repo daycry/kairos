@@ -7,7 +7,10 @@ import httpx
 from .errors import UNAVAILABLE, ToolError
 from .logs import log_event
 
-MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+# The largest answer `/v1` can produce is `observation_search` with 200 observations of up to 100 000 characters (at most 4 bytes each in UTF-8: 80 MB,
+# `get_observations` with 100 ids is half of it). The bound sits above that, so that an answer the server produced is cut with the marker of the tool's
+# byte budget, never turned into UNAVAILABLE; it only guards against a server that answers without end.
+MAX_RESPONSE_BYTES = 96 * 1024 * 1024
 GENERIC_5XX_CODES = frozenset({'service_unavailable'})
 
 
@@ -41,6 +44,7 @@ class ApiClient:
         self.timeout = timeout
         # Redirects are never followed: the credential must not travel to a place `/v1` did not name.
         self._http = httpx.AsyncClient(base_url=base_url, timeout=httpx.Timeout(timeout), transport=transport, follow_redirects=False,
+                                       trust_env=False,  # a proxy of the environment (Docker injects them) must never receive the Bearer
                                        limits=httpx.Limits(max_keepalive_connections=20, keepalive_expiry=30.0))
 
     async def aclose(self):
@@ -71,6 +75,7 @@ class ApiClient:
             log_event('api_unavailable', 'warning', method=method, reason=reason, duration_ms=round((loop.time() - started) * 1000, 1))
             raise ToolError(UNAVAILABLE) from None
         status, parsed = response.status_code, parse(chunks)
+        del chunks
         if 300 <= status < 400:
             log_event('api_unavailable', 'warning', method=method, status=status, reason='redirect')
             raise ToolError(UNAVAILABLE)

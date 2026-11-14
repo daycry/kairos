@@ -11,6 +11,7 @@ from starlette.routing import Mount, Route
 from . import contract as contract_module
 from .auth import RequireBearer
 from .client import ApiClient
+from .errors import ToolError
 from .config import DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT, from_env, parse_api_url
 from .limits import BodyLimit
 from .logs import configure_logging
@@ -47,13 +48,21 @@ def create_app(api_url=None, timeout=None, allowed_origins=(), transport=None, c
     async def mcp_endpoint(scope, receive, send):
         await manager.handle_request(scope, receive, send)
 
+    async def verify(authorization):
+        """The credential is refused only when `/v1` says so: an API that cannot answer is a failure of the calls, not a reason to refuse the request."""
+        try:
+            status, _ = await client.send('GET', '/v1/auth/me', authorization)
+        except ToolError:
+            return True
+        return status != 401
+
     @asynccontextmanager
     async def lifespan(app):
         async with manager.run():
             yield
         await client.aclose()
 
-    app = Starlette(routes=[Route('/health/live', live, methods=['GET']), Mount('/mcp', app=RequireBearer(mcp_endpoint))], lifespan=lifespan)
+    app = Starlette(routes=[Route('/health/live', live, methods=['GET']), Mount('/mcp', app=RequireBearer(mcp_endpoint, verify))], lifespan=lifespan)
     app.add_middleware(BodyLimit, maximum=max_body_bytes)
     app.state.api_url, app.state.client = api_url, client
     return app
