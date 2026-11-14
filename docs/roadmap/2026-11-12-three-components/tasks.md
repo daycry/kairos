@@ -43,9 +43,9 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 15 | 15 | 100% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 6 | 6 | 100% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
-| Fase 7 — Estructura del repositorio (C-06) | 8 | 12 | 66.7% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
+| Fase 7 — Estructura del repositorio (C-06) | 9 | 12 | 75.0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **64** | **74** | **86.5%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **65** | **74** | **87.8%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2138,10 +2138,11 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 ### T-65 — Rutas de la CI tras el movimiento
 
 - **Descripción**: Actualizar los trabajos de la CI a las rutas finales y comprobar que el test estructural y la puerta de higiene (T-04) siguen en verde; ejecución verde en el PR. Fuente: CA-24.
-- **Changelog**: 
-- **Estado**: en-progreso
+- **Changelog**: La integración continua construye cada componente desde sus rutas nuevas (`server/`, `mcp/`, `client/`, `web/`) y los seis trabajos terminan en verde en la rama.
+- **Estado**: completado
+- **Cerrada**: 2026-11-14
 - **Tiempo humano**: est. 2.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.28h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.28h (estimado) · real 0.13h (medido)
 - **Supervisión**: est. 0.07h (≈25 % IA) · real —
 - **Previsión IA**: 77 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-64
@@ -2151,18 +2152,19 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 - **Verificación**:
   - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
   - `gh run list --branch feat/three-components --limit 1 --json conclusion` → `success`
+  - Evidencia (2026-11-14): `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → Ran 45 OK (incluye `ComponentTests` y el mínimo 759). Push de la rama (sin force) → run de GitHub Actions 43613535562 (push de `feat/three-components`, commit 607f7a8): conclusion success; los seis trabajos en verde: server (MEMORY_TEST_RESULT, tests=759 minimum=759), retrieval-eval (RETRIEVAL_EVAL_RESULT, puerta passed), mcp, client, web, contracts. `gh run list --branch feat/three-components --limit 1 --json conclusion` → success. Test estructural y puerta de higiene (`HygieneTests`) pasan dentro de test_ci_workflow.
 
 **Criterios de aceptación**
-- [ ] Los seis trabajos (`server`, `retrieval-eval`, `mcp`, `client`, `web`, `contracts`) usan rutas nuevas y terminan en verde en el PR
-- [ ] El test estructural y la puerta de higiene pasan
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] Los seis trabajos (`server`, `retrieval-eval`, `mcp`, `client`, `web`, `contracts`) usan rutas nuevas y terminan en verde en el PR
+- [x] El test estructural y la puerta de higiene pasan
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Actualizar rutas
-- [ ] Empujar y comprobar la ejecución
-- [ ] `usage-meter start/close`
+- [x] Actualizar rutas
+- [x] Empujar y comprobar la ejecución
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-24. Dependencia: Actions activas (P-01). Clase: cambio (oráculo: ejecución en verde).
+**Notas**: Procedencia: spec CA-24. Dependencia: Actions activas (P-01). Clase: cambio (oráculo: ejecución en verde). NO se ha abierto ningún PR (requiere autorización del usuario): como evidencia de «verde en el PR» se usa el run que dispara el push de la rama; el PR queda para la Fase 8, con autorización. Actions activas (P-01). Las rutas ya se habían ido actualizando en T-59, T-62, T-63 y T-64; aquí se verifica el conjunto con la ejecución real. Nada se publica: la CI no tiene pasos de publicación (comprobado por `SupplyChainTests`). usage-meter three-components/T-65: 0.13 h IA (medido, win-281ac31fe9ef48b9b795e3106f53f866).
 
 ### T-66 — Manuales con la estructura de tres componentes
 
