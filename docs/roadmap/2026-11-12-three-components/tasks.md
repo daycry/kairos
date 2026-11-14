@@ -44,8 +44,8 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 5 — kairos-mcp (C-03) | 15 | 15 | 100% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
 | Fase 6 — Compatibilidad (C-07) | 6 | 6 | 100% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 12 | 12 | 100% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
-| Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **68** | **74** | **91.9%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| Fase 8 — Integración final y revisión | 5 | 6 | 83% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
+| **TOTAL** | **73** | **74** | **98.6%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2261,7 +2261,7 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 
 ## Fase 8 — Integración final y revisión
 
-**Estado**: borrador · **Estimado**: 12.0h (10.0h base) · **Real**: — · **Coste est.**: 600 € · **Tokens est.**: 440 k
+**Estado**: en-progreso · **Estimado**: 12.0h (10.0h base) · **Real**: — · **Coste est.**: 600 € · **Tokens est.**: 440 k
 
 ### T-69 — Prueba de contrato de kairos-mcp idéntica a la del MCP interno
 
