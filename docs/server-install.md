@@ -70,7 +70,7 @@ Prueba una memoria sintética, comprueba su recibo y procesamiento y recupérala
 
 ## Instalar en un servidor remoto
 
-Utiliza un nombre DNS y un proxy HTTPS. El ejemplo [Caddyfile.example](../memory_platform/Caddyfile.example) redirige hacia la web local. Mantén `5173` y `8790` enlazados a loopback; no expongas directamente PostgreSQL.
+Utiliza un nombre DNS y un proxy HTTPS. El ejemplo [Caddyfile.example](../server/memory_platform/Caddyfile.example) redirige hacia la web local. Mantén `5173` y `8790` enlazados a loopback; no expongas directamente PostgreSQL.
 
 Configura `MEMORY_ALLOWED_ORIGINS` con el origen HTTPS exacto y `MEMORY_COOKIE_SECURE=1` antes de recrear los servicios. Un origen es el esquema y el dominio, sin rutas ni barra final. Para los clientes, la URL base será la dirección HTTPS del servidor y MCP estará en `/mcp/`; no necesitan acceso a carpetas remotas.
 

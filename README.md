@@ -153,16 +153,16 @@ Guía completa: [servidor desde cero](docs/server-install.md) y [configuración]
 
 ## Conectar un agente
 
-El instalador `@daycry/kairos` (versión 0.3.0) configura Claude Code, Codex y OpenCode. La 0.3.0 no está publicada en npm y el repositorio no incluye ningún tarball (`packages/kairos-cli/artifacts/` está en `.gitignore`): desde un clon, genera primero el tarball local y luego instálalo:
+El instalador `@daycry/kairos` (versión 0.4.0) configura Claude Code, Codex y OpenCode. La 0.4.0 no está publicada en npm y el repositorio no incluye ningún tarball (`client/artifacts/` está en `.gitignore`): desde un clon, genera primero el tarball local y luego instálalo:
 
 ```powershell
 # Generar el tarball (no publica nada)
-cd packages/kairos-cli
+cd client
 npm pack --ignore-scripts --offline --pack-destination ./artifacts
 cd ../..
 
 # Previsualizar (no modifica nada)
-npx --offline --yes --package ./packages/kairos-cli/artifacts/daycry-kairos-0.3.0.tgz kairos install `
+npx --offline --yes --package ./client/artifacts/daycry-kairos-0.4.0.tgz kairos install `
   --client all --root C:/laragon/www/mi-proyecto --url http://127.0.0.1:5173 `
   --project mi-proyecto --key-file C:/Private/kairos-agent.key --opencode-version 2 --dry-run
 
@@ -207,13 +207,23 @@ Contratos: [`docs/contracts/kairos-mcp.json`](docs/contracts/kairos-mcp.json) y 
 .
 ├── docker-compose.yml        Servicios, redes y volúmenes
 ├── .env.example              Plantilla de configuración (sin secretos)
-├── memory_platform/          Backend: API FastAPI, MCP, trabajador, migraciones, tests
-├── web/                      Web pública y panel (TypeScript + Vite)
-├── packages/kairos-cli/      Instalador y puente MCP local (@daycry/kairos)
+├── server/                   Servidor: paquete Python `memory_platform` (API FastAPI, MCP interno, trabajador, migraciones, tests) y su Dockerfile
+├── mcp/                      kairos-mcp: las 34 herramientas MCP delante de /v1, sin base de datos
+├── client/                   Instalador y puente MCP local (@daycry/kairos)
+├── web/                      Web pública y panel (TypeScript + Vite), con el Dockerfile y el nginx.conf de la imagen web
 ├── ollama-proxy/             Proxy nginx hacia el servidor Ollama
 ├── scripts/                  Despliegue, administración, manual y diagnóstico
 └── docs/                     Manuales, contratos, capturas y roadmap con evidencias
 ```
+
+Los tres componentes (servidor, kairos-mcp y cliente) comparten la versión 0.4.0 y nada de esto está publicado. Cada uno tiene su Dockerfile (o su paquete) y la orden de pruebas que ejecuta la CI:
+
+| Componente | Carpeta y versión | Dockerfile o paquete | Pruebas |
+|---|---|---|---|
+| Servidor | `server/` · `server/VERSION` | `server/memory_platform/Dockerfile` | `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:local .` |
+| kairos-mcp | `mcp/` · `mcp/VERSION` | `mcp/Dockerfile` | `docker build -f mcp/Dockerfile -t kairos-mcp:local mcp/` y `docker run --rm kairos-mcp:local python -m unittest discover -s tests` |
+| Cliente | `client/` · `client/package.json` | paquete npm `@daycry/kairos` (`client/Dockerfile.test` para las pruebas en contenedor) | en `client`: `npm test` y `npm run release:check` |
+| Portal | `web/` | `web/Dockerfile` | en `web`: `npm ci`, `npm run typecheck`, `npm test`, `npm run build`; y `docker build --target test -f web/Dockerfile -t kairos-web-test:local .` |
 
 ## Operación diaria
 
@@ -235,12 +245,12 @@ Copias, restauración aislada, claves e incidencias: [operación y recuperación
 
 | Ámbito | Cómo se verifica |
 |---|---|
-| Backend | Suite completa contra PostgreSQL aislado (525 pruebas) |
+| Backend | Suite completa contra PostgreSQL aislado (759 pruebas) |
 | Calidad de recuperación | Puerta `retrieval-eval` (recall@5, MRR y no regresión por subconjunto sobre un conjunto sintético congelado), con embeddings simulados en la suite y con un Ollama desechable en la medida con el modelo real |
 | Web | Pruebas unitarias (65), TypeScript y build de producción con Vite |
 | Interfaz | Navegación real en Chromium con Playwright (20 escenarios), escritorio y móvil |
 | Manuales | Generación sin conexión y comprobación en dos anchos de pantalla |
-| Instalador | `npm run release:check` en `packages/kairos-cli`: tests, instalación `npx` sin conexión y verificación byte a byte del tarball |
+| Instalador | `npm run release:check` en `client`: tests, instalación `npx` sin conexión y verificación byte a byte del tarball |
 | Despliegue | Fase `verify`: llamadas MCP reales, catálogo de herramientas y manifiesto documental |
 
 La integración continua (`.github/workflows/ci.yml`) repite en cada pull request y rama los trabajos `server`, `retrieval-eval`, `client`, `web` y `contracts`, sin secretos ni publicación; comandos y tiempos en [Operación](docs/operations.md#integración-continua).

@@ -2170,7 +2170,7 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 
 - **Descripción**: Actualizar rutas y descripciones en los manuales a `server/`, `mcp/`, `client/` y `web/`. Fuente: CA-32, evaluación C-06.
 - **Changelog**: 
-- **Estado**: borrador
+- **Estado**: en-progreso
 - **Tiempo humano**: est. 4.0h (base) · real —
 - **Tiempo IA (ejec.)**: est. 0.55h (estimado) · real —
 - **Supervisión**: est. 0.14h (≈25 % IA) · real —

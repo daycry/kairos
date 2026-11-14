@@ -130,13 +130,13 @@ budget reset or unlimited retry loop.
 ## Implementation and validation
 
 The additive migration is `migrate_corpus_answers(connection)` in
-`memory_platform/corpus_answers.py`, run inside the Store migration transaction.
+`server/memory_platform/corpus_answers.py`, run inside the Store migration transaction.
 It preserves existing corpora, observations, models, ports and credentials.
 Admission and completion use short PostgreSQL transactions; the provider call
 runs after releasing database locks. Authorization/source fences are checked
 again before any result is stored or returned.
 
-`memory_platform/tests/test_corpus_answers.py` covers native transport/schema,
+`server/memory_platform/tests/test_corpus_answers.py` covers native transport/schema,
 single-attempt timeouts and 429, literal quotations, foreign reference rejection,
 Unicode punctuation, usage checks, actual PostgreSQL concurrent admission,
 idempotency, persistence/reload, continuity, withdrawal/revocation during the

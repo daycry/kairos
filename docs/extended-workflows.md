@@ -126,7 +126,7 @@ would destroy shared work and is not a recovery procedure.
 From the product directory, the isolated PostgreSQL test target is:
 
 ```sh
-docker build --no-cache --target test -f memory_platform/Dockerfile -t kairos-memory-tests .
+docker build --no-cache --target test -f server/memory_platform/Dockerfile -t kairos-memory-tests .
 ```
 
 For focused tests against an explicitly disposable PostgreSQL database, set
