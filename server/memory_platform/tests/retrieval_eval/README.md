@@ -20,4 +20,4 @@ It is a separate gate (`docker build --target retrieval-eval`), not part of the 
   `127.0.0.1:55432/memory_test` (no `service`, no redirecting query parameters). It validates the dataset on load.
 - `test_metrics.py`: hand-computed metric cases and gate/DSN/determinism checks, part of the regular suite.
 
-Run: `python -m memory_platform.tests.retrieval_eval.check_dataset memory_platform/tests/retrieval_eval/dataset-v1.jsonl`
+Run from the repository root: `PYTHONPATH=server python -m memory_platform.tests.retrieval_eval.check_dataset server/memory_platform/tests/retrieval_eval/dataset-v1.jsonl`

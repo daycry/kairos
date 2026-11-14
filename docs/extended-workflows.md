@@ -133,7 +133,7 @@ For focused tests against an explicitly disposable PostgreSQL database, set
 `MEMORY_TEST_DSN` to that test database and run:
 
 ```sh
-python -m unittest memory_platform.tests.test_extended_tools memory_platform.tests.test_extended_gateway -v
+PYTHONPATH=server python -m unittest memory_platform.tests.test_extended_tools memory_platform.tests.test_extended_gateway -v
 ```
 
 Without `MEMORY_TEST_DSN`, integration cases skip. That result is not database
