@@ -280,3 +280,412 @@ SHA-256 del bloque: `41cbea948d9e6169daea6570a8bb91fcdda65dba7668233f5dbc865b07d
 SHA-256 del bloque: `d7275d0d25be51ced7962ee4c30cc8fadb8959f231d7f9e8faa8c77d28838399`.
 
 **Notas**: Procedencia: spec CA-28. Patrón: puente en `packages/kairos-cli/lib/mcp.mjs:33` (`baseURL + '/mcp/'`), `REQUIRED_TOOLS` en `mcp.mjs:7-8`; target `lifecycle-test` en `memory_platform/Dockerfile:63-66`; probe en `memory_platform/tests/lifecycle_probe.py`. Verificación con componente real, temprana (lección de la retro). Clase: capacidad nueva. Alcance real: el target lifecycle-test no tiene nginx, asi que la cadena CLI -> kairos-mcp (sockets reales, /mcp/) -> /v1 -> PostgreSQL se prueba en el probe, y el tramo del proxy (/mcp -> memory-mcp:8791) se prueba aparte con una nginx real y stubs (nginx_portal_probe.py, que habia que ampliar porque nginx ya no arranca sin memory-mcp). No se levanto un proyecto Compose completo (memoria justa; seria el despliegue). El puente se ejerce con `kairos mcp` real por stdio (initialize, tools/list, projects). Dockerfile, lifecycle-live.mjs y lifecycle.test.mjs no cambian. Archivos anadidos: nginx_portal_probe.py, ci.yml y test_ci_workflow.py (suelo de tests 743 a 756 con los tests de T-51 y T-52). usage-meter three-components/T-53: 0.18 h IA (medido, win-b78398e4aaf740a1ab6650180dc2f687).
+
+## Archivado 2026-11-14 — T-55 · Notas (bytes sin cambios)
+
+SHA-256 del bloque: `043d67dffed52b20ca04ed3b7880a74b2d3fab4f9ccd75d8f388d79a9a0407fb`.
+
+**Notas**: Procedencia: spec CA-27/CA-32, R-03. Clase: documentación. Archivos anadidos: architecture.md y configuration.md (describian el estado anterior del proxy y no listaban la variable) y docker-compose.yml: MEMORY_MOUNT_MCP: ${MEMORY_MOUNT_MCP:-1} en el ancla de entorno, valor por defecto compatible (sin la variable el despliegue actual monta el MCP interno como hoy); sin esa linea el interruptor no llegaria al contenedor. Las notas de despliegue estan en operations.md (seccion Retirada del MCP interno). Cambios del despliegue que la nota cubre: memory-web se recrea con la nueva ruta y la red mcp, y exige memory-mcp sano. CI de la fase 6 (T-51 a T-55): ejecucion 43591247077 en feat/three-components, 6/6 jobs en verde (server, mcp, web, client, contracts, retrieval-eval). usage-meter three-components/T-55: 0.00 h IA (medido, win-124ab66b0aeb466fac08b53b5faa06c5); el texto se escribio dentro de la ventana de T-53/T-54.
+
+## Archivado 2026-11-14 — T-08 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `2a8346a41989bd96c63374971eaf970dbc6aa50f6f2ae61df4234e37883ff995`.
+
+- **Verificación**:
+  - lectura: `review.md`, sección «Fase 1», sin hallazgos Critical/Important abiertos
+  - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
+  - Evidencia (2026-11-12): `review.md` sección «Fase 1»; 3 intentos (lentes A, B, C; luego A y B+C; luego A+B+C); sin Critical/Important abiertos; 5 Minor del intento 3 como deuda aceptada. `test_ci_workflow.py`: «Ran 39 tests … OK» en local (Git bash) y en el trabajo `contracts` del run 43210843135.
+
+## Archivado 2026-11-14 — T-11 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `624ad06adb503ab6444b901f251d8a3cd5a10fb1bb7f6826bbedb8492bbcc1b5`.
+
+- **Verificación**:
+  - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t11 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+  - `python scripts/export-contracts.py && git diff --stat docs/contracts` → sin diff (34 herramientas intactas)
+
+## Archivado 2026-11-14 — T-12 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `f1f0b05d42232aa175250c85a6c3176dee05842cb090e2a14e3aa3d3a1380d16`.
+
+- **Verificación**:
+  - `grep -n "beam" memory_platform/config.py docker-compose.yml docs/configuration.md` → sin salida (exit 1)
+  - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t12 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+
+## Archivado 2026-11-14 — T-17 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `2a84e4c1ff24f78f0bd97fbc72d2f4202f62367236c0a2cf06ed8843025ef085`.
+
+- **Verificación**:
+  - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t17 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+  - lectura: `review.md`, sección «Fase 2», sin hallazgos Critical/Important abiertos
+  - Evidencia (2026-11-12): `review.md` sección «Fase 2»; 3 intentos (A+B+C+D; A y B; A+B). Intento 1: 1 Important (fixture e2e del portal) corregido en de1e229. Intento 2: 3 Minor corregidos en ec7e750. Intento 3: 1 Minor como deuda aceptada y documentado. Suite tras cada arreglo: 528 (4dabeba) y 529 (ec7e750), 0 skipped, `llm_chat_calls` 0; CI runs 43233832269 y 43240152321 en verde. La Lente C probó el proxy en `kairos-proxy-lensc` (19 peticiones × 5 valores de `OLLAMA_ALLOW_CHAT`) sin evasiones.
+
+## Archivado 2026-11-14 — T-26 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `fe3923146b033097d1de052afe972db855bf1794da2a4e3efd04287f572d839b`.
+
+- **Verificación**:
+  - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t26 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+  - `git show 23ced03:docs/contracts/kairos-mcp.json | diff - memory_platform/tests/contracts_base_23ced03/kairos-mcp.json` → sin diferencias
+
+## Archivado 2026-11-14 — T-27 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `96c08cc3699b08cd6c42a97eb67abb3bc88bc1d8eb09c56ee8b2129af1d58f7d`.
+
+- **Verificación**:
+  - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t27 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+  - lectura: `review.md`, sección «Fase 3», sin hallazgos Critical/Important abiertos
+  - Evidencia (2026-11-13): `review.md` sección «Fase 3»; 3 intentos (A, B+D y C forzada; A y B; A+B y C). Intento 1: 1 Important (traducción de argumentos en `x-kairos-endpoint`) corregido en 16539ea. Intento 2: 1 Important (`rebuild_corpus` sin versión) corregido en 9030645. Intento 3: sin Critical/Important; tres Minor de seguridad (log con query string, lectura de corpus con clave de solo escritura, NUL → 503) los corrigió el orquestador en el commit de cierre. Suite tras el cierre: `MEMORY_TEST_RESULT` 609, 0 failures, 0 errors, 0 skipped, `llm_chat_calls` 0 (`kairos-test:i2p3close`, `docker run --network=none`). Contrato: 34 herramientas, solo `x-kairos-*`; OpenAPI solo añade rutas.
+
+## Archivado 2026-11-14 — T-28 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `2e13f308a3fc4e7f54635d5907bd0b451ee479a20e5dcf30942a8d0f386046a6`.
+
+- **Verificación**:
+  - `python -c "import json;[json.load(open(f,encoding='utf-8')) for f in ('docs/contracts/observation.v1.schema.json','docs/contracts/session-summary.v1.schema.json')]"` → exit 0
+  - lectura: los campos coinciden con CA-19
+  - Evidencia (2026-11-13): `python -c "import json;[json.load(open(f,encoding='utf-8')) for f in (...)]"` exit 0; `Draft202012Validator.check_schema` acepta ambos; lectura: observación con los siete campos de CA-19 (`type`, `title`, `facts` con `evidence_quote`, `narrative`, `concepts`, `files_read`, `files_modified`) más `schema_version`; resumen con `request`, `investigated`, `learned`, `completed`, `next_steps` más `schema_version`; todos los textos con `maxLength`.
+
+## Archivado 2026-11-14 — T-29 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `832b15e186d25972fa1451a54d971559b29043b172458da0932adbc96278c970`.
+
+- **Verificación**:
+  - `python -m unittest discover -s scripts/tests -p test_contract_examples.py` → `OK`
+  - `grep -n "memory_platform" scripts/tests/test_contract_examples.py` → sin salida
+  - Evidencia (2026-11-13): `python -m unittest discover -s scripts/tests -p test_contract_examples.py` → `Ran 4 tests ... OK`; `grep -n "memory_platform" scripts/tests/test_contract_examples.py` → sin salida (exit 1). 30 ficheros de ejemplo: observación 4 válidos / 15 inválidos, resumen 3 válidos / 8 inválidos (campo faltante, sobrante, límite excedido, tipo erróneo y versión desconocida en ambos).
+
+## Archivado 2026-11-14 — T-30 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `a99f5265e81b47af5dba158575b8642367049ce0b71dddc15e2d2a8881ccc40e`.
+
+- **Verificación**:
+  - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t30 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+  - Evidencia (2026-11-13): Build del estado de T-30 (dffb667 sin los cambios de T-31): `MEMORY_TEST_RESULT` tests 613, failures 0, errors 0, skipped 0, `"passed": true`, `llm_chat_calls` 0; `pip list` en la imagen: `jsonschema 4.26.0`, `mcp 1.27.1`. Estado final: Suite `docker build --target test -f memory_platform/Dockerfile -t kairos-test:i2p4 .` (rama feat/three-components tras bf3e5b8): `MEMORY_TEST_RESULT` tests 630, failures 0, errors 0, skipped 0, `"passed": true`, `llm_chat_calls` 0 (609 de partida + 21); puerta offline `docker run --rm --network=none -e MEMORY_RETRIEVAL_EVAL=1 ... run_postgres` exit 0, `RETRIEVAL_EVAL_RESULT` gate passed.
+
+## Archivado 2026-11-14 — T-31 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `909fa535e26fdbe46c18723c1bfe7d0573f0b68209792d616a9543d8c1cc8439`.
+
+- **Verificación**:
+  - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t31 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+  - Evidencia (2026-11-13): Suite `docker build --target test -f memory_platform/Dockerfile -t kairos-test:i2p4 .` (rama feat/three-components tras bf3e5b8): `MEMORY_TEST_RESULT` tests 630, failures 0, errors 0, skipped 0, `"passed": true`, `llm_chat_calls` 0 (609 de partida + 21); puerta offline `docker run --rm --network=none -e MEMORY_RETRIEVAL_EVAL=1 ... run_postgres` exit 0, `RETRIEVAL_EVAL_RESULT` gate passed. Los ejemplos válidos dan 202 y los inválidos 422 `invalid_observation` en `test_the_server_agrees_with_the_examples_the_independent_validator_checks` (mismo resultado que el validador independiente).
+
+## Archivado 2026-11-14 — T-32 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `5ce547dc9f843ddc7dea15331e028bfcb516f13dbfd058f9d8e088d4a72df0e8`.
+
+- **Verificación**:
+  - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t32 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+  - `grep -niE "DROP|TRUNCATE|DELETE|ALTER .* TYPE" memory_platform/schema.sql` → sin coincidencias nuevas respecto de `23ced03` (`git diff 23ced03 -- memory_platform/schema.sql`)
+  - Evidencia (2026-11-13): Suite `docker build --target test -f memory_platform/Dockerfile -t kairos-test:i2p4 .` (rama feat/three-components tras bf3e5b8): `MEMORY_TEST_RESULT` tests 630, failures 0, errors 0, skipped 0, `"passed": true`, `llm_chat_calls` 0 (609 de partida + 21); puerta offline `docker run --rm --network=none -e MEMORY_RETRIEVAL_EVAL=1 ... run_postgres` exit 0, `RETRIEVAL_EVAL_RESULT` gate passed. `git diff 23ced03 -- memory_platform/schema.sql` → 0 líneas; el único acierto de `grep -niE "DROP|TRUNCATE|DELETE|ALTER .* TYPE" memory_platform/schema.sql` es la columna `deleted`, ya existente en `23ced03`.
+
+## Archivado 2026-11-14 — T-33 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `e8cf75844bae0c56d7e18d8585bbf95eb5c6a2cc3d0592a718d38a25b1ed9906`.
+
+- **Verificación**:
+  - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t33 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+  - Evidencia (2026-11-13): Suite `docker build --target test -f memory_platform/Dockerfile -t kairos-test:i2p4 .` (rama feat/three-components tras bf3e5b8): `MEMORY_TEST_RESULT` tests 630, failures 0, errors 0, skipped 0, `"passed": true`, `llm_chat_calls` 0 (609 de partida + 21); puerta offline `docker run --rm --network=none -e MEMORY_RETRIEVAL_EVAL=1 ... run_postgres` exit 0, `RETRIEVAL_EVAL_RESULT` gate passed. Casos: cada límite en el borde y uno por encima (campos, `facts`, `concepts`, ficheros, resumen), caracteres frente a bytes (emoji), una prueba por regla (`required`, `additionalProperties`, `type`, `enum`, `const`, `maxLength`, `maxItems`, `minLength`, `uniqueItems`), anidamiento hostil (5000 niveles) y 2 000 claves sobrantes sin eco, centinela ausente en el cuerpo y las cabeceras del 422, payload del CLI 0.3.0 (con `capture` y huella) aceptado, secreto en `structured` rechazado, documento máximo aceptado y evento mayor rechazado (413).
+
+## Archivado 2026-11-14 — T-34 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `9a47d4bd4c8161d6bc86bbd58a622e9a26728ab0e37638cd4a2b474e0f03b2ab`.
+
+- **Verificación**:
+  - `grep -n "observation.v1" docs/integration.md` → ≥ 1 coincidencia
+  - lectura: los límites citados coinciden con los esquemas
+  - Evidencia (2026-11-13): `grep -n "observation.v1" docs/integration.md` → coincidencias en las líneas 161, 164 y 168 (sección «Observaciones estructuradas con esquema versionado»); lectura: los límites citados (200, 20 000, 20×500/2 000, 20×100, 50×500, 5×4 000) coinciden con los esquemas.
+
+## Archivado 2026-11-14 — T-35 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `f3d9e9f4bbd993d4a7d91d8139797ea2766661040cb0f0ab89aff19a7151551e`.
+
+- **Verificación**:
+  - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t35 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+  - lectura: `review.md`, sección «Fase 4», sin hallazgos Critical/Important abiertos
+  - Evidencia (2026-11-13): `review.md` sección «Fase 4»; 2 intentos (A+B y C; A+B+C forzada). Intento 1: 1 Critical (DoS por `uniqueItems`) y 1 Important (`remember` y `POST /v1/events` sin validar) corregidos en fd80bd0, 0d4c90e, a7f617a y 1bd3b54 con los 4 Minor. Intento 2: sin Critical/Important; los dos Minor (coste superlineal acotado y doc de privacidad) los corrigió el orquestador en el commit de cierre (`MAX_NODES`, RED observado: 3,86 s con el código anterior). Suite tras el cierre: `MEMORY_TEST_RESULT` 639 tests, 0 failures, 0 errors, 0 skipped, `llm_chat_calls` 0 (`kairos-test:i2p4close`, `docker run --network=none`); puerta offline exit 0. Contrato: 34 herramientas, sin cambios desde 23ec012.
+
+## Archivado 2026-11-14 — T-36 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `2c1b9fd3eb3ca2cdc59a1d8be812a701ae44c42335673610e22b4f63ec9b52dd`.
+
+- **Verificación**:
+  - `docker build -f mcp/Dockerfile -t kairos-mcp:t36 mcp/` → exit 0
+  - `docker build -f mcp/Dockerfile -t kairos-mcp:t36 mcp/ && docker run --rm kairos-mcp:t36 python -m unittest discover -s tests` → `OK`
+  - `docker build -f mcp/Dockerfile -t kairos-mcp:t36 mcp/ && docker run --rm kairos-mcp:t36 pip list` no contiene `psycopg`
+  - Evidencia (2026-11-13): build `kairos-mcp:t36` exit 0; `docker run --rm kairos-mcp:t36 python -m unittest discover -s tests` -> Ran 5 tests, OK; `pip list | grep -c psycopg` -> 0; scripts/tests/test_ci_workflow.py 42 tests OK (job mcp, minimo 639).
+
+## Archivado 2026-11-14 — T-37 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `83710f02e551d8a790615e8cc4dbc7b850581045430671da8e9cd2ac8a66b2d2`.
+
+- **Verificación**:
+  - `docker run --rm kairos-mcp:t37 python -m unittest discover -s tests` → `OK` (tras `docker build -f mcp/Dockerfile -t kairos-mcp:t37 mcp/`)
+  - Evidencia (2026-11-13): `docker build -f mcp/Dockerfile -t kairos-mcp:t37 mcp/` y `docker run --rm kairos-mcp:t37 python -m unittest discover -s tests` -> Ran 24 tests, OK (el token sintetico aparece 0 veces en los logs con todos los loggers en DEBUG).
+
+## Archivado 2026-11-14 — T-38 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `8335b0c1ac02adbdda90a5a8b45ffff1c8c4eae29dea99cf63efae68949c87b8`.
+
+- **Verificación**:
+  - `docker build -f mcp/Dockerfile -t kairos-mcp:t38 mcp/ && docker run --rm kairos-mcp:t38 python -m unittest discover -s tests` → `OK`, incluido `test_tools_list`
+  - Evidencia (2026-11-13): `docker build -f mcp/Dockerfile -t kairos-mcp:t38 mcp/ && docker run --rm kairos-mcp:t38 python -m unittest discover -s tests` -> Ran 35 tests, OK (incluye test_tools_list con SDK mcp 1.27.1); `memory_platform.tests.test_mcp_contract_copy` OK en local; el target `test` completo se ejecuta en T-40.
+
+## Archivado 2026-11-14 — T-39 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `016360d547b37e5a0073ca9bb4194eb92e62d25bbdfc9218a7256114effb6edb`.
+
+- **Verificación**:
+  - `python mcp/tests/smoke_container.py` → `PASS health 200; tools 34` y exit 0
+  - `docker ps -a -q --filter name=knowledge-graphs-` antes y después → idéntico (no se toca la instalación)
+  - Evidencia (2026-11-13): `KAIROS_SMOKE_PROJECT=kairos-i2p5-mcp-smoke python mcp/tests/smoke_container.py` -> `PASS health 200; tools 34`, rc 0; `docker ps -a -q --filter name=knowledge-graphs-` antes y despues identico (15 ids); sin contenedores, red ni imagen del proyecto de humo al terminar.
+
+## Archivado 2026-11-14 — T-40 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `1de1473802c10d420816f5c54a9ba4b81391d4945a778ba4360c82ef9fd1a0f8`.
+
+- **Verificación**:
+  - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t40 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+  - `docker compose -p kairos-cfg-t40 config --format json` → `services.memory-mcp` sin `secrets` ni `memory-data` en `networks`
+  - Evidencia (2026-11-13): build `--target test` (kairos-test:i2p5): MEMORY_TEST_RESULT tests 649, failures 0, errors 0, skipped 0, passed true, llm_chat_calls 0. `docker compose -p kairos-i2p5-cfg-t40 --profile memory config --format json`: services.memory-mcp sin `secrets`, networks [mcp]; red mcp internal; miembros de mcp: memory-api y memory-mcp. `deploy-memory.py` (dry-run) lista memory-mcp en `services`. Sin `up`: no se creo nada.
+
+## Archivado 2026-11-14 — T-41 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `ebb541a56e22d8b7103a0c83f6c85e99375a450006466c9334811d233508dbe7`.
+
+- **Verificación**:
+  - `docker build -f mcp/Dockerfile -t kairos-mcp:t41 mcp/ && docker run --rm kairos-mcp:t41 python -m unittest discover -s tests` → `OK`, 12 herramientas probadas
+  - Evidencia (2026-11-13): `docker build -f mcp/Dockerfile -t kairos-mcp:t41 mcp/ && docker run --rm kairos-mcp:t41 python -m unittest discover -s tests` -> Ran 46 tests, OK (12 herramientas: exito, 4xx, 5xx y caida cada una; event_status con y sin proyecto; presupuesto de bytes).
+
+## Archivado 2026-11-14 — T-42 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `6eba8a746254c9717117e112bc12a29fc8e90024951e989b8fe208e8b156d50e`.
+
+- **Verificación**:
+  - `docker build -f mcp/Dockerfile -t kairos-mcp:t42 mcp/ && docker run --rm kairos-mcp:t42 python -m unittest discover -s tests` → `OK`, 13 herramientas probadas
+  - Evidencia (2026-11-13): mcp: `docker build -f mcp/Dockerfile -t kairos-mcp:t42 mcp/ && docker run --rm kairos-mcp:t42 python -m unittest discover -s tests` -> Ran 64 tests, OK. Servidor (modulos con PostgreSQL aislado, working tree sobre kairos-test:i2p5): test_tool_endpoint_parity 68 OK; test_contract_additive + test_mcp_contract_copy + test_agent_tools + test_api 53 OK. Suite completa 652 tests con 1 error de un test nuevo ya corregido y reejecutado (parity 68 OK); la suite completa se repite en T-46/T-47.
+
+## Archivado 2026-11-14 — T-43 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `45e91547758173997ed0f1126c79d7a7f0fdd07f45b32df9c1bde40c46cbbc64`.
+
+- **Verificación**:
+  - `docker build -f mcp/Dockerfile -t kairos-mcp:t43 mcp/ && docker run --rm kairos-mcp:t43 python -m unittest discover -s tests` → `OK`, 7 herramientas probadas
+  - Evidencia (2026-11-13): `docker build -f mcp/Dockerfile -t kairos-mcp:t44 mcp/ && docker run --rm kairos-mcp:t44 python -m unittest discover -s tests` -> Ran 77 tests, OK (7 herramientas: exito, 4xx, 5xx y caida; presupuesto DETAIL de los listados; booleano false enviado como false).
+
+## Archivado 2026-11-14 — T-44 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `7cc1dbc9dfb3c6e9a42e1e1bafda792ca555792c8b403b9de00017231bd5b574`.
+
+- **Verificación**:
+  - `docker build -f mcp/Dockerfile -t kairos-mcp:t44 mcp/ && docker run --rm kairos-mcp:t44 python -m unittest discover -s tests` → `OK`, 2 herramientas probadas y recuento total de 34
+  - Evidencia (2026-11-13): `docker build -f mcp/Dockerfile -t kairos-mcp:t44 mcp/ && docker run --rm kairos-mcp:t44 python -m unittest discover -s tests` -> Ran 77 tests, OK, incluido el recuento total: la tabla de salida cubre exactamente los 34 nombres del contrato.
+
+## Archivado 2026-11-14 — T-45 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `5c44e2e28f18aeb7d1f2649d66ed46f0b4c3be58598f3830d29a6cdcd877c787`.
+
+- **Verificación**:
+  - `docker build -f mcp/Dockerfile -t kairos-mcp:t45 mcp/ && docker run --rm kairos-mcp:t45 python -m unittest discover -s tests` → `OK`, incluido `test_untrusted`
+  - `cd packages/kairos-cli && npm test` → pasa sin cambios (`dispatcher.test.mjs`, `mcp.test.mjs`)
+  - Evidencia (2026-11-13): `docker build -f mcp/Dockerfile -t kairos-mcp:t45 mcp/ && docker run --rm kairos-mcp:t45 python -m unittest discover -s tests` -> Ran 86 tests, OK (incluye test_untrusted: 9 casos, un caso por herramienta de lectura segun readOnlyHint). `cd packages/kairos-cli && npm test` -> 90 pass, 0 fail, sin cambios en el CLI.
+
+## Archivado 2026-11-14 — T-46 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `088a6c5aed718cffeb2d1cb33e2607ce4bbd5b1950978499909d2f7ac8b4808d`.
+
+- **Verificación**:
+  - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t46 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+  - `cd packages/kairos-cli && npm test` → pasa sin cambios
+  - Evidencia (2026-11-13): `docker build --target test -f memory_platform/Dockerfile -t kairos-test:i2p5 .` (con T-46, T-47 y T-48 aplicados) -> MEMORY_TEST_RESULT tests 727, failures 0, errors 0, skipped 0, passed true, llm_chat_calls 0; test_untrusted_internal 6 OK; contrato regenerado (Python 3.13) sin ninguna diferencia (34 herramientas); `cd packages/kairos-cli && npm test` -> ver nota (90 pass).
+
+## Archivado 2026-11-14 — T-47 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `b0ff4d16005d40a5dbb17c9e54f61cfdbd1d47a31dc8ad355aba411f877de2c9`.
+
+- **Verificación**:
+  - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t47 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01 (incluye el humo de la cadena)
+  - `grep -rn "memory_platform" mcp/ --include=*.py` → sin coincidencias
+  - Evidencia (2026-11-13): `docker build --target test ... -t kairos-test:i2p5 .` -> MEMORY_TEST_RESULT tests 727, failures 0, errors 0, skipped 0, passed true (incluye test_chain_smoke: projects, remember y search por la cadena iguales al MCP interno, mismo mensaje con clave sin permiso y 401 sin credencial); `grep -rn "memory_platform" mcp/ --include=*.py` -> sin coincidencias.
+
+## Archivado 2026-11-14 — T-48 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `54942fcd9862a1657d3bab4518826ef7554a818290427d1b6a1fadc2c54aebd9`.
+
+- **Verificación**:
+  - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t48 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+  - `docker build` anterior imprime `tests` ≥ línea base de T-01 más los casos de la cadena
+  - Evidencia (2026-11-13): `docker build --target test ... -t kairos-test:i2p5 .` -> MEMORY_TEST_RESULT tests 727 (649 de la linea base de T-40 + 78 casos de la cadena y de las fases siguientes: 5 ficheros HTTP con variante chain, AgentPostgresChainTests, ExtendedPostgresChainTests, test_chain_retry 8, test_chain_smoke 4, test_untrusted_internal 6), failures 0, errors 0, skipped 0, passed true, llm_chat_calls 0; mcp: `docker run --rm kairos-mcp:t48 python -m unittest discover -s tests` -> Ran 99 tests, OK.
+
+## Archivado 2026-11-14 — T-49 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `2f52e72d450dd604641b9e4dfb3555f10a175f0e3eee3753639f72e331978adb`.
+
+- **Verificación**:
+  - `grep -c "KAIROS_API_URL\|KAIROS_API_TIMEOUT" mcp/README.md docs/configuration.md` → ≥ 2
+  - lectura: valores y rutas citados coinciden con el código
+  - Evidencia (2026-11-13): `grep -c "KAIROS_API_URL|KAIROS_API_TIMEOUT" mcp/README.md docs/configuration.md` -> 4 y 2 (>= 2); lectura: variables, puerto 8791, plazo 30 s (4 x por llamada), tope 262144 B, 32768/262144 B, mensajes de error y rutas coinciden con kairos_mcp/{config,app,auth,budget,translate}.py y con docker-compose.yml; `docker build --target test -f memory_platform/Dockerfile.web` (genera el manual desde docs/) exit 0.
+
+## Archivado 2026-11-14 — T-50 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `2355b12fb146171b9b62504f0057d3e59cd822abaeb13451d1842651625923ab`.
+
+- **Verificación**:
+  - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t50 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+  - `python mcp/tests/smoke_container.py` → `PASS health 200; tools 34`
+  - lectura: `review.md`, sección «Fase 5», sin hallazgos Critical/Important abiertos
+  - Evidencia (2026-11-14): `review.md` sección «Fase 5»; 6 intentos en 2 ciclos (el 2.º con OK del usuario tras el intento 3). Intento 1: 4 Important y 10 Minor, corregidos en fix1. Intentos 2-6: el Important de CPU de la validación de entrada (CWE-400) se cerró por capas: validadores precompilados, errores acotados (fix2), `anyOf` acotado (fix3), validación fuera del event loop (fix4), vía rápida para entradas pequeñas y plazo de cola de 5 s (fix5). Intento 6: sin Critical/Important; los dos Minor (cifras de la doc y test de tiempos frágil) los corrigió el orquestador en el commit de cierre. Suite backend tras fix5: `MEMORY_TEST_RESULT` 743, 0 failures, 0 errors, 0 skipped, `llm_chat_calls` 0; suite de `mcp/` 136 OK; CI 43583624763 6/6; `test_review5` 8 OK tras el cierre; `python mcp/tests/smoke_container.py` → `PASS health 200; tools 34` (con la credencial sintética `smoke-synthetic-token`). Contrato: 34 herramientas, sin cambios fuera de `x-kairos-*` respecto a 57f9902; copia de `mcp/contract/` byte a byte.
+
+## Archivado 2026-11-14 — T-51 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `ad6b8be99152dc179aa311d8a23adc325001558ee01b46bf856b906c624cbacd`.
+
+- **Verificación**:
+  - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t51 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+  - Evidencia (2026-11-14): suite backend `MEMORY_TEST_RESULT` tests 749, failures 0, errors 0, skipped 0, passed true, `llm_chat_calls` 0 (kairos-test:i2p6; 743 + 6 de test_mcp_legacy); tests de mcp/ en la imagen: 136 OK; test_mcp, test_observability y test_mcp_write en verde.
+
+## Archivado 2026-11-14 — T-52 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `0d4eb2de7c98235146b0f41130747d8a8187df0c73918c887150aca916f6ba72`.
+
+- **Verificación**:
+  - `docker build --target test -f memory_platform/Dockerfile.web -t kairos-web-test:t52 .` → exit 0 (`nginx -t`)
+  - `python -m unittest discover -s memory_platform/tests -p test_nginx_routes.py` → `OK`
+  - Evidencia (2026-11-14): `docker build --target test -f memory_platform/Dockerfile.web -t kairos-web-test:t52 .` exit 0, `nginx: configuration file /tmp/nginx-test.conf test is successful`; `python -m unittest` de test_nginx_routes, test_nginx_portal, test_deploy y test_deploy_isolation: 48 OK; `docker compose -p kgi2pt52 --profile memory config` (solo render, sin crear nada): memory-web en redes webui y mcp, depends_on memory-api y memory-mcp service_healthy, puerto 127.0.0.1:5173 intacto.
+
+## Archivado 2026-11-14 — T-53 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `264aa28ac436974e521b4c9478517525ab1ead134ade48c10e9c36b6339f6b65`.
+
+- **Verificación**:
+  - `docker build --target lifecycle-test -f memory_platform/Dockerfile -t kairos-lifecycle:t53 .` → exit 0
+  - `cd packages/kairos-cli && npm test` → pasa sin cambios
+  - Evidencia (2026-11-14): RED (2026-11-14): con el probe apuntado al MCP interno, `docker run` de kairos-test:i2p6 con node y el CLI montados falla en `the bridge reached {"name": "Kairos", "version": "1.27.1"}` (SDK del servidor, no kairos-mcp). VERDE: `docker build --target lifecycle-test -f memory_platform/Dockerfile -t kairos-lifecycle:t53 .` exit 0; suite del build `MEMORY_TEST_RESULT` tests 756, 0 failures, 0 errors, 0 skipped, `llm_chat_calls` 0; `KAIROS_LIFECYCLE_RESULT` passed true, kairos_mcp true, bridge_tools 34, doctor ready, provider_calls 0. `cd packages/kairos-cli && npm test`: 90 pass, 0 fail, sin cambios en el CLI. Proxy real: `python -m memory_platform.tests.nginx_portal_probe` (nginx de la imagen fijada, proyecto de pruebas kairos-portal-probe-i2p6-, limpiado) PORTAL_PROBE_RESULT 17 casos, 0 fallos; /mcp, /mcp/ y /mcp/anything?x=1 llegan al stub memory-mcp:8791 y nunca al de la API.
+
+## Archivado 2026-11-14 — T-54 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `57b5137eee11afdab6a4c219bd40a61c68218e9aded2ef5365e50cc6d0d14fbc`.
+
+- **Verificación**:
+  - `docker build --target lifecycle-test -f memory_platform/Dockerfile -t kairos-lifecycle:t54 .` → exit 0 con el caso de `doctor`
+  - Evidencia (2026-11-14): `docker build --target lifecycle-test -f memory_platform/Dockerfile -t kairos-lifecycle:t54 .` exit 0 (suite 756 tests, 0 failures, 0 errors, 0 skipped); salida del caso doctor (sin escribir en testing/): doctor ready, doctor_tools 34, doctor_missing_tools [], doctor_project_authorized true (con capture y context automaticos, que exigen capture_policy, el esquema de event_status y match_mode de context).
+
+## Archivado 2026-11-14 — T-55 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `95d810f8eba8a8c3ec04305f1c243105ef16b8696280309d70772ec2382ddef6`.
+
+- **Verificación**:
+  - `grep -c "MEMORY_MOUNT_MCP\|0.5.0" docs/integration.md CHANGELOG.md` → ≥ 2
+  - lectura: coincide con T-12, T-09 y T-51
+  - Evidencia (2026-11-14): grep -c de MEMORY_MOUNT_MCP o 0.5.0: docs/integration.md 3, CHANGELOG.md 1 (suma 4 >= 2); lectura contra T-12 (MEMORY_LLM_MODEL solo con extraccion o respuestas, sin beam:cloud), T-09 (generate:true aceptado, sin trabajo extract, recibo extraction disabled) y T-51 (cabeceras, evento, interruptor); `docker compose -p kgi2pt55 --profile memory config` (solo render) muestra MEMORY_MOUNT_MCP "1" en memory-api; test_deploy, test_deploy_isolation y test_nginx_routes en verde.
+
+## Archivado 2026-11-14 — T-56 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `0cccd19c5e338d28b754bb5edb5f72fb73394afbc01f27d7dabe6395088c5101`.
+
+- **Verificación**:
+  - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t56 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+  - lectura: `review.md`, sección «Fase 6», sin hallazgos Critical/Important abiertos
+  - Evidencia (2026-11-14): `review.md` sección «Fase 6»; 1 intento (A+B y C en dos revisores). Sin Critical/Important. Minor corregidos por el orquestador en el commit de cierre: cookie de sesión del portal reenviada a kairos-mcp (`proxy_set_header Cookie "";` + test), afirmación falsa de que el MCP interno ya no pasa por el proxy (sigue en `/memory-api/mcp/`), formato no estándar de `Deprecation`/`Sunset` y 307 sin cabeceras documentados. `nginx -t` del target `test` de `Dockerfile.web`: exit 0. Suite tras el cierre: `MEMORY_TEST_RESULT` 757 tests, 0 failures, 0 errors, 0 skipped, `llm_chat_calls` 0 (`kairos-test:i2p6close`, `docker run --network=none`). Contrato sin cambios.
+
+## Archivado 2026-11-14 — T-57 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `8231b3684b2f3b59a91147b572ca4236667cd659d55d16a89cdc791198cee310`.
+
+- **Verificación**:
+  - `gh pr view 2 --json state --jq .state` → `MERGED`
+  - `docker build --target test -f memory_platform/Dockerfile -t kairos-test:t57 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+  - `sha256sum memory_platform/tests/store_surface.json` → valor anotado
+
+## Archivado 2026-11-14 — T-60 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `c097ffaf6f372258cdd7f8e89b9c5ce7efb4e93abda708881f6e1f30d3173c11`.
+
+- **Verificación**:
+  - `python docs/roadmap/2026-11-06-functional-parity/testing/frozen-source-gate.py` → `PASS` con las rutas nuevas
+  - `python scripts/export-contracts.py && git diff --stat docs/contracts` → sin diff
+  - `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:t60 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+
+## Archivado 2026-11-14 — T-67 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `77da6e9a9a4e07a5e599c48d32d551f2e50a8d6d3d671cd76ada58353a6dd153`.
+
+- **Verificación**:
+  - `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:t67 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+  - `ls -d memory_platform packages/kairos-cli` → `No such file or directory` ×2
+  - `sha256sum server/memory_platform/tests/store_surface.json` → igual que T-57
+
+## Archivado 2026-11-14 — T-68 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `44698d124e8772b8619116c95c2157b61dfb9bbd7d26fffa6903d80d97dd5033`.
+
+- **Verificación**:
+  - `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:t68 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+  - `grep -rln "packages/kairos-cli" --include=*.py --include=*.mjs --include=*.yml --include=Dockerfile* . ` fuera de `docs/roadmap` → vacío
+  - lectura: `review.md`, sección «Fase 7», sin hallazgos Critical/Important abiertos
+
+## Archivado 2026-11-14 — T-69 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `6021317004b360fca5f3cfaced87a8d8c53de7ac7076c63b7ed773fd9f9a3701`.
+
+- **Verificación**:
+  - `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:t69 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+  - `docker build -f mcp/Dockerfile -t kairos-mcp:t69 mcp/ && docker run --rm kairos-mcp:t69 python -m unittest tests.test_contract_identity` → `OK`
+
+## Archivado 2026-11-14 — T-71 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `55c8d11a837dc2782388d20fa791ab089257d916ed794199001e03b974846ce3`.
+
+- **Verificación**:
+  - `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:t71 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+  - `env -u MEMORY_LLM_MODEL docker compose -p kairos-nollm-t71 up -d memory-api memory-worker` (con override aislado) y consulta del espía → 0 llamadas
+
+## Archivado 2026-11-14 — T-72 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `d5501e1e6ad6200627c5625b9ac857555ec18d4a92673cf37fa7470a023e0eee`.
+
+- **Verificación**:
+  - `python scripts/deploy-memory.py --project-name kairos-three-t72 --api-port 18790 --web-port 15173 --dry-run` → lista fases y nombres `kairos-three-t72_*`
+  - `python scripts/deploy-memory.py --project-name kairos-three-t72 --api-port 18790 --web-port 15173` → salida con `PASS` de la ida y vuelta y exit 0
+  - `docker volume ls -q --filter name=knowledge-graphs_memory` antes y después → idéntico
+
+## Archivado 2026-11-14 — T-73 · Verificación (bytes sin cambios)
+
+SHA-256 del bloque: `8de3d2990bda055c3a27a5d7a7fee88b26f346a90fe8bd1d2d1058419aeb9a20`.
+
+- **Verificación**:
+  - `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:t73 .` → imprime `MEMORY_TEST_RESULT` con `"passed": true`, `failures` 0, `errors` 0, `skipped` 0 y `tests` ≥ la línea base de T-01
+  - `docker build --target retrieval-eval -f server/memory_platform/Dockerfile -t kairos-eval:t73 .` → exit 0
+  - `python scripts/export-contracts.py && git diff --stat docs/contracts` → sin diff
+
+## Archivado 2026-11-14 — T-33 · Notas (bytes sin cambios)
+
+SHA-256 del bloque: `609dd91a4be82399e353e4e6c0b01d5cc0d0f37e11243fe5487b1333af671a58`.
+
+**Notas**: Procedencia: spec CA-20. Patrón: `packages/kairos-cli/lib/capture.mjs:84`. Clase: capacidad nueva (cobertura). Ventana: la de T-28. Payload del CLI tomado de la forma de `packages/kairos-cli/lib/capture.mjs` (`payload` con `category: agent-activity`, `tags`, `source{uri,sha256}`, `validation_status: observed`, bloque `capture` con huella). Hallazgo al escribirlo: el cuerpo de más de ~256 KiB lo rechaza antes el límite HTTP (`413 body_too_large`), no el chequeo del evento; el test lo fija así.
+
+## Archivado 2026-11-14 — T-34 · Notas (bytes sin cambios)
+
+SHA-256 del bloque: `8a07c40c95906800fe2250108e57519e8183a5f661104850cb72a9feb110482a`.
+
+**Notas**: Procedencia: spec CA-32. Clase: documentación. Ventana: la de T-28. `docs-style.md` no existe en el repositorio: se siguió el estilo de cada documento (español y CRLF en `integration.md`, inglés y LF en `extended-workflows.md` y el `README.md` nuevo de `docs/contracts/`). La orden de validación local usa `jsonschema` (ya instalado con `mcp`); explica que sin `payload.structured` no se valida (P-11).
+
+## Archivado 2026-11-14 — T-43 · Notas (bytes sin cambios)
+
+SHA-256 del bloque: `b7ff2ef7039d44ecd7668cc031eb50fe2034c78b99948d77f76a9256c0beb10a`.
+
+**Notas**: Procedencia: spec CA-10/CA-11. Patrón: `memory_platform/extended_tools.py:24-76`; `team_search` usa el endpoint de T-23. Clase: capacidad nueva (oráculo: igualdad de salida con el MCP interno, comprobada en T-47/T-48). Las 7 herramientas usan (TEXT, DETAIL_BYTES) como `extended_tools.call`. team_work_read recibe `include_closed` (nombre distinto de work_state_read). El motor generico no necesito cambios: solo la tabla de salida. usage-meter three-components/T-43: 0.01 h IA (medido, win-618a0936f16442bdafa2e3db2662d3b9).
+
+## Archivado 2026-11-14 — T-49 · Notas (bytes sin cambios)
+
+SHA-256 del bloque: `6c45a6b3297e04cde8439c117bd4f3e783b0443105912404e6c74e1bfa3166b3`.
+
+**Notas**: Procedencia: spec CA-32. Clase: documentación. Estilo: docs-style.md no existe en el repositorio; se siguio el de cada documento (espanol; CRLF en architecture.md e integration.md, LF en configuration.md y en mcp/README.md). La documentacion describe lo que ya existe: el proxy web sigue enrutando /mcp al MCP interno hasta T-52, y asi lo dice architecture.md. Cambios visibles para un cliente MCP documentados en integration.md. Archivos anadidos: ninguno. usage-meter three-components/T-49: 0.03 h IA (medido, win-6dac7cf32f3a42659959fe9734d7ddca).
+
+## Archivado 2026-11-14 — T-54 · Notas (bytes sin cambios)
+
+SHA-256 del bloque: `0edbbf16d4cec9ff70bc7ee611132db6dc39b55063d1a8bd69ff7c3eabeb7ee6`.
+
+**Notas**: Procedencia: spec CA-28. Patrón: `doctor` y `REQUIRED_TOOLS` en `packages/kairos-cli/lib/mcp.mjs:7-8`, `:113`. Clase: capacidad nueva (cobertura). El caso doctor vive en lifecycle_probe.py junto al del puente (T-53); no se toco el CLI ni lifecycle.test.mjs. RED parcial (ver linea RED): no hubo ejecucion roja propia del caso doctor. usage-meter three-components/T-54: 0.02 h IA (medido, win-c7099c9650914975865ba958675a9de6).
