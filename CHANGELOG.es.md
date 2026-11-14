@@ -6,9 +6,9 @@ Kairos aún no tiene versiones etiquetadas. Todo lo que sigue está sin publicar
 
 ## [Sin publicar]
 
-### Changed — iniciativa `three-components` (2026-11-12, en curso: servidor sin modelo de lenguaje)
+### Changed — iniciativa `three-components` (del 2026-11-12 al 2026-11-14)
 
-El servidor ya no necesita un modelo de lenguaje. [Ledger](docs/roadmap/2026-11-12-three-components/tasks.md)
+Kairos se separa en tres componentes: el servidor, kairos-mcp y el CLI, más el portal web. El servidor ya no necesita un modelo de lenguaje. [Ledger](docs/roadmap/2026-11-12-three-components/tasks.md) · [revisión final](docs/roadmap/2026-11-12-three-components/review.md)
 
 - **Tres componentes en un repositorio.** El servidor vive en `server/` (el paquete Python sigue siendo `memory_platform`, construido con `server/memory_platform/Dockerfile`), kairos-mcp en `mcp/`, el CLI en `client/` (antes `packages/kairos-cli/`) y la imagen del portal en `web/` (`web/Dockerfile`, `web/nginx.conf`). Compose mantiene los mismos servicios, nombres, volúmenes y redes; solo cambian las rutas de construcción. El `npm pack` del CLI lista los mismos ficheros. Servidor, kairos-mcp y CLI están todos en la 0.4.0.
 - **Sin extracción en el servidor por defecto.** `MEMORY_EXTRACT_ENABLED` es `0`: un evento con `generate: true` (el CLI lo envía con los resúmenes) se acepta con 202 y no crea trabajo `extract`. El recibo añade el campo `extraction: "disabled"`. Los trabajos que ya estaban en cola se conservan y quedan marcados `extraction_disabled`; `POST /v1/jobs/{id}/retry` los vuelve a encolar cuando actives la extracción.
@@ -17,6 +17,11 @@ El servidor ya no necesita un modelo de lenguaje. [Ledger](docs/roadmap/2026-11-
 - **Proxy de Ollama cerrado.** El proxy interno solo reenvía `/api/embed` y `/api/version`; lo demás recibe 403 del propio proxy. `OLLAMA_ALLOW_CHAT=1` permite además `/api/chat`. El proxy ya no corre como root.
 - **`/mcp` pasa a kairos-mcp.** El proxy web (`127.0.0.1:5173/mcp/`, la dirección que usa `kairos mcp`) sirve kairos-mcp en lugar del MCP del servidor, y `memory-web` entra en la red interna `mcp` y espera a `memory-mcp`. El puente del CLI no cambia; las diferencias que ve un cliente (solo credencial Bearer, `structuredContent` en 12 herramientas, un 401 sin `X-Request-ID`) están en [integración](docs/integration.md#conectar-con-kairos-mcp).
 - **El MCP interno queda en desuso y se retira en la 0.5.0.** Sigue en `memory-api:8790/mcp/` durante la 0.4.x con `Deprecation: true` y `Sunset: 0.5.0` en cada respuesta y un evento de log `mcp_legacy_used` por llamada (método, estado e identificador de petición, nada más). `MEMORY_MOUNT_MCP=0` lo desmonta y `/mcp` responde 404; por defecto es `1`. Notas de migración: [integración](docs/integration.md#migración-el-mcp-interno-queda-en-desuso-y-se-retira-en-la-050) y [operaciones](docs/operations.md#retirada-del-mcp-interno).
+- **kairos-mcp, en su propio contenedor.** Las 34 herramientas MCP las sirve `memory-mcp` (`mcp/`), sin acceso a la base: llama a `/v1` con el Bearer de quien llama, envuelve las lecturas como dato no fiable y publica las mismas herramientas y el mismo contrato que antes (`docs/contracts/kairos-mcp.json` solo gana claves `x-kairos-*` y `structured`).
+- **Un endpoint REST `/v1` por cada herramienta MCP.** Cada herramienta tiene su equivalente en `/v1` con los mismos permisos, así que cualquier cliente HTTP puede hacer lo mismo que las herramientas MCP.
+- **Esquemas versionados de observación y resumen de sesión.** `docs/contracts/observation.v1.schema.json` y `session-summary.v1.schema.json`, con ejemplos válidos e inválidos que comprueban los tests.
+- **Integración continua.** Seis trabajos de GitHub Actions (server, retrieval-eval, mcp, client, web, contracts) en cada push y cada PR, con permisos de solo lectura y acciones fijadas por SHA.
+- **Comprobación de `/mcp` al desplegar.** `scripts/deploy-memory.py` comprueba `/mcp` con una clave temporal de lectura que revoca al terminar (la sesión del portal ya no llega a kairos-mcp), dice en la consola cuándo no ha comprobado `/mcp` y puede hacer un ensayo aislado con un proveedor de embeddings simulado (`--embed-stub`, `--roundtrip`). Tras actualizar, recrea también el servicio `ollama`: su plantilla usa ahora `OLLAMA_ALLOW_CHAT`.
 
 ### Changed — iniciativa `retrieval-quality` (2026-11-09)
 
