@@ -72,7 +72,27 @@ def wait_live(base):
     raise SystemExit('memory-mcp did not answer /health/live in %d s: %s' % (READY_SECONDS, last))
 
 
+def check_service_configuration():
+    """T-70 (CA-09): the memory-mcp service of the real `docker-compose.yml` has no `secrets`, no volume and no database network, and no DSN variable.
+
+    `docker compose config` only renders the file (nothing is created); the tracked `.env.example` feeds it, so the check needs no private file.
+    """
+    root = HERE.parents[1]
+    result = subprocess.run(['docker', 'compose', '--env-file', str(root / '.env.example'), '-p', PROJECT, '-f', str(root / 'docker-compose.yml'), '--profile', 'memory',
+                             'config', '--format', 'json'], capture_output=True, text=True, encoding='utf-8', errors='replace', cwd=root)
+    if result.returncode:
+        raise SystemExit('docker compose config failed (%d): %s' % (result.returncode, result.stderr.strip()[-600:]))
+    service = json.loads(result.stdout)['services']['memory-mcp']
+    names = sorted(service.get('networks') or {})
+    problems = [text for text, bad in (('secrets', 'secrets' in service), ('volumes', bool(service.get('volumes'))), ('memory-data network', 'memory-data' in names),
+                                       ('inference network', 'inference' in names), ('a DSN variable', any('DSN' in key for key in service.get('environment', {})))) if bad]
+    if problems or names != ['mcp']:
+        raise SystemExit('memory-mcp is not isolated in docker-compose.yml: %s; networks %r' % (', '.join(problems) or 'ok', names))
+    print('PASS config: memory-mcp has networks %s, no secrets, no volumes, no DSN' % names)
+
+
 def main():
+    check_service_configuration()
     if not COMPOSE.is_file():
         raise SystemExit('missing ' + str(COMPOSE))
     before = installed_containers()

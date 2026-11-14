@@ -2298,10 +2298,11 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 ### T-70 — Contenedor MCP arrancado sin credenciales de base (cierre)
 
 - **Descripción**: Arrancar el contenedor `kairos-mcp` con solo `KAIROS_API_URL`, sin `MEMORY_DSN*`, secretos ni red `memory-data`, y comprobar `GET /health/live` y la salida de `docker compose config` del proyecto aislado. Fuente: CA-09, cierre del plan director.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: El contenedor de kairos-mcp arranca y responde con solo la dirección de la API: sin credenciales de base de datos, secretos ni acceso a la red de datos, y esa condición queda comprobada con la configuración real de Compose.
+- **Estado**: completado
+- **Cerrada**: 2026-11-14
 - **Tiempo humano**: est. 1.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.15h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.15h (estimado) · real 0.03h (medido)
 - **Supervisión**: est. 0.04h (≈25 % IA) · real —
 - **Previsión IA**: 40 k in / 4 k out tok · ⚠️ verificar €
 - **Dependencias**: T-69
@@ -2311,19 +2312,20 @@ RED: `server/memory_platform/tests/test_versions.py::ComponentVersionTests` fall
 - **Verificación**:
   - `python mcp/tests/smoke_container.py` → `PASS health 200; tools 34`
   - `docker compose -p kairos-final-t70 config --format json` → `memory-mcp` sin `secrets` ni `memory-data`
+  - Evidencia (2026-11-14): `KAIROS_SMOKE_PROJECT=kairos-final-t70 python mcp/tests/smoke_container.py` → `PASS config: memory-mcp has networks ['mcp'], no secrets, no volumes, no DSN` y `PASS health 200; tools 34`, exit 0. `docker compose -p kairos-final-t70 --profile memory config --format json` (con `.env.example`): `memory-mcp` sin `secrets`, sin volúmenes, sin red `memory-data`/`inference` y sin variable DSN (entorno: `KAIROS_API_URL`, `KAIROS_API_TIMEOUT`, `KAIROS_ALLOWED_ORIGINS`, `KAIROS_MAX_BODY_BYTES`, `KAIROS_VALIDATION_THREADS`). Tras la prueba: 0 contenedores, redes, volúmenes e imágenes `kairos-final-t70`; `docker volume ls -q --filter name=knowledge-graphs_` (7) y `docker ps --filter name=knowledge-graphs` (4) idénticos antes y después.
 
 **Criterios de aceptación**
-- [ ] `GET /health/live` responde 200
-- [ ] `docker compose config` muestra el servicio sin `secrets` ni `memory-data`
-- [ ] El proyecto aislado se elimina al terminar y no se toca ningún recurso `knowledge-graphs-*`
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] `GET /health/live` responde 200
+- [x] `docker compose config` muestra el servicio sin `secrets` ni `memory-data`
+- [x] El proyecto aislado se elimina al terminar y no se toca ningún recurso `knowledge-graphs-*`
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Ejecutar `smoke_container.py` en el árbol final
-- [ ] Anotar la salida
-- [ ] `usage-meter start/close`
+- [x] Ejecutar `smoke_container.py` en el árbol final
+- [x] Anotar la salida
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-09, cierre del plan director. Repite el humo de T-39 sobre el árbol ya reestructurado. Clase: verificación de cierre (misma prueba en verde).
+**Notas**: Procedencia: spec CA-09, cierre del plan director. Repite el humo de T-39 sobre el árbol ya reestructurado. Clase: verificación de cierre (misma prueba en verde). usage-meter three-components/T-70: 0.03 h IA (medido, win-7b5357bb845146aa814436dabd77f94a). `smoke_container.py` gana `check_service_configuration()` (la comprobación de `docker compose config` sobre el `docker-compose.yml` real, sin crear nada). Aviso para T-72: con `-p <proyecto>` el compose base conserva los nombres fijos `knowledge-graphs_mcp`, `knowledge-graphs_inference` y `knowledge-graphs_webui` para esas redes; el aislamiento depende del override que escribe `deploy-memory.py`. Sin cambios visibles para clientes.
 
 ### T-71 — Servidor arrancado y suite pasada sin ningún modelo de lenguaje (cierre)
 
