@@ -17,7 +17,7 @@ import sys
 import tempfile
 import time
 import unittest
-# frozen_evidence.py lives in docs/roadmap/2026-11-06-functional-parity/testing/ (qa-owned); run with that directory on PYTHONPATH.
+# frozen_evidence.py is a copy of docs/roadmap/2026-11-06-functional-parity/testing/frozen_evidence.py (qa-owned, closed initiative); it sits next to this script so no PYTHONPATH is needed.
 from frozen_evidence import begin_evidence, finish_evidence
 
 
