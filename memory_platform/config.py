@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
+import math
 import os
+import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -21,6 +23,188 @@ def endpoint(name: str, default: str) -> str:
     parsed = urlsplit(value)
     if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise ValueError(f'{name} must be an HTTP(S) endpoint without credentials or query')
+    return value
+
+
+DEFAULT_VECTOR_INDEXES = 'nomic-embed-text:768'
+HNSW_MAX_DIMENSIONS = 2000  # pgvector indexes `vector` up to 2,000 dimensions
+HNSW_EF_SEARCH = 100  # hnsw.ef_search, per transaction
+HNSW_MAX_SCAN_TUPLES = 20000  # hnsw.max_scan_tuples with hnsw.iterative_scan = relaxed_order
+EXACT_CANDIDATE_LIMIT = 10000  # exact route: candidates scored per query
+
+
+def vector_indexes(environ=None) -> tuple:
+    """(model, dimensions) pairs that get a partial HNSW index; everything else uses the exact route.
+
+    MEMORY_VECTOR_INDEXES="model:dims,model:dims" (the model name may itself contain ':').
+    """
+    environ = os.environ if environ is None else environ
+    raw = environ.get('MEMORY_VECTOR_INDEXES', DEFAULT_VECTOR_INDEXES)
+    result = []
+    for entry in (part.strip() for part in raw.split(',')):
+        if not entry:
+            continue
+        model, separator, dims = entry.rpartition(':')
+        if not separator or not model.strip() or len(model) > 200 or not dims.isdigit() or not 1 <= int(dims) <= HNSW_MAX_DIMENSIONS:
+            raise ValueError(f'MEMORY_VECTOR_INDEXES entries must be model:dimensions with 1..{HNSW_MAX_DIMENSIONS} dimensions')
+        pair = (model, int(dims))
+        if pair in result:
+            raise ValueError('MEMORY_VECTOR_INDEXES contains a duplicate entry')
+        result.append(pair)
+    return tuple(result)
+
+
+DEFAULT_EXACT_FALLBACK_MS = 1500
+
+
+def exact_fallback_ms(environ=None) -> int:
+    """Own statement_timeout (ms) of the exact fallback after a short HNSW answer; MEMORY_VECTOR_EXACT_FALLBACK_MS."""
+    environ = os.environ if environ is None else environ
+    value = environ.get('MEMORY_VECTOR_EXACT_FALLBACK_MS', str(DEFAULT_EXACT_FALLBACK_MS)).strip()
+    if not value.isascii() or not value.isdigit() or not 1 <= int(value) <= 600000:
+        raise ValueError('MEMORY_VECTOR_EXACT_FALLBACK_MS must be a positive integer of milliseconds (1 to 600000)')
+    return int(value)
+
+
+DEFAULT_MIGRATION_MAINTENANCE_WORK_MEM = '256MB'
+
+
+def migration_maintenance_work_mem(environ=None) -> str:
+    """maintenance_work_mem for the migration transaction (HNSW builds); MEMORY_MIGRATION_MAINTENANCE_WORK_MEM."""
+    environ = os.environ if environ is None else environ
+    value = environ.get('MEMORY_MIGRATION_MAINTENANCE_WORK_MEM', DEFAULT_MIGRATION_MAINTENANCE_WORK_MEM).strip()
+    if not re.fullmatch(r'[1-9][0-9]{0,5}(kB|MB|GB)', value):
+        raise ValueError('MEMORY_MIGRATION_MAINTENANCE_WORK_MEM must be a size such as 256MB')
+    return value
+
+
+DEFAULT_CHUNK_CHARS, DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_MAX, DEFAULT_EMBED_BATCH = 1500, 200, 200, 8
+CHUNK_CHARS_RANGE = (200, 6000)  # the provider cuts an input at 8,000 characters: a fragment must never reach it
+CHUNK_MAX_LIMIT = 500
+
+
+def chunk_settings(environ=None) -> tuple:
+    """(chunk characters, overlap, maximum fragments); MEMORY_CHUNK_CHARS / MEMORY_CHUNK_OVERLAP / MEMORY_CHUNK_MAX.
+
+    Decision P-07: 1,500 characters with a 200-character overlap. The overlap must stay below half of the fragment.
+    """
+    environ = os.environ if environ is None else environ
+
+    def read(name, default):
+        value = environ.get(name, str(default)).strip()
+        if not value.isascii() or not value.isdigit():
+            raise ValueError(f'{name} must be a non-negative integer')
+        return int(value)
+    chars, overlap, maximum = read('MEMORY_CHUNK_CHARS', DEFAULT_CHUNK_CHARS), read('MEMORY_CHUNK_OVERLAP', DEFAULT_CHUNK_OVERLAP), read('MEMORY_CHUNK_MAX', DEFAULT_CHUNK_MAX)
+    if not CHUNK_CHARS_RANGE[0] <= chars <= CHUNK_CHARS_RANGE[1]:
+        raise ValueError('MEMORY_CHUNK_CHARS must be between %d and %d' % CHUNK_CHARS_RANGE)
+    if overlap * 2 >= chars:
+        raise ValueError('MEMORY_CHUNK_OVERLAP must be below half of MEMORY_CHUNK_CHARS')
+    if not 1 <= maximum <= CHUNK_MAX_LIMIT:
+        raise ValueError(f'MEMORY_CHUNK_MAX must be between 1 and {CHUNK_MAX_LIMIT}')
+    return chars, overlap, maximum
+
+
+def embed_batch_size(environ=None) -> int:
+    """Fragments sent to /api/embed per request (MEMORY_EMBED_BATCH)."""
+    environ = os.environ if environ is None else environ
+    value = environ.get('MEMORY_EMBED_BATCH', str(DEFAULT_EMBED_BATCH)).strip()
+    if not value.isascii() or not value.isdigit() or not 1 <= int(value) <= 64:
+        raise ValueError('MEMORY_EMBED_BATCH must be an integer between 1 and 64')
+    return int(value)
+
+
+DEFAULT_EMBED_BATCH_TIMEOUT, DEFAULT_EMBED_JOB_MAX_TIMEOUT = 60.0, 900.0
+
+
+def embed_timeouts(environ=None) -> tuple:
+    """(deadline per batch, global ceiling of one embed job) in seconds; MEMORY_EMBED_BATCH_TIMEOUT / MEMORY_EMBED_JOB_MAX_TIMEOUT."""
+    environ = os.environ if environ is None else environ
+
+    def read(name, default, low, high):
+        raw = environ.get(name, str(default)).strip()
+        try:
+            value = float(raw)
+        except ValueError:
+            raise ValueError(f'{name} must be a number of seconds between {low} and {high}') from None
+        if not low <= value <= high:  # also rejects NaN
+            raise ValueError(f'{name} must be a number of seconds between {low} and {high}')
+        return value
+    batch = read('MEMORY_EMBED_BATCH_TIMEOUT', DEFAULT_EMBED_BATCH_TIMEOUT, 1, 600)
+    ceiling = read('MEMORY_EMBED_JOB_MAX_TIMEOUT', DEFAULT_EMBED_JOB_MAX_TIMEOUT, 1, 3600)
+    if ceiling < batch:
+        raise ValueError('MEMORY_EMBED_JOB_MAX_TIMEOUT must not be below MEMORY_EMBED_BATCH_TIMEOUT')
+    return batch, ceiling
+
+
+def embedding_job_timeout(settings, inputs: int) -> float:
+    """Deadline of one embed job that sends `inputs` texts: one embedding keeps `embedding_worker_timeout`; several get
+    `embedding_batch_timeout` for every batch of `embedding_batch_size`, never above the global ceiling (and never below the single-text deadline)."""
+    single = getattr(settings, 'embedding_worker_timeout', 120.0)
+    if inputs <= 1:
+        return single
+    size = max(1, int(getattr(settings, 'embedding_batch_size', DEFAULT_EMBED_BATCH)))
+    batches = -(-inputs // size)
+    ceiling = max(getattr(settings, 'embedding_job_timeout_max', DEFAULT_EMBED_JOB_MAX_TIMEOUT), single)
+    return min(ceiling, max(single, batches * getattr(settings, 'embedding_batch_timeout', DEFAULT_EMBED_BATCH_TIMEOUT)))
+
+
+# Fusion of the retrieval layers (reciprocal rank fusion). The values are the ones chosen with the evaluation gate; see
+# memory_platform/tests/retrieval_eval/fusion-tuning.json for the grid and the reason.
+DEFAULT_FUSION_K, FUSION_K_RANGE = 60, (1, 1000)
+DEFAULT_FUSION_VALIDATED_BONUS, FUSION_BONUS_RANGE = 0.0001, (0.0, 1.0)
+FUSION_LAYERS = ('episodic', 'documental', 'temporal', 'semantic')
+FUSION_WEIGHT_RANGE = (0.0, 10.0)
+
+
+def check_fusion(k, bonus, weights) -> None:
+    """Validate the fusion parameters (a hit adds `weight / (k + rank)` per layer, and `bonus` once when it is validated)."""
+    if isinstance(k, bool) or not isinstance(k, int) or not FUSION_K_RANGE[0] <= k <= FUSION_K_RANGE[1]:
+        raise ValueError('MEMORY_FUSION_K must be an integer between %d and %d' % FUSION_K_RANGE)
+    if isinstance(bonus, bool) or not isinstance(bonus, (int, float)) or not math.isfinite(bonus) or not FUSION_BONUS_RANGE[0] <= bonus <= FUSION_BONUS_RANGE[1]:
+        raise ValueError('MEMORY_FUSION_VALIDATED_BONUS must be a number between %s and %s' % FUSION_BONUS_RANGE)
+    if not isinstance(weights, dict):
+        raise ValueError('MEMORY_FUSION_WEIGHTS must map layers to weights')
+    for layer, weight in weights.items():
+        if layer not in FUSION_LAYERS:
+            raise ValueError('MEMORY_FUSION_WEIGHTS: unknown layer %r (expected one of %s)' % (layer, ', '.join(FUSION_LAYERS)))
+        if isinstance(weight, bool) or not isinstance(weight, (int, float)) or not math.isfinite(weight) or not FUSION_WEIGHT_RANGE[0] < weight <= FUSION_WEIGHT_RANGE[1]:
+            raise ValueError('MEMORY_FUSION_WEIGHTS: the weight of %s must be above %s and at most %s' % ((layer,) + FUSION_WEIGHT_RANGE))
+
+
+def fusion_from_env(environ=None) -> tuple:
+    """(k, validated bonus, weights per layer) from MEMORY_FUSION_K, MEMORY_FUSION_VALIDATED_BONUS and MEMORY_FUSION_WEIGHTS (`layer=weight,...`)."""
+    environ = os.environ if environ is None else environ
+    raw_k = environ.get('MEMORY_FUSION_K', str(DEFAULT_FUSION_K)).strip()
+    raw_bonus = environ.get('MEMORY_FUSION_VALIDATED_BONUS', str(DEFAULT_FUSION_VALIDATED_BONUS)).strip()
+    if not raw_k.isascii() or not raw_k.isdigit():
+        raise ValueError('MEMORY_FUSION_K must be an integer between %d and %d' % FUSION_K_RANGE)
+    try:
+        bonus = float(raw_bonus)
+    except ValueError:
+        raise ValueError('MEMORY_FUSION_VALIDATED_BONUS must be a number between %s and %s' % FUSION_BONUS_RANGE) from None
+    weights = {}
+    for part in (p for p in environ.get('MEMORY_FUSION_WEIGHTS', '').split(',') if p.strip()):
+        layer, separator, value = part.partition('=')
+        try:
+            if not separator:
+                raise ValueError()
+            weights[layer.strip()] = float(value)
+        except ValueError:
+            raise ValueError('MEMORY_FUSION_WEIGHTS must look like layer=weight,layer=weight') from None
+    check_fusion(int(raw_k), bonus, weights)
+    return int(raw_k), bonus, weights
+
+
+METRICS_MODES = ('off', 'internal', 'admin')
+
+
+def metrics_mode_from_env(environ=None) -> str:
+    """Exposure of `GET /metrics` (MEMORY_METRICS, decision P-05): `off` (no route), `internal` (default: only requests that did not come through a proxy) or `admin` (administrator credential)."""
+    environ = os.environ if environ is None else environ
+    value = environ.get('MEMORY_METRICS', 'internal').strip().lower()
+    if value not in METRICS_MODES:
+        raise ValueError('MEMORY_METRICS must be one of: ' + ', '.join(METRICS_MODES))
     return value
 
 
@@ -42,6 +226,21 @@ class Settings:
     embed_enabled: bool = True
     embedding_query_timeout: float = 10.0
     embedding_worker_timeout: float = 120.0
+    chunk_chars: int = DEFAULT_CHUNK_CHARS
+    chunk_overlap: int = DEFAULT_CHUNK_OVERLAP
+    chunk_max: int = DEFAULT_CHUNK_MAX
+    embedding_batch_size: int = DEFAULT_EMBED_BATCH
+    embedding_batch_timeout: float = DEFAULT_EMBED_BATCH_TIMEOUT
+    embedding_job_timeout_max: float = DEFAULT_EMBED_JOB_MAX_TIMEOUT
+    fusion_k: int = DEFAULT_FUSION_K
+    fusion_validated_bonus: float = DEFAULT_FUSION_VALIDATED_BONUS
+    fusion_weights: dict = field(default_factory=dict)
+    metrics_mode: str = 'internal'
+
+    def __post_init__(self):
+        if self.metrics_mode not in METRICS_MODES:
+            raise ValueError('metrics_mode must be one of: ' + ', '.join(METRICS_MODES))
+        check_fusion(self.fusion_k, self.fusion_validated_bonus, self.fusion_weights)
 
     @classmethod
     def from_env(cls):
@@ -59,6 +258,12 @@ class Settings:
         secure = os.environ.get('MEMORY_COOKIE_SECURE', '0') == '1'
         if any(urlsplit(v).hostname not in ('localhost', '127.0.0.1', '::1', 'testserver') for v in origins) and (not secure or any(urlsplit(v).scheme != 'https' for v in origins)):
             raise ValueError('Remote portal origins require HTTPS and MEMORY_COOKIE_SECURE=1')
+        exact_fallback_ms()  # fail at startup, not on the first short semantic answer
+        chunk_chars, chunk_overlap, chunk_max = chunk_settings()
+        batch_size = embed_batch_size()
+        batch_timeout, job_timeout_max = embed_timeouts()
+        fusion_k, fusion_bonus, fusion_weights = fusion_from_env()
+        metrics_mode = metrics_mode_from_env()
         return cls(
             dsn=secret('MEMORY_DSN', required=True), allowed_origins=origins,
             cookie_secure=secure, session_ttl=int(os.environ.get('MEMORY_SESSION_TTL', '43200')),
@@ -74,4 +279,8 @@ class Settings:
             embed_enabled=os.environ.get('MEMORY_EMBED_ENABLED', '1') == '1',
             embedding_query_timeout=float(os.environ.get('MEMORY_EMBED_QUERY_TIMEOUT', '10')),
             embedding_worker_timeout=float(os.environ.get('MEMORY_EMBED_WORKER_TIMEOUT', '120')),
+            chunk_chars=chunk_chars, chunk_overlap=chunk_overlap, chunk_max=chunk_max, embedding_batch_size=batch_size,
+            embedding_batch_timeout=batch_timeout, embedding_job_timeout_max=job_timeout_max,
+            fusion_k=fusion_k, fusion_validated_bonus=fusion_bonus, fusion_weights=fusion_weights,
+            metrics_mode=metrics_mode,
         )

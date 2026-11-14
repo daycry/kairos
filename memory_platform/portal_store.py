@@ -3,6 +3,14 @@ import base64
 import json
 from .errors import MemoryError
 from .store import clean, digest
+from .store_common import fts_inline, item_columns
+
+# Text matched by each `query` filter (Spanish, English and `simple` configurations, see store_common.fts_inline).
+SESSION_TEXT = "concat_ws(' ',s.id,s.agent_id)"
+JOB_TEXT = "concat_ws(' ',j.destination,j.operation,j.state)"
+HISTORY_TEXT = "e.body->'payload'->>'title'"
+ACTIVITY_TEXT = "e.body->>'event_type'"
+NOTE_TEXT = "concat_ws(' ',i.payload->>'title',i.payload->>'content')"
 
 
 class PortalStore:
@@ -35,49 +43,49 @@ class PortalStore:
         with self.store.transaction() as c:
             self.store._require(c, actor, project, 'read')
             if kind == 'sessions':
-                records = c.execute("""SELECT s.* FROM memory.sessions s WHERE s.project_id=%s
+                records = c.execute(f"""SELECT s.* FROM memory.sessions s WHERE s.project_id=%s
                     AND (%s::text IS NULL OR s.id>%s) AND (%s='' OR s.id=%s)
                     AND (%s='' OR EXISTS(SELECT 1 FROM memory.memory_items i WHERE i.project_id=s.project_id AND i.session_id=s.id
                         AND NOT i.deleted AND i.superseded_by IS NULL AND i.payload->>'category'=%s))
-                    AND (%s='' OR to_tsvector('simple',concat_ws(' ',s.id,s.agent_id)) @@ plainto_tsquery('simple',%s))
-                    ORDER BY s.id LIMIT %s""", (project, anchor, anchor, session_id, session_id, category, category, query, query, limit+1)).fetchall()
+                    AND (%s='' OR {fts_inline(SESSION_TEXT)})
+                    ORDER BY s.id LIMIT %s""", (project, anchor, anchor, session_id, session_id, category, category, query, query, query, query, limit+1)).fetchall()
                 items = clean(records[:limit])
             elif kind == 'jobs':
-                records = c.execute("""SELECT j.id,j.project_id,j.item_id,j.version,j.destination,j.operation,j.state,j.attempts,j.error_code,j.created_at
+                records = c.execute(f"""SELECT j.id,j.project_id,j.item_id,j.version,j.destination,j.operation,j.state,j.attempts,j.error_code,j.created_at
                     FROM memory.jobs j LEFT JOIN memory.memory_items i ON i.project_id=j.project_id AND i.id=j.item_id
                     LEFT JOIN memory.documents d ON d.project_id=j.project_id AND d.id=j.item_id
                     WHERE j.project_id=%s AND (%s::text IS NULL OR j.id>%s)
                     AND (%s='' OR COALESCE(i.payload->>'category',d.body->>'category')=%s)
                     AND (%s='' OR i.session_id=%s)
-                    AND (%s='' OR to_tsvector('simple',concat_ws(' ',j.destination,j.operation,j.state)) @@ plainto_tsquery('simple',%s))
-                    ORDER BY j.id LIMIT %s""", (project, anchor, anchor, category, category, session_id, session_id, query, query, limit+1)).fetchall()
+                    AND (%s='' OR {fts_inline(JOB_TEXT)})
+                    ORDER BY j.id LIMIT %s""", (project, anchor, anchor, category, category, session_id, session_id, query, query, query, query, limit+1)).fetchall()
                 items = clean(records[:limit])
             elif kind == 'history':
-                records = c.execute("""SELECT e.id AS event_id,e.body,e.created_at FROM memory.events e WHERE e.project_id=%s
+                records = c.execute(f"""SELECT e.id AS event_id,e.body,e.created_at FROM memory.events e WHERE e.project_id=%s
                     AND (%s::text IS NULL OR e.id>%s) AND (%s='' OR e.body->'payload'->>'category'=%s)
                     AND (%s='' OR e.body->>'session_id'=%s)
-                    AND (%s='' OR to_tsvector('simple',e.body->'payload'->>'title') @@ plainto_tsquery('simple',%s))
-                    ORDER BY e.id LIMIT %s""", (project, anchor, anchor, category, category, session_id, session_id, query, query, limit+1)).fetchall()
+                    AND (%s='' OR {fts_inline(HISTORY_TEXT)})
+                    ORDER BY e.id LIMIT %s""", (project, anchor, anchor, category, category, session_id, session_id, query, query, query, query, limit+1)).fetchall()
                 items = clean(records[:limit])
             elif kind == 'activity-log':
-                records = c.execute("""SELECT e.id AS event_id,e.project_id,e.created_at,
+                records = c.execute(f"""SELECT e.id AS event_id,e.project_id,e.created_at,
                     e.body->>'event_type' AS event_type,e.body->>'item_id' AS item_id,e.body->>'version' AS version
                     FROM memory.events e WHERE e.project_id=%s
                     AND (%s::text IS NULL OR e.id>%s)
                     AND (%s='' OR e.body->'payload'->>'category'=%s)
                     AND (%s='' OR e.body->>'session_id'=%s)
-                    AND (%s='' OR to_tsvector('simple',e.body->>'event_type') @@ plainto_tsquery('simple',%s))
-                    ORDER BY e.id LIMIT %s""", (project, anchor, anchor, category, category, session_id, session_id, query, query, limit+1)).fetchall()
+                    AND (%s='' OR {fts_inline(ACTIVITY_TEXT)})
+                    ORDER BY e.id LIMIT %s""", (project, anchor, anchor, category, category, session_id, session_id, query, query, query, query, limit+1)).fetchall()
                 items = [dict(clean(row), ref=f"episodic:{project}:{row['item_id']}:{row['version']}") for row in records[:limit]]
             else:
-                records = c.execute("""SELECT i.* FROM memory.memory_items i WHERE i.project_id=%s
+                records = c.execute(f"""SELECT {item_columns('i.')} FROM memory.memory_items i WHERE i.project_id=%s
                     AND NOT i.deleted AND i.superseded_by IS NULL
                     AND (%s::text IS NULL OR i.id>%s)
                     AND (%s='' OR i.payload->>'category'=%s)
                     AND (%s='' OR i.session_id=%s)
                     AND (%s!='rules' OR (i.payload->'tags') ? 'kairos:rule')
-                    AND (%s='' OR to_tsvector('simple',concat_ws(' ',i.payload->>'title',i.payload->>'content')) @@ plainto_tsquery('simple',%s))
-                    ORDER BY i.id LIMIT %s""", (project, anchor, anchor, category, category, session_id, session_id, kind, query, query, limit+1)).fetchall()
+                    AND (%s='' OR {fts_inline(NOTE_TEXT,stored='i.search_vector')})
+                    ORDER BY i.id LIMIT %s""", (project, anchor, anchor, category, category, session_id, session_id, kind, query, query, query, query, limit+1)).fetchall()
                 items = [self.store._item(row) for row in records[:limit]]
         more = len(records) > limit
         key = 'event_id' if kind in ('activity-log', 'history') else 'id' if kind in ('sessions', 'jobs') else 'item_id'

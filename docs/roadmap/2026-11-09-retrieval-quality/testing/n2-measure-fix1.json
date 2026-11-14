@@ -1,0 +1,86 @@
+{
+  "create_index_ms": 384.3,
+  "failed_rows": 300000,
+  "pending_rows": 50,
+  "postgres": "isolated container build, own temporary cluster",
+  "succeeded_rows": 200000,
+  "timeout_1ms_without_index": {
+    "ok": false,
+    "queue_depth_pending_embed": -1.0,
+    "scrape_success_gauge": 0.0
+  },
+  "with_index": {
+    "failed_query": {
+      "execution_ms": 41.406,
+      "plan": [
+        "Finalize GroupAggregate  (cost=1000.45..5675.58 rows=10 width=31) (actual time=38.951..41.350 rows=10 loops=1)",
+        "Group Key: destination, error_code",
+        "Buffers: shared hit=245",
+        "->  Gather Merge  (cost=1000.45..5675.33 rows=20 width=31) (actual time=38.629..41.329 rows=20 loops=1)",
+        "Workers Planned: 2",
+        "Workers Launched: 2",
+        "Buffers: shared hit=245",
+        "->  Partial GroupAggregate  (cost=0.42..4672.99 rows=10 width=31) (actual time=4.505..23.095 rows=7 loops=3)"
+      ],
+      "uses_failed_index": true
+    },
+    "index_bytes": 1998848,
+    "jobs_failed_provider_timeout_embed": 30000.0,
+    "queue_depth_pending_embed": 50.0,
+    "queue_depth_query": {
+      "execution_ms": 0.163,
+      "plan": [
+        "HashAggregate  (cost=74.10..74.16 rows=6 width=22) (actual time=0.120..0.121 rows=1 loops=1)",
+        "Group Key: state, destination",
+        "Batches: 1  Memory Usage: 24kB",
+        "Buffers: shared hit=8",
+        "->  Index Scan using memory_job_queue on jobs  (cost=0.42..73.85 rows=33 width=14) (actual time=0.055..0.099 rows=50 loops=1)",
+        "Index Cond: (state = ANY ('{pending,running,unknown}'::text[]))",
+        "Buffers: shared hit=8",
+        "Planning:"
+      ],
+      "uses_failed_index": false
+    },
+    "refresh_queue_depth_ms": 46.0,
+    "refresh_queue_depth_ok": true,
+    "scrape_success_gauge": 1.0,
+    "table_bytes": 191463424
+  },
+  "without_index": {
+    "failed_query": {
+      "execution_ms": 82.319,
+      "plan": [
+        "Finalize GroupAggregate  (cost=17091.50..17094.08 rows=10 width=31) (actual time=78.237..82.278 rows=10 loops=1)",
+        "Group Key: destination, error_code",
+        "Buffers: shared hit=11616 read=947",
+        "->  Gather Merge  (cost=17091.50..17093.83 rows=20 width=31) (actual time=78.228..82.262 rows=30 loops=1)",
+        "Workers Planned: 2",
+        "Workers Launched: 2",
+        "Buffers: shared hit=11616 read=947",
+        "->  Sort  (cost=16091.47..16091.50 rows=10 width=31) (actual time=74.104..74.105 rows=10 loops=3)"
+      ],
+      "uses_failed_index": false
+    },
+    "index_bytes": null,
+    "jobs_failed_provider_timeout_embed": 30000.0,
+    "queue_depth_pending_embed": 50.0,
+    "queue_depth_query": {
+      "execution_ms": 0.075,
+      "plan": [
+        "HashAggregate  (cost=74.10..74.16 rows=6 width=22) (actual time=0.056..0.056 rows=1 loops=1)",
+        "Group Key: state, destination",
+        "Batches: 1  Memory Usage: 24kB",
+        "Buffers: shared hit=8",
+        "->  Index Scan using memory_job_queue on jobs  (cost=0.42..73.85 rows=33 width=14) (actual time=0.026..0.041 rows=50 loops=1)",
+        "Index Cond: (state = ANY ('{pending,running,unknown}'::text[]))",
+        "Buffers: shared hit=8",
+        "Planning:"
+      ],
+      "uses_failed_index": false
+    },
+    "refresh_queue_depth_ms": 86.1,
+    "refresh_queue_depth_ok": true,
+    "scrape_success_gauge": 1.0,
+    "table_bytes": 189464576
+  }
+}

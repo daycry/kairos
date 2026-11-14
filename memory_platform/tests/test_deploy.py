@@ -98,3 +98,48 @@ class DeploymentTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class BackfillPhaseTests(unittest.TestCase):
+    """Decision P-07: the fragments of the existing content are queued at deployment, right after migrate and before the services start."""
+    def run_phases(self, backfill_answer=None):
+        from memory_platform.tests.test_deploy_isolation import IsolatedDeploymentTests
+        helper = IsolatedDeploymentTests('migrate_run')
+        return helper.migrate_run(backfill_answer=backfill_answer)
+
+    def test_the_plan_lists_the_backfill_between_bootstrap_and_start(self):
+        phases = list(deploy.PHASES)
+        self.assertLess(phases.index('migrate'), phases.index('backfill'))
+        self.assertEqual(phases[phases.index('bootstrap') + 1:phases.index('bootstrap') + 3], ['backfill', 'start'])
+        with patch.object(deploy.subprocess, 'run') as run, contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(deploy.main([]), 0)
+        self.assertIn('backfill', json.loads(output.getvalue())['phases'])
+        run.assert_not_called()  # the simulation only prints the plan
+
+    def test_apply_queues_the_backfill_after_migrate_and_before_start_and_reports_counts_only(self):
+        instance, commands = self.run_phases()
+        names = [command[-1] for command in commands if 'memory-admin' in command]
+        self.assertLess(names.index('migrate'), names.index('backfill-chunks'))
+        started = next(n for n, command in enumerate(commands) if 'up' in command and 'ollama' in command)
+        backfill = next(n for n, command in enumerate(commands) if command[-1] == 'backfill-chunks')
+        self.assertLess(backfill, started)
+        self.assertEqual(instance.report['backfill'], {'status': 'backfilled', 'enqueued': 7, 'remaining': 0, 'batches': 1, 'embedding_filled': 0})
+        stop = next(n for n, command in enumerate(commands) if 'stop' in command and command[-1] == 'memory-worker')
+        self.assertLess(stop, backfill)  # the previous worker never sees the queued jobs
+        self.assertEqual(instance.report['phases'][instance.report['phases'].index('bootstrap') + 1], 'backfill')
+
+    def test_the_report_keeps_only_the_known_count_keys(self):
+        noisy = json.dumps({'status': 'backfilled', 'enqueued': 1, 'remaining': 0, 'batches': 1, 'embedding_filled': 0, 'dsn': 'postgresql://u:secret@h/db'})
+        instance, _ = self.run_phases(noisy)
+        self.assertNotIn('secret', json.dumps(instance.report))
+        self.assertNotIn('dsn', instance.report['backfill'])
+
+    def test_the_report_carries_pending_failed_and_stale_counts_and_nothing_else(self):
+        answer = {'status': 'backfilled', 'enqueued': 2, 'derived': 1, 'failed': 3, 'pending': 4, 'remaining': 5, 'batches': 1, 'embedding_filled': 0, 'stale_marked': 6, 'token': 'x'}
+        instance, _ = self.run_phases(json.dumps(answer))
+        self.assertEqual(instance.report['backfill'], {key: value for key, value in answer.items() if key != 'token'})
+        self.assertEqual((instance.report['backfill']['pending'], instance.report['backfill']['failed']), (4, 3))
+
+    def test_a_failed_backfill_stops_the_deployment_before_the_services_start(self):
+        with self.assertRaises(Exception) as raised:  # the helper loads its own copy of the script, hence its own exception class
+            self.run_phases('not json')
+        self.assertEqual(type(raised.exception).__name__, 'DeploymentError')

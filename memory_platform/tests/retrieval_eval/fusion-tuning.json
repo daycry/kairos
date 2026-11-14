@@ -1,0 +1,2038 @@
+{
+  "before": {
+    "behaviour": "absolute order (validated first, then RRF) = bonus 1.0 with k=60 and weight 1",
+    "fused_phase5": {
+      "overall": {
+        "mrr": 0.403114,
+        "recall@5": 0.541667
+      },
+      "subsets": {
+        "en": {
+          "mrr": 0.333118,
+          "recall@5": 0.583333
+        },
+        "es": {
+          "mrr": 0.31713,
+          "recall@5": 0.333333
+        },
+        "long": {
+          "mrr": 0.895833,
+          "recall@5": 1.0
+        },
+        "typo_id": {
+          "mrr": 0.222354,
+          "recall@5": 0.416667
+        }
+      }
+    },
+    "fused_vs_baseline_json": {
+      "overall": {
+        "mrr": 0.339809,
+        "recall@5": 0.5
+      },
+      "subsets": {
+        "en": {
+          "mrr": 0.356614,
+          "recall@5": 0.625
+        },
+        "es": {
+          "mrr": 0.341022,
+          "recall@5": 0.333333
+        },
+        "long": {
+          "mrr": 0.354167,
+          "recall@5": 0.5
+        },
+        "typo_id": {
+          "mrr": 0.289418,
+          "recall@5": 0.583333
+        }
+      }
+    },
+    "gate_failures": [
+      "fused_recall_at_5",
+      "fused_mrr",
+      "subset:es",
+      "subset:typo_id",
+      "regression:en",
+      "regression:typo_id"
+    ]
+  },
+  "best_single_layer_mrr_overall": 0.964583,
+  "chosen": {
+    "bonus": 0.0001,
+    "checks": {
+      "ca18_ok": true,
+      "ca35_ok": true,
+      "subset_recall5_change_points": {
+        "en": 37.5,
+        "es": 66.67,
+        "long": 50.0,
+        "typo_id": 41.67
+      },
+      "thresholds_ok": true
+    },
+    "fused": {
+      "overall": {
+        "mrr": 0.971528,
+        "recall@5": 1.0
+      },
+      "subsets": {
+        "en": {
+          "mrr": 1.0,
+          "recall@5": 1.0
+        },
+        "es": {
+          "mrr": 1.0,
+          "recall@5": 1.0
+        },
+        "long": {
+          "mrr": 0.829167,
+          "recall@5": 1.0
+        },
+        "typo_id": {
+          "mrr": 1.0,
+          "recall@5": 1.0
+        }
+      }
+    },
+    "gate_failures": [],
+    "gate_passed": true,
+    "k": 60,
+    "weights": {}
+  },
+  "dataset": "dataset-v1",
+  "dataset_sha256": "1bba8d997c6dcc8e11f2ddceba2a78e8c38c0bd7cafd4aa458dd1547ad4be6f6",
+  "date": "2026-11-11",
+  "fusion": "score(hit) = sum over layers of weight_layer/(k + rank) + bonus if validated and not superseded; stable sort by score",
+  "grids": [
+    {
+      "points": [
+        {
+          "bonus": 0,
+          "ca18_ok": true,
+          "ca35_ok": true,
+          "k": 60,
+          "mrr": 0.971528,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.829167,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {}
+        },
+        {
+          "bonus": 0.0001,
+          "ca18_ok": true,
+          "ca35_ok": true,
+          "k": 60,
+          "mrr": 0.971528,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.829167,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {}
+        },
+        {
+          "bonus": 0.0002,
+          "ca18_ok": true,
+          "ca35_ok": true,
+          "k": 60,
+          "mrr": 0.971528,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.829167,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {}
+        },
+        {
+          "bonus": 0.0005,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 60,
+          "mrr": 0.951852,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.958333,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.836111,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.958333,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {}
+        },
+        {
+          "bonus": 0.001,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 60,
+          "mrr": 0.886574,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.763889,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.895833,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.895833,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {}
+        },
+        {
+          "bonus": 0.0015,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 60,
+          "mrr": 0.844444,
+          "recall@5": 0.958333,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 58.33,
+            "long": 50.0,
+            "typo_id": 33.33
+          },
+          "subsets": {
+            "en": {
+              "mrr": 0.979167,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.720833,
+              "recall@5": 0.916667
+            },
+            "long": {
+              "mrr": 0.895833,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.770833,
+              "recall@5": 0.916667
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {}
+        },
+        {
+          "bonus": 0.002,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 60,
+          "mrr": 0.822305,
+          "recall@5": 0.861111,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 37.5,
+            "long": 50.0,
+            "typo_id": 16.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 0.979167,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.66756,
+              "recall@5": 0.708333
+            },
+            "long": {
+              "mrr": 0.895833,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.744544,
+              "recall@5": 0.75
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {}
+        },
+        {
+          "bonus": 0.003,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 60,
+          "mrr": 0.820133,
+          "recall@5": 0.847222,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 33.33,
+            "long": 50.0,
+            "typo_id": 16.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 0.979167,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.662616,
+              "recall@5": 0.666667
+            },
+            "long": {
+              "mrr": 0.895833,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.741402,
+              "recall@5": 0.75
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {}
+        },
+        {
+          "bonus": 0.004,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 60,
+          "mrr": 0.820133,
+          "recall@5": 0.847222,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 33.33,
+            "long": 50.0,
+            "typo_id": 16.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 0.979167,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.662616,
+              "recall@5": 0.666667
+            },
+            "long": {
+              "mrr": 0.895833,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.741402,
+              "recall@5": 0.75
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {}
+        },
+        {
+          "bonus": 0.005,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 60,
+          "mrr": 0.820133,
+          "recall@5": 0.847222,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 33.33,
+            "long": 50.0,
+            "typo_id": 16.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 0.979167,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.662616,
+              "recall@5": 0.666667
+            },
+            "long": {
+              "mrr": 0.895833,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.741402,
+              "recall@5": 0.75
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {}
+        },
+        {
+          "bonus": 0.0075,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 60,
+          "mrr": 0.820133,
+          "recall@5": 0.847222,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 33.33,
+            "long": 50.0,
+            "typo_id": 16.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 0.979167,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.662616,
+              "recall@5": 0.666667
+            },
+            "long": {
+              "mrr": 0.895833,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.741402,
+              "recall@5": 0.75
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {}
+        },
+        {
+          "bonus": 0.01,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 60,
+          "mrr": 0.820133,
+          "recall@5": 0.847222,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 33.33,
+            "long": 50.0,
+            "typo_id": 16.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 0.979167,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.662616,
+              "recall@5": 0.666667
+            },
+            "long": {
+              "mrr": 0.895833,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.741402,
+              "recall@5": 0.75
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {}
+        },
+        {
+          "bonus": 0.02,
+          "ca18_ok": false,
+          "ca35_ok": false,
+          "k": 60,
+          "mrr": 0.403114,
+          "recall@5": 0.541667,
+          "subset_recall5_change_points": {
+            "en": -4.17,
+            "es": 0.0,
+            "long": 50.0,
+            "typo_id": -16.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 0.333118,
+              "recall@5": 0.583333
+            },
+            "es": {
+              "mrr": 0.31713,
+              "recall@5": 0.333333
+            },
+            "long": {
+              "mrr": 0.895833,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.222354,
+              "recall@5": 0.416667
+            }
+          },
+          "thresholds_ok": false,
+          "weights": {}
+        },
+        {
+          "bonus": 0.05,
+          "ca18_ok": false,
+          "ca35_ok": false,
+          "k": 60,
+          "mrr": 0.403114,
+          "recall@5": 0.541667,
+          "subset_recall5_change_points": {
+            "en": -4.17,
+            "es": 0.0,
+            "long": 50.0,
+            "typo_id": -16.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 0.333118,
+              "recall@5": 0.583333
+            },
+            "es": {
+              "mrr": 0.31713,
+              "recall@5": 0.333333
+            },
+            "long": {
+              "mrr": 0.895833,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.222354,
+              "recall@5": 0.416667
+            }
+          },
+          "thresholds_ok": false,
+          "weights": {}
+        },
+        {
+          "bonus": 1.0,
+          "ca18_ok": false,
+          "ca35_ok": false,
+          "k": 60,
+          "mrr": 0.403114,
+          "recall@5": 0.541667,
+          "subset_recall5_change_points": {
+            "en": -4.17,
+            "es": 0.0,
+            "long": 50.0,
+            "typo_id": -16.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 0.333118,
+              "recall@5": 0.583333
+            },
+            "es": {
+              "mrr": 0.31713,
+              "recall@5": 0.333333
+            },
+            "long": {
+              "mrr": 0.895833,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.222354,
+              "recall@5": 0.416667
+            }
+          },
+          "thresholds_ok": false,
+          "weights": {}
+        }
+      ],
+      "spec": {
+        "bonus": [
+          0,
+          0.0001,
+          0.0002,
+          0.0005,
+          0.001,
+          0.0015,
+          0.002,
+          0.003,
+          0.004,
+          0.005,
+          0.0075,
+          0.01,
+          0.02,
+          0.05,
+          1.0
+        ],
+        "k": [
+          60
+        ],
+        "weights": [
+          {}
+        ]
+      }
+    },
+    {
+      "points": [
+        {
+          "bonus": 0.0002,
+          "ca18_ok": true,
+          "ca35_ok": true,
+          "k": 20,
+          "mrr": 0.971528,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.829167,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {}
+        },
+        {
+          "bonus": 0.0002,
+          "ca18_ok": true,
+          "ca35_ok": true,
+          "k": 20,
+          "mrr": 0.971528,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.829167,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {
+            "semantic": 2.0
+          }
+        },
+        {
+          "bonus": 0.0002,
+          "ca18_ok": true,
+          "ca35_ok": true,
+          "k": 20,
+          "mrr": 0.971528,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.829167,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {
+            "documental": 0.5,
+            "episodic": 0.5
+          }
+        },
+        {
+          "bonus": 0.0002,
+          "ca18_ok": true,
+          "ca35_ok": true,
+          "k": 60,
+          "mrr": 0.971528,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.829167,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {}
+        },
+        {
+          "bonus": 0.0002,
+          "ca18_ok": true,
+          "ca35_ok": true,
+          "k": 60,
+          "mrr": 0.971528,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.829167,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {
+            "semantic": 2.0
+          }
+        },
+        {
+          "bonus": 0.0002,
+          "ca18_ok": true,
+          "ca35_ok": true,
+          "k": 60,
+          "mrr": 0.971528,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.829167,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {
+            "documental": 0.5,
+            "episodic": 0.5
+          }
+        },
+        {
+          "bonus": 0.0002,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 100,
+          "mrr": 0.913194,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.840278,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.854167,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.944444,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {}
+        },
+        {
+          "bonus": 0.0002,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 100,
+          "mrr": 0.951852,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.958333,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.836111,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.958333,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {
+            "semantic": 2.0
+          }
+        },
+        {
+          "bonus": 0.0002,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 100,
+          "mrr": 0.913194,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.840278,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.854167,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.944444,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {
+            "documental": 0.5,
+            "episodic": 0.5
+          }
+        },
+        {
+          "bonus": 0.0003,
+          "ca18_ok": true,
+          "ca35_ok": true,
+          "k": 20,
+          "mrr": 0.971528,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.829167,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {}
+        },
+        {
+          "bonus": 0.0003,
+          "ca18_ok": true,
+          "ca35_ok": true,
+          "k": 20,
+          "mrr": 0.971528,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.829167,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {
+            "semantic": 2.0
+          }
+        },
+        {
+          "bonus": 0.0003,
+          "ca18_ok": true,
+          "ca35_ok": true,
+          "k": 20,
+          "mrr": 0.971528,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.829167,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {
+            "documental": 0.5,
+            "episodic": 0.5
+          }
+        },
+        {
+          "bonus": 0.0003,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 60,
+          "mrr": 0.951852,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.958333,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.836111,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.958333,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {}
+        },
+        {
+          "bonus": 0.0003,
+          "ca18_ok": true,
+          "ca35_ok": true,
+          "k": 60,
+          "mrr": 0.971528,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.829167,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {
+            "semantic": 2.0
+          }
+        },
+        {
+          "bonus": 0.0003,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 60,
+          "mrr": 0.951852,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.958333,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.836111,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.958333,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {
+            "documental": 0.5,
+            "episodic": 0.5
+          }
+        },
+        {
+          "bonus": 0.0003,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 100,
+          "mrr": 0.886574,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.763889,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.895833,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.895833,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {}
+        },
+        {
+          "bonus": 0.0003,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 100,
+          "mrr": 0.951852,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.958333,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.836111,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.958333,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {
+            "semantic": 2.0
+          }
+        },
+        {
+          "bonus": 0.0003,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 100,
+          "mrr": 0.886574,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.763889,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.895833,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.895833,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {
+            "documental": 0.5,
+            "episodic": 0.5
+          }
+        },
+        {
+          "bonus": 0.0004,
+          "ca18_ok": true,
+          "ca35_ok": true,
+          "k": 20,
+          "mrr": 0.971528,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.829167,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {}
+        },
+        {
+          "bonus": 0.0004,
+          "ca18_ok": true,
+          "ca35_ok": true,
+          "k": 20,
+          "mrr": 0.971528,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.829167,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {
+            "semantic": 2.0
+          }
+        },
+        {
+          "bonus": 0.0004,
+          "ca18_ok": true,
+          "ca35_ok": true,
+          "k": 20,
+          "mrr": 0.971528,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.829167,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {
+            "documental": 0.5,
+            "episodic": 0.5
+          }
+        },
+        {
+          "bonus": 0.0004,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 60,
+          "mrr": 0.951852,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.958333,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.836111,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.958333,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {}
+        },
+        {
+          "bonus": 0.0004,
+          "ca18_ok": true,
+          "ca35_ok": true,
+          "k": 60,
+          "mrr": 0.971528,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.829167,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {
+            "semantic": 2.0
+          }
+        },
+        {
+          "bonus": 0.0004,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 60,
+          "mrr": 0.951852,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.958333,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.836111,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.958333,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {
+            "documental": 0.5,
+            "episodic": 0.5
+          }
+        },
+        {
+          "bonus": 0.0004,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 100,
+          "mrr": 0.854398,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 0.979167,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.738889,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.895833,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.794444,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {}
+        },
+        {
+          "bonus": 0.0004,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 100,
+          "mrr": 0.913194,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.840278,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.854167,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.944444,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {
+            "semantic": 2.0
+          }
+        },
+        {
+          "bonus": 0.0004,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 100,
+          "mrr": 0.854398,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 0.979167,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.738889,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.895833,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.794444,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {
+            "documental": 0.5,
+            "episodic": 0.5
+          }
+        },
+        {
+          "bonus": 0.003,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 20,
+          "mrr": 0.951852,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.958333,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.836111,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.958333,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {}
+        },
+        {
+          "bonus": 0.003,
+          "ca18_ok": true,
+          "ca35_ok": true,
+          "k": 20,
+          "mrr": 0.971528,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.829167,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {
+            "semantic": 2.0
+          }
+        },
+        {
+          "bonus": 0.003,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 20,
+          "mrr": 0.951852,
+          "recall@5": 1.0,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 66.67,
+            "long": 50.0,
+            "typo_id": 41.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 1.0,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.958333,
+              "recall@5": 1.0
+            },
+            "long": {
+              "mrr": 0.836111,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.958333,
+              "recall@5": 1.0
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {
+            "documental": 0.5,
+            "episodic": 0.5
+          }
+        },
+        {
+          "bonus": 0.003,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 60,
+          "mrr": 0.820133,
+          "recall@5": 0.847222,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 33.33,
+            "long": 50.0,
+            "typo_id": 16.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 0.979167,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.662616,
+              "recall@5": 0.666667
+            },
+            "long": {
+              "mrr": 0.895833,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.741402,
+              "recall@5": 0.75
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {}
+        },
+        {
+          "bonus": 0.003,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 60,
+          "mrr": 0.844444,
+          "recall@5": 0.958333,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 58.33,
+            "long": 50.0,
+            "typo_id": 33.33
+          },
+          "subsets": {
+            "en": {
+              "mrr": 0.979167,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.720833,
+              "recall@5": 0.916667
+            },
+            "long": {
+              "mrr": 0.895833,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.770833,
+              "recall@5": 0.916667
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {
+            "semantic": 2.0
+          }
+        },
+        {
+          "bonus": 0.003,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 60,
+          "mrr": 0.820133,
+          "recall@5": 0.847222,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 33.33,
+            "long": 50.0,
+            "typo_id": 16.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 0.979167,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.662616,
+              "recall@5": 0.666667
+            },
+            "long": {
+              "mrr": 0.895833,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.741402,
+              "recall@5": 0.75
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {
+            "documental": 0.5,
+            "episodic": 0.5
+          }
+        },
+        {
+          "bonus": 0.003,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 100,
+          "mrr": 0.820133,
+          "recall@5": 0.847222,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 33.33,
+            "long": 50.0,
+            "typo_id": 16.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 0.979167,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.662616,
+              "recall@5": 0.666667
+            },
+            "long": {
+              "mrr": 0.895833,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.741402,
+              "recall@5": 0.75
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {}
+        },
+        {
+          "bonus": 0.003,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 100,
+          "mrr": 0.820133,
+          "recall@5": 0.847222,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 33.33,
+            "long": 50.0,
+            "typo_id": 16.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 0.979167,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.662616,
+              "recall@5": 0.666667
+            },
+            "long": {
+              "mrr": 0.895833,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.741402,
+              "recall@5": 0.75
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {
+            "semantic": 2.0
+          }
+        },
+        {
+          "bonus": 0.003,
+          "ca18_ok": false,
+          "ca35_ok": true,
+          "k": 100,
+          "mrr": 0.820133,
+          "recall@5": 0.847222,
+          "subset_recall5_change_points": {
+            "en": 37.5,
+            "es": 33.33,
+            "long": 50.0,
+            "typo_id": 16.67
+          },
+          "subsets": {
+            "en": {
+              "mrr": 0.979167,
+              "recall@5": 1.0
+            },
+            "es": {
+              "mrr": 0.662616,
+              "recall@5": 0.666667
+            },
+            "long": {
+              "mrr": 0.895833,
+              "recall@5": 1.0
+            },
+            "typo_id": {
+              "mrr": 0.741402,
+              "recall@5": 0.75
+            }
+          },
+          "thresholds_ok": true,
+          "weights": {
+            "documental": 0.5,
+            "episodic": 0.5
+          }
+        }
+      ],
+      "spec": {
+        "bonus": [
+          0.0002,
+          0.0003,
+          0.0004,
+          0.003
+        ],
+        "k": [
+          20,
+          60,
+          100
+        ],
+        "weights": [
+          {},
+          {
+            "semantic": 2.0
+          },
+          {
+            "documental": 0.5,
+            "episodic": 0.5
+          }
+        ]
+      }
+    }
+  ],
+  "how_to_reproduce": "docker run --rm --network=none -e MEMORY_FUSION_GRID=<spec> kairos-test:IMG python -m memory_platform.tests.run_postgres (offline, deterministic fake embeddings, isolated PostgreSQL); the spec of each grid is below; the gate itself is MEMORY_RETRIEVAL_EVAL=1 with the same command.",
+  "initiative": "retrieval-quality",
+  "reason": [
+    "k=60 and equal layer weights are kept: no point of the grid improves the criteria with a different k or weight and the measure does not justify changing them (a larger k makes the same bonus overturn more ranks; k=100 already breaks CA-18 at bonus 0.0002).",
+    "The bonus is measured in score units: one rank step at the top is 1/60-1/61 = 0.00027. Up to 0.0002 the bonus only settles ties and near-ties (deep ranks): recall@5 1.0, MRR 0.9715 (CA-18: fused MRR >= the best single layer, overall and per subset), CA-35 met in every subset. Above 0.0002 (0.0003..0.0005) CA-18 fails (MRR 0.9519).",
+    "Between 0.0015 and 0.01 the bonus turns validated into a strong preference (recall@5 0.85, MRR 0.82): it still meets the thresholds and CA-35 (bonus 0.003..0.01, identical plateau) but fails CA-18; from 0.02 up it reproduces the old absolute order and fails the gate (recall@5 0.54).",
+    "0.0001 is the middle of the interval that meets everything (0 < bonus <= 0.0002; 0.0001 and 0.0002 measure the same on this dataset) instead of its edge, and it is above 0 so a validated hit still wins an exact tie. The dataset has 24 + 24 + 12 + 12 questions of a single synthetic corpus: do not read finer values than the grid as meaningful.",
+    "The value is configurable (MEMORY_FUSION_VALIDATED_BONUS, validated at startup in Settings) so an operator who wants validated to weigh more can raise it; the plateau 0.003..0.01 is the documented alternative that still passes the gate thresholds and CA-35 (not CA-18)."
+  ],
+  "single_layers_at_default": {
+    "documental": {
+      "overall": {
+        "mrr": 0.45,
+        "recall@5": 0.45
+      },
+      "subsets": {
+        "en": {
+          "mrr": 1.0,
+          "recall@5": 1.0
+        },
+        "es": {
+          "mrr": 0.25,
+          "recall@5": 0.25
+        },
+        "long": {
+          "mrr": 0.333333,
+          "recall@5": 0.333333
+        }
+      }
+    },
+    "episodic": {
+      "overall": {
+        "mrr": 0.75,
+        "recall@5": 0.75
+      },
+      "subsets": {
+        "en": {
+          "mrr": 1.0,
+          "recall@5": 1.0
+        },
+        "es": {
+          "mrr": 0.5,
+          "recall@5": 0.5
+        },
+        "typo_id": {
+          "mrr": 0.75,
+          "recall@5": 0.75
+        }
+      }
+    },
+    "semantic": {
+      "overall": {
+        "mrr": 0.964583,
+        "recall@5": 1.0
+      },
+      "subsets": {
+        "en": {
+          "mrr": 1.0,
+          "recall@5": 1.0
+        },
+        "es": {
+          "mrr": 1.0,
+          "recall@5": 1.0
+        },
+        "long": {
+          "mrr": 0.7875,
+          "recall@5": 1.0
+        },
+        "typo_id": {
+          "mrr": 1.0,
+          "recall@5": 1.0
+        }
+      }
+    }
+  },
+  "task": "T-27",
+  "user_decision": "Decision del usuario (2026-11-10): «validado» deja de ser un orden absoluto en la busqueda combinada (clave (validado, RRF)) y pasa a ser una bonificacion ajustable de la puntuacion; se ajusta con el conjunto de evaluacion hasta cumplir los umbrales y CA-35.",
+  "where": "memory_platform/tests/retrieval_eval/fusion-tuning.json (a hook reserves docs/roadmap/**/testing/ to qa, so the implementer cannot write it there; move it to testing/ if wanted)"
+}

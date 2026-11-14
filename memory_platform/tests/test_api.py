@@ -1,3 +1,5 @@
+import asyncio
+import time
 import unittest
 import hashlib
 from unittest.mock import Mock, AsyncMock
@@ -236,3 +238,57 @@ class PostgresAPITests(unittest.TestCase):
         csrf = restored.json()['csrf_token']
         self.assertEqual(self.client.post('/v1/auth/logout', headers={'Origin': origin, 'X-CSRF-Token': csrf}).status_code, 200)
         self.assertEqual(self.client.get('/v1/auth/me').status_code, 401)
+
+
+class DegradedSemanticHttpTests(unittest.TestCase):
+    """CA-16 and CA-17 over HTTP with the real retrieval: a failing embeddings provider degrades, it does not fail."""
+    def build(self, embed, query_timeout=0.3):
+        from memory_platform.retrieval import Retrieval
+        store, auth = Mock(), Mock()
+        auth.authenticate_bearer.return_value = {'id': 'actor', 'credential_type': 'bearer'}
+        auth.authenticate_session.side_effect = Unauthorized()
+        store.search_items.return_value = [{'ref': 'episodic:a:lex:1', 'project_id': 'a', 'item_id': 'lex', 'version': 1, 'layer': 'episodic',
+                                            'title': 'Lexical', 'excerpt': 'x', 'validation_status': 'unknown'}]
+        store.search_documents.return_value, store.search_native_facts.return_value, store.has_vectors.return_value = [], [], True
+        settings = Settings('unused', request_timeout=5, embedding_query_timeout=query_timeout)
+        self.embeddings = Mock(embed=embed)
+        return create_app(settings, store, auth, Retrieval(store, settings, self.embeddings))
+
+    def test_search_and_context_answer_with_lexical_hits_and_degraded_when_the_provider_fails(self):
+        from memory_platform.providers import ProviderError
+        app = self.build(AsyncMock(side_effect=ProviderError('http_503')))
+        with TestClient(app) as client:
+            for path in ('/v1/search', '/v1/context'):
+                response = client.post(path, json={'project_ids': ['a'], 'q': 'fencing', 'layers': ['episodic']}, headers={'Authorization': 'Bearer fixture'})
+                self.assertEqual(response.status_code, 200, response.text)
+                body = response.json()
+                self.assertEqual([item['item_id'] for item in body['items']], ['lex'])
+                self.assertEqual(body['backends']['semantic']['status'], 'unavailable')
+                self.assertEqual(body['degraded'], {'layer': 'semantic', 'reason': 'provider_error'})
+                self.assertTrue(body['partial'])
+
+    def test_semantic_budget_ms_is_optional_bounded_and_cuts_the_semantic_layer_short(self):
+        async def stalled(*args, **kwargs):
+            await asyncio.sleep(30)
+        app = self.build(AsyncMock(side_effect=stalled), query_timeout=5.0)
+        headers = {'Authorization': 'Bearer fixture'}
+        with TestClient(app) as client:
+            for path in ('/v1/search', '/v1/context'):
+                for bad in (0, -1, 600001, 'soon', True, '1100'):
+                    response = client.post(path, json={'project_ids': ['a'], 'q': 'fencing', 'layers': ['episodic'], 'semantic_budget_ms': bad}, headers=headers)
+                    self.assertEqual(response.status_code, 422, (path, bad, response.text))
+                started = time.monotonic()
+                response = client.post(path, json={'project_ids': ['a'], 'q': 'fencing', 'layers': ['episodic'], 'semantic_budget_ms': 120}, headers=headers)
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertLessEqual(time.monotonic() - started, 0.12 + 0.5)
+                self.assertEqual(response.json()['degraded'], {'layer': 'semantic', 'reason': 'timeout'})
+                self.assertEqual([item['item_id'] for item in response.json()['items']], ['lex'])
+
+    def test_semantic_false_makes_no_provider_call_and_reports_no_degradation(self):
+        app = self.build(AsyncMock())
+        with TestClient(app) as client:
+            response = client.post('/v1/search', json={'project_ids': ['a'], 'q': 'fencing', 'layers': ['episodic'], 'semantic': False}, headers={'Authorization': 'Bearer fixture'})
+        body = response.json()
+        self.assertEqual(body['backends']['semantic']['status'], 'off')
+        self.assertNotIn('degraded', body)
+        self.embeddings.embed.assert_not_awaited()

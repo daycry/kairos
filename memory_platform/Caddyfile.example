@@ -2,5 +2,8 @@
 # Before exposing it, configure MEMORY_COOKIE_SECURE=1 and the exact HTTPS
 # MEMORY_ALLOWED_ORIGINS, then recreate the API. Keep 5173 bound to loopback.
 memory.example.com {
+    # /metrics is internal (memory-data network, MEMORY_METRICS=internal): never serve it on the public name.
+    @metrics path /metrics /metrics/* /memory-api/metrics /memory-api/metrics/*
+    respond @metrics 404
     reverse_proxy 127.0.0.1:5173
 }

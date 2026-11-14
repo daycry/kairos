@@ -1,6 +1,306 @@
 {
   "name": "Kairos",
   "path": "/mcp/",
+  "result_schemas": {
+    "search": {
+      "$defs": {
+        "Degraded": {
+          "additionalProperties": false,
+          "description": "Present when only the semantic layer fell short of what was asked: the lexical answer is complete and valid, but it is not the hybrid one.",
+          "properties": {
+            "layer": {
+              "const": "semantic",
+              "title": "Layer",
+              "type": "string"
+            },
+            "reason": {
+              "description": "timeout: the embeddings query deadline (or the request semantic_budget_ms) ran out; provider_error: the embeddings provider failed; store_error: the database failed while searching vectors (both with status unavailable, partial true); no_vectors: nothing is embedded for these projects; embeddings_disabled: the server runs without embeddings (status off)",
+              "enum": [
+                "timeout",
+                "provider_error",
+                "store_error",
+                "no_vectors",
+                "embeddings_disabled"
+              ],
+              "title": "Reason",
+              "type": "string"
+            }
+          },
+          "required": [
+            "layer",
+            "reason"
+          ],
+          "title": "Degraded",
+          "type": "object"
+        },
+        "Hit": {
+          "additionalProperties": false,
+          "properties": {
+            "category": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Category"
+            },
+            "excerpt": {
+              "title": "Excerpt",
+              "type": "string"
+            },
+            "index_status": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pending",
+                    "ready"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Index Status"
+            },
+            "item_id": {
+              "title": "Item Id",
+              "type": "string"
+            },
+            "layer": {
+              "enum": [
+                "episodic",
+                "documental",
+                "temporal"
+              ],
+              "title": "Layer",
+              "type": "string"
+            },
+            "lexical_match": {
+              "anyOf": [
+                {
+                  "const": "trigram",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Lexical Match"
+            },
+            "matched_chunk": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/MatchedChunk"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Fragment that answered this semantic hit, present only when it is not the whole text; offsets are Unicode code points of title + newline + content"
+            },
+            "project_id": {
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+              "title": "Project Id",
+              "type": "string"
+            },
+            "ref": {
+              "title": "Ref",
+              "type": "string"
+            },
+            "source": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Source"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "superseded": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Superseded"
+            },
+            "tags": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 64,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Tags"
+            },
+            "title": {
+              "title": "Title",
+              "type": "string"
+            },
+            "validation_status": {
+              "enum": [
+                "observed",
+                "unverified",
+                "validated",
+                "unknown"
+              ],
+              "title": "Validation Status",
+              "type": "string"
+            },
+            "version": {
+              "minimum": 1,
+              "title": "Version",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "ref",
+            "layer",
+            "project_id",
+            "item_id",
+            "title",
+            "excerpt",
+            "validation_status",
+            "version"
+          ],
+          "title": "Hit",
+          "type": "object"
+        },
+        "MatchedChunk": {
+          "additionalProperties": false,
+          "description": "The fragment that answered a semantic hit. Offsets are Unicode code points (not bytes or UTF-16 units) into title + newline + content.",
+          "properties": {
+            "char_end": {
+              "description": "Code point after the last one of the fragment (end-exclusive)",
+              "minimum": 1,
+              "title": "Char End",
+              "type": "integer"
+            },
+            "char_start": {
+              "description": "First code point of the fragment (Unicode code points of title + newline + content)",
+              "minimum": 0,
+              "title": "Char Start",
+              "type": "integer"
+            },
+            "ordinal": {
+              "description": "Position of the fragment among those of the resource, from 0",
+              "minimum": 0,
+              "title": "Ordinal",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "ordinal",
+            "char_start",
+            "char_end"
+          ],
+          "title": "MatchedChunk",
+          "type": "object"
+        },
+        "Source": {
+          "additionalProperties": false,
+          "properties": {
+            "label": {
+              "anyOf": [
+                {
+                  "maxLength": 300,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Label"
+            },
+            "sha256": {
+              "anyOf": [
+                {
+                  "pattern": "^[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Sha256"
+            },
+            "uri": {
+              "maxLength": 2000,
+              "title": "Uri",
+              "type": "string"
+            }
+          },
+          "required": [
+            "uri"
+          ],
+          "title": "Source",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "backends": {
+          "additionalProperties": true,
+          "title": "Backends",
+          "type": "object"
+        },
+        "degraded": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Degraded"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional: present only when the semantic layer alone fell short; `partial` keeps its meaning"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/Hit"
+          },
+          "maxItems": 100,
+          "title": "Items",
+          "type": "array"
+        },
+        "partial": {
+          "title": "Partial",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "items",
+        "backends",
+        "partial"
+      ],
+      "title": "SearchResult",
+      "type": "object"
+    }
+  },
   "tools": [
     {
       "annotations": {
@@ -796,6 +1096,18 @@
             "default": true,
             "title": "Semantic",
             "type": "boolean"
+          },
+          "semantic_budget_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Semantic Budget Ms"
           }
         },
         "required": [
@@ -906,6 +1218,18 @@
             "default": true,
             "title": "Semantic",
             "type": "boolean"
+          },
+          "semantic_budget_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Semantic Budget Ms"
           }
         },
         "required": [

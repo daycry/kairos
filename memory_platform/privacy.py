@@ -173,6 +173,14 @@ def sanitize_payload(payload):
     return result,changed
 
 
+def redact_log(text):
+    """One string for a log line, with the capture rules applied. Never raises: text the rules cannot parse is hidden whole."""
+    try:
+        return _sanitize_text(str(text)[:2000])[0]
+    except (MemoryError,RecursionError):
+        return REDACTED
+
+
 def has_sensitive(value):
     pending=[(value,0)]
     visited=0

@@ -1,0 +1,41 @@
+{
+  "candidate_mount": "read-only",
+  "database": "PostgreSQL",
+  "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)",
+  "date": "2026-11-09",
+  "environment": "isolated-container-frozen-gate",
+  "errors": 0,
+  "failures": 0,
+  "frozen_source_gate": {
+    "file_count": 140,
+    "full_backend_suite": true,
+    "passed": true,
+    "source_sha256": "7480cdedbcb5c2835143934798f03ec247f01118e11cf3396645dd9ad30df4d9"
+  },
+  "gate": "docs/roadmap/2026-11-06-functional-parity/testing/frozen-source-gate.py (unmodified)",
+  "image": "kairos-test:rq",
+  "network": "none",
+  "note": "Top level: the pre-refactor code (60be598) run with the same suite as the after receipt (194 = 191 + 3 test_store_surface), so before and after compare the same test count. pre_refactor_suite_at_60be598 keeps the run of the untouched 60be598 tree (191 tests). 191 tests = suite at 60be598; test_store_surface (3 tests, added in T-04) did not exist yet. After-refactor 194 = 191 + 3 surface tests, so the difference is exactly that test. The 19-file gap in file_count is 7 store_*.py + store_surface.json + test_store_surface.py (9) + 10 untracked packages/kairos-cli/.npm-cache files present only in the working tree, not in git; memory_platform differs only by those 9 files and the rewritten store.py.",
+  "passed": true,
+  "product_database_accessed": false,
+  "skipped": 0,
+  "source_tree": "git archive 60be598 + memory_platform/tests/test_store_surface.py + memory_platform/tests/store_surface.json (pre-refactor code, same suite as after the refactor)",
+  "stage": "before-refactor",
+  "store_py_lines": 1030,
+  "tests": 194,
+  "pre_refactor_suite_at_60be598": {
+    "description": "Suite exactly as it was at 60be598 (before T-04 added test_store_surface).",
+    "source_tree": "git archive 60be598 (tree before the refactor; store.py 1030 lines, 138 files)",
+    "frozen_source_gate": {
+      "file_count": 138,
+      "full_backend_suite": true,
+      "passed": true,
+      "source_sha256": "af4436689f04d0d1a6be14272ba916447f14e8cef64739c4d8f13dbbb7d768fb"
+    },
+    "tests": 191,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": true
+  }
+}

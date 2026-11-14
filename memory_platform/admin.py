@@ -10,8 +10,10 @@ import subprocess
 import tempfile
 import hashlib
 
+from .chunking import chunk_text, embedding_text
 from .config import Settings
 from .store import Store
+from .store_vectors import CURRENT_RESOURCE
 
 
 
@@ -75,6 +77,166 @@ def content_manifest(store):
         return dict(manifest, sha256=hashlib.sha256(encoded.encode('utf-8')).hexdigest())
 
 
+# Current resources (the same notion of "current" as the semantic search) with no fragment for the model and no job in flight, that were
+# meant to be embedded: an `embed` job exists at this version (any state) or an item-level embedding does. Technical items (captures,
+# agent activity) never get one and stay out. Each source is read in key order starting after the last key already handled
+# (`{after}`), so a run walks every table once instead of re-scanning what it already queued.
+BACKFILL_SOURCES = {
+    'document': """SELECT 'document'::text AS resource_type, d.project_id, d.id AS item_id, d.version, d.canonical_hash
+        FROM memory.documents d WHERE NOT d.deleted AND (%(project)s::text IS NULL OR d.project_id=%(project)s){after}""",
+    'item': """SELECT 'item'::text AS resource_type, i.project_id, i.id AS item_id, i.version, i.canonical_hash
+        FROM memory.memory_items i LEFT JOIN memory.memory_items p ON p.project_id=i.project_id AND p.id=i.parent_item_id
+        WHERE NOT i.deleted AND i.superseded_by IS NULL AND (%(project)s::text IS NULL OR i.project_id=%(project)s)
+        AND (i.parent_item_id IS NULL OR (p.version=i.parent_version AND p.canonical_hash=i.parent_hash AND NOT p.deleted AND p.superseded_by IS NULL)){after}""",
+}
+BACKFILL_AFTER = {'document': ' AND (%(after_project)s::text IS NULL OR (d.project_id,d.id)>(%(after_project)s,%(after_item)s))',
+                  'item': ' AND (%(after_project)s::text IS NULL OR (i.project_id,i.id)>(%(after_project)s,%(after_item)s))'}
+BACKFILL_PENDING = """
+WHERE NOT EXISTS (SELECT 1 FROM memory.embedding_chunks k WHERE k.project_id=r.project_id AND k.item_id=r.item_id
+        AND k.resource_type=r.resource_type AND k.version=r.version AND k.model=%(model)s)
+  AND NOT EXISTS (SELECT 1 FROM memory.jobs j WHERE j.project_id=r.project_id AND j.item_id=r.item_id AND j.resource_type=r.resource_type
+        AND j.version=r.version AND j.destination='embed' AND j.operation='upsert' AND j.state IN ('pending','running','unknown'))
+  AND (%(retry_failed)s OR NOT EXISTS (SELECT 1 FROM memory.jobs j WHERE j.project_id=r.project_id AND j.item_id=r.item_id AND j.resource_type=r.resource_type
+        AND j.version=r.version AND j.destination='embed' AND j.operation='upsert' AND j.state='failed'))
+  AND (EXISTS (SELECT 1 FROM memory.jobs j WHERE j.project_id=r.project_id AND j.item_id=r.item_id AND j.resource_type=r.resource_type
+        AND j.version=r.version AND j.destination='embed' AND j.operation='upsert')
+       OR EXISTS (SELECT 1 FROM memory.embeddings e WHERE e.project_id=r.project_id AND e.item_id=r.item_id AND e.resource_type=r.resource_type
+        AND e.version=r.version AND e.canonical_hash=r.canonical_hash))
+"""
+
+
+def backfill_query(kind, *, after=True):
+    """Candidates of one source, in key order: parameters project, model, after_project, after_item, limit."""
+    source = BACKFILL_SOURCES[kind].format(after=BACKFILL_AFTER[kind] if after else '')
+    return 'SELECT r.resource_type,r.project_id,r.item_id,r.version,r.canonical_hash FROM (' + source + ') r' + BACKFILL_PENDING +         ' ORDER BY r.project_id,r.item_id' + (' LIMIT %(limit)s' if after else '')
+
+
+# Current resources without fragments whose embed job of this version FAILED (the worker already used its attempts): a run does not queue them
+# again (`--retry-failed` does) and reports how many wait for a decision.
+BACKFILL_FAILED = """
+WHERE NOT EXISTS (SELECT 1 FROM memory.embedding_chunks k WHERE k.project_id=r.project_id AND k.item_id=r.item_id
+        AND k.resource_type=r.resource_type AND k.version=r.version AND k.model=%(model)s)
+  AND EXISTS (SELECT 1 FROM memory.jobs j WHERE j.project_id=r.project_id AND j.item_id=r.item_id AND j.resource_type=r.resource_type
+        AND j.version=r.version AND j.destination='embed' AND j.operation='upsert' AND j.state='failed')
+"""
+
+
+def backfill_failed(connection, params):
+    union = ' UNION ALL '.join(BACKFILL_SOURCES[kind].format(after='') for kind in BACKFILL_SOURCES)
+    return connection.execute('SELECT count(*) AS n FROM (' + union + ') r' + BACKFILL_FAILED, params).fetchone()['n']
+
+
+def backfill_remaining(connection, params):
+    union = ' UNION ALL '.join(BACKFILL_SOURCES[kind].format(after='') for kind in BACKFILL_SOURCES)
+    return connection.execute('SELECT count(*) AS n FROM (' + union + ') r' + BACKFILL_PENDING, params).fetchone()['n']
+
+
+# Queue the job, or put a finished one (succeeded/failed) back in the queue with a fresh attempt budget; a job in flight is never touched.
+BACKFILL_ENQUEUE = """
+INSERT INTO memory.jobs(id,project_id,item_id,version,canonical_hash,resource_type,destination,operation,priority)
+VALUES(%s,%s,%s,%s,%s,%s,'embed','upsert',1)
+ON CONFLICT(project_id,item_id,version,resource_type,destination,operation) DO UPDATE
+SET state='pending',attempts=0,available_at=clock_timestamp(),lease_until=NULL,worker_id=NULL,error_code=NULL,canonical_hash=EXCLUDED.canonical_hash,priority=1
+WHERE memory.jobs.state IN ('succeeded','failed') RETURNING id
+"""  # priority 1: the worker serves every live write (priority 0) first
+
+# A resource whose whole text is ONE fragment and that already has a current item vector of the model (the previous worker embedded exactly that
+# text) needs no provider call: its fragment is that vector.
+BACKFILL_DERIVE = """
+INSERT INTO memory.embedding_chunks(project_id,item_id,resource_type,version,canonical_hash,model,ordinal,char_start,char_end,embedding)
+SELECT e.project_id,e.item_id,e.resource_type,e.version,e.canonical_hash,e.model,0,0,%(length)s,e.embedding
+FROM memory.embeddings e WHERE e.project_id=%(project_id)s AND e.item_id=%(item_id)s AND e.resource_type=%(resource_type)s AND e.version=%(version)s
+  AND e.canonical_hash=%(canonical_hash)s AND e.model=%(model)s AND e.embedding IS NOT NULL AND vector_norm(e.embedding)>0
+ON CONFLICT DO NOTHING RETURNING 1
+"""
+
+
+# Item vectors of resources that are no longer current (older versions, superseded, deleted: written before fragments existed, so still
+# flagged unchunked) are derived data nobody can search. Flagging them keeps the partial index `memory_embeddings_unchunked` limited to live work.
+# Never a DELETE. Parameters: project x2, after (project, item, type, version, model) x1 + x5 (or NULL), the eight of CURRENT_RESOURCE, limit.
+STALE_UNCHUNKED = '''WITH stale AS (SELECT e.project_id,e.item_id,e.resource_type,e.version,e.model FROM memory.embeddings e
+    WHERE NOT e.chunked AND (%s::text IS NULL OR e.project_id=%s)
+    AND (%s::text IS NULL OR (e.project_id,e.item_id,e.resource_type,e.version,e.model)>(%s,%s,%s,%s,%s))
+    AND NOT ''' + CURRENT_RESOURCE + ''' ORDER BY e.project_id,e.item_id,e.resource_type,e.version,e.model LIMIT %s),
+marked AS (UPDATE memory.embeddings e SET chunked=true FROM stale s WHERE e.project_id=s.project_id AND e.item_id=s.item_id AND e.resource_type=s.resource_type
+    AND e.version=s.version AND e.model=s.model RETURNING 1)
+SELECT project_id,item_id,resource_type,version,model FROM stale ORDER BY project_id,item_id,resource_type,version,model'''
+
+
+def mark_stale_unchunked(store, project, batch):
+    """Flag every non-current item vector as chunked, in batches of `batch` rows (one short transaction each); idempotent. Returns how many."""
+    total, after = 0, (None,) * 5
+    while True:
+        with store.transaction() as connection:
+            rows = connection.execute(STALE_UNCHUNKED, [project, project, after[0], *after, *(None,) * 8, batch]).fetchall()
+        total += len(rows)
+        if len(rows) < batch:
+            return total
+        after = tuple(rows[-1][key] for key in ('project_id', 'item_id', 'resource_type', 'version', 'model'))  # the database's own order, not Python's
+
+
+def derive_single_fragment(connection, row, model):
+    """True when the resource fitted one fragment and its fragment was derived from the item vector (no job needed)."""
+    table, column = ('memory.documents', 'body') if row['resource_type'] == 'document' else ('memory.memory_items', 'payload')
+    source = connection.execute('SELECT ' + column + ' AS source FROM ' + table + ' WHERE project_id=%s AND id=%s', (row['project_id'], row['item_id'])).fetchone()['source']
+    text = embedding_text(source.get('title', ''), source.get('content', ''))
+    chunks = chunk_text(text)
+    if len(chunks) != 1 or chunks.truncated or (chunks[0].char_start, chunks[0].char_end) != (0, len(text)):
+        return False
+    if not connection.execute(BACKFILL_DERIVE, dict(row, model=model, length=len(text))).fetchone():
+        return False
+    connection.execute('UPDATE memory.embeddings SET chunked=true WHERE project_id=%s AND item_id=%s AND resource_type=%s AND version=%s AND model=%s',
+                       (row['project_id'], row['item_id'], row['resource_type'], row['version'], model))
+    return True
+
+
+def backfill_chunks(store, model, *, batch=200, max_jobs=None, project=None, retry_failed=False):
+    """Queue `embed` jobs for current resources without fragments, in short transactions of `batch` jobs.
+
+    Idempotent (a resource with a job in flight, or with fragments, is not queued again), resumable (a run that stops at
+    `max_jobs` or by a failure is continued by running it again) and bounded (every batch is its own transaction: no table is
+    locked for the length of the run, only the rows of the jobs being queued; each source is walked once in key order). It also fills `embeddings.embedding` where the
+    pgvector column is still empty. Jobs are queued at priority 1, behind every live write. A resource whose text is one fragment and
+    already has its item vector is completed without a job (`derived`). Jobs that already FAILED are not queued again unless
+    `retry_failed`; they are counted in `failed`. Returns counts only: {enqueued, derived, failed, pending, remaining, batches, embedding_filled, stale_marked}.
+    """
+    import uuid
+    if not isinstance(batch, int) or not 1 <= batch <= 5000 or (max_jobs is not None and (not isinstance(max_jobs, int) or max_jobs < 1)):
+        raise ValueError('batch must be 1..5000 and max_jobs a positive integer')
+    params = {'project': project, 'model': model, 'retry_failed': bool(retry_failed)}
+    enqueued = batches = filled = derived = 0
+    for kind in BACKFILL_SOURCES:
+        last = (None, None)
+        while max_jobs is None or enqueued < max_jobs:
+            with store.transaction() as connection:
+                rows = connection.execute(backfill_query(kind), dict(params, after_project=last[0], after_item=last[1],
+                                                                       limit=batch if max_jobs is None else min(batch, max_jobs - enqueued))).fetchall()
+                queued = 0
+                for row in rows:
+                    if derive_single_fragment(connection, row, model):
+                        derived += 1
+                    elif connection.execute(BACKFILL_ENQUEUE, (str(uuid.uuid4()), row['project_id'], row['item_id'], row['version'],
+                                                               row['canonical_hash'], row['resource_type'])).fetchone():
+                        queued += 1
+            if not rows:
+                break  # this source is exhausted
+            enqueued += queued
+            batches += 1
+            last = (rows[-1]['project_id'], rows[-1]['item_id'])
+    while True:
+        with store.transaction() as connection:
+            done = len(connection.execute('UPDATE memory.embeddings SET embedding=vector::vector WHERE ctid=ANY(ARRAY(SELECT ctid FROM memory.embeddings WHERE embedding IS NULL LIMIT %s)) RETURNING 1', (batch,)).fetchall())
+        filled += done
+        if not done:
+            break
+    stale = mark_stale_unchunked(store, project, batch)
+    with store.transaction() as connection:
+        remaining = backfill_remaining(connection, params)
+        failed = backfill_failed(connection, params)
+        pending = connection.execute("SELECT count(*) AS n FROM memory.jobs WHERE destination='embed' AND priority=1 AND state IN ('pending','running','unknown') AND (%(project)s::text IS NULL OR project_id=%(project)s)", params).fetchone()['n']
+    return {'enqueued': enqueued, 'derived': derived, 'failed': failed, 'pending': pending, 'remaining': remaining, 'batches': batches, 'embedding_filled': filled, 'stale_marked': stale}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Manage only the isolated memory platform database')
     commands = parser.add_subparsers(dest='command', required=True)
@@ -83,6 +245,11 @@ def main(argv=None):
     bootstrap.add_argument('--username', default='admin')
     bootstrap.add_argument('--password-file', default=os.environ.get('MEMORY_BOOTSTRAP_PASSWORD_FILE'))
     bootstrap.add_argument('--with-projects', action='store_true', help='Create allowlisted project shells; capture stays off')
+    backfill = commands.add_parser('backfill-chunks', help='Queue embed jobs for current resources without fragments (idempotent, resumable)')
+    backfill.add_argument('--batch', type=int, default=200, help='Jobs queued per transaction (1..5000)')
+    backfill.add_argument('--max-jobs', type=int, default=None, help='Stop after queueing this many jobs; run again to continue')
+    backfill.add_argument('--project', default=None, help='Only this project id')
+    backfill.add_argument('--retry-failed', action='store_true', help='Also queue again the jobs that already failed (otherwise they are only counted)')
     commands.add_parser('inspect')
     commands.add_parser('content-manifest')
     backup = commands.add_parser('backup')
@@ -96,6 +263,11 @@ def main(argv=None):
     if args.command == 'migrate':
         store.migrate()
         print(json.dumps({'status': 'migrated'}))
+    elif args.command == 'backfill-chunks':
+        if not getattr(settings, 'embed_enabled', True):
+            print(json.dumps({'status': 'skipped', 'reason': 'embeddings_disabled', 'enqueued': 0}))
+        else:
+            print(json.dumps(dict(backfill_chunks(store, settings.embedding_model, batch=args.batch, max_jobs=args.max_jobs, project=args.project, retry_failed=args.retry_failed), status='backfilled'), sort_keys=True))
     elif args.command == 'bootstrap':
         if not args.password_file:
             parser.error('--password-file or MEMORY_BOOTSTRAP_PASSWORD_FILE is required')

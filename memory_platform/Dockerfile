@@ -21,7 +21,14 @@ FROM api AS worker
 ENTRYPOINT ["python", "-m", "memory_platform.worker"]
 CMD []
 
-FROM postgres:17-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5 AS test
+# PostgreSQL with pgvector, shared by memory-postgres (docker-compose.yml) and the test targets.
+# Same major version (17) and same base digest as before, so an existing data volume needs no pg_upgrade.
+# The PGDG repository is already configured in the official image; the package version is pinned.
+FROM postgres:17-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5 AS postgres-pgvector
+ARG PGVECTOR_VERSION=0.8.7-1.pgdg12+1
+RUN apt-get update && apt-get install -y --no-install-recommends postgresql-17-pgvector=${PGVECTOR_VERSION}     && rm -rf /var/lib/apt/lists/*
+
+FROM postgres-pgvector AS test
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv \
     && rm -rf /var/lib/apt/lists/*
@@ -34,6 +41,7 @@ COPY --chown=postgres:postgres memory_platform /app/memory_platform
 COPY --chown=postgres:postgres scripts/memory-client.py /app/scripts/memory-client.py
 COPY --chown=postgres:postgres scripts/memory-admin.py /app/scripts/memory-admin.py
 COPY --chown=postgres:postgres scripts/deploy-memory.py /app/scripts/deploy-memory.py
+COPY --chown=postgres:postgres scripts/export-contracts.py /app/scripts/export-contracts.py
 COPY --chown=postgres:postgres docker-compose.yml /app/docker-compose.yml
 USER postgres
 ENV PYTHONPATH=/app
@@ -42,6 +50,14 @@ RUN python -m memory_platform.tests.run_postgres
 FROM test AS live-probe
 # Explicit opt-in target: synthetic payloads only, existing provider/model.
 ENV MEMORY_LIVE_PROBE=1
+RUN python -m memory_platform.tests.run_postgres
+
+FROM test AS retrieval-eval
+# Quality gate (not part of the 191-test suite = 177 + 14 of test_metrics): offline embeddings, isolated PostgreSQL.
+# Run: docker build --target retrieval-eval ... (needs network for the apt-get layers; `docker build --network=none` fails there).
+# Offline run of the same gate: docker build --target test -t IMG ... && docker run --rm --network=none -e MEMORY_RETRIEVAL_EVAL=1 IMG python -m memory_platform.tests.run_postgres
+# The report lists the local network interfaces it observed (no outbound connection is made).
+ENV MEMORY_RETRIEVAL_EVAL=1
 RUN python -m memory_platform.tests.run_postgres
 
 FROM node:22-bookworm-slim@sha256:3ed98443660ff48413b5af19ecefce3b9d50845a901a43420d47cc63a9fddbe9 AS lifecycle-node

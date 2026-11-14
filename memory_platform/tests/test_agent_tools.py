@@ -202,6 +202,30 @@ class AgentPostgresTests(unittest.TestCase):
         self.change(source, delete=True)
         self.assertEqual(self.service.observations(self.actor, self.project, ids=[source['item_id']])['items'], [])
 
+    def test_corpus_selection_matches_a_query_without_accent(self):
+        """CA-23 (agent_store `_select`): `configuracion` did not match `configuración` before the language vectors."""
+        source = self.add('La configuración de las canciones vive en el servidor')
+        self.add('Nada que ver con este tema')
+        built = self.service.build_corpus(self.actor, self.project, 'accents', query='configuracion cancion')
+        self.assertEqual(built['count'], 1)
+        self.assertEqual(self.service.build_corpus(self.actor, self.project, 'nothing', query='zzzunrelated')['count'], 0)
+        self.assertTrue(source)
+
+    def test_corpus_query_matches_a_question_without_accent(self):
+        """CA-23 (agent_store `query_corpus`)."""
+        source = self.add('La configuración de las canciones vive en el servidor')
+        self.service.build_corpus(self.actor, self.project, 'ask')
+        self.service.prime_corpus(self.actor, self.project, 'ask')
+        found = self.service.query_corpus(self.actor, self.project, 'ask', 'configuracion cancion')
+        self.assertEqual([item['id'] for item in found['items']], [source['item_id']])
+
+    def test_observation_search_matches_a_query_without_accent(self):
+        """CA-23 (agent_store `observations`)."""
+        source = self.add('La configuración de las canciones vive en el servidor')
+        self.add('Otra nota distinta')
+        found = self.service.observations(self.actor, self.project, query='configuracion cancion')
+        self.assertEqual([item['id'] for item in found['items']], [source['item_id']])
+
     def test_corpus_retry_and_saved_filter_bounds(self):
         self.add()
         built = self.service.build_corpus(self.actor, self.project, 'subset', query='Database', limit=1)

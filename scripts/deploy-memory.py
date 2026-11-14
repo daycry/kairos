@@ -18,14 +18,82 @@ import sys
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
-VOLUMES = ('knowledge-graphs_memory-postgres-data', 'knowledge-graphs_memory-backups')
+DEFAULT_PROJECT = 'knowledge-graphs'
+DEFAULT_API_PORT, DEFAULT_WEB_PORT = 8790, 5173
+MIGRATE_TIMEOUT_SECONDS = 3600  # the first pgvector migration rewrites and indexes embeddings; the default 120 s would abort it
+ISOLATED_PRIVATE_FILES = ('memory-platform.env', 'compose.override.yml', 'deployment-status.json', 'deployment-status.tmp')
+VOLUMES = (DEFAULT_PROJECT + '_memory-postgres-data', DEFAULT_PROJECT + '_memory-backups')
 SERVICES = ('memory-api', 'memory-worker', 'memory-web')
+BACKFILL_TIMEOUT_SECONDS = 1800  # queues jobs in short transactions; the worker does the embedding after `start`
+BACKFILL_REPORT_KEYS = ('status', 'reason', 'enqueued', 'derived', 'failed', 'pending', 'remaining', 'batches', 'embedding_filled', 'stale_marked')  # counts only, never anything else
 PHASES = ('engine', 'configuration', 'build', 'database', 'inspect', 'backup',
-          'migrate', 'bootstrap', 'start', 'verify')
+          'migrate', 'bootstrap', 'backfill', 'start', 'verify')
 
 
 class DeploymentError(Exception):
     pass
+
+
+def validate_isolation(project, api_port, web_port):
+    """The installed project keeps its fixed names and ports; any other project is an isolated rehearsal.
+
+    An isolated project gets its own compose project name, volumes, networks, image tags, ports, private
+    directory and secrets, and may not be named like (or inside) the installed project.
+    """
+    if project == DEFAULT_PROJECT:
+        if (api_port, web_port) != (DEFAULT_API_PORT, DEFAULT_WEB_PORT):
+            raise DeploymentError('--api-port and --web-port are only for an isolated --project-name')
+        return
+    if (not re.fullmatch(r'[a-z][a-z0-9]*(-[a-z0-9]+)*', project) or len(project) > 40
+            or project.startswith(DEFAULT_PROJECT) or DEFAULT_PROJECT.startswith(project)):
+        raise DeploymentError('Isolated --project-name must be lowercase letters, digits and hyphens, and distinct from ' + DEFAULT_PROJECT)
+    ports = (api_port, web_port)
+    if len(set(ports)) != 2 or any(not 1024 <= port <= 65535 or port in (DEFAULT_API_PORT, DEFAULT_WEB_PORT) for port in ports):
+        raise DeploymentError('An isolated rehearsal needs two distinct ports in 1024-65535, not ' + f'{DEFAULT_API_PORT} or {DEFAULT_WEB_PORT}')
+
+
+def isolated_image(project, name):
+    # Always under `rehearsal-`: it can never equal an installed tag (kairos-*, knowledge-graphs-*).
+    return f'rehearsal-{project}-{name}:latest'
+
+
+def check_isolation_names(project, compose_text):
+    """No generated image tag, volume or network may equal anything docker-compose.yml fixes for the installed project."""
+    fixed = set(re.findall(r'^\s+image:\s*(\S+)', compose_text, re.M)) | set(re.findall(r'name:\s*(knowledge-graphs_\S+?)[,}\s]', compose_text))
+    generated = {isolated_image(project, name) for name in ('postgres', 'api', 'worker', 'web', 'operator')}
+    generated |= {project + suffix for suffix in ('_inference', '_webui', '_memory-postgres-data', '_memory-backups')}
+    if fixed & generated:
+        raise DeploymentError('A generated rehearsal name collides with an installed one; choose another --project-name')
+
+
+def project_volumes(project):
+    return (project + '_memory-postgres-data', project + '_memory-backups')
+
+
+def isolation_override(project, api_port, web_port):
+    """Compose override that moves one deployment away from every installed name and port."""
+    image = lambda name: isolated_image(project, name)
+    return f"""# Generated for the isolated project {project}; it replaces every fixed name of docker-compose.yml.
+services:
+  memory-postgres: {{image: {image('postgres')}}}
+  memory-migrate: {{image: {image('api')}}}
+  memory-bootstrap: {{image: {image('api')}}}
+  memory-files: {{image: {image('api')}}}
+  memory-api:
+    image: {image('api')}
+    ports: !override ['127.0.0.1:{api_port}:8790']
+  memory-worker: {{image: {image('worker')}}}
+  memory-web:
+    image: {image('web')}
+    ports: !override ['127.0.0.1:{web_port}:8080']
+  memory-admin: {{image: {image('operator')}}}
+networks:
+  inference: {{name: {project}_inference}}
+  webui: {{name: {project}_webui}}
+volumes:
+  memory-postgres-data: {{name: {project}_memory-postgres-data}}
+  memory-backups: {{name: {project}_memory-backups}}
+"""
 
 
 def redact_output(value, known_values=()):
@@ -96,16 +164,31 @@ def check_network(desired, observed):
 class Deployment:
     def __init__(self, args, root=ROOT):
         self.args, self.root = args, root
-        self.private = safe_path(root / '.private')
+        self.project = getattr(args, 'project_name', None) or DEFAULT_PROJECT
+        self.api_port = getattr(args, 'api_port', None) or DEFAULT_API_PORT
+        self.web_port = getattr(args, 'web_port', None) or DEFAULT_WEB_PORT
+        validate_isolation(self.project, self.api_port, self.web_port)
+        self.isolated = self.project != DEFAULT_PROJECT
+        self.volumes = project_volumes(self.project)
+        self.private = safe_path(root / '.private' / ('rehearsal-' + self.project) if self.isolated else root / '.private')
+        if self.isolated:
+            # An existing directory must be one of ours: never adopt (or write into) somebody else's .private subdirectory.
+            if self.private.is_dir() and any(child.name not in ISOLATED_PRIVATE_FILES for child in self.private.iterdir()):
+                raise DeploymentError('.private/rehearsal-' + self.project + ' exists and holds files this rehearsal did not create; choose another --project-name')
+            # Nothing MEMORY_*/COMPOSE_*/KAIROS* of the caller's shell reaches Compose: the project's own env file decides.
+            clean = {k: v for k, v in os.environ.items() if not k.upper().startswith(('MEMORY_', 'COMPOSE_', 'KAIROS'))}
+            self.environment = dict(clean, MEMORY_ALLOWED_ORIGINS=f'http://127.0.0.1:{self.web_port},http://localhost:{self.web_port}')
+        else:
+            self.environment = None
         self.report = {'status': 'pending', 'phases': [], 'backup': None,
                        'data_removed': False, 'capture_policy_changed': False}
-        self.compose = ['docker', 'compose', '-p', 'knowledge-graphs', '--project-directory', str(root)]
+        self.compose = ['docker', 'compose', '-p', self.project, '--project-directory', str(root)]
         self.phase = 'engine'
         self.secret_values = []
 
     def run(self, command, timeout=120):
         try:
-            result = subprocess.run(command, cwd=self.root, capture_output=True,
+            result = subprocess.run(command, cwd=self.root, capture_output=True, env=self.environment,
                                     text=True, encoding='utf-8', errors='replace', timeout=timeout)
         except (OSError, subprocess.TimeoutExpired):
             raise DeploymentError('Command unavailable or timed out; verify its actual state before retrying') from None
@@ -124,8 +207,8 @@ class Deployment:
         self.report['phases'].append(name)
         print(f'Kairos: {name}', flush=True)
 
-    def operator(self, *args):
-        return decode_json(self.run(self.compose + ['run', '--rm', '--no-deps', '-T', 'memory-admin', *args]))
+    def operator(self, *args, timeout=120):
+        return decode_json(self.run(self.compose + ['run', '--rm', '--no-deps', '-T', 'memory-admin', *args], timeout=timeout))
 
     def save_report(self):
         self.private.mkdir(parents=True, exist_ok=True)
@@ -140,9 +223,10 @@ class Deployment:
         self.run(['docker', 'compose', 'version', '--short'])
         # No secret creation, image build or service change precedes this check.
         self.step('configuration')
-        config = read_env(self.root / '.env')
+        # An isolated rehearsal never reads the installed project's .env or private configuration.
+        config = {} if self.isolated else read_env(self.root / '.env')
         config.update(read_env(self.private / 'memory-platform.env'))
-        configured_dir = os.environ.get('MEMORY_SECRETS_DIR') or config.get('MEMORY_SECRETS_DIR')
+        configured_dir = (None if self.isolated else os.environ.get('MEMORY_SECRETS_DIR')) or config.get('MEMORY_SECRETS_DIR')
         if self.args.secret_dir and configured_dir and Path(self.args.secret_dir).resolve() != Path(configured_dir).resolve():
             raise DeploymentError('--secret-dir differs from existing configuration; nothing was replaced')
         secret_dir = self.args.secret_dir or configured_dir
@@ -158,21 +242,34 @@ class Deployment:
             if not path.is_file() or not path.read_text(encoding='utf-8').strip():
                 raise DeploymentError('Existing private configuration is incomplete; nothing was replaced')
             self.secret_values.append(path.read_text(encoding='utf-8').strip())
-        for path in (self.root / '.env', self.private / 'memory-platform.env'):
-            if path.is_file():
-                self.compose.extend(['--env-file', str(path)])
-        self.compose.extend(['-f', str(self.root / 'docker-compose.yml'),
-                             '--profile', 'memory', '--profile', 'memory-admin'])
+        if self.isolated:
+            # Always an explicit --env-file: without one Compose would load the installed project's root .env.
+            env_file = self.private / 'memory-platform.env'
+            if not env_file.is_file():
+                raise DeploymentError('The rehearsal needs its own ' + str(env_file) + ' (scripts/memory-admin.py prepare --env-output); the installed .env is never used')
+            self.compose.extend(['--env-file', str(env_file)])
+        else:
+            for path in (self.root / '.env', self.private / 'memory-platform.env'):
+                if path.is_file():
+                    self.compose.extend(['--env-file', str(path)])
+        self.compose.extend(['-f', str(self.root / 'docker-compose.yml')])
+        if self.isolated:
+            self.private.mkdir(parents=True, exist_ok=True)
+            check_isolation_names(self.project, (self.root / 'docker-compose.yml').read_text(encoding='utf-8'))
+            override = safe_path(self.private / 'compose.override.yml')
+            override.write_text(isolation_override(self.project, self.api_port, self.web_port), encoding='utf-8')
+            self.compose.extend(['-f', str(override)])
+        self.compose.extend(['--profile', 'memory', '--profile', 'memory-admin'])
         self.run(self.compose + ['config', '--quiet'])
         effective = decode_json(self.run(self.compose + ['config', '--format', 'json']))
         if Path(effective['secrets']['memory_postgres']['file']).resolve() != (self.secret_dir / 'postgres_password').resolve():
             raise DeploymentError('Compose resolves a different secret directory')
-        if {value.get('name') for value in effective['volumes'].values()} != set(VOLUMES):
+        if {value.get('name') for value in effective['volumes'].values()} != set(self.volumes):
             raise DeploymentError('Compose resolves different data volumes')
         if not self.args.fresh:
-            for volume in VOLUMES:
+            for volume in self.volumes:
                 self.run(['docker', 'volume', 'inspect', '--format', '{{.Name}}', volume])
-        existing_networks = set(self.run(['docker', 'network', 'ls', '--filter', 'name=knowledge-graphs_', '--format', '{{.Name}}']).splitlines())
+        existing_networks = set(self.run(['docker', 'network', 'ls', '--filter', 'name='+self.project+'_', '--format', '{{.Name}}']).splitlines())
         self.report['networks'] = []
         for desired in effective.get('networks', {}).values():
             if desired['name'] not in existing_networks:
@@ -183,7 +280,7 @@ class Deployment:
             self.report['networks'].append(check_network(desired, observed))
         previous = {}
         for service in SERVICES:
-            ids = self.run(['docker', 'ps', '-a', '--filter', 'label=com.docker.compose.project=knowledge-graphs',
+            ids = self.run(['docker', 'ps', '-a', '--filter', 'label=com.docker.compose.project='+self.project,
                             '--filter', 'label=com.docker.compose.service='+service, '--format', '{{.ID}}']).splitlines()
             if len(ids) > 1:
                 raise DeploymentError('Multiple containers own the same service; resolve ownership before deployment')
@@ -191,7 +288,7 @@ class Deployment:
                 previous[service] = self.run(['docker', 'inspect', '--format', '{{.Image}}', ids[0]])
         self.report['previous_images'] = previous
         self.step('build')
-        self.run(self.compose + ['build', *SERVICES, 'memory-admin'], timeout=1800)
+        self.run(self.compose + ['build', 'memory-postgres', *SERVICES, 'memory-admin'], timeout=1800)
         self.step('database')
         self.run(self.compose + ['up', '-d', '--no-deps', '--wait', '--wait-timeout', '90', 'memory-postgres'])
         self.run(self.compose + ['run', '--rm', '--no-deps', '-T', 'memory-files'])
@@ -206,13 +303,30 @@ class Deployment:
             stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
             self.report['backup'] = self.operator('backup', '--output', f'/backups/kairos-before-{stamp}.dump')
         self.step('migrate')
-        self.operator('migrate')
+        if getattr(self.args, 'stop_services_before_migrate', False):
+            # Opt-in: the migration holds ACCESS EXCLUSIVE locks until its COMMIT (docs/operations.md); the services of the
+            # previous release would only queue behind them. `start` brings the services back up; if the deployment stops
+            # before `start` they stay stopped.
+            self.report['services_stopped_before_migrate'] = True  # before the command: a stop that fails half way may have stopped one of them
+            self.run(self.compose + ['stop', '--timeout', '30', 'memory-api', 'memory-worker'])
+        # The first pgvector migration rewrites embeddings and builds HNSW indexes: no 120 s abort. Recorded in the report.
+        self.report['migrate_timeout_seconds'] = MIGRATE_TIMEOUT_SECONDS
+        self.operator('migrate', timeout=MIGRATE_TIMEOUT_SECONDS)
         self.step('bootstrap')
         if not existing:
             self.operator('bootstrap')
         after = self.operator('content-manifest')
         if before:
             compare_content(before, after)
+        # Decision P-07: fragments for the existing content are queued at deployment. Only `embed` jobs are inserted (no content table is
+        # touched, so the manifest checks above and below still hold); the worker started next embeds them, bounded by its own deadline.
+        self.step('backfill')
+        # The memory-worker of the previous release would complete these jobs with its own `complete_job` (no fragments) and the report would
+        # say there is nothing left: it stays stopped until `start` brings the new one up. Always, with or without --stop-services-before-migrate.
+        self.report['worker_stopped_before_backfill'] = True  # before the command, for the same reason
+        self.run(self.compose + ['stop', '--timeout', '30', 'memory-worker'])
+        result = self.operator('backfill-chunks', timeout=BACKFILL_TIMEOUT_SECONDS)
+        self.report['backfill'] = {key: result[key] for key in BACKFILL_REPORT_KEYS if key in result}
         self.step('start')
         self.run(self.compose + ['up', '-d', '--no-deps', '--wait', '--wait-timeout', '90',
                                  'ollama', *SERVICES])
@@ -221,16 +335,15 @@ class Deployment:
         if before:
             compare_content(before, final)
         self.report['verification'] = verify_runtime(final, self.secret_dir,
-                                                    self.args.verify_key_file)
+                                                    self.args.verify_key_file, f'http://127.0.0.1:{self.web_port}')
         self.report.update(status='complete', content_sha256=final['sha256'],
                            documents=len(final['documents']), projects=len(final['projects']))
         self.save_report()
-        print('Kairos deployment verified. Report: .private/deployment-status.json')
+        print('Kairos deployment verified. Report: ' + ('.private/rehearsal-' + self.project + '/' if self.isolated else '.private/') + 'deployment-status.json')
 
 
-def verify_runtime(manifest, secret_dir, key_file=None):
+def verify_runtime(manifest, secret_dir, key_file=None, origin='http://127.0.0.1:5173'):
     """Read actual MCP tools, projects and complete paginated document manifests."""
-    origin = 'http://127.0.0.1:5173'
     client = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
     headers = {'Accept': 'application/json, text/event-stream', 'Origin': origin}
 
@@ -326,19 +439,44 @@ def verify_runtime(manifest, secret_dir, key_file=None):
             request('/v1/auth/logout', {})
 
 
+def failure_hints(report, phase):
+    """Extra stderr lines for a failed deployment that leaves something in a state the operator must act on."""
+    hints = []
+    if report.get('services_stopped_before_migrate') and phase in ('migrate', 'bootstrap', 'backfill'):
+        hints.append('memory-api and memory-worker were stopped before migrate and are still stopped; a failed migration is '
+                     'rolled back. Start them again (docker compose ... start memory-api memory-worker) or retry.')
+    if report.get('worker_stopped_before_backfill') and phase in ('backfill', 'start', 'verify') and not hints:  # the hint above already covers the worker
+        hints.append('memory-worker was stopped before the backfill (the previous release would complete its jobs without fragments) and may still be '
+                     'stopped; start it again (docker compose ... up -d memory-worker) or retry the deployment. Queued jobs stay pending meanwhile.')
+    return hints
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply', action='store_true')
     parser.add_argument('--fresh', action='store_true', help='Allow first installation; never replace existing secrets')
     parser.add_argument('--secret-dir', help='Existing private secret directory outside the repository')
     parser.add_argument('--verify-key-file', help='Optional existing read key for all projects, if the admin password was changed')
+    parser.add_argument('--project-name', default=DEFAULT_PROJECT,
+                        help='Isolated rehearsal: own compose project, volumes, networks, image tags, ports and private directory (never the installed project)')
+    parser.add_argument('--api-port', type=int, default=DEFAULT_API_PORT, help='Isolated rehearsal only: host port of the API')
+    parser.add_argument('--web-port', type=int, default=DEFAULT_WEB_PORT, help='Isolated rehearsal only: host port of the portal')
+    parser.add_argument('--stop-services-before-migrate', action='store_true',
+                        help='Stop memory-api and memory-worker before the migrate phase (they are started again by the start phase); default: leave them running')
     args = parser.parse_args(argv)
     if not args.apply:
-        print(json.dumps({'mode': 'dry-run', 'phases': PHASES, 'fresh': args.fresh,
-                          'volumes': VOLUMES, 'models': 'preserve configuration',
+        try:
+            validate_isolation(args.project_name, args.api_port, args.web_port)
+        except DeploymentError as exc:
+            parser.error(str(exc))
+        print(json.dumps({'mode': 'dry-run', 'phases': PHASES, 'fresh': args.fresh, 'project': args.project_name,
+                          'volumes': project_volumes(args.project_name), 'models': 'preserve configuration',
                           'data_removed': False}, indent=2))
         return 0
-    deployment = Deployment(args)
+    try:
+        deployment = Deployment(args)
+    except DeploymentError as exc:
+        parser.error(str(exc))
     try:
         deployment.apply()
     except Exception as exc:
@@ -352,6 +490,8 @@ def main(argv=None):
               'Inspect the current state before retrying; credentials are not printed.', file=sys.stderr)
         if deployment.report.get('command_failure'):
             print(deployment.report['command_failure']['details'], file=sys.stderr)
+        for hint in failure_hints(deployment.report, deployment.phase):
+            print(hint, file=sys.stderr)
         return 1
     return 0
 

@@ -54,3 +54,175 @@ CREATE INDEX IF NOT EXISTS memory_items_recent ON memory.memory_items(project_id
     (event_type='correction' AND payload->>'validation_status'='validated') DESC,occurred_at DESC,id)
     WHERE NOT deleted AND superseded_by IS NULL;
 INSERT INTO memory.schema_versions(version) VALUES (5) ON CONFLICT DO NOTHING;
+
+-- pgvector (schema version 8; 6 and 7 are taken by the extended and corpus-answer migrations). Additive: `vector double precision[]` stays authoritative so a previous release keeps working.
+-- The extension lives in `public` on purpose: without WITH SCHEMA it would land in the first schema of the search path,
+-- which for the role `memory` is the schema `memory` itself. Needs a role allowed to create the extension (the bootstrap superuser of the PostgreSQL image). The partial
+-- HNSW indexes are created by Store.migrate() because the indexed model/dimensions come from MEMORY_VECTOR_INDEXES.
+SET LOCAL lock_timeout = '5s';
+-- The whole block is skipped once version 8 is registered and its columns exist: a repeated `admin migrate` takes
+-- no ACCESS EXCLUSIVE lock and does not walk the table. The first run rewrites the table (generated `dims`),
+-- backfills `embedding` and builds the HNSW indexes; see docs/operations.md for cost and lock window.
+DO $pgvector$
+BEGIN
+    IF EXISTS (SELECT 1 FROM memory.schema_versions WHERE version = 8)
+       AND (SELECT count(*) FROM information_schema.columns WHERE table_schema = 'memory' AND table_name = 'embeddings' AND column_name IN ('embedding', 'dims')) = 2 THEN
+        RETURN;
+    END IF;
+    CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
+    ALTER TABLE memory.embeddings ADD COLUMN IF NOT EXISTS embedding vector;
+    ALTER TABLE memory.embeddings ADD COLUMN IF NOT EXISTS dims integer GENERATED ALWAYS AS (array_length(vector,1)) STORED;
+    CREATE OR REPLACE FUNCTION memory.embedding_sync() RETURNS trigger LANGUAGE plpgsql AS $function$
+    BEGIN
+        -- Rows written by code that only knows `vector` (a previous release, direct SQL) get their `embedding`.
+        IF NEW.embedding IS NULL OR (TG_OP = 'UPDATE' AND NEW.vector IS DISTINCT FROM OLD.vector AND NEW.embedding IS NOT DISTINCT FROM OLD.embedding) THEN
+            NEW.embedding := NEW.vector::vector;
+        END IF;
+        RETURN NEW;
+    END
+    $function$;
+    CREATE OR REPLACE TRIGGER embedding_sync BEFORE INSERT OR UPDATE ON memory.embeddings
+        FOR EACH ROW EXECUTE FUNCTION memory.embedding_sync();
+    UPDATE memory.embeddings SET embedding = vector::vector WHERE embedding IS NULL;
+    INSERT INTO memory.schema_versions(version) VALUES (8) ON CONFLICT DO NOTHING;
+END
+$pgvector$;
+
+-- fts-language (schema version 9)
+-- Spanish and English full-text vectors with `unaccent`, plus `pg_trgm` for typo/identifier fallback. Additive: the `simple`
+-- `search_vector` columns and their indexes stay, and a previous release keeps working (documents: generated columns;
+-- memory_items: a trigger completes rows written by code that only knows `search_vector`).
+-- Extensions live in `public` (see the pgvector note above). `unaccent` and `pg_trgm` are trusted extensions.
+-- The block is skipped once version 9 is registered and its columns exist, so a repeated `admin migrate` takes no
+-- ACCESS EXCLUSIVE/SHARE lock and does not walk the tables. The first run rewrites `documents` (generated columns),
+-- adds columns to `memory_items`, backfills it, creates a trigger and builds six indexes. Store.migrate() runs ALL of schema.sql in ONE
+-- transaction, so the strongest lock taken on each table (ACCESS EXCLUSIVE from the ALTER TABLEs, on BOTH `documents` and
+-- `memory_items`) is held until the COMMIT of the whole migration: reads and writes of those two tables by other sessions
+-- wait for the entire run, not only for the statement that took the lock. Cost, window and mitigation: docs/operations.md.
+-- The new indexes are not partial on purpose: they cover every row, so no predicate has to be kept in step with the queries.
+SET LOCAL lock_timeout = '5s';
+DO $fts$
+BEGIN
+    IF EXISTS (SELECT 1 FROM memory.schema_versions WHERE version = 9)
+       AND (SELECT count(*) FROM information_schema.columns WHERE table_schema = 'memory'
+            AND table_name IN ('documents', 'memory_items') AND column_name IN ('search_vector_es', 'search_vector_en')) = 4 THEN
+        RETURN;
+    END IF;
+    CREATE EXTENSION IF NOT EXISTS unaccent WITH SCHEMA public;
+    CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
+    -- `unaccent` is only STABLE; the wrapper pins the dictionary so generated columns and indexes may use it.
+    CREATE OR REPLACE FUNCTION memory.kairos_unaccent(text) RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT
+        AS $f$ SELECT public.unaccent('public.unaccent'::regdictionary, $1) $f$;
+    -- Heading text weighs A, body text B (same weights as the `simple` vectors of memory_items).
+    CREATE OR REPLACE FUNCTION memory.item_fts(config regconfig, heading text, body text) RETURNS tsvector LANGUAGE sql IMMUTABLE PARALLEL SAFE
+        AS $f$ SELECT setweight(to_tsvector(config, memory.kairos_unaccent(COALESCE(heading, ''))), 'A')
+                   || setweight(to_tsvector(config, memory.kairos_unaccent(COALESCE(body, ''))), 'B') $f$;
+    -- Trigram keys: words (lowercase, no accents) and the same string without separators for identifiers (ERR-4471 / err4471).
+    CREATE OR REPLACE FUNCTION memory.trigram_words(text) RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT
+        AS $f$ SELECT lower(memory.kairos_unaccent($1)) $f$;
+    CREATE OR REPLACE FUNCTION memory.trigram_compact(text) RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT
+        AS $f$ SELECT regexp_replace(lower(memory.kairos_unaccent($1)), '[^[:alnum:]]', '', 'g') $f$;
+    CREATE OR REPLACE FUNCTION memory.trigram_key(text) RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT
+        AS $f$ SELECT memory.trigram_words($1) || ' ' || memory.trigram_compact($1) $f$;
+    ALTER TABLE memory.documents
+        ADD COLUMN IF NOT EXISTS search_vector_es tsvector GENERATED ALWAYS AS (
+            setweight(to_tsvector('spanish'::regconfig, memory.kairos_unaccent(COALESCE(body->>'title', ''))), 'A') ||
+            setweight(to_tsvector('spanish'::regconfig, memory.kairos_unaccent(COALESCE(body->>'tags', ''))), 'B') ||
+            setweight(to_tsvector('spanish'::regconfig, memory.kairos_unaccent(COALESCE(body->>'content', ''))), 'C')) STORED,
+        ADD COLUMN IF NOT EXISTS search_vector_en tsvector GENERATED ALWAYS AS (
+            setweight(to_tsvector('english'::regconfig, memory.kairos_unaccent(COALESCE(body->>'title', ''))), 'A') ||
+            setweight(to_tsvector('english'::regconfig, memory.kairos_unaccent(COALESCE(body->>'tags', ''))), 'B') ||
+            setweight(to_tsvector('english'::regconfig, memory.kairos_unaccent(COALESCE(body->>'content', ''))), 'C')) STORED;
+    ALTER TABLE memory.memory_items ADD COLUMN IF NOT EXISTS search_vector_es tsvector, ADD COLUMN IF NOT EXISTS search_vector_en tsvector;
+    UPDATE memory.memory_items SET
+        search_vector_es = memory.item_fts('spanish', concat_ws(' ', payload->>'title', payload->>'problem', payload->>'correction'), payload->>'content'),
+        search_vector_en = memory.item_fts('english', concat_ws(' ', payload->>'title', payload->>'problem', payload->>'correction'), payload->>'content')
+        WHERE search_vector_es IS NULL OR search_vector_en IS NULL;
+    CREATE OR REPLACE FUNCTION memory.item_fts_sync() RETURNS trigger LANGUAGE plpgsql AS $function$
+    BEGIN
+        -- Rows written by code that only knows `search_vector` (a previous release, direct SQL) get the language vectors.
+        IF NEW.search_vector_es IS NULL OR NEW.search_vector_en IS NULL
+           OR (TG_OP = 'UPDATE' AND NEW.search_vector IS DISTINCT FROM OLD.search_vector
+               AND NEW.search_vector_es IS NOT DISTINCT FROM OLD.search_vector_es AND NEW.search_vector_en IS NOT DISTINCT FROM OLD.search_vector_en) THEN
+            NEW.search_vector_es := memory.item_fts('spanish', concat_ws(' ', NEW.payload->>'title', NEW.payload->>'problem', NEW.payload->>'correction'), NEW.payload->>'content');
+            NEW.search_vector_en := memory.item_fts('english', concat_ws(' ', NEW.payload->>'title', NEW.payload->>'problem', NEW.payload->>'correction'), NEW.payload->>'content');
+        END IF;
+        RETURN NEW;
+    END
+    $function$;
+    CREATE OR REPLACE TRIGGER item_fts_sync BEFORE INSERT OR UPDATE ON memory.memory_items
+        FOR EACH ROW EXECUTE FUNCTION memory.item_fts_sync();
+    CREATE INDEX IF NOT EXISTS memory_item_search_es ON memory.memory_items USING gin(search_vector_es);
+    CREATE INDEX IF NOT EXISTS memory_item_search_en ON memory.memory_items USING gin(search_vector_en);
+    CREATE INDEX IF NOT EXISTS memory_document_search_es ON memory.documents USING gin(search_vector_es);
+    CREATE INDEX IF NOT EXISTS memory_document_search_en ON memory.documents USING gin(search_vector_en);
+    CREATE INDEX IF NOT EXISTS memory_item_title_trgm ON memory.memory_items USING gin(memory.trigram_key(payload->>'title') public.gin_trgm_ops);
+    CREATE INDEX IF NOT EXISTS memory_document_title_trgm ON memory.documents USING gin(memory.trigram_key(body->>'title') public.gin_trgm_ops);
+    INSERT INTO memory.schema_versions(version) VALUES (9) ON CONFLICT DO NOTHING;
+END
+$fts$;
+
+-- embedding-chunks (schema version 10)
+-- Fragments of long documents and notes for semantic search (decision P-07: 1,500 characters, 200 of overlap). Additive: one new
+-- table plus two columns with constant defaults (no table rewrite): `memory.embeddings.chunked` (true when the row was written
+-- together with its fragments; a previous release writes false, which is how search finds what still needs the item vector) and
+-- `memory.jobs.priority` (0 for live writes, 1 for the `admin backfill-chunks` jobs, which must not delay them). `memory.embeddings`
+-- (one row per resource version, the vector of the item) keeps its primary key and its meaning, so a previous release keeps working
+-- and ignores the table and both columns. A fragment is the interval
+-- [char_start, char_end) of `title || E'\n' || content` of its resource version; the text itself is not stored (it is
+-- recomputed from the current resource). `embedding` is `vector` (pgvector, created by version 8); `dims` is generated like in
+-- `memory.embeddings`. The partial HNSW indexes per (model, dimensions) are created by Store.migrate() from MEMORY_VECTOR_INDEXES.
+-- The block is skipped once version 10 is registered and the table exists: a repeated `admin migrate` creates and locks nothing.
+-- The first run only creates an empty table; the foreign key to `memory.projects` takes SHARE ROW EXCLUSIVE on that tiny table until
+-- the COMMIT of the whole migration (writes to projects wait, reads do not). Rows arrive through the worker or `admin backfill-chunks`.
+SET LOCAL lock_timeout = '5s';
+DO $chunks$
+BEGIN
+    IF EXISTS (SELECT 1 FROM memory.schema_versions WHERE version = 10)
+       AND to_regclass('memory.embedding_chunks') IS NOT NULL
+       AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'memory' AND table_name = 'jobs' AND column_name = 'priority') THEN
+        RETURN;
+    END IF;
+    CREATE TABLE IF NOT EXISTS memory.embedding_chunks(
+        project_id text NOT NULL REFERENCES memory.projects(id),
+        item_id text NOT NULL,
+        resource_type text NOT NULL CHECK(resource_type IN ('item','document')),
+        version integer NOT NULL,
+        canonical_hash text NOT NULL,
+        model text NOT NULL,
+        ordinal integer NOT NULL CHECK(ordinal >= 0),
+        char_start integer NOT NULL CHECK(char_start >= 0),
+        char_end integer NOT NULL,
+        embedding vector NOT NULL CHECK(vector_dims(embedding) BETWEEN 1 AND 4096),
+        dims integer GENERATED ALWAYS AS (vector_dims(embedding)) STORED,
+        created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+        CHECK(char_end > char_start),
+        PRIMARY KEY(project_id, item_id, resource_type, version, model, ordinal)
+    );
+    ALTER TABLE memory.jobs ADD COLUMN IF NOT EXISTS priority smallint NOT NULL DEFAULT 0;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'memory' AND table_name = 'embeddings' AND column_name = 'chunked') THEN
+        ALTER TABLE memory.embeddings ADD COLUMN chunked boolean NOT NULL DEFAULT false;
+        UPDATE memory.embeddings e SET chunked = true WHERE EXISTS (SELECT 1 FROM memory.embedding_chunks k
+            WHERE k.project_id = e.project_id AND k.item_id = e.item_id AND k.resource_type = e.resource_type AND k.version = e.version AND k.model = e.model);
+    END IF;
+    -- Empty once every row is chunked: the probe "is any embedding still unchunked in scope" is then an index lookup, not a scan.
+    CREATE INDEX IF NOT EXISTS memory_embeddings_unchunked ON memory.embeddings(project_id, model, dims) WHERE NOT chunked;
+    INSERT INTO memory.schema_versions(version) VALUES (10) ON CONFLICT DO NOTHING;
+END
+$chunks$;
+
+-- jobs-failed-index (schema version 11)
+-- Partial index for the `failed` jobs by destination and error code that GET /metrics counts at every scrape (kairos_jobs_failed): without
+-- it that count reads every historical `failed` row. Additive and tiny (only the failed jobs); nothing existing is touched and a previous
+-- release ignores it. The block is skipped once version 11 is registered and the index exists, so a repeated `admin migrate` takes no
+-- lock on `memory.jobs`; the first run takes SHARE on it (writes to jobs wait) only while the index is built, until the COMMIT of the whole migration.
+SET LOCAL lock_timeout = '5s';
+DO $failedjobs$
+BEGIN
+    IF EXISTS (SELECT 1 FROM memory.schema_versions WHERE version = 11) AND to_regclass('memory.memory_jobs_failed_code') IS NOT NULL THEN
+        RETURN;
+    END IF;
+    CREATE INDEX IF NOT EXISTS memory_jobs_failed_code ON memory.jobs(destination, error_code) WHERE state = 'failed';
+    INSERT INTO memory.schema_versions(version) VALUES (11) ON CONFLICT DO NOTHING;
+END
+$failedjobs$;

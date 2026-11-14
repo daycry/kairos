@@ -11,7 +11,8 @@ import unittest
 from unittest.mock import Mock, patch
 import uuid
 
-from memory_platform.admin import main, store_fingerprints, content_manifest
+from memory_platform.admin import backfill_chunks, main, store_fingerprints, content_manifest
+from memory_platform.store_jobs import stored_item_vector
 from memory_platform.tests.test_store import create_core, event
 
 
@@ -130,3 +131,217 @@ class AdminPostgresTests(unittest.TestCase):
                 raise RuntimeError('Unsafe restore target')
             with psycopg.connect(maintenance, autocommit=True) as connection:
                 connection.execute(sql.SQL('DROP DATABASE {}').format(sql.Identifier(target_name)))
+
+
+class BackfillChunksTests(unittest.TestCase):
+    """`admin backfill-chunks`: queue `embed` jobs for current resources that have no fragments (CA-28), idempotent, resumable, bounded."""
+    MODEL = 'nomic-embed-text'
+
+    def setUp(self):
+        self.store, self.actor, self.project = create_core()
+
+    LONG = 'palabra ' * 400  # more than one fragment: such a resource needs a job; a short one is completed from its item vector
+
+    def resource(self, kind='document', *, embedded=True, job_state='succeeded', chunks=False, deleted=False, superseded=False, text=None):
+        """A resource as the previous release left it: a job and an item-level embedding, no fragments (unless `chunks`)."""
+        item_id = str(uuid.uuid4())
+        resource_type = 'item' if kind == 'item' else 'document'
+        with self.store.transaction() as c:
+            if kind == 'document':
+                c.execute("INSERT INTO memory.documents(project_id,id,version,canonical_hash,body,deleted) VALUES(%s,%s,1,repeat('a',64),%s::jsonb,%s)",
+                          (self.project, item_id, json.dumps({'title': 'T', 'content': self.LONG if text is None else text}), deleted))
+            else:
+                c.execute("""INSERT INTO memory.memory_items(project_id,id,version,canonical_hash,event_type,payload,session_id,agent_id,occurred_at,search_vector,deleted,superseded_by)
+                             VALUES(%s,%s,1,repeat('a',64),'note',%s::jsonb,'s','a',clock_timestamp(),to_tsvector('simple','x'),%s,%s)""",
+                          (self.project, item_id, json.dumps({'title': 'T', 'content': self.LONG if text is None else text}), deleted, 'newer' if superseded else None))
+            if job_state:
+                c.execute("INSERT INTO memory.jobs(id,project_id,item_id,version,canonical_hash,resource_type,destination,operation,state) VALUES(%s,%s,%s,1,repeat('a',64),%s,'embed','upsert',%s)",
+                          (str(uuid.uuid4()), self.project, item_id, resource_type, job_state))
+            if embedded:
+                c.execute("INSERT INTO memory.embeddings(project_id,item_id,resource_type,version,canonical_hash,model,vector) VALUES(%s,%s,%s,1,repeat('a',64),%s,%s)",
+                          (self.project, item_id, resource_type, self.MODEL, [1.0, 0.5]))
+            if chunks:
+                c.execute("INSERT INTO memory.embedding_chunks(project_id,item_id,resource_type,version,canonical_hash,model,ordinal,char_start,char_end,embedding) VALUES(%s,%s,%s,1,repeat('a',64),%s,0,0,10,'[1,0.5]'::vector)",
+                          (self.project, item_id, resource_type, self.MODEL))
+        return item_id
+
+    def jobs(self, ids):
+        with self.store.transaction() as c:
+            return {r['item_id']: r for r in c.execute("SELECT * FROM memory.jobs WHERE project_id=%s AND item_id=ANY(%s) AND destination='embed'", (self.project, list(ids))).fetchall()}
+
+    def run_backfill(self, **options):
+        return backfill_chunks(self.store, self.MODEL, project=self.project, **options)
+
+    def test_only_current_resources_without_fragments_are_queued_and_a_second_run_queues_none(self):
+        """CA-28."""
+        wanted = [self.resource('document'), self.resource('item')]
+        skipped = {'has fragments': self.resource('document', chunks=True), 'deleted': self.resource('document', deleted=True),
+                   'superseded item': self.resource('item', superseded=True),
+                   'technical item': self.resource('item', embedded=False, job_state=None),
+                   'already queued': self.resource('document', job_state='pending')}
+        first = self.run_backfill()
+        self.assertEqual((first['enqueued'], first['remaining']), (2, 0))
+        queued = self.jobs(wanted)
+        self.assertEqual({row['state'] for row in queued.values()}, {'pending'})
+        untouched = self.jobs(skipped.values())
+        self.assertEqual(untouched[skipped['already queued']]['state'], 'pending')
+        self.assertEqual({untouched[skipped[name]]['state'] for name in ('has fragments', 'deleted', 'superseded item')}, {'succeeded'})
+        self.assertNotIn(skipped['technical item'], untouched)  # never meant to be embedded: no job, no embedding, none created
+        second = self.run_backfill()
+        self.assertEqual((second['enqueued'], second['remaining']), (0, 0))
+        self.assertEqual({row['id'] for row in self.jobs(wanted).values()}, {row['id'] for row in queued.values()})
+
+    def test_the_run_is_bounded_and_resumable(self):
+        resources = [self.resource('document') for _ in range(5)]
+        first = self.run_backfill(batch=2, max_jobs=3)
+        self.assertEqual((first['enqueued'], first['remaining'], first['batches']), (3, 2, 2))
+        self.assertEqual(sum(row['state'] == 'pending' for row in self.jobs(resources).values()), 3)
+        second = self.run_backfill(batch=2)
+        self.assertEqual((second['enqueued'], second['remaining']), (2, 0))
+        self.assertEqual(self.run_backfill()['enqueued'], 0)
+
+    def test_a_failed_job_is_queued_again_with_a_fresh_attempt_budget_and_an_active_one_is_left_alone(self):
+        failed, running = self.resource('document', job_state='failed'), self.resource('document', job_state='running')
+        with self.store.transaction() as c:
+            c.execute("UPDATE memory.jobs SET attempts=3,error_code='provider_unavailable' WHERE project_id=%s AND item_id=%s", (self.project, failed))
+        before = self.jobs([failed, running])
+        self.assertEqual(self.run_backfill()['enqueued'], 0)  # gap 10: a failed job is not queued again on every run...
+        self.assertEqual(self.jobs([failed])[failed]['state'], 'failed')
+        counted = self.run_backfill()
+        self.assertEqual((counted['failed'], counted['remaining']), (1, 0))  # ...it is counted, so nobody reads it as done
+        self.assertEqual(self.run_backfill(retry_failed=True)['enqueued'], 1)  # ...until the operator asks
+        after = self.jobs([failed, running])
+        self.assertEqual((after[failed]['state'], after[failed]['attempts'], after[failed]['error_code']), ('pending', 0, None))
+        self.assertEqual(after[failed]['id'], before[failed]['id'])
+        self.assertEqual(after[running]['state'], 'running')
+
+    def test_backfill_jobs_are_queued_behind_every_live_write(self):
+        """Gap 2: priority 1, also when a finished job is put back in the queue."""
+        queued, again = self.resource('document'), self.resource('document', job_state='failed')
+        self.assertEqual(self.run_backfill()['enqueued'], 1)
+        self.assertEqual(self.run_backfill(retry_failed=True)['enqueued'], 1)
+        self.assertEqual({row['priority'] for row in self.jobs([queued, again]).values()}, {1})
+        self.assertEqual(self.run_backfill()['pending'], 2)
+
+    def test_a_resource_that_is_one_fragment_with_its_item_vector_needs_no_provider_call(self):
+        """Gap 6: its only fragment is the vector the previous worker already computed for exactly that text."""
+        short = self.resource('document', text='texto corto')
+        shorter_item = self.resource('item', text='nota corta')
+        without_vector = self.resource('document', embedded=False, text='sin vector', job_state='succeeded')
+        result = self.run_backfill()
+        self.assertEqual((result['derived'], result['enqueued']), (2, 1))
+        with self.store.transaction() as c:
+            rows = c.execute("SELECT item_id,ordinal,char_start,char_end,vector_dims(embedding) AS dims FROM memory.embedding_chunks WHERE project_id=%s ORDER BY item_id", (self.project,)).fetchall()
+            flags = {r['item_id']: r['chunked'] for r in c.execute('SELECT item_id,chunked FROM memory.embeddings WHERE project_id=%s', (self.project,)).fetchall()}
+        self.assertEqual({r['item_id']: (r['ordinal'], r['char_start'], r['char_end'], r['dims']) for r in rows},
+                         {short: (0, 0, len('T\ntexto corto'), 2), shorter_item: (0, 0, len('T\nnota corta'), 2)})
+        self.assertTrue(flags[short] and flags[shorter_item])
+        self.assertEqual(self.jobs([short])[short]['state'], 'succeeded')  # no new job
+        self.assertEqual(self.jobs([without_vector])[without_vector]['state'], 'pending')  # no vector to derive from: the provider is needed
+        self.assertEqual(self.run_backfill()['derived'], 0)
+
+    def test_a_resource_with_an_embedding_but_no_job_record_is_queued(self):
+        legacy = self.resource('document', job_state=None)
+        self.assertEqual(self.run_backfill()['enqueued'], 1)
+        self.assertEqual(self.jobs([legacy])[legacy]['state'], 'pending')
+
+    def test_the_other_projects_are_not_touched(self):
+        other = 'o-' + uuid.uuid4().hex[:10]
+        self.store.create_project(self.actor, {'id': other, 'title': 'Other'})
+        with self.store.transaction() as c:
+            c.execute("INSERT INTO memory.documents(project_id,id,version,canonical_hash,body) VALUES(%s,'foreign',1,repeat('a',64),%s::jsonb)", (other, json.dumps({'title': 'T', 'content': 'x'})))
+            c.execute("INSERT INTO memory.embeddings(project_id,item_id,resource_type,version,canonical_hash,model,vector) VALUES(%s,'foreign','document',1,repeat('a',64),%s,%s)", (other, self.MODEL, [1.0, 0.5]))
+        self.resource('document')
+        self.assertEqual(self.run_backfill()['enqueued'], 1)
+        with self.store.transaction() as c:
+            self.assertEqual(c.execute("SELECT count(*) AS n FROM memory.jobs WHERE project_id=%s", (other,)).fetchone()['n'], 0)
+
+    def test_a_completed_job_takes_the_resource_out_of_the_backfill(self):
+        item_id = self.resource('document')
+        self.assertEqual(self.run_backfill()['enqueued'], 1)
+        with self.store.transaction() as c:
+            c.execute("UPDATE memory.jobs SET state='running',fence=9,lease_until=clock_timestamp()+interval '1 minute' WHERE project_id=%s AND item_id=%s", (self.project, item_id))
+            job = c.execute("SELECT * FROM memory.jobs WHERE project_id=%s AND item_id=%s", (self.project, item_id)).fetchone()
+        self.assertTrue(self.store.complete_job(job['id'], 9, {'vector': [1.0, 0.5], 'model': self.MODEL, 'canonical_hash': job['canonical_hash'], 'verified': True}))
+        self.assertEqual(self.run_backfill()['enqueued'], 0)
+
+    def unchunked_rows(self):
+        with self.store.transaction() as c:
+            return {(r['item_id'], r['version']) for r in c.execute('SELECT item_id,version FROM memory.embeddings WHERE project_id=%s AND NOT chunked', (self.project,)).fetchall()}
+
+    def test_item_vectors_of_non_current_resources_leave_the_unchunked_index_and_none_is_deleted(self):
+        """Attempt 2, gap 1: rows of old versions, deleted and superseded resources stay out of `memory_embeddings_unchunked` after the backfill."""
+        live = self.resource('document')
+        gone, replaced = self.resource('document', deleted=True), self.resource('item', superseded=True)
+        old = self.resource('document', chunks=True)
+        with self.store.transaction() as c:
+            c.execute("INSERT INTO memory.embeddings(project_id,item_id,resource_type,version,canonical_hash,model,vector) VALUES(%s,%s,'document',0,repeat('b',64),%s,%s)", (self.project, old, self.MODEL, [1.0, 0.5]))
+            c.execute('UPDATE memory.embeddings SET chunked=true WHERE project_id=%s AND item_id=%s AND version=1', (self.project, old))
+            total = c.execute('SELECT count(*) AS n FROM memory.embeddings WHERE project_id=%s', (self.project,)).fetchone()['n']
+        self.assertEqual(self.unchunked_rows(), {(live, 1), (gone, 1), (replaced, 1), (old, 0)})
+        result = self.run_backfill(batch=1)  # batch 1: the key order is walked across several transactions
+        self.assertEqual(result['stale_marked'], 3)
+        self.assertEqual(self.unchunked_rows(), {(live, 1)})  # only live work is left in the partial index
+        with self.store.transaction() as c:
+            self.assertEqual(c.execute('SELECT count(*) AS n FROM memory.embeddings WHERE project_id=%s', (self.project,)).fetchone()['n'], total)
+        self.assertEqual(self.run_backfill()['stale_marked'], 0)
+
+    def test_completing_a_job_flags_the_item_vectors_of_older_versions(self):
+        """Attempt 2, gap 1: a resource updated before its backfill must not leave its old version in the unchunked index."""
+        item_id = self.resource('document', job_state='pending')  # no backfill run here: only complete_job may flag the old version
+        with self.store.transaction() as c:
+            c.execute("INSERT INTO memory.embeddings(project_id,item_id,resource_type,version,canonical_hash,model,vector) VALUES(%s,%s,'document',0,repeat('b',64),%s,%s)", (self.project, item_id, self.MODEL, [1.0, 0.5]))
+        self.assertEqual(self.unchunked_rows(), {(item_id, 0), (item_id, 1)})
+        with self.store.transaction() as c:
+            c.execute("UPDATE memory.jobs SET state='running',fence=9,lease_until=clock_timestamp()+interval '1 minute' WHERE project_id=%s AND item_id=%s", (self.project, item_id))
+            job = c.execute("SELECT * FROM memory.jobs WHERE project_id=%s AND item_id=%s", (self.project, item_id)).fetchone()
+            before = c.execute('SELECT created_at,embedding::text AS e FROM memory.embeddings WHERE project_id=%s AND item_id=%s AND version=1', (self.project, item_id)).fetchone()
+        self.assertTrue(self.store.complete_job(job['id'], 9, {'vector': [1.0, 0.5], 'model': self.MODEL, 'canonical_hash': job['canonical_hash'], 'verified': True}))
+        self.assertEqual(self.unchunked_rows(), set())
+        with self.store.transaction() as c:
+            after = c.execute('SELECT created_at,embedding::text AS e FROM memory.embeddings WHERE project_id=%s AND item_id=%s AND version=1', (self.project, item_id)).fetchone()
+        self.assertEqual(after, before)  # gap 3: an identical item vector is not rewritten (not even its timestamp)
+        self.assertEqual(stored_item_vector(self.store, self.project, item_id, 'document', 1, 'a' * 64, self.MODEL), [1.0, 0.5])
+        self.assertIsNone(stored_item_vector(self.store, self.project, item_id, 'document', 1, 'b' * 64, self.MODEL))
+
+    def test_item_vectors_missing_their_pgvector_column_are_filled_in_batches(self):
+        item_id = self.resource('document')
+        with self.store.transaction() as c:
+            c.execute('ALTER TABLE memory.embeddings DISABLE TRIGGER embedding_sync')
+            try:
+                c.execute('UPDATE memory.embeddings SET embedding=NULL WHERE project_id=%s AND item_id=%s', (self.project, item_id))
+            finally:
+                c.execute('ALTER TABLE memory.embeddings ENABLE TRIGGER embedding_sync')
+        filled = self.run_backfill(batch=1)['embedding_filled']
+        self.assertGreaterEqual(filled, 1)  # the whole table is filled: other fixtures of the shared test database may also be pending
+        with self.store.transaction() as c:
+            self.assertEqual(c.execute('SELECT vector_dims(embedding) AS n FROM memory.embeddings WHERE project_id=%s AND item_id=%s', (self.project, item_id)).fetchone()['n'], 2)
+        self.assertEqual(self.run_backfill()['embedding_filled'], 0)
+
+    def test_the_command_prints_counts_only(self):
+        settings = Mock(dsn='postgresql://fixture@127.0.0.1/fixture', project_maps={}, embedding_model=self.MODEL)
+        store = Mock()
+        result = {'enqueued': 3, 'remaining': 0, 'batches': 1, 'embedding_filled': 0}
+        with patch('memory_platform.admin.Settings.from_env', return_value=settings), patch('memory_platform.admin.Store', return_value=store), \
+                patch('memory_platform.admin.backfill_chunks', return_value=result) as run, contextlib.redirect_stdout(io.StringIO()) as output:
+            main(['backfill-chunks', '--batch', '50', '--max-jobs', '1000'])
+        self.assertEqual(json.loads(output.getvalue()), dict(result, status='backfilled'))
+        run.assert_called_once_with(store, self.MODEL, batch=50, max_jobs=1000, project=None, retry_failed=False)
+        self.assertNotIn('postgresql://', output.getvalue())
+
+    def test_the_command_runs_end_to_end_against_the_database_and_a_second_run_queues_none(self):
+        item_id = self.resource('document')
+        outputs = []
+        for _ in range(2):
+            with patch.dict(os.environ, {'MEMORY_DSN': self.store.dsn, 'MEMORY_DSN_FILE': ''}), contextlib.redirect_stdout(io.StringIO()) as output:
+                main(['backfill-chunks', '--project', self.project, '--batch', '10'])
+            outputs.append(json.loads(output.getvalue()))
+        self.assertEqual([(o['status'], o['enqueued'], o['remaining']) for o in outputs], [('backfilled', 1, 0), ('backfilled', 0, 0)])
+        self.assertEqual(self.jobs([item_id])[item_id]['state'], 'pending')
+
+    def test_a_disabled_embedding_service_queues_nothing_and_says_so(self):
+        settings = Mock(dsn='postgresql://fixture@127.0.0.1/fixture', project_maps={}, embedding_model=self.MODEL, embed_enabled=False)
+        with patch('memory_platform.admin.Settings.from_env', return_value=settings), patch('memory_platform.admin.Store'),                 patch('memory_platform.admin.backfill_chunks') as run, contextlib.redirect_stdout(io.StringIO()) as output:
+            main(['backfill-chunks'])
+        run.assert_not_called()
+        self.assertEqual(json.loads(output.getvalue()), {'status': 'skipped', 'reason': 'embeddings_disabled', 'enqueued': 0})

@@ -1,0 +1,327 @@
+{
+  "helpers": [
+    "as_dict",
+    "canonical",
+    "digest",
+    "new_id",
+    "lexical_query",
+    "clean"
+  ],
+  "methods": {
+    "__init__": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, dsn, project_maps=None, embedding_enabled=False)"
+    },
+    "_active": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, c, actor)"
+    },
+    "_audit": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, c, actor, action, project_id=None, resource_id=None)"
+    },
+    "_current_job": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, c, job_id, fence)"
+    },
+    "_delegate": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, c, actor, projects, scopes)"
+    },
+    "_global_admin": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, c, actor)"
+    },
+    "_item": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, row)"
+    },
+    "_job_payload": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, c, row)"
+    },
+    "_jobs": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, c, project_id, item_id, version, content_hash, resource_type, destinations, operation, *, embed=True)"
+    },
+    "_materialize_extract": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, c, row, receipt)"
+    },
+    "_native_fact": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, row)"
+    },
+    "_protect_validated": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, c, actor, project_id, item_id, current)"
+    },
+    "_require": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, c, actor, project_id, permission)"
+    },
+    "_unit": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, vector)"
+    },
+    "_validate_facts": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, payload, source, include_payload_context=True)"
+    },
+    "_vector": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, value, allow_zero=False)"
+    },
+    "_vector_candidates": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, c, projects, model, categories, tags, limit, *, stream=False, identities=None)"
+    },
+    "bootstrap_user": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, username, password)"
+    },
+    "capture_policy": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, project_id)"
+    },
+    "claim_job": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, worker_id, lease_seconds=120)"
+    },
+    "complete_job": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, job_id, fence, receipt)"
+    },
+    "create_key": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, key)"
+    },
+    "create_project": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, project)"
+    },
+    "create_user": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, user)"
+    },
+    "delete_document": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, project_id, document_id, version)"
+    },
+    "document_manifest": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, project_id, limit=20, cursor=None)"
+    },
+    "document_status": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, project_id, document_id)"
+    },
+    "fail_job": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, job_id, fence, code, retry_at=None, unknown=False)"
+    },
+    "get_current_items": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, project_id, item_ids=None)"
+    },
+    "get_document": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, project_id, document_id)"
+    },
+    "get_event_receipt": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, event_id)"
+    },
+    "get_item": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, project_id, item_id)"
+    },
+    "get_job": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, job_id)"
+    },
+    "get_native_fact": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, project_id, item_id, version, ordinal)"
+    },
+    "get_policy": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, project_id)"
+    },
+    "graph_data": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, request)"
+    },
+    "has_vectors": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, project_ids, model)"
+    },
+    "history": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, project_id, limit=20, cursor=None)"
+    },
+    "ingest_event": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, event)"
+    },
+    "list_activity": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, project_id, cursor=None, limit=50)"
+    },
+    "list_documents": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, project_id, limit=20, cursor=None)"
+    },
+    "list_jobs": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, project_id, limit=20, cursor=None)"
+    },
+    "list_keys": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor)"
+    },
+    "list_notes": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, project_id, limit=20, cursor=None)"
+    },
+    "list_projects": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor)"
+    },
+    "list_sessions": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, project_id, limit=20, cursor=None)"
+    },
+    "list_users": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor)"
+    },
+    "migrate": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self)"
+    },
+    "native_history": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, project_id, limit=20, cursor=None)"
+    },
+    "publish_document": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, project_id, document)"
+    },
+    "reconcile_capture": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, project_id, event_id)"
+    },
+    "renew_lease": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, job_id, fence, lease_seconds=120)"
+    },
+    "require_permission": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, project_id, permission)"
+    },
+    "retry_job": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, job_id)"
+    },
+    "revoke_key": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, key_id)"
+    },
+    "search_documents": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, project_ids, q='', limit=20, categories=None, tags=None, *, match_mode='all', exclude_categories=None)"
+    },
+    "search_items": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, project_ids, q='', limit=20, categories=None, tags=None, *, match_mode='all', exclude_categories=None)"
+    },
+    "search_native_facts": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, project_ids, q='', limit=20, categories=None, tags=None)"
+    },
+    "search_vectors": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, project_ids, vector, model, limit=20, categories=None, tags=None, *, deadline=None)"
+    },
+    "set_policy": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, project_id, policy)"
+    },
+    "stats": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, project_id)"
+    },
+    "timeline": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, request)"
+    },
+    "transaction": {
+      "contextmanager": true,
+      "kind": "function",
+      "signature": "(self)"
+    }
+  }
+}

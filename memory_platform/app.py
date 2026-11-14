@@ -1,17 +1,21 @@
 """Private memory HTTP boundary. App construction never migrates or contacts providers."""
 from __future__ import annotations
 
+import time
 import uuid
 from fastapi import FastAPI, Request, Depends, Query
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from . import models as m
+from . import observability
 from .auth import Auth
 from .config import Settings
 from .errors import MemoryError, Unauthorized, Forbidden
 from .store import Store
 
 COOKIE = 'memory_session'
+# Headers a reverse proxy adds: a request that carries any of them did not come from inside the internal network.
+PROXY_HEADERS = ('x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-forwarded-port', 'x-real-ip', 'forwarded')
 
 
 class BodyLimit:
@@ -47,6 +51,18 @@ def public_actor(actor):
     return {k: actor[k] for k in ('id', 'username', 'scopes', 'project_ids') if k in actor}
 
 
+MOUNT_ROUTES = {'/mcp': 'mcp'}  # closed labels of the mounted sub-applications, for the access log
+
+
+def mount_label(request):
+    path = request.url.path
+    for route in request.app.router.routes:
+        mount = getattr(route, 'path', '') if route.__class__.__name__ == 'Mount' else ''
+        if mount and (path == mount or path.startswith(mount+'/')):
+            return MOUNT_ROUTES.get(mount, 'mount')
+    return None
+
+
 def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity_duration=25.0, activity_poll_interval=2.0):
     settings = settings or Settings.from_env()
     store = store or Store(settings.dsn, settings.project_maps, embedding_enabled=getattr(settings, 'embed_enabled', True))
@@ -62,13 +78,31 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
     @app.middleware('http')
     async def request_identity(request, call_next):
         request.state.request_id = str(uuid.uuid4())
-        response = await call_next(request)
-        response.headers['X-Request-ID'] = request.state.request_id
-        response.headers['Cache-Control'] = 'no-store'
-        return response
+        token = observability.REQUEST_ID.set(request.state.request_id)
+        started = time.monotonic()
+        mounted = mount_label(request)  # before routing: the mount rewrites the scope path
+
+        def access(status):
+            route = mounted or getattr(request.scope.get('route'), 'path', None) or 'unmatched'  # a mount's own inner routes are not ours; the template, never the concrete path (ids)
+            health = route.startswith('/health/') and status < 500
+            observability.log_event('http_request', 'debug' if health else 'info', method=request.method, route=route, status=status,
+                                    duration_ms=observability.elapsed_ms(started))
+        try:
+            try:
+                response = await call_next(request)
+            except Exception:
+                access(503)
+                raise
+            response.headers['X-Request-ID'] = request.state.request_id
+            response.headers['Cache-Control'] = 'no-store'
+            access(response.status_code)
+            return response
+        finally:
+            observability.REQUEST_ID.reset(token)
 
     def error(request, code, message, status):
-        return JSONResponse({'error': {'code': code, 'message': message}, 'request_id': getattr(request.state, 'request_id', str(uuid.uuid4()))}, status_code=status)
+        request_id = getattr(request.state, 'request_id', str(uuid.uuid4()))
+        return JSONResponse({'error': {'code': code, 'message': message}, 'request_id': request_id}, status_code=status, headers={'X-Request-ID': request_id})
 
     @app.exception_handler(MemoryError)
     async def domain_error(request, exc):
@@ -80,6 +114,7 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
 
     @app.exception_handler(Exception)
     async def unavailable(request, exc):
+        observability.log_failure('unhandled_exception', exc, 'error', request_id=getattr(request.state, 'request_id', None))
         return error(request, 'service_unavailable', 'Service is temporarily unavailable', 503)
 
     def identity(request: Request):
@@ -104,9 +139,29 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
         try:
             with store.transaction() as c:
                 c.execute('SELECT version FROM memory.schema_versions LIMIT 1')
-        except Exception:
+        except Exception as exc:
+            observability.log_failure('readiness_failed', exc, 'warning')
             raise MemoryError('not_ready', 'Database migration is unavailable', 503)
         return {'status': 'ready'}
+
+    def metrics_response():
+        observability.refresh_queue_depth(store)
+        return Response(observability.render_metrics(), media_type=observability.METRICS_CONTENT_TYPE)
+
+    # Not part of the published API contract (include_in_schema=False). A single uvicorn process serves it, so the default in-process registry is enough.
+    if settings.metrics_mode == 'internal':
+        @app.get('/metrics', include_in_schema=False)
+        def metrics_internal(request: Request):
+            # nginx and the host proxy never route /metrics; a request that still carries proxy headers is treated as public.
+            if any(header in request.headers for header in PROXY_HEADERS):
+                return error(request, 'not_found', 'Not found', 404)
+            return metrics_response()
+    elif settings.metrics_mode == 'admin':
+        @app.get('/metrics', include_in_schema=False)
+        def metrics_admin(actor=Depends(identity)):
+            if actor.get('is_admin') is not True:
+                raise Forbidden()
+            return metrics_response()
 
     @app.post('/v1/auth/login', operation_id='memory_login')
     def login(payload: m.Login, request: Request):
@@ -349,7 +404,9 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
 
 def main():
     import uvicorn
-    uvicorn.run(create_app(), host='0.0.0.0', port=8790)
+    observability.configure_logging()
+    # One process only: the Prometheus registry lives in it (no multiprocess mode). Our own JSON access line replaces uvicorn's text one.
+    uvicorn.run(create_app(), host='0.0.0.0', port=8790, log_config=None, access_log=False)
 
 
 if __name__ == '__main__':

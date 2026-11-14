@@ -126,6 +126,22 @@ class CorpusAnswerDatabaseTests(unittest.TestCase):
         self.assertEqual(self.service.status(self.actor, self.project, 'review', 'request-1'), first)
         with self.assertRaises(Conflict): asyncio.run(self.service.answer(*self.args(question='different')))
 
+    def test_sources_are_found_with_a_question_without_accent(self):
+        """CA-23 (corpus_answers): `configuracion` did not match `configuración` before the language vectors."""
+        accented = event(self.project, generate=False, payload={'title': 'Servidor', 'content': 'La configuración de las canciones vive en el servidor', 'source': {'uri': 'fixture://fts'}})
+        self.store.ingest_event(self.actor, accented)
+        self.agent.rebuild_corpus(self.actor, self.project, 'review', expected_version=self.corpus['version'])
+        corpus = self.agent.prime_corpus(self.actor, self.project, 'review', fresh=True)
+        class Quoting(FakeProvider):
+            async def answer(self, messages, sources, limits):
+                self.calls.append((messages, sources))
+                return {'answer': 'La configuración vive en el servidor.', 'citations': [{'ref': sources[0]['ref'], 'quote': 'configuración'}], 'input_tokens': 200, 'output_tokens': 40}
+        self.provider = Quoting()
+        self.service = CorpusAnswers(self.store, settings(), self.provider)
+        receipt = asyncio.run(self.service.answer(self.actor, self.project, 'review', 'configuracion cancion', 'accents', corpus['session_id'], corpus['version']))
+        self.assertEqual(receipt['status'], 'completed')
+        self.assertEqual([source['ref'].split(':')[2] for source in self.provider.calls[0][1]], [accented['item_id']])
+
     def test_no_evidence_never_calls_model(self):
         receipt = asyncio.run(self.service.answer(*self.args(question='unfindableword')))
         self.assertEqual(receipt['status'], 'no_evidence'); self.assertEqual(receipt['reserved_token_units'], 0)

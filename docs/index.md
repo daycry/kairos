@@ -1,6 +1,6 @@
 # Documentación de Kairos
 
-Última actualización: 2026-11-06.
+Última actualización: 2026-11-09.
 
 ## Empieza por tu objetivo
 
@@ -25,7 +25,9 @@ El manual es dueño de las instrucciones del panel. La guía del servidor cubre 
 
 Describe la implementación propia disponible: 34 herramientas MCP de servidor, almacenamiento central, procesamiento asíncrono y portal nativo. Las herramientas locales de código son una opción independiente del instalador. Comprueba la lista real del servidor desplegado: una compilación preparada no activa sus herramientas en un contenedor anterior. Un recibo de aceptación, una prueba unitaria o un estado de salud no acreditan por separado una integración completa con un cliente real.
 
-La distribución pública del paquete, la aceptación en cada cliente real y la activación de esta distribución limpia deben verificarse en su entorno. No se promete captura automática universal ni equivalencia funcional completa con otros productos.
+Estado a 2026-11-09: la instalación local ejecuta esta distribución y superó la verificación de despliegue ([activación](roadmap/2026-11-06-functional-parity/testing/activation.json)). El paquete `@daycry/kairos` 0.2.0 está preparado y verificado, pero su publicación en npm sigue pendiente; la instalación de clientes usa el tarball local. La aceptación en cada cliente real debe verificarse en su entorno. No se promete captura automática universal ni equivalencia funcional completa con otros productos.
+
+Las capturas de pantalla de los manuales están en `assets/screenshots/` y proceden de pruebas de interfaz con datos sintéticos.
 
 No hay una sección separada de decisiones aprobadas, porque este repositorio no aporta un inventario de conocimiento aprobado para indexar. El avance de la distribución se mantiene en el [ledger de producto](roadmap/2026-11-04-native-product/tasks.md), separado del manual.
 

@@ -1,0 +1,58 @@
+{
+  "conditions": "synthetic Spanish/English words, documents with about 2.5 KB of content (title, tags, content) and memory items with about 1.2 KB; isolated PostgreSQL 17.11 in the kairos-test container (no CPU limit, nothing else running); maintenance_work_mem 256MB, serial index build; schema version 8 as starting point; measured with the FINAL schema (indexes without predicate)",
+  "date": "2026-11-09",
+  "reading": "Store.migrate() runs the whole schema in ONE transaction, so the strongest lock taken on each table is held until the COMMIT of the entire migration (first_migrate_seconds), not for the phase that took it. ALTER TABLE takes ACCESS EXCLUSIVE on BOTH documents (generated columns: full rewrite, the dominant cost) and memory_items (ADD COLUMN is metadata only, but its lock is kept): reads and writes of both tables by the services of the previous release wait for the whole run. The phase times are per statement on a copy and only show where the time goes (they do not sum to the total: the total also contains the earlier idempotent versions and the migration's own overhead). A repeated migrate skips the whole block (no lock, no scan).",
+  "results": [
+    {
+      "rows_per_table": 2000,
+      "first_migrate_seconds": 6.97,
+      "second_migrate_seconds": 0.09,
+      "phases_seconds": {
+        "documents_rewrite": 5.81,
+        "memory_items_backfill": 1.98,
+        "index_memory_document_search_es": 0.03,
+        "index_memory_document_search_en": 0.03,
+        "index_memory_document_title_trgm": 0.05,
+        "index_memory_item_search_es": 0.03,
+        "index_memory_item_search_en": 0.02,
+        "index_memory_item_title_trgm": 0.04
+      },
+      "size_mb_before": {
+        "documents": 4,
+        "memory_items": 3
+      },
+      "size_mb_after": {
+        "documents": 9,
+        "memory_items": 10
+      }
+    },
+    {
+      "rows_per_table": 20000,
+      "first_migrate_seconds": 86.86,
+      "second_migrate_seconds": 0.04,
+      "phases_seconds": {
+        "documents_rewrite": 34.34,
+        "memory_items_backfill": 14.82,
+        "index_memory_document_search_es": 0.2,
+        "index_memory_document_search_en": 0.43,
+        "index_memory_document_title_trgm": 0.41,
+        "index_memory_item_search_es": 0.19,
+        "index_memory_item_search_en": 0.19,
+        "index_memory_item_title_trgm": 0.36
+      },
+      "size_mb_before": {
+        "documents": 37,
+        "memory_items": 30
+      },
+      "size_mb_after": {
+        "documents": 92,
+        "memory_items": 91
+      }
+    }
+  ],
+  "disk": "total relation size (table + indexes + TOAST) grows 2.5x for documents (37 -> 92 MB) and 3x for memory_items (30 -> 91 MB) at 20,000 rows; the documents rewrite needs room for a second copy of the table during the run and the transaction writes WAL for every changed row",
+  "deployed_volume_note": "the deployed database holds about 21 documents (activation of 2026-11-09): the migration is sub-second there; the figures above only bound the cost for a much larger installation",
+  "earlier_measurement": "the first version of this file (119.3 s at 20,000 rows) was taken with the six indexes still partial and other containers running; superseded by this one",
+  "task": "T-13-fix1",
+  "what": "wall time of Store.migrate() over an existing schema-8 database; phases timed per statement on a second copy"
+}

@@ -1,0 +1,2245 @@
+{
+  "dataset": "dataset-v1",
+  "dataset_sha256": "1bba8d997c6dcc8e11f2ddceba2a78e8c38c0bd7cafd4aa458dd1547ad4be6f6",
+  "deterministic": true,
+  "embedding_provider": "fake-hashed-words-and-char-ngrams",
+  "generated_at": "2026-11-09T12:50:23+00:00",
+  "layers": {
+    "documental": {
+      "overall": {
+        "mrr": 0.2,
+        "n": 20,
+        "recall@1": 0.2,
+        "recall@10": 0.2,
+        "recall@5": 0.2
+      },
+      "subsets": {
+        "en": {
+          "mrr": 1.0,
+          "n": 4,
+          "recall@1": 1.0,
+          "recall@10": 1.0,
+          "recall@5": 1.0
+        },
+        "es": {
+          "mrr": 0.0,
+          "n": 4,
+          "recall@1": 0.0,
+          "recall@10": 0.0,
+          "recall@5": 0.0
+        },
+        "long": {
+          "mrr": 0.0,
+          "n": 12,
+          "recall@1": 0.0,
+          "recall@10": 0.0,
+          "recall@5": 0.0
+        }
+      }
+    },
+    "episodic": {
+      "overall": {
+        "mrr": 0.384615,
+        "n": 52,
+        "recall@1": 0.384615,
+        "recall@10": 0.384615,
+        "recall@5": 0.384615
+      },
+      "subsets": {
+        "en": {
+          "mrr": 1.0,
+          "n": 20,
+          "recall@1": 1.0,
+          "recall@10": 1.0,
+          "recall@5": 1.0
+        },
+        "es": {
+          "mrr": 0.0,
+          "n": 20,
+          "recall@1": 0.0,
+          "recall@10": 0.0,
+          "recall@5": 0.0
+        },
+        "typo_id": {
+          "mrr": 0.0,
+          "n": 12,
+          "recall@1": 0.0,
+          "recall@10": 0.0,
+          "recall@5": 0.0
+        }
+      }
+    },
+    "fused": {
+      "overall": {
+        "mrr": 0.339809,
+        "n": 72,
+        "recall@1": 0.180556,
+        "recall@10": 0.916667,
+        "recall@5": 0.5
+      },
+      "subsets": {
+        "en": {
+          "mrr": 0.356614,
+          "n": 24,
+          "recall@1": 0.166667,
+          "recall@10": 1.0,
+          "recall@5": 0.625
+        },
+        "es": {
+          "mrr": 0.341022,
+          "n": 24,
+          "recall@1": 0.208333,
+          "recall@10": 1.0,
+          "recall@5": 0.333333
+        },
+        "long": {
+          "mrr": 0.354167,
+          "n": 12,
+          "recall@1": 0.25,
+          "recall@10": 0.5,
+          "recall@5": 0.5
+        },
+        "typo_id": {
+          "mrr": 0.289418,
+          "n": 12,
+          "recall@1": 0.083333,
+          "recall@10": 1.0,
+          "recall@5": 0.583333
+        }
+      }
+    },
+    "semantic": {
+      "overall": {
+        "mrr": 0.869097,
+        "n": 72,
+        "recall@1": 0.847222,
+        "recall@10": 0.916667,
+        "recall@5": 0.902778
+      },
+      "subsets": {
+        "en": {
+          "mrr": 1.0,
+          "n": 24,
+          "recall@1": 1.0,
+          "recall@10": 1.0,
+          "recall@5": 1.0
+        },
+        "es": {
+          "mrr": 1.0,
+          "n": 24,
+          "recall@1": 1.0,
+          "recall@10": 1.0,
+          "recall@5": 1.0
+        },
+        "long": {
+          "mrr": 0.214583,
+          "n": 12,
+          "recall@1": 0.083333,
+          "recall@10": 0.5,
+          "recall@5": 0.416667
+        },
+        "typo_id": {
+          "mrr": 1.0,
+          "n": 12,
+          "recall@1": 1.0,
+          "recall@10": 1.0,
+          "recall@5": 1.0
+        }
+      }
+    }
+  },
+  "limit": 10,
+  "model": "nomic-embed-text",
+  "network": "unreachable",
+  "product_database_accessed": false,
+  "query_backends": [
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-001",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-002",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-003",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-004",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-005",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-006",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-007",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-008",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-009",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-010",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-011",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-012",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-013",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-014",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-015",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-016",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-017",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-018",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-019",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-020",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-021",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-022",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-023",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-024",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-025",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-026",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-027",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-028",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-029",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-030",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-031",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-032",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-033",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-034",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-035",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-036",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-037",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-038",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-039",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-040",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-041",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-042",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-043",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-044",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-045",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-046",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-047",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-048",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-049",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-050",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-051",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-052",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-053",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-054",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-055",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-056",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-057",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-058",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-059",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-060",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-061",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-062",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-063",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-064",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-065",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-066",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-067",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-068",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-069",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-070",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-071",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    },
+    {
+      "documental": {
+        "backends": {
+          "documental": "ok"
+        },
+        "partial": false
+      },
+      "episodic": {
+        "backends": {
+          "episodic": "ok"
+        },
+        "partial": false
+      },
+      "fused": {
+        "backends": {
+          "documental": "ok",
+          "episodic": "ok",
+          "semantic": "ok"
+        },
+        "partial": false
+      },
+      "id": "q-072",
+      "semantic": {
+        "backends": {
+          "semantic": "ok"
+        },
+        "partial": false
+      }
+    }
+  ]
+}
