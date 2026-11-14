@@ -33,6 +33,7 @@ Solo `Authorization: Bearer <clave>`; el esquema puede ir en cualquier combinaci
 
 - Sin cabecera, o con otro esquema: **401** con el cuerpo `{"error": {"code": "unauthorized", "message": "Authentication required"}, "request_id": ""}`, sin llamar a la API. Es el mismo cuerpo que el MCP interno.
 - kairos-mcp no sabe si una clave es válida hasta que `/v1` la juzga: si la API responde 401 (clave revocada, desactivada o inventada), la respuesta HTTP de esa petición MCP es el mismo 401. `initialize`, `tools/list` y cualquier mensaje MCP que no sea una llamada de herramienta comprueban la credencial con una lectura barata de la API (`GET /v1/auth/me`) y responden 401 si la rechaza; `important_workflow`, que no hace petición propia, hace la misma comprobación; el resto de llamadas se enteran por su propia petición. Si la API no responde, la petición no se rechaza (la llamada de herramienta fallará con su mensaje).
+- Una llamada de herramienta que no llega a `/v1` (herramienta desconocida, argumentos que no cumplen el esquema o un UUID inválido) se rechaza antes de mirar la credencial: responde con el error de la herramienta a cualquier `Bearer` con esquema correcto, donde el MCP interno daría 401. No filtra nada (los esquemas son públicos y no se accede a datos); es el diseño aprobado, que evita llamar a la API por una clave que aún no ha juzgado.
 - Cliente HTTP: no usa las variables de proxy del entorno (`HTTP_PROXY`, `ALL_PROXY`…) ni sigue redirecciones; la cabecera solo viaja a `KAIROS_API_URL`.
 - Los permisos (lectura, escritura, publicación, proyecto) los decide siempre el servidor; una clave sin permiso recibe el mismo mensaje que con el MCP interno.
 - Las sesiones con cookie y CSRF del portal no se aceptan: siguen solo en el MCP interno.
@@ -63,9 +64,9 @@ Como con el MCP interno, con dos diferencias (siguen siendo texto JSON compatibl
 | Situación | Resultado |
 |---|---|
 | `/v1` responde 4xx con `{"error": {"code", "message"}}` | Fallo de la herramienta con ese `message` |
-| 5xx sin error de dominio, plazo agotado, conexión caída, redirección o respuesta de más de 96 MiB (el tope está por encima de lo que el servidor puede producir; una respuesta mayor que el tope de bytes de su herramienta se corta con su marcador) | `Memory service temporarily unavailable` y un evento de log sin contenido ni credenciales |
+| 5xx sin error de dominio, plazo agotado, conexión caída, redirección o respuesta de más de 64 MiB (el tope está por encima de lo que el servidor produce con sus límites, unos 52 MB; una respuesta mayor que el tope de bytes de su herramienta se corta con su marcador) | `Memory service temporarily unavailable` y un evento de log sin contenido ni credenciales |
 | 5xx que es un error de dominio del servidor (por ejemplo `semantic_deadline_exceeded`) | Su mensaje, como el MCP interno |
-| Argumentos que no cumplen el `inputSchema` | Resultado `isError` con `Input validation error: …` (el texto de FastMCP del MCP interno es otro); un UUID inválido, el texto del MCP interno |
+| Argumentos que no cumplen el `inputSchema` | Resultado `isError` con `Input validation error: …` (el texto de FastMCP del MCP interno es otro); un UUID inválido, el texto del MCP interno. Se elige el mejor de los 16 primeros errores del esquema, para que una entrada enorme se rechace en milisegundos: con más de 16 fallos el texto puede nombrar otro error que el del SDK (por ejemplo, el de un elemento y no el de `maxItems`) |
 | Error inesperado dentro de kairos-mcp | `Memory service temporarily unavailable`; el log lleva solo el tipo de la excepción |
 | Cuerpo MCP de más de `KAIROS_MAX_BODY_BYTES` | 413 `body_too_large` |
 
