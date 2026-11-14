@@ -163,6 +163,124 @@ class VerifyRuntimeTests(unittest.TestCase):
         self.assertEqual([call[0] if call[0] in ('login', 'logout') else call[1] for call in FakePortal.instances[0].calls], ['login', 'logout'])
 
 
+class RevocationTests(unittest.TestCase):
+    """T-72 fix: the temporary keys are revoked on every path and a failed revocation never hides the error that was already propagating."""
+
+    @staticmethod
+    def portal(fail_mcp=False, fail_delete=False, project_ids=None, fail_create=False, roundtrip_projects=None):
+        class Portal(FakePortal):
+            keys_body = None
+
+            def request(self, path, value=None, method=None, bearer=None, host=None):
+                if path == '/v1/keys':
+                    Portal.keys_body = value
+                    if fail_create:
+                        self.calls.append(('POST', path, None))
+                        raise deploy.DeploymentError('422')
+                if path == '/v1/projects' and method is None and value is None and roundtrip_projects is not None:
+                    return {'projects': [{'id': name} for name in roundtrip_projects]}
+                if path.endswith('/policy'):
+                    return {}
+                if path == '/mcp/' and fail_mcp:
+                    self.calls.append(('POST', path, bearer))
+                    raise deploy.DeploymentError('MCP verification returned a protocol or tool error')
+                if method == 'DELETE' and fail_delete:
+                    self.calls.append(('DELETE', path, bearer))
+                    raise deploy.DeploymentError('Runtime verification failed; check access and service status without resending data')
+                return super().request(path, value, method, bearer, host)
+
+            def exchange(self, path, value=None, method=None, bearer=None, host=None):
+                self.calls.append(('exchange', path, host))
+                return 500, b''
+
+            if project_ids is not None:
+                @staticmethod
+                def rpc(method, params, base=FakePortal.rpc):
+                    if method == 'tools/call' and params['name'] == 'projects':
+                        return {'structuredContent': {'projects': [{'id': name} for name in project_ids]}}
+                    return base(method, params)
+
+        FakePortal.instances.clear()
+        return Portal
+
+    def verify(self, portal, manifest=None, warnings=None):
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory, patch.object(deploy, 'Portal', portal), contextlib.redirect_stderr(io.StringIO()) as stderr:
+            (Path(directory) / 'bootstrap_password').write_text('synthetic-password\n', encoding='utf-8')
+            try:
+                return deploy.verify_runtime(manifest or {'projects': [{'id': 'p1'}], 'documents': []}, Path(directory), warnings=warnings), None, stderr.getvalue()
+            except deploy.DeploymentError as exc:
+                return None, exc, stderr.getvalue()
+
+    def test_a_failed_verification_still_revokes_the_key_and_closes_the_session(self):
+        portal = self.portal(fail_mcp=True)
+        report, error, _ = self.verify(portal)
+        self.assertIsNone(report)
+        self.assertIn('protocol or tool error', str(error))
+        order = [call[0] if call[0] in ('login', 'logout') else call[1] for call in FakePortal.instances[0].calls]
+        self.assertEqual(order[-2:], ['/v1/keys/key-1', 'logout'])  # the DELETE lives in the finally
+
+    def test_a_failed_revocation_keeps_the_original_error_and_names_the_key_but_never_the_token(self):
+        portal, warnings = self.portal(fail_mcp=True, fail_delete=True), []
+        _, error, stderr = self.verify(portal, warnings=warnings)
+        self.assertIn('protocol or tool error', str(error))  # not the error of the DELETE
+        self.assertEqual(FakePortal.instances[0].calls[-1][0], 'logout')
+        self.assertEqual([(w['code'], w['key_id']) for w in warnings], [('temporary_key_not_revoked', 'key-1')])
+        for text in (stderr, json.dumps(warnings)):
+            self.assertIn('key-1', text)
+            self.assertIn('deployment-verify-', text)
+            self.assertIn('revoke it by hand', text)
+            self.assertNotIn('synthetic-token', text)
+
+    def test_a_failed_revocation_after_a_good_check_is_in_the_returned_report(self):
+        report, error, stderr = self.verify(self.portal(fail_delete=True), warnings=[])
+        self.assertIsNone(error)
+        self.assertEqual(report['temporary_key_not_revoked']['key_id'], 'key-1')
+        self.assertIn('key-1', stderr)
+
+    def test_with_more_than_100_projects_the_key_names_at_most_100_and_the_rest_is_reported(self):
+        ids = ['p%03d' % number for number in range(120)]
+        portal = self.portal(project_ids=ids[:100])
+        report, error, _ = self.verify(portal, {'projects': [{'id': name} for name in ids], 'documents': []})
+        self.assertIsNone(error)
+        self.assertEqual(len(portal.keys_body['project_ids']), 100)
+        self.assertEqual((report['projects'], report['projects_not_checked']), (100, 20))
+
+    def test_the_key_is_created_inside_the_guarded_block_so_a_failed_creation_still_logs_out(self):
+        portal = self.portal(fail_create=True)
+        _, error, _ = self.verify(portal)
+        self.assertEqual(str(error), '422')
+        self.assertEqual(FakePortal.instances[0].calls[-1][0], 'logout')
+
+    def test_roundtrip_revokes_its_key_removes_the_key_file_and_logs_out_when_it_fails(self):
+        import tempfile
+        portal = self.portal(roundtrip_projects=[deploy.REHEARSAL_PROJECT_ID])
+        with tempfile.TemporaryDirectory() as directory, patch.object(deploy, 'Portal', portal):
+            private = Path(directory) / 'private'
+            with self.assertRaises(deploy.DeploymentError):  # `exchange` answers 500: the Host check fails before the bridge starts
+                deploy.roundtrip('http://127.0.0.1:15173', 'synthetic-password', private, ROOT)
+            self.assertFalse((private / 'roundtrip.key').exists())
+        calls = FakePortal.instances[0].calls
+        self.assertIn(('DELETE', '/v1/keys/key-1', None), calls)
+        self.assertEqual(calls[-1][0], 'logout')
+
+    def test_a_failed_roundtrip_revocation_keeps_the_original_error(self):
+        import tempfile
+        portal, warnings = self.portal(fail_delete=True, roundtrip_projects=[deploy.REHEARSAL_PROJECT_ID]), []
+        with tempfile.TemporaryDirectory() as directory, patch.object(deploy, 'Portal', portal), contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(deploy.DeploymentError) as caught:
+                deploy.roundtrip('http://127.0.0.1:15173', 'synthetic-password', Path(directory), ROOT, warnings=warnings)
+        self.assertIn('allowed_hosts', str(caught.exception))
+        self.assertEqual(warnings[0]['key_id'], 'key-1')
+
+
+class ConsoleMessageTests(unittest.TestCase):
+    def test_the_success_line_says_when_mcp_was_not_checked(self):
+        self.assertEqual(deploy.verified_message({'mcp_checked': True}), 'Kairos deployment verified.')
+        self.assertEqual(deploy.verified_message({'projects': 2}), 'Kairos deployment verified.')
+        self.assertIn('/mcp not checked', deploy.verified_message({'mcp_checked': False}))
+
+
 class EmbeddingStubTests(unittest.TestCase):
     def test_the_stub_serves_deterministic_vectors_of_the_index_dimension_and_reports_without_counting_the_report(self):
         with ChatSpy('127.0.0.1', 0, 768) as spy:

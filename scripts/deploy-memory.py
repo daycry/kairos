@@ -276,7 +276,7 @@ class Deployment:
         password = safe_path(self.secret_dir / 'bootstrap_password').read_text(encoding='utf-8').strip()
         origin = f'http://127.0.0.1:{self.web_port}'
         before = self.spy_report()
-        result = roundtrip(origin, password, self.private, self.root)
+        result = roundtrip(origin, password, self.private, self.root, warnings=self.report.setdefault('warnings', []))
         after = self.spy_report()
         if after['chat_calls']:
             raise DeploymentError(f"The server asked a language model {after['chat_calls']} time(s) during the round trip; there must be none")
@@ -411,7 +411,8 @@ class Deployment:
         if before:
             compare_content(before, final)
         self.report['verification'] = verify_runtime(final, self.secret_dir,
-                                                    self.args.verify_key_file, f'http://127.0.0.1:{self.web_port}')
+                                                    self.args.verify_key_file, f'http://127.0.0.1:{self.web_port}',
+                                                    self.report.setdefault('warnings', []))
         if self.roundtrip:
             self.step('roundtrip')
             self.report['roundtrip'] = self.run_roundtrip()
@@ -420,7 +421,7 @@ class Deployment:
         self.report.update(status='complete', content_sha256=final['sha256'],
                            documents=len(final['documents']), projects=len(final['projects']))
         self.save_report()
-        print('Kairos deployment verified. Report: ' + ('.private/rehearsal-' + self.project + '/' if self.isolated else '.private/') + 'deployment-status.json')
+        print(verified_message(self.report['verification']) + ' Report: ' + ('.private/rehearsal-' + self.project + '/' if self.isolated else '.private/') + 'deployment-status.json')
 
 
 class Portal:
@@ -467,15 +468,39 @@ class Portal:
         self.request('/v1/auth/logout', {})
 
 
-def verify_runtime(manifest, secret_dir, key_file=None, origin='http://127.0.0.1:5173'):
+def verified_message(verification):
+    """Console line of a finished deployment: a skipped `/mcp/` check is said, not hidden behind a plain success."""
+    if verification.get('mcp_checked', True):
+        return 'Kairos deployment verified.'
+    return 'Kairos deployment verified; /mcp not checked: the installation has no projects.'
+
+
+MAX_KEY_PROJECTS = 100  # `KeyInput.project_ids` of the server
+
+
+def revoke_key(portal, key_id, name, warnings):
+    """Revoke a temporary key without hiding the error that is already propagating: a failure is a warning (report and stderr) with the way to revoke it by hand. Never the token."""
+    try:
+        portal.request('/v1/keys/' + key_id, method='DELETE')
+    except Exception:
+        warning = {'code': 'temporary_key_not_revoked', 'key_id': key_id, 'key_name': name,
+                   'action': f'The temporary key {name} (id {key_id}) is still active; revoke it by hand: DELETE /v1/keys/{key_id} with an admin session, or the portal key list.'}
+        if warnings is not None:
+            warnings.append(warning)
+        print('WARNING: ' + warning['action'], file=sys.stderr)
+        return warning
+    return None
+
+
+def verify_runtime(manifest, secret_dir, key_file=None, origin='http://127.0.0.1:5173', warnings=None):
     """Read actual MCP tools, projects and complete paginated document manifests.
 
     `/mcp/` of the web entry is kairos-mcp, which takes a Bearer and never the portal cookie: with a session login the check first creates a read key
-    for the projects of the manifest and revokes it at the end.
+    for the projects of the manifest (at most 100, what a key can name; the rest is reported as not checked) and revokes it at the end, also when the check fails.
     """
     portal = Portal(origin)
     request = portal.request
-    bearer, temporary_key = None, None
+    bearer, temporary_key, key_name, granted, result = None, None, None, None, None
     if key_file:
         bearer = safe_path(Path(key_file)).read_text(encoding='utf-8').strip()
     else:
@@ -484,9 +509,13 @@ def verify_runtime(manifest, secret_dir, key_file=None, origin='http://127.0.0.1
             # A key needs at least one project to be granted on, and an installation without projects has nothing to read: the `/mcp/` check is not possible (and is reported as such).
             portal.logout()
             return {'transport': 'MCP HTTP', 'tools': [], 'projects': 0, 'documents_verified': 0, 'mcp_checked': False, 'reason': 'the installation has no project to authorize a key on'}
-        created = request('/v1/keys', {'name': 'deployment-verify-' + uuid.uuid4().hex[:8], 'project_ids': [p['id'] for p in manifest['projects']], 'scopes': ['read']})
-        bearer, temporary_key = created['token'], created['id']
     try:
+        if not key_file:
+            granted = sorted(p['id'] for p in manifest['projects'])[:MAX_KEY_PROJECTS]
+            key_name = 'deployment-verify-' + uuid.uuid4().hex[:8]
+            created = request('/v1/keys', {'name': key_name, 'project_ids': granted, 'scopes': ['read']})
+            temporary_key = created['id']  # before the token: from here on the key has to be revoked
+            bearer = created['token']
         serial = 0
 
         def rpc(method, params):
@@ -523,7 +552,8 @@ def verify_runtime(manifest, secret_dir, key_file=None, origin='http://127.0.0.1
         if 'AutomaticCapture' not in remember_tool.get('inputSchema',{}).get('$defs',{}) or 'match_mode' not in context_tool.get('inputSchema',{}).get('properties',{}):
             raise DeploymentError('Automatic capture fingerprint or context filter contract is unavailable')
         projects = call('projects', {})['projects']
-        if {p['id'] for p in projects} != {p['id'] for p in manifest['projects']}:
+        expected_ids = {p['id'] for p in manifest['projects']} if granted is None else set(granted)
+        if {p['id'] for p in projects} != expected_ids:
             raise DeploymentError('Verification identity cannot read every configured project')
         actual = {}
         for project in projects:
@@ -547,18 +577,28 @@ def verify_runtime(manifest, secret_dir, key_file=None, origin='http://127.0.0.1
             else:
                 raise DeploymentError('MCP verification exceeded its page limit')
         expected = {(d['project_id'], d['id']): (d['version'], d['source_sha256'], d['deleted'])
-                    for d in manifest['documents']}
+                    for d in manifest['documents'] if granted is None or d['project_id'] in expected_ids}
         if actual != expected:
             raise DeploymentError('Runtime document identities, hashes or versions differ')
-        return {'transport': 'MCP HTTP', 'tools': sorted(names),
-                'projects': len(projects), 'documents_verified': len(actual)}
+        result = {'transport': 'MCP HTTP', 'tools': sorted(names),
+                  'projects': len(projects), 'documents_verified': len(actual)}
+        if granted is not None and len(manifest['projects']) > len(granted):
+            result['projects_not_checked'] = len(manifest['projects']) - len(granted)  # a key names at most 100 projects
+        return result
     finally:
+        failing = sys.exc_info()[0] is not None  # an error is propagating: it is the one to keep
         if not key_file:
             try:
                 if temporary_key:
-                    request('/v1/keys/' + temporary_key, method='DELETE')
+                    revocation = revoke_key(portal, temporary_key, key_name, warnings)
+                    if revocation and result is not None:
+                        result['temporary_key_not_revoked'] = revocation
             finally:
-                portal.logout()
+                try:
+                    portal.logout()
+                except Exception:
+                    if not failing:
+                        raise
 
 
 class CliBridge:
@@ -612,7 +652,7 @@ class CliBridge:
         self.child.stdout.close()
 
 
-def roundtrip(origin, password, private, root, wait_seconds=90):
+def roundtrip(origin, password, private, root, wait_seconds=90, warnings=None):
     """The three components end to end through the web entry (T-72, CA-31): the CLI talks to `/mcp/` of nginx, which is kairos-mcp, which calls `/v1`.
 
     A project and a read/write key are created through the portal; the CLI bridge writes one observation with `remember` and searches for it until the worker
@@ -664,17 +704,22 @@ def roundtrip(origin, password, private, root, wait_seconds=90):
         return {'server': info.get('serverInfo', {}).get('name'), 'tools': len(tools), 'hosts': hosts, 'receipt': sorted(receipt) if isinstance(receipt, dict) else None,
                 'found_ref': found.get('ref'), 'found_layer': found.get('layer')}
     finally:
+        failing = sys.exc_info()[0] is not None
         try:
             if bridge:
                 bridge.close()
         finally:
             try:
                 if key_id:
-                    portal.request('/v1/keys/' + key_id, method='DELETE')
+                    revoke_key(portal, key_id, 'rehearsal-roundtrip', warnings)
             finally:
                 if key_file and key_file.exists():
                     key_file.unlink()
-                portal.logout()
+                try:
+                    portal.logout()
+                except Exception:
+                    if not failing:
+                        raise
 
 
 def failure_hints(report, phase):
