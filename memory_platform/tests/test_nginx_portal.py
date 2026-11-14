@@ -44,8 +44,7 @@ class PortalNginxTests(unittest.TestCase):
         self.assertLess(CONF.index('+metrics'), CONF.index('location /memory-api/ {'))
 
     def test_the_other_routes_are_unchanged(self):
-        for route in ('location /v1/ {', 'location /mcp {'):
-            self.assertIn('proxy_pass http://memory-api:8790;', block(route), route)
+        self.assertIn('proxy_pass http://memory-api:8790;', block('location /v1/ {'))  # `/mcp` goes to kairos-mcp since T-52: see test_nginx_routes
         self.assertIn('location = /health/ready { proxy_pass http://memory-api:8790/health/ready; }', CONF)
         self.assertIn('location /api/ { return 404; }', CONF)
         self.assertEqual(len(re.findall(r'proxy_pass http', CONF)), 4)

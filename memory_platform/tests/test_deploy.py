@@ -172,7 +172,7 @@ class McpServiceTests(unittest.TestCase):
 
     def test_only_memory_api_shares_the_mcp_network(self):
         members = {name for name, value in self.compose['services'].items() if 'mcp' in (value.get('networks') or [])}
-        self.assertEqual(members, {'memory-api', 'memory-mcp'})  # T-52 adds memory-web, which routes /mcp to this service
+        self.assertEqual(members, {'memory-api', 'memory-mcp', 'memory-web'})  # memory-web routes /mcp to this service (T-52)
 
     def test_the_image_is_built_from_the_component_alone_and_waits_for_the_api(self):
         self.assertEqual(self.service['image'], 'kairos-mcp:latest')

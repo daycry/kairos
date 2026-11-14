@@ -185,10 +185,11 @@ services:
     build: {context: ., dockerfile: memory_platform/Dockerfile.web, target: final}
     profiles: [memory]
     restart: unless-stopped
-    networks: [webui]
+    networks: [webui, mcp]  # `mcp` (internal): the only way from the proxy to kairos-mcp, which routes /mcp (T-52)
     ports: ['127.0.0.1:5173:8080']
     depends_on:
       memory-api: {condition: service_healthy}
+      memory-mcp: {condition: service_healthy}
     tmpfs: ['/tmp:uid=101,gid=101,mode=1777']
 
   memory-admin:

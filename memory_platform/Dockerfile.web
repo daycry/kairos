@@ -22,7 +22,7 @@ EXPOSE 8080
 ENTRYPOINT ["nginx", "-g", "daemon off;"]
 
 FROM runtime AS test
-RUN sed 's/memory-api:8790/127.0.0.1:8790/g' /etc/nginx/nginx.conf > /tmp/nginx-test.conf \
+RUN sed 's/memory-api:8790/127.0.0.1:8790/g; s/memory-mcp:8791/127.0.0.1:8791/g' /etc/nginx/nginx.conf > /tmp/nginx-test.conf \
     && nginx -t -c /tmp/nginx-test.conf
 
 FROM runtime AS final

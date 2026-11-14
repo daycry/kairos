@@ -42,10 +42,10 @@ verificacion: obligatoria   # cada T-XX lleva `- **Verificación**:`; lo exige l
 | Fase 3 — Paridad REST /v1 (C-02) | 10 | 10 | 100% | 0 / 36.0h | 0 / 5.1h | 0 / 1.3h | 0 / 1282 k |
 | Fase 4 — Esquema de observación (C-05) | 8 | 8 | 100% | 0 / 37.8h | 0 / 4.8h | 0 / 1.2h | 0 / 1193 k |
 | Fase 5 — kairos-mcp (C-03) | 15 | 15 | 100% | 0 / 68.4h | 0 / 10.1h | 0 / 2.5h | 0 / 2532 k |
-| Fase 6 — Compatibilidad (C-07) | 1 | 6 | 16.7% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
+| Fase 6 — Compatibilidad (C-07) | 2 | 6 | 33.3% | 0 / 23.4h | 0 / 3.0h | 0 / 0.8h | 0 / 757 k |
 | Fase 7 — Estructura del repositorio (C-06) | 0 | 12 | 0% | 0 / 46.8h | 0 / 6.5h | 0 / 1.6h | 0 / 1614 k |
 | Fase 8 — Integración final y revisión | 0 | 6 | 0% | 0 / 12.0h | 0 / 1.8h | 0 / 0.4h | 0 / 440 k |
-| **TOTAL** | **51** | **74** | **68.9%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
+| **TOTAL** | **52** | **74** | **70.3%** | **0 / 280.2h** | **0 / 38.6h** | **0 / 9.6h** | **0 / 9641 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1817,32 +1817,37 @@ RED: `memory_platform/tests/test_mcp_legacy.py` falló con 6 tests: 3 failures y
 ### T-52 — `/mcp` del proxy web hacia kairos-mcp y Compose
 
 - **Descripción**: Enrutar `/mcp` del proxy web a `memory-mcp` (hoy a `memory-api`) y declarar la dependencia en Compose; el MCP interno sigue accesible en `memory-api:8790/mcp` durante la versión. Fuente: CA-27, CA-28, P-07.
-- **Changelog**: 
-- **Estado**: borrador
+- **Changelog**: El /mcp del proxy web (puerto 5173) ahora lo sirve kairos-mcp en lugar del MCP interno de la API; el puente del CLI no cambia, y memory-web espera a memory-mcp.
+- **Estado**: completado
+- **Cerrada**: 2026-11-14
 - **Tiempo humano**: est. 3.0h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.38h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.38h (estimado) · real 0.01h (medido)
 - **Supervisión**: est. 0.09h (≈25 % IA) · real —
 - **Previsión IA**: 104 k in / 9 k out tok · ⚠️ verificar €
 - **Dependencias**: T-51
 - **Tipo**: devops
-- **Archivos**: `memory_platform/nginx.conf`, `docker-compose.yml`, `memory_platform/tests/test_nginx_routes.py`
+- **Archivos**: `memory_platform/nginx.conf`, `docker-compose.yml`, `memory_platform/tests/test_nginx_routes.py`, `memory_platform/Dockerfile.web`, `memory_platform/tests/test_nginx_portal.py`, `memory_platform/tests/test_deploy.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build --target test -f memory_platform/Dockerfile.web -t kairos-web-test:t52 .` → exit 0 (`nginx -t`)
   - `python -m unittest discover -s memory_platform/tests -p test_nginx_routes.py` → `OK`
+  - Evidencia (2026-11-14): `docker build --target test -f memory_platform/Dockerfile.web -t kairos-web-test:t52 .` exit 0, `nginx: configuration file /tmp/nginx-test.conf test is successful`; `python -m unittest` de test_nginx_routes, test_nginx_portal, test_deploy y test_deploy_isolation: 48 OK; `docker compose -p kgi2pt52 --profile memory config` (solo render, sin crear nada): memory-web en redes webui y mcp, depends_on memory-api y memory-mcp service_healthy, puerto 127.0.0.1:5173 intacto.
 
 **Criterios de aceptación**
-- [ ] `nginx -t` valida la configuración con `/mcp` apuntando a `memory-mcp`
-- [ ] `memory-web` depende de `memory-mcp` y `docker compose config` del proyecto aislado lo refleja
-- [ ] `/mcp` conserva el comportamiento de plazos y buffers que tenía
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
+- [x] `nginx -t` valida la configuración con `/mcp` apuntando a `memory-mcp`
+- [x] `memory-web` depende de `memory-mcp` y `docker compose config` del proyecto aislado lo refleja
+- [x] `/mcp` conserva el comportamiento de plazos y buffers que tenía
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas` al cerrar
 
 **Subtareas**
-- [ ] Test estructural de la ruta (rojo)
-- [ ] Cambiar `nginx.conf` y Compose
-- [ ] `usage-meter start/close`
+- [x] Test estructural de la ruta (rojo)
+- [x] Cambiar `nginx.conf` y Compose
+- [x] `usage-meter start/close`
 
-**Notas**: Procedencia: spec CA-27/P-07. Patrón: `memory_platform/nginx.conf:56-60` (`/mcp` hoy hacia `memory-api`); target `test` de `memory_platform/Dockerfile.web:24-26` sustituye el upstream para `nginx -t`. Clase: cambio (oráculo: `nginx -t` y el test de ruta).
+**Notas**: Procedencia: spec CA-27/P-07. Patrón: `memory_platform/nginx.conf:56-60` (`/mcp` hoy hacia `memory-api`); target `test` de `memory_platform/Dockerfile.web:24-26` sustituye el upstream para `nginx -t`. Clase: cambio (oráculo: `nginx -t` y el test de ruta). Archivos anadidos: Dockerfile.web (el target test debe sustituir tambien memory-mcp:8791 para nginx -t), test_nginx_portal.py (su test de rutas fijaba /mcp a memory-api) y test_deploy.py (el test de miembros de la red mcp ya anunciaba que T-52 anade memory-web). Efecto en un despliegue existente: memory-web debe reconstruirse y recrearse (nueva nginx.conf y red mcp); si memory-mcp no esta arriba, nginx no arranca (por eso depends_on). usage-meter three-components/T-52: 0.01 h IA (medido, win-9b86e33f316b4b87a9c8f302120cdf80); la ventana es corta porque el codigo se escribio dentro de la ventana de T-51 (aprox. 0.3 h de trabajo real de esta tarea).
+
+
+RED: `memory_platform/tests/test_nginx_routes.py` falló con 7 tests: 3 failures y 1 error (/mcp apuntaba a memory-api:8790, Dockerfile.web sin sustituir memory-mcp, memory-web sin depends_on memory-mcp ni red mcp) · 2026-11-14.
 
 ### T-53 — Puente stdio del CLI contra kairos-mcp en proyecto aislado (CA-28)
 
