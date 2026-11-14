@@ -1437,7 +1437,7 @@ RED: `memory_platform/tests/test_deploy.py::McpServiceTests` falló con KeyError
 - **Previsión IA**: 84 k in / 8 k out tok · ⚠️ verificar €
 - **Dependencias**: T-39
 - **Tipo**: mcp
-- **Archivos**: `mcp/kairos_mcp/tools.py`, `mcp/kairos_mcp/budget.py`, `mcp/tests/test_tools_t41.py`, `mcp/kairos_mcp/translate.py`, `mcp/tests/support.py`, `mcp/tests/tool_cases.py`, `mcp/tests/test_review1.py`
+- **Archivos**: `mcp/kairos_mcp/tools.py`, `mcp/kairos_mcp/budget.py`, `mcp/tests/test_tools_t41.py`, `mcp/kairos_mcp/translate.py`, `mcp/tests/support.py`, `mcp/tests/tool_cases.py`, `mcp/tests/test_review1.py`, `mcp/tests/test_review2.py` (nota: añadido en el fix2 del intento 2, el test de la validación acotada)
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build -f mcp/Dockerfile -t kairos-mcp:t41 mcp/ && docker run --rm kairos-mcp:t41 python -m unittest discover -s tests` → `OK`, 12 herramientas probadas
