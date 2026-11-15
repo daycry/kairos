@@ -6,6 +6,7 @@ from .errors import MemoryError, NotFound
 from .privacy import has_sensitive, sanitize_payload
 from .store_common import canonical, digest, clean
 
+DEFAULT_MAX_ATTEMPTS = 3  # the cap of `claim_job` when nobody told the store otherwise; the worker passes MEMORY_MAX_ATTEMPTS (`store.max_attempts`)
 LEGACY_EMBED_CHARS = 8000  # what a receipt without `chunks` (a previous worker) embedded: the first 8,000 characters
 
 
@@ -87,6 +88,8 @@ class JobsMixin:
         return result
 
     def claim_job(self,worker_id,lease_seconds=120):
+        # `store.max_attempts` is set by the worker (MEMORY_MAX_ATTEMPTS) and is not a parameter: the signature of the store is frozen (store_surface.json).
+        max_attempts=getattr(self,'max_attempts',None) or DEFAULT_MAX_ATTEMPTS
         with self.transaction() as c:
             while True:
                 row=c.execute("SELECT * FROM memory.jobs WHERE (state IN ('pending','unknown') AND available_at<=clock_timestamp()) OR (state='running' AND lease_until<clock_timestamp()) ORDER BY priority,available_at,created_at,id FOR UPDATE SKIP LOCKED LIMIT 1").fetchone()
@@ -94,6 +97,12 @@ class JobsMixin:
                     return None
                 if row['destination'] not in {'extract','embed'}:
                     c.execute("UPDATE memory.jobs SET state='failed',error_code='destination_retired',lease_until=NULL WHERE id=%s",(row['id'],))
+                    continue
+                if row['state']=='running' and row['attempts']>=max_attempts:
+                    # A poisoned job: its lease expired (its worker died or was lost) and every attempt it was allowed has been charged. It is failed in THIS transaction,
+                    # on the row this transaction holds locked, instead of being claimed one more time; `retry_job` brings it back. `unknown` and `pending` jobs are not
+                    # touched: reconciliation and the retry of a failed job keep their semantics.
+                    c.execute("UPDATE memory.jobs SET state='failed',error_code='attempts_exhausted',lease_until=NULL WHERE id=%s AND state='running' AND attempts>=%s",(row['id'],max_attempts))
                     continue
                 table='memory.documents' if row['resource_type']=='document' else 'memory.memory_items'
                 extra=',NULL::text AS superseded_by' if row['resource_type']=='document' else ',superseded_by'

@@ -90,6 +90,7 @@ class Worker:
         """`clock` (monotonic seconds), `rng` (jitter, [0, 1)), `waiter` (the wait between claims; default: ends early when the worker is told to stop)
         and `heartbeat_wait` (the pause of the lease heartbeat) exist so that a test drives time and does not wait for it."""
         self.store, self.settings = store, settings
+        self.store.max_attempts = settings.max_attempts  # the cap `claim_job` applies to a job whose lease expired (`attempts_exhausted`); same value as the retry policy below
         self.id = worker_id or socket.gethostname()+':'+str(uuid.uuid4())
         if providers is None:
             # The language-model provider exists only when the operator turned extraction on (MEMORY_EXTRACT_ENABLED).

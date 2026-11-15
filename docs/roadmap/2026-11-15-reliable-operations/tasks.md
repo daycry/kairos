@@ -41,7 +41,7 @@ test-plan: n/a (sin UI)
 | Fase | Completadas | Total | Progreso | H. humanas (real/est) | H. IA ejec. (real/est) | Supervisión (real/est) | Tokens (real/est) |
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Arnés de fallos y tests de límites (C-07) | 6 | 6 | 100% | 0 / 32.4h | 0.83 / 4.3h | 0 / 1.1h | 0 / 1080 k |
-| Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 3 | 7 | 43% | 0 / 27.0h | 0.56 / 3.6h | 0 / 0.9h | 0 / 900 k |
+| Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 4 | 7 | 57% | 0 / 27.0h | 0.75 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 0 | 7 | 0% | 0 / 27.0h | 0 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 0 | 9 | 0% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 0 | 5 | 0% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **9** | **98** | **9%** | **0 / 412.8h** | **1.39 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **10** | **98** | **10%** | **0 / 412.8h** | **1.58 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -343,31 +343,32 @@ test-plan: n/a (sin UI)
 ### T-10 — Tope al reclamar: `attempts_exhausted` en el trabajo venenoso
 
 - **Descripción**: Un trabajo `running` con concesión expirada y `attempts ≥ max_attempts` pasa a `failed` con `attempts_exhausted` en la misma transacción de reclamo, en lugar de reclamarse; `retry_job` lo reactiva. Fuente: CA-12; B-05.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Un trabajo cuyo worker muere una y otra vez deja de reclamarse al agotar MEMORY_MAX_ATTEMPTS: pasa a fallido con attempts_exhausted, se ve en kairos_jobs_failed y se reactiva con el reintento.
+- **Estado**: completado
+- **Cerrada**: 2026-11-15
 - **Tiempo humano**: est. 3h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.19h (medido)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 110 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: T-09
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/store_jobs.py`, `server/memory_platform/tests/test_job_leases.py`
+- **Archivos**: `server/memory_platform/store_jobs.py`, `server/memory_platform/tests/test_job_leases.py`, `server/memory_platform/worker.py`, `server/memory_platform/observability.py`
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_job_leases|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Un trabajo venenoso (concesión expirada, `attempts ≥ max_attempts`) queda `failed` con `attempts_exhausted` y deja de reclamarse (prueba escrita en rojo antes del cambio)
-- [ ] `retry_job` (`store_jobs.py:68-78`) lo devuelve a `pending` y vuelve a procesarse
-- [ ] Es visible en `kairos_jobs_failed`
-- [ ] La semántica de reconciliación (`unknown`, `needs_reconciliation`, `store_jobs.py:104`) no cambia (pruebas existentes en verde)
+- [x] Un trabajo venenoso (concesión expirada, `attempts ≥ max_attempts`) queda `failed` con `attempts_exhausted` y deja de reclamarse (prueba escrita en rojo antes del cambio)
+- [x] `retry_job` (`store_jobs.py:68-78`) lo devuelve a `pending` y vuelve a procesarse
+- [x] Es visible en `kairos_jobs_failed`
+- [x] La semántica de reconciliación (`unknown`, `needs_reconciliation`, `store_jobs.py:104`) no cambia (pruebas existentes en verde)
 
 **Subtareas**
-- [ ] Escribir primero la prueba de trabajo venenoso (rojo)
-- [ ] Aplicar el tope en `claim_job` (`store_jobs.py:92`, `:105`)
-- [ ] Comprobar `retry_job` y la métrica
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero la prueba de trabajo venenoso (rojo)
+- [x] Aplicar el tope en `claim_job` (`store_jobs.py:92`, `:105`)
+- [x] Comprobar `retry_job` y la métrica
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `store_jobs.py:89-192` (`claim_job`, `renew_lease`, `_current_job`, `complete_job`, `fail_job`); `observability.py:205-208` (`kairos_jobs_failed`).
+**Notas**: Patrón: `store_jobs.py:89-192` (`claim_job`, `renew_lease`, `_current_job`, `complete_job`, `fail_job`); `observability.py:205-208` (`kairos_jobs_failed`). CIERRE: usage-meter {inicio 17:11:41Z, fin 17:19:46Z, horas_ia 0.19, duracion 11m, medido}. DESVIACION (Archivos ampliado con nota): worker.py y observability.py. Motivo 1: `store_surface.json` esta congelado, asi que `claim_job` no puede ganar un parametro `max_attempts` ni `Store` un atributo de clase; el tope viaja como atributo de INSTANCIA `store.max_attempts` (patron ya usado por `store.extraction_enabled`), que `Worker.__init__` fija desde `settings.max_attempts` (misma cifra que la politica de reintento de proveedor) y `claim_job` lee con `getattr(self,'max_attempts',None) or DEFAULT_MAX_ATTEMPTS` (3, el de `Settings`) para un Store usado sin worker. test_store_surface en verde. Motivo 2: `attempts_exhausted` entra en `JOB_CODES` (observability.py) para que `kairos_jobs_failed` lo cuente con su propio codigo y no como `other`. Diseño (store_jobs.py `claim_job`): tras elegir la fila con FOR UPDATE SKIP LOCKED y descartar destinos retirados, si `state='running' AND attempts>=max_attempts` ejecuta en la MISMA transaccion `UPDATE memory.jobs SET state='failed',error_code='attempts_exhausted',lease_until=NULL WHERE id=%s AND state='running' AND attempts>=%s` y `continue`: la fila esta bloqueada por la transaccion, asi que no hay ventana entre el juicio y la escritura, y el mismo reclamo sigue con el siguiente trabajo (nunca queda uno `running` con un intento de mas ni uno a medias). Solo afecta a `running` con concesion expirada: `unknown` (conciliacion) y `pending` (incluido un trabajo reactivado con `retry_job`, que recibe una oportunidad mas y vuelve a fallar con el mismo codigo si su worker muere otra vez) quedan como estaban; `needs_reconciliation` no cambia. El orden destino-retirado primero evita tocar test_native_runtime (su fila simulada no trae `state`). RED (contra el codigo de T-09): 7 FAIL + 1 ERROR en test_job_leases (el reclamo seguia reclamando el trabajo venenoso para siempre) · 2026-11-15. test_every_expiry_costs_one_more_attempt_and_nothing_stops_it_yet (de la Fase 1) se reescribio como test_every_expiry_costs_one_more_attempt_until_the_cap_and_then_the_job_fails_instead_of_being_claimed (criterio previsto en su docstring). MUTANTES en copia temporal: P1 sin tope -> 8 FAIL; P2 `>` en vez de `>=` (un intento de mas) -> 8 FAIL; P3 tope sin filtrar por estado `running` -> el reclamo no termina (la fila pending se reselecciona sin cambiar: bucle infinito, cortado a mano); P3b tope y UPDATE sin filtro de estado -> 4 ERROR (el trabajo `unknown` y el `pending` reactivado se fallan en vez de reclamarse: test_unknown_jobs_keep_their_reconciliation…, test_retry_job_brings…, test_a_retried_job_whose_worker_dies_again…, test_a_running_job_with_a_live_lease…); P4 error_code distinto -> 6 FAIL; P5 `attempts_exhausted` fuera de JOB_CODES -> FAIL test_the_poisoned_job_is_visible_in_kairos_jobs_failed_under_its_own_code; P6 el worker no fija `store.max_attempts` -> ERROR test_the_worker_hands_its_max_attempts_to_the_store; P7 tope fijo (ignora `store.max_attempts`) -> 2 FAIL + 1 ERROR. Visible para clientes: el trabajo venenoso deja de reclamarse y aparece `failed` con `error_code='attempts_exhausted'` en `GET /v1/jobs/{id}` (`memory_job`) y `kairos_jobs_failed{code="attempts_exhausted"}` (codigo nuevo; el contrato MCP no cambia); `POST /v1/jobs/{id}/retry` lo reactiva. Verificación (módulos en kairos-test:i3p1 con el paquete montado, `--network=none`): test_job_leases 15 tests ok (antes 6; +9) y, con test_jobs, test_worker_db_down, test_worker, test_metrics, test_store_surface, test_observability, test_native_runtime, test_chunk_jobs, test_review_regressions, test_chain_retry, test_ingest_extract_switch: DEV_RESULT 179 0 0 0; suite completa en T-12.
 
 ### T-11 — Documentar el comportamiento del worker sin base
 
