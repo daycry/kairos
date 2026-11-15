@@ -40,7 +40,7 @@ test-plan: n/a (sin UI)
 
 | Fase | Completadas | Total | Progreso | H. humanas (real/est) | H. IA ejec. (real/est) | Supervisión (real/est) | Tokens (real/est) |
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
-| Fase 1 — Arnés de fallos y tests de límites (C-07) | 5 | 6 | 83% | 0 / 32.4h | 0.83 / 4.3h | 0 / 1.1h | 0 / 1080 k |
+| Fase 1 — Arnés de fallos y tests de límites (C-07) | 6 | 6 | 100% | 0 / 32.4h | 0.83 / 4.3h | 0 / 1.1h | 0 / 1080 k |
 | Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 0 | 7 | 0% | 0 / 27.0h | 0 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 0 | 7 | 0% | 0 / 27.0h | 0 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 0 | 9 | 0% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **5** | **98** | **5%** | **0 / 412.8h** | **0.83 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **6** | **98** | **6%** | **0 / 412.8h** | **0.83 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -64,7 +64,7 @@ test-plan: n/a (sin UI)
 
 ## Fase 1 — Arnés de fallos y tests de límites (C-07)
 
-**Estado**: en-progreso · **Hito**: A · **Estimado**: 32.4h (27.0h base, de ellas 9.0h de revisión adversarial) · **Real**: — · **Coste est.**: 1.620 € · **Tokens est.**: 1080 k
+**Estado**: completado · **Hito**: A · **Estimado**: 32.4h (27.0h base, de ellas 9.0h de revisión adversarial) · **Real**: — · **Coste est.**: 1.620 € · **Tokens est.**: 1080 k
 
 ### T-01 — Arnés `FaultProxy`: proxy TCP cortable delante del PostgreSQL efímero
 
@@ -186,7 +186,7 @@ test-plan: n/a (sin UI)
 ### T-05 — Cierre de fase: suite completa y subida del mínimo
 
 - **Descripción**: Ejecuta la suite completa del servidor, anota el recuento `MEMORY_TEST_RESULT` y sube `KAIROS_MIN_TESTS` y `MIN_FLOOR` al número observado (la suite solo crece).  Fuente: Puerta de fase; CA-38 (suite con 0 fallos y 0 omitidos).
-- **Changelog**: Interno: el mínimo de pruebas que exige la integración continua sube a 801; no cambia el comportamiento del producto.
+- **Changelog**: Interno: el mínimo de pruebas que exige la integración continua sube a 806; no cambia el comportamiento del producto.
 - **Estado**: completado
 - **Cerrada**: 2026-11-15
 - **Tiempo humano**: est. 0.5h (base) · real —
@@ -216,10 +216,10 @@ test-plan: n/a (sin UI)
 ### T-06 — Revisión adversarial de la fase (dos lentes)
 
 - **Descripción**: Revisión adversarial del diff de la fase con dos lentes: A (contrato, seguridad, regresiones, alcance declarado) y B (mutantes: cada control nuevo se quita y su prueba debe fallar). Superficie: el arnés no debe poder tocar bases fuera del PostgreSQL efímero. Cada hallazgo se corrige para la clase entera y se anota con intento y evidencia en `review.md`; cada intento abre y cierra `usage-meter`. Fuente: Lección de la retro de la Iniciativa 2: la revisión es partida propia (0,5 × la implementación; 1,0 × en C-03 y C-05).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: revisión adversarial de la fase 1; endurece los tests nuevos, sin cambios para quien usa Kairos.
+- **Estado**: completado
 - **Tiempo humano**: est. 9h (base) · real —
-- **Tiempo IA (ejec.)**: est. 1.20h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 1.20h (estimado) · real — (los revisores no tienen medición propia; constan en la telemetría de los subagentes)
 - **Supervisión**: est. 0.30h (≈25 % IA) · real —
 - **Previsión IA**: 331 k in / 29 k out tok · ⚠️ verificar €
 - **Dependencias**: T-05
@@ -232,18 +232,18 @@ test-plan: n/a (sin UI)
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
 
 **Criterios de aceptación**
-- [ ] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
-- [ ] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
-- [ ] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
-- [ ] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
+- [x] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
+- [x] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
+- [x] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
+- [x] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
 
 **Subtareas**
-- [ ] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
-- [ ] Lente B: mutantes en memoria sobre cada control nuevo
-- [ ] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
-- [ ] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
+- [x] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
+- [x] Lente B: mutantes en memoria sobre cada control nuevo
+- [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
+- [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas**: Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+**Notas**: Cerrada en el intento 2 de 3 (secciones «Revisión de dos lentes — intento 1/2» al final del ledger y `review.md`). Lentes: intento 1, A+B+C+D; intento 2, A+B. `scope-check.py --base be001a4` exit 0; suite 806 en verde (Notas de T-05). Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
 
 ---
 
@@ -484,7 +484,7 @@ test-plan: n/a (sin UI)
 - [ ] Comprobar migración desde la 11
 - [ ] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `schema.sql:7-19` (índice actual `(state, available_at)` en `:19`) y `:214-228` (bloque de la versión 11 como forma de registrar una versión nueva). Los tests por catálogo de la Fase 1 sostienen este cambio.
+**Notas**: Deuda Minor heredada de la revisión de la Fase 1 (intento 2, n.º 3 y 4): cubrir la guarda en Python de los índices HNSW (`store_vectors.py:23-24`) frente a un `migrate()` repetido, y que las etiquetas de sección de la prueba genérica salgan de `schema.sql` en vez de ir a mano. Patrón: `schema.sql:7-19` (índice actual `(state, available_at)` en `:19`) y `:214-228` (bloque de la versión 11 como forma de registrar una versión nueva). Los tests por catálogo de la Fase 1 sostienen este cambio.
 
 ### T-15 — `EXPLAIN` de `claim_job` sobre 10.000 trabajos y, si hace falta, dos sondeos
 
@@ -2984,3 +2984,14 @@ Lentes: A+B+C+D (C por `.github/workflows/ci.yml`; D por los tests de migración
 | 5 | Minor | El docstring de `expire_lease` dice «Only the lease moves», pero también mueve `available_at` a 1990 | T-04 | Docstring de expire_lease: mueve lease_until y available_at. Commit `T-04: fix1` | Lente A n.º 4; `fault_proxy.py:186` frente a `:191` |
 | 6 | Minor | `claim()` de `test_job_leases` reclama trabajos de otros tests de la base compartida y exige vaciar la cola en 49 intentos; los trabajos de 1990 que deja se adelantan a otros | T-04 | Una base de datos propia por test, borrada al terminar; sin vaciar la cola compartida. Commit `T-04: fix1` | Lente D n.º 1, Lente B n.º 5; `test_job_leases.py:18-22`, `:31` |
 | 7 | Minor | La `Verificación` de T-01 a T-04 no se pegó tal cual (hay corridas por módulo y el `MEMORY_TEST_RESULT` de T-05) | T-01–T-04 | Salida de la Verificacion (suite completa, 806 pruebas, nombres por modulo) pegada en Notas de T-01..T-04. Commits `T-01..T-04: fix1` | Lente A n.º 3 |
+
+## Revisión de dos lentes — intento 2: Fase 1 (T-01..T-04) tras fix1 (T-01, T-02, T-03, T-04)
+
+Lentes: A+B (re-evalúan solo lo corregido; C y D no tenían gaps abiertos). Diff `cc698e3..62888f0`. Veredicto: los gaps 1-7 del intento 1 quedan cerrados, cada uno con su mutante en rojo en las Notas de T-02/T-03. Sin Critical ni Important: **fase cerrada en el intento 2 de 3**. Suite 806, 0 fallos (Notas de T-05).
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Minor | El Changelog de T-05 decía «sube a 801»; el mínimo vigente es 806 | T-05 | corregido en el cierre de la fase | Lente A n.º 1 |
+| 2 | Minor | El docstring de `asgi()` prometía un par con `None`; devuelve `(consumed, sent, seen)` | T-02 | corregido en el cierre de la fase | Lente A n.º 2; `test_api_limits.py:45-46` |
+| 3 | Minor | Medir solo la sección de `schema.sql` deja sin cubrir la guarda en Python de los índices HNSW (`store_vectors.py:23-24`): sin ella, cada `migrate()` repetido toma ShareLock sobre `embeddings`/`embedding_chunks` | T-03 | deuda aceptada → T-14 (migración 12 de la Fase 3, que toca esos tests) | Lente B n.º 1 |
+| 4 | Minor | La prueba genérica de secciones nombra a mano sus etiquetas; una sección nueva sin guarda no entraría | T-03 | deuda aceptada → T-14 (la v12 añade una sección: que las etiquetas salgan de `schema.sql`) | Lente B n.º 2; `test_migrations_additive.py:233` |

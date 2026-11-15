@@ -43,7 +43,7 @@ class BodyLimitTests(unittest.TestCase):
 
     def asgi(self, chunks):
         """Drive `BodyLimit` itself with one `http.request` event per chunk (the test client joins an iterator into a single event, so it never splits a body).
-        Returns (events sent, body the application received or None)."""
+        Returns (consumed, sent, seen): request events BodyLimit read, response events it sent, and the request events the application received."""
         import asyncio
         from memory_platform.app import BodyLimit
         seen, sent = [], []
