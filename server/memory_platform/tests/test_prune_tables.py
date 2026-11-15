@@ -15,6 +15,7 @@ import uuid
 from memory_platform import admin
 from memory_platform.admin import content_manifest, main, prune_tables, store_fingerprints
 from memory_platform.config import RETENTION_DEFAULTS, retention_windows
+from memory_platform.errors import NotFound
 from memory_platform.store import Store
 
 NOW = datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc)
@@ -126,7 +127,7 @@ class PruneTests(PruneDatabase):
         self.assertEqual({table: result['tables'][table]['deleted'] for table in ('login_attempts', 'web_sessions', 'audit_events', 'jobs')},
                          {'login_attempts': 2, 'web_sessions': 3, 'audit_events': 2, 'jobs': 2})
         self.assertEqual(self.rows('login_attempts', 'username'), {'keep2', 'keep3', 'keep4'})
-        self.assertEqual(self.rows('audit_events', 'action'), {'keep2', 'keep3'})
+        self.assertEqual(self.rows('audit_events', 'action'), {'keep2', 'keep3', 'retention_prune'}, 'the run leaves its own audit row')
         self.assertEqual(self.rows('web_sessions'), {'s-expired-recent', 's-live', 's-live-revoked-recent'}, 'live sessions and the ones that ended less than the window ago stay')
         self.assertEqual(self.rows('jobs'), {'f-old-receipt', 'f-recent', 'f-retried', 's-old', 'p-old', 'r-old', 'u-old'})
         self.assertEqual(self.rows('events'), {'e-old', 'e-recent'}, 'events has no window by default')
@@ -153,7 +154,7 @@ class PruneTests(PruneDatabase):
         result = prune_tables(self.store, self.windows(), tables=['audit_events'], now=NOW)
         self.assertEqual(set(result['tables']), {'audit_events'})
         self.assertEqual(len(self.rows('login_attempts')), 5)
-        self.assertEqual(len(self.rows('audit_events')), 2)
+        self.assertEqual(len(self.rows('audit_events')), 3)  # 2 kept + the audit row of the run
 
     def test_batches_have_the_size_asked_and_each_one_is_a_transaction(self):
         with self.psycopg.connect(self.dsn) as c:
@@ -181,12 +182,16 @@ class PruneTests(PruneDatabase):
             c.execute('CREATE TRIGGER refuse_poison BEFORE DELETE ON memory.audit_events FOR EACH ROW EXECUTE FUNCTION public.refuse_poison()')
         with self.assertRaises(self.psycopg.errors.Error):
             prune_tables(self.store, self.windows(), tables=['audit_events'], batch=3, now=NOW)
-        self.assertEqual(self.rows('audit_events', 'action'), {'a6', 'poison', 'a8', 'a9'}, 'rows 0-5 went in two committed batches; the batch of 6-8 left nothing half done')
+        self.assertEqual(self.rows('audit_events', 'action'), {'a6', 'poison', 'a8', 'a9', 'retention_prune'}, 'rows 0-5 went in two committed batches; the batch of 6-8 left nothing half done')
         with self.psycopg.connect(self.dsn) as c:
             c.execute('DROP TRIGGER refuse_poison ON memory.audit_events')
         result = prune_tables(self.store, self.windows(), tables=['audit_events'], batch=3, now=NOW)
         self.assertEqual(result['tables']['audit_events']['deleted'], 4)
-        self.assertEqual(self.rows('audit_events'), set())
+        self.assertEqual(self.rows('audit_events', 'action'), {'retention_prune'})
+        with self.psycopg.connect(self.dsn) as c:
+            traces = [json.loads(row[0]) for row in c.execute("SELECT resource_id FROM memory.audit_events WHERE action='retention_prune' ORDER BY id").fetchall()]
+        self.assertEqual(traces, [{'audit_events': {'days': 365, 'deleted': 6}, 'complete': False}, {'audit_events': {'days': 365, 'deleted': 4}}],
+                         'the run that failed half way left its trace too, flagged incomplete')
 
     def test_two_runs_at_the_same_time_delete_every_row_once(self):
         with self.psycopg.connect(self.dsn) as c:
@@ -249,7 +254,7 @@ class PruneTests(PruneDatabase):
         counts = [s for s in statements if s.startswith('SELECT count(*)')]
         self.assertEqual(len(counts), 4)  # the four tables with a window
         self.assertEqual(statements.count('SET TRANSACTION READ ONLY'), 4, 'every count runs in a READ ONLY transaction')
-        self.assertFalse([s for s in statements if s.startswith(('DELETE', 'UPDATE', 'INSERT'))], statements)
+        self.assertFalse([s for s in statements if any(word in s for word in ('DELETE', 'UPDATE', 'INSERT'))], statements)
 
     def test_the_batch_size_is_validated(self):
         for bad in (0, -1, 5001, True, 1.5, '10'):
@@ -295,8 +300,9 @@ class InvariantTests(PruneDatabase):
         for table in ('documents', 'memory_items', 'embeddings', 'projection_receipts', 'projects', 'actors', 'item_versions', 'document_versions'):
             self.assertEqual(after[table], tables[table], table)
         self.assertEqual(self.rows('projection_receipts', 'job_id'), {'f-old-receipt', 's-old', 'j-d1-ok'})
-        self.assertNotIn('j-d1-failed', self.rows('jobs'))
+        self.assertIn('j-d1-failed', self.rows('jobs'), 'a job of the CURRENT version of its document is reachable by document_status: it stays')
         self.assertIn('j-d1-ok', self.rows('jobs'))
+        self.assertEqual(self.rows('jobs'), {'f-old-receipt', 's-old', 'p-old', 'r-old', 'u-old', 'j-d1-ok', 'j-d1-failed'})
 
     def test_a_failed_job_with_a_receipt_survives_and_the_foreign_key_is_what_backs_it(self):
         """The predicate of the run leaves the job out; if it ever did not, the foreign key of `projection_receipts` stops the DELETE (shown here directly)."""
@@ -314,6 +320,171 @@ class InvariantTests(PruneDatabase):
             prune_tables(self.store, retention_windows({}), now=NOW + timedelta(days=40000))
         self.assertEqual(self.fingerprint()['events'], before)
         self.assertEqual(retention_windows({})['events'], None)
+
+
+class RecorderMixin:
+    def record(self):
+        calls = []
+        real = self.store.transaction
+
+        class Recorder:
+            def __init__(self, connection):
+                self.connection = connection
+
+            def execute(self, query, params=None, *args, **kwargs):
+                calls.append((' '.join(str(query).split()), params))
+                return self.connection.execute(query, params, *args, **kwargs)
+
+        @contextlib.contextmanager
+        def recorded():
+            with real() as connection:
+                yield Recorder(connection)
+        self.store.transaction = recorded
+        return calls
+
+
+class CursorAndTraceTests(RecorderMixin, PruneDatabase):
+    def test_every_batch_starts_after_the_last_key_of_the_previous_one_in_ascending_order(self):
+        with self.psycopg.connect(self.dsn) as c:
+            c.execute("INSERT INTO memory.login_attempts(username,client_ip,happened_at) SELECT 'bulk'||g,'10.0.0.3',%s FROM generate_series(1,10) g", (ago(90),))
+            c.execute("INSERT INTO memory.web_sessions(id,actor_id,token_hash,csrf_hash,expires_at) SELECT 'bs'||lpad(g::text,3,'0'),'a1','tk'||g,'c',%s FROM generate_series(1,10) g", (ago(90),))
+        calls = self.record()
+        result = prune_tables(self.store, self.windows(), tables=['login_attempts', 'web_sessions'], batch=4, now=NOW)
+        self.assertEqual((result['tables']['login_attempts']['deleted'], result['tables']['web_sessions']['deleted']), (12, 13))
+        for table, first in (('login_attempts', 0), ('web_sessions', '')):
+            deletes = [(sql, params) for sql, params in calls if sql.startswith('WITH gone AS (DELETE FROM memory.' + table + ' ')]
+            self.assertTrue(all('t.id > %(after)s ORDER BY t.id LIMIT %(batch)s FOR UPDATE SKIP LOCKED' in sql for sql, _ in deletes), table)
+            afters = [params['after'] for _, params in deletes]
+            self.assertEqual(len(afters), 4, table)  # 4 + 4 + 4 + the short one that ends the table
+            self.assertEqual(afters[0], first)
+            self.assertEqual(afters, sorted(afters), table)
+            self.assertEqual(len(set(afters)), len(afters), 'a batch that starts where the previous one started would walk the deleted rows again')
+
+    def test_a_real_run_writes_one_audit_row_with_the_days_and_rows_per_table_after_pruning_audit_events(self):
+        before = self.rows('audit_events')
+        result = prune_tables(self.store, self.windows(), now=NOW)
+        with self.psycopg.connect(self.dsn) as c:
+            rows = c.execute("SELECT actor_id, project_id, resource_id, happened_at FROM memory.audit_events WHERE action='retention_prune'").fetchall()
+        self.assertEqual(len(rows), 1)
+        actor_id, project_id, resource_id, happened_at = rows[0]
+        self.assertEqual((actor_id, project_id), (None, None))
+        self.assertEqual(json.loads(resource_id), {'audit_events': {'days': 365, 'deleted': 2}, 'jobs': {'days': 90, 'deleted': 2}, 'login_attempts': {'days': 30, 'deleted': 2},
+                                                   'web_sessions': {'days': 30, 'deleted': 3}})
+        self.assertEqual(resource_id, json.dumps(json.loads(resource_id), sort_keys=True, separators=(',', ':')))
+        self.assertEqual(len(self.rows('audit_events')), len(before) - 2 + 1)
+        # Even with the shortest window the trace of the run survives it: it is written after audit_events was pruned.
+        prune_tables(self.store, self.windows(audit_events=1), now=NOW + timedelta(days=5000))
+        with self.psycopg.connect(self.dsn) as c:
+            self.assertEqual(c.execute("SELECT count(*) FROM memory.audit_events WHERE action='retention_prune'").fetchone()[0], 1 + 1 - 1, 'the first trace went (old), the new one stays')
+            self.assertEqual(json.loads(c.execute("SELECT resource_id FROM memory.audit_events WHERE action='retention_prune'").fetchone()[0])['audit_events']['deleted'], 3)
+
+    def test_a_dry_run_leaves_no_audit_row(self):
+        prune_tables(self.store, self.windows(), dry_run=True, now=NOW)
+        self.assertNotIn('retention_prune', self.rows('audit_events', 'action'))
+
+    def test_a_run_over_a_subset_of_tables_records_only_those(self):
+        prune_tables(self.store, self.windows(), tables=['events'], now=NOW)
+        with self.psycopg.connect(self.dsn) as c:
+            self.assertEqual(json.loads(c.execute("SELECT resource_id FROM memory.audit_events WHERE action='retention_prune'").fetchone()[0]), {})
+
+
+class ClientContractTests(PruneDatabase):
+    """Decision of the review (attempt 1, n.º 1): pruning `jobs` never changes what a client of an existing MCP/REST tool receives. Only true orphans go."""
+    def seed(self, c):
+        pass
+
+    def setUp(self):
+        super().setUp()
+        from memory_platform.auth import hash_password
+        self.store.extraction_enabled = True
+        with self.store.transaction() as c:
+            c.execute('INSERT INTO memory.actors(id,username,password_hash,is_admin) VALUES(%s,%s,%s,true)', ('admin1', 'admin1', hash_password('fixture-password-123')))
+        self.actor = {'id': 'admin1', 'credential_type': 'bootstrap'}
+        self.store.create_project(self.actor, {'id': 'pc', 'title': 'Contract'})
+        self.store.set_policy(self.actor, 'pc', {'capture_mode': 'summary', 'temporal_projection': True})
+        self.seed_clients()
+
+    def capture(self, item, version, event_id):
+        value = {'event_id': event_id, 'project_id': 'pc', 'session_id': 's', 'agent_id': 'fx', 'event_type': 'note', 'occurred_at': '2026-05-01T10:00:00Z', 'item_id': item,
+                 'version': version, 'generate': True, 'payload': {'title': 'T' + item, 'content': 'content ' + event_id}}
+        return value, self.store.ingest_event(self.actor, value)
+
+    def age(self, c, job_id, state='failed', days=200):
+        c.execute('UPDATE memory.jobs SET state=%s,created_at=%s,available_at=%s WHERE id=%s', (state, ago(days), ago(days), job_id))
+
+    def seed_clients(self):
+        self.events = {}
+        self.item_a = str(uuid.uuid4())
+        # (a) E-old: its event is kept, the job it cites is failed, old and of a PAST version of its item (version 2 exists): only the event's receipt protects it.
+        self.events['past'], receipt = self.capture(self.item_a, 1, str(uuid.uuid4()))
+        self.cited = receipt['jobs'][0]
+        self.events['now'], receipt2 = self.capture(self.item_a, 2, str(uuid.uuid4()))
+        self.current_item_job = receipt2['jobs'][0]
+        # (b) documents whose current version has a failed embed job that no event cites; the first one also has a failed job of a past version (orphan).
+        body = {'title': 'Doc', 'content': 'c', 'tags': ['a'], 'source': {'uri': 'fixture://1', 'sha256': hashlib.sha256(b'c').hexdigest()}}
+        with self.store.transaction() as c:
+            for doc, version in (('doc-1', 2), ('doc-2', 1)):
+                c.execute("INSERT INTO memory.documents(project_id,id,version,canonical_hash,body) VALUES('pc',%s,%s,repeat('d',64),%s::jsonb)", (doc, version, json.dumps(body)))
+            for name, doc, version in (('j-doc1-v2', 'doc-1', 2), ('j-doc1-v1', 'doc-1', 1), ('j-doc2-v1', 'doc-2', 1), ('j-ghost', 'doc-gone', 1), ('j-item-ghost', 'item-gone', 1), ('j-item-a-v2', self.item_a, 2)):
+                c.execute("INSERT INTO memory.jobs(id,project_id,item_id,version,canonical_hash,resource_type,destination,operation,state,created_at,available_at) "
+                          "VALUES(%s,'pc',%s,%s,repeat('d',64),%s,'embed','upsert','failed',%s,%s)", (name, doc, version, 'item' if 'item' in name else 'document', ago(200), ago(200)))
+            for job in (self.cited, self.current_item_job):
+                self.age(c, job)
+        self.orphans = {'j-doc1-v1', 'j-ghost', 'j-item-ghost'}
+        self.kept = {self.cited, self.current_item_job, 'j-doc1-v2', 'j-doc2-v1', 'j-item-a-v2'}
+
+    def client_view(self):
+        """What the MCP tools and REST routes answer, by calling the store functions behind them (`mcp.py:100-116`, `app.py` routes)."""
+        view = {}
+        for name, value in self.events.items():
+            receipt = self.store.get_event_receipt(self.actor, value['event_id'])
+            view['event_status:' + name] = {'receipt': receipt, 'jobs': [self.store.get_job(self.actor, job_id) for job_id in receipt['jobs']]}
+            view['event_status_reconcile:' + name] = self.store.reconcile_capture(self.actor, 'pc', value['event_id'])
+            view['ingest_replay:' + name] = self.store.ingest_event(self.actor, value)
+        for doc in ('doc-1', 'doc-2'):
+            view['document_status:' + doc] = self.store.document_status(self.actor, 'pc', doc)
+        view['get_job:current'] = self.store.get_job(self.actor, self.current_item_job)
+        with self.store.transaction() as c:
+            params = {'model': 'nomic-embed-text', 'project': 'pc', 'retry_failed': False, 'after_project': None, 'after_item': None, 'limit': 100}
+            view['backfill_failed'] = admin.backfill_failed(c, params)
+            view['backfill_remaining'] = admin.backfill_remaining(c, params)
+            view['backfill_candidates'] = [dict(row) for kind in ('document', 'item') for row in c.execute(admin.backfill_query(kind), params).fetchall()]
+        return view
+
+    def counters(self):
+        listed = {row['id'] for row in self.store.list_jobs(self.actor, 'pc', limit=100)}
+        return listed, self.store.stats(self.actor, 'pc')['jobs']
+
+    def prune(self):
+        return prune_tables(self.store, self.windows(), now=NOW)
+
+    def test_the_answers_of_the_existing_tools_are_the_same_after_pruning_and_only_the_orphans_go(self):
+        before = self.client_view()
+        listed_before, counts_before = self.counters()
+        self.assertTrue(self.orphans | self.kept <= listed_before)
+        self.assertEqual(before['backfill_failed'], 3, 'doc-1, doc-2 and the item (current version) have a failed embed job')
+        result = self.prune()
+        self.assertEqual(result['tables']['jobs']['deleted'], len(self.orphans))
+        self.assertEqual(self.client_view(), before)
+        listed_after, counts_after = self.counters()
+        self.assertEqual(listed_before - listed_after, self.orphans, 'only the true orphans disappear')
+        self.assertEqual(counts_before.get('failed', 0) - counts_after.get('failed', 0), len(self.orphans))
+        self.assertEqual(self.prune()['tables']['jobs']['deleted'], 0)
+
+    def test_an_orphan_that_is_pruned_is_not_found_by_get_job_and_the_rest_of_the_receipt_is_untouched(self):
+        self.store.get_job(self.actor, 'j-ghost')
+        self.prune()
+        with self.assertRaises(NotFound):
+            self.store.get_job(self.actor, 'j-ghost')
+        with self.assertRaises(NotFound):
+            self.store.retry_job(self.actor, 'j-ghost')
+        self.store.get_job(self.actor, self.cited)
+
+    def test_a_job_cited_by_a_kept_event_goes_once_the_event_window_removes_the_event(self):
+        prune_tables(self.store, self.windows(), now=NOW + timedelta(days=1000))
+        self.assertIn(self.cited, self.rows('jobs'), 'with no window for events the receipt keeps it however old')
+        prune_tables(self.store, self.windows(events=1), now=NOW + timedelta(days=1000))  # `events` is pruned before `jobs` in the same run
+        self.assertNotIn(self.cited, self.rows('jobs'), 'the receipt that protected it is gone with its event')
 
 
 class CommandTests(PruneDatabase):
@@ -337,7 +508,7 @@ class CommandTests(PruneDatabase):
         self.assertEqual((report['status'], report['batch'], set(report['tables'])), ('pruned', 10, {'events'}))
         self.assertEqual(report['tables']['events']['deleted'], 2)
         self.assertEqual(self.rows('events'), set())
-        self.assertEqual(len(self.rows('audit_events')), 4, 'only the table asked for')
+        self.assertEqual(len(self.rows('audit_events')), 5, 'only the table asked for (4 seeded + the audit row of the run)')
 
     def test_an_invalid_window_stops_the_command_with_a_clear_message_before_touching_anything(self):
         before = self.fingerprint()

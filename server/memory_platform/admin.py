@@ -237,30 +237,41 @@ def backfill_chunks(store, model, *, batch=200, max_jobs=None, project=None, ret
     return {'enqueued': enqueued, 'derived': derived, 'failed': failed, 'pending': pending, 'remaining': remaining, 'batches': batches, 'embedding_filled': filled, 'stale_marked': stale}
 
 
-# Retention (decision P-03): what `prune-tables` may delete, per table. `{cutoff}` is the instant that the window ends at (rows OLDER than it go; a row exactly at it stays).
-# Nothing here is a migration, and every statement takes its values as parameters. `order` walks the rows in key order (the key grows with time) so a batch stops early.
+# Retention (decision P-03): what `prune-tables` may delete, per table. `%(cutoff)s` is the instant that the window ends at (rows OLDER than it go; a row exactly at it stays).
+# Nothing here is a migration, and every statement takes its values as parameters. Rows are walked in ascending key order with a cursor (`id > after`, `after` starting at the
+# second element), so a batch never looks again at what an earlier one already deleted.
 #   login_attempts  attempts older than the window.
 #   web_sessions    sessions that EXPIRED or were REVOKED longer ago than the window; a live session (not expired, not revoked) is never touched.
 #   audit_events    audit rows older than the window.
-#   jobs            only `failed` jobs, last scheduled (created_at and available_at) before the window, WITHOUT a receipt in `projection_receipts` (a job with one is never
-#                   deleted: the receipt references it, and it is what says the work was done).
+#   jobs            only `failed` jobs, last scheduled (created_at and available_at) before the window, that NO client can still reach (the MCP/REST contract stays as it is):
+#                   no receipt in `projection_receipts` (the receipt references it and says the work was done), not cited by the receipt of any kept `events` row
+#                   (`event_status` and the idempotent `ingest_event` read it), and not a job of the CURRENT version of its document or item (`document_status` lists those and
+#                   `backfill-chunks` reads them). What goes is the orphan: a job of a past version, of a resource that no longer exists, cited by no kept event.
 #   events          the capture journal: only when its window is set explicitly.
+JOBS_PREDICATE = ("t.state = 'failed' AND t.created_at < %(cutoff)s AND t.available_at < %(cutoff)s "
+                  "AND NOT EXISTS (SELECT 1 FROM memory.projection_receipts r WHERE r.job_id = t.id) "
+                  "AND NOT EXISTS (SELECT 1 FROM memory.events e, jsonb_array_elements_text(CASE WHEN jsonb_typeof(e.receipt->'jobs') = 'array' THEN e.receipt->'jobs' ELSE '[]'::jsonb END) AS cited(job_id) WHERE cited.job_id = t.id) "
+                  "AND NOT EXISTS (SELECT 1 FROM memory.documents d WHERE t.resource_type = 'document' AND d.project_id = t.project_id AND d.id = t.item_id AND d.version = t.version) "
+                  "AND NOT EXISTS (SELECT 1 FROM memory.memory_items i WHERE t.resource_type <> 'document' AND i.project_id = t.project_id AND i.id = t.item_id AND i.version = t.version)")
 RETENTION_TABLES = {
-    'login_attempts': ('t.happened_at < %(cutoff)s', 'ORDER BY t.id'),
+    'login_attempts': ('t.happened_at < %(cutoff)s', 0),
     'web_sessions': ('(t.expires_at < %(cutoff)s OR (t.revoked_at IS NOT NULL AND t.revoked_at < %(cutoff)s))', ''),
-    'audit_events': ('t.happened_at < %(cutoff)s', 'ORDER BY t.id'),
-    'jobs': ("t.state = 'failed' AND t.created_at < %(cutoff)s AND t.available_at < %(cutoff)s AND NOT EXISTS (SELECT 1 FROM memory.projection_receipts r WHERE r.job_id = t.id)", ''),
-    'events': ('t.created_at < %(cutoff)s', ''),
+    'audit_events': ('t.happened_at < %(cutoff)s', 0),
+    'events': ('t.created_at < %(cutoff)s', ''),  # before `jobs`: a job cited only by an event this run removes can go in the same run
+    'jobs': (JOBS_PREDICATE, ''),
 }
 PRUNE_BATCH_MAX = 5000
+PRUNE_AUDIT_ACTION = 'retention_prune'
 
 
 def prune_tables(store, windows, *, batch=1000, dry_run=False, tables=None, now=None):
     """Delete the rows the retention `windows` ({table: days or None}) select, `batch` rows per transaction; with `dry_run` only count them, in a READ ONLY transaction.
 
     One `now` for the whole run (the database clock unless given) fixes every cutoff, so a run ends: rows inserted meanwhile are newer than any cutoff. Each batch is its own
-    transaction (a failure rolls back that batch alone and leaves every earlier one committed), rows are claimed with FOR UPDATE SKIP LOCKED (two runs at the same time
-    share the work and never delete a row twice) and a second run finds nothing to do. A table without a window (`events` by default) is reported and left alone.
+    transaction (a failure rolls back that batch alone and leaves every earlier one committed), rows are claimed in ascending key order after a cursor with FOR UPDATE SKIP LOCKED
+    (two runs at the same time share the work and never delete a row twice; a table is done when a batch removes fewer rows than `batch`) and a second run finds nothing to do.
+    A table without a window (`events` by default) is reported and left alone. A real run ends by writing ONE `audit_events` row (action `retention_prune`, resource_id = JSON of
+    the days and rows deleted per table), after `audit_events` was pruned so the run cannot erase its own trace; it is written even when the run failed half way (`complete: false`).
     Returns {status, dry_run, batch, now, tables: {table: {window_days, cutoff, would_delete, deleted, batches}}}."""
     from datetime import timedelta
     if isinstance(batch, bool) or not isinstance(batch, int) or not 1 <= batch <= PRUNE_BATCH_MAX:
@@ -272,30 +283,43 @@ def prune_tables(store, windows, *, batch=1000, dry_run=False, tables=None, now=
         with store.transaction() as connection:
             now = connection.execute('SELECT clock_timestamp() AS now').fetchone()['now']
     report = {}
-    for table in selected:
-        days = windows[table]
-        entry = {'window_days': days, 'would_delete': 0, 'deleted': 0, 'batches': 0}
-        report[table] = entry
-        if days is None:
-            entry['skipped'] = 'no_window'
-            continue
-        cutoff = now - timedelta(days=days)
-        entry['cutoff'] = cutoff.isoformat()
-        predicate, order = RETENTION_TABLES[table]
-        if dry_run:
+    complete = False
+    try:
+        for table in selected:
+            days = windows[table]
+            entry = {'window_days': days, 'would_delete': 0, 'deleted': 0, 'batches': 0}
+            report[table] = entry
+            if days is None:
+                entry['skipped'] = 'no_window'
+                continue
+            cutoff = now - timedelta(days=days)
+            entry['cutoff'] = cutoff.isoformat()
+            predicate, after = RETENTION_TABLES[table]
+            if dry_run:
+                with store.transaction() as connection:
+                    connection.execute('SET TRANSACTION READ ONLY')
+                    entry['would_delete'] = connection.execute(f'SELECT count(*) AS n FROM memory.{table} t WHERE {predicate}', {'cutoff': cutoff}).fetchone()['n']
+                continue
+            statement = (f'WITH gone AS (DELETE FROM memory.{table} WHERE id IN (SELECT t.id FROM memory.{table} t WHERE {predicate} AND t.id > %(after)s '
+                         f'ORDER BY t.id LIMIT %(batch)s FOR UPDATE SKIP LOCKED) RETURNING id) SELECT count(*) AS n, max(id) AS last FROM gone')
+            while True:
+                with store.transaction() as connection:
+                    result = connection.execute(statement, {'cutoff': cutoff, 'batch': batch, 'after': after}).fetchone()
+                removed = result['n']
+                if removed:
+                    entry['deleted'] += removed
+                    entry['batches'] += 1
+                    after = result['last']
+                if removed < batch:
+                    break
+        complete = True
+    finally:
+        if not dry_run:
+            summary = {table: {'days': info['window_days'], 'deleted': info['deleted']} for table, info in report.items() if info['window_days'] is not None}
+            if not complete:
+                summary['complete'] = False
             with store.transaction() as connection:
-                connection.execute('SET TRANSACTION READ ONLY')
-                entry['would_delete'] = connection.execute(f'SELECT count(*) AS n FROM memory.{table} t WHERE {predicate}', {'cutoff': cutoff}).fetchone()['n']
-            continue
-        statement = f'DELETE FROM memory.{table} WHERE id IN (SELECT t.id FROM memory.{table} t WHERE {predicate} {order} LIMIT %(batch)s FOR UPDATE SKIP LOCKED)'
-        while True:
-            with store.transaction() as connection:
-                removed = connection.execute(statement, {'cutoff': cutoff, 'batch': batch}).rowcount
-            if removed:
-                entry['deleted'] += removed
-                entry['batches'] += 1
-            if removed < batch:
-                break
+                connection.execute('INSERT INTO memory.audit_events(action,resource_id) VALUES(%s,%s)', (PRUNE_AUDIT_ACTION, json.dumps(summary, sort_keys=True, separators=(',', ':'))))
     return {'status': 'dry_run' if dry_run else 'pruned', 'dry_run': dry_run, 'batch': batch, 'now': now.isoformat(), 'tables': report}
 
 
