@@ -11,7 +11,7 @@ import tempfile
 import hashlib
 
 from .chunking import chunk_text, embedding_text
-from .config import Settings
+from .config import Settings, retention_windows
 from .store import Store
 from .store_vectors import CURRENT_RESOURCE
 
@@ -237,6 +237,68 @@ def backfill_chunks(store, model, *, batch=200, max_jobs=None, project=None, ret
     return {'enqueued': enqueued, 'derived': derived, 'failed': failed, 'pending': pending, 'remaining': remaining, 'batches': batches, 'embedding_filled': filled, 'stale_marked': stale}
 
 
+# Retention (decision P-03): what `prune-tables` may delete, per table. `{cutoff}` is the instant that the window ends at (rows OLDER than it go; a row exactly at it stays).
+# Nothing here is a migration, and every statement takes its values as parameters. `order` walks the rows in key order (the key grows with time) so a batch stops early.
+#   login_attempts  attempts older than the window.
+#   web_sessions    sessions that EXPIRED or were REVOKED longer ago than the window; a live session (not expired, not revoked) is never touched.
+#   audit_events    audit rows older than the window.
+#   jobs            only `failed` jobs, last scheduled (created_at and available_at) before the window, WITHOUT a receipt in `projection_receipts` (a job with one is never
+#                   deleted: the receipt references it, and it is what says the work was done).
+#   events          the capture journal: only when its window is set explicitly.
+RETENTION_TABLES = {
+    'login_attempts': ('t.happened_at < %(cutoff)s', 'ORDER BY t.id'),
+    'web_sessions': ('(t.expires_at < %(cutoff)s OR (t.revoked_at IS NOT NULL AND t.revoked_at < %(cutoff)s))', ''),
+    'audit_events': ('t.happened_at < %(cutoff)s', 'ORDER BY t.id'),
+    'jobs': ("t.state = 'failed' AND t.created_at < %(cutoff)s AND t.available_at < %(cutoff)s AND NOT EXISTS (SELECT 1 FROM memory.projection_receipts r WHERE r.job_id = t.id)", ''),
+    'events': ('t.created_at < %(cutoff)s', ''),
+}
+PRUNE_BATCH_MAX = 5000
+
+
+def prune_tables(store, windows, *, batch=1000, dry_run=False, tables=None, now=None):
+    """Delete the rows the retention `windows` ({table: days or None}) select, `batch` rows per transaction; with `dry_run` only count them, in a READ ONLY transaction.
+
+    One `now` for the whole run (the database clock unless given) fixes every cutoff, so a run ends: rows inserted meanwhile are newer than any cutoff. Each batch is its own
+    transaction (a failure rolls back that batch alone and leaves every earlier one committed), rows are claimed with FOR UPDATE SKIP LOCKED (two runs at the same time
+    share the work and never delete a row twice) and a second run finds nothing to do. A table without a window (`events` by default) is reported and left alone.
+    Returns {status, dry_run, batch, now, tables: {table: {window_days, cutoff, would_delete, deleted, batches}}}."""
+    from datetime import timedelta
+    if isinstance(batch, bool) or not isinstance(batch, int) or not 1 <= batch <= PRUNE_BATCH_MAX:
+        raise ValueError(f'batch must be an integer between 1 and {PRUNE_BATCH_MAX}')
+    selected = list(RETENTION_TABLES) if tables is None else list(tables)
+    if any(table not in RETENTION_TABLES for table in selected) or any(table not in windows for table in RETENTION_TABLES):
+        raise ValueError('prune-tables knows the tables ' + ', '.join(RETENTION_TABLES) + ' and needs a window (or None) for each')
+    if now is None:
+        with store.transaction() as connection:
+            now = connection.execute('SELECT clock_timestamp() AS now').fetchone()['now']
+    report = {}
+    for table in selected:
+        days = windows[table]
+        entry = {'window_days': days, 'would_delete': 0, 'deleted': 0, 'batches': 0}
+        report[table] = entry
+        if days is None:
+            entry['skipped'] = 'no_window'
+            continue
+        cutoff = now - timedelta(days=days)
+        entry['cutoff'] = cutoff.isoformat()
+        predicate, order = RETENTION_TABLES[table]
+        if dry_run:
+            with store.transaction() as connection:
+                connection.execute('SET TRANSACTION READ ONLY')
+                entry['would_delete'] = connection.execute(f'SELECT count(*) AS n FROM memory.{table} t WHERE {predicate}', {'cutoff': cutoff}).fetchone()['n']
+            continue
+        statement = f'DELETE FROM memory.{table} WHERE id IN (SELECT t.id FROM memory.{table} t WHERE {predicate} {order} LIMIT %(batch)s FOR UPDATE SKIP LOCKED)'
+        while True:
+            with store.transaction() as connection:
+                removed = connection.execute(statement, {'cutoff': cutoff, 'batch': batch}).rowcount
+            if removed:
+                entry['deleted'] += removed
+                entry['batches'] += 1
+            if removed < batch:
+                break
+    return {'status': 'dry_run' if dry_run else 'pruned', 'dry_run': dry_run, 'batch': batch, 'now': now.isoformat(), 'tables': report}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Manage only the isolated memory platform database')
     commands = parser.add_subparsers(dest='command', required=True)
@@ -250,6 +312,10 @@ def main(argv=None):
     backfill.add_argument('--max-jobs', type=int, default=None, help='Stop after queueing this many jobs; run again to continue')
     backfill.add_argument('--project', default=None, help='Only this project id')
     backfill.add_argument('--retry-failed', action='store_true', help='Also queue again the jobs that already failed (otherwise they are only counted)')
+    prune = commands.add_parser('prune-tables', help='Delete old rows of the tables that only grow, in batches, by the MEMORY_RETENTION_*_DAYS windows (P-03)')
+    prune.add_argument('--dry-run', action='store_true', help='Only report what each table would lose; nothing is written')
+    prune.add_argument('--batch', type=int, default=1000, help=f'Rows deleted per transaction (1..{PRUNE_BATCH_MAX})')
+    prune.add_argument('--table', action='append', choices=sorted(RETENTION_TABLES), help='Only this table (repeatable); default: every table that has a window')
     commands.add_parser('inspect')
     commands.add_parser('content-manifest')
     backup = commands.add_parser('backup')
@@ -258,6 +324,13 @@ def main(argv=None):
     restore.add_argument('--backup', required=True)
     restore.add_argument('--target-dsn-file', required=True)
     args = parser.parse_args(argv)
+    if args.command == 'prune-tables':
+        if not 1 <= args.batch <= PRUNE_BATCH_MAX:
+            parser.error(f'--batch must be an integer between 1 and {PRUNE_BATCH_MAX}')
+        try:
+            windows = retention_windows()
+        except ValueError as error:
+            parser.error(str(error))  # a clear message and nothing touched
     settings = Settings.from_env()
     store = Store(settings.dsn, project_maps=settings.project_maps, embedding_enabled=True)
     if args.command == 'migrate':
@@ -268,6 +341,8 @@ def main(argv=None):
             print(json.dumps({'status': 'skipped', 'reason': 'embeddings_disabled', 'enqueued': 0}))
         else:
             print(json.dumps(dict(backfill_chunks(store, settings.embedding_model, batch=args.batch, max_jobs=args.max_jobs, project=args.project, retry_failed=args.retry_failed), status='backfilled'), sort_keys=True))
+    elif args.command == 'prune-tables':
+        print(json.dumps(prune_tables(store, windows, batch=args.batch, dry_run=args.dry_run, tables=args.table), sort_keys=True))
     elif args.command == 'bootstrap':
         if not args.password_file:
             parser.error('--password-file or MEMORY_BOOTSTRAP_PASSWORD_FILE is required')

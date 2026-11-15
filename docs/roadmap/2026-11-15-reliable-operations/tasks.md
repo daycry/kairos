@@ -42,7 +42,7 @@ test-plan: n/a (sin UI)
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Arnés de fallos y tests de límites (C-07) | 6 | 6 | 100% | 0 / 32.4h | 0.83 / 4.3h | 0 / 1.1h | 0 / 1080 k |
 | Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 7 | 7 | 100% | 0 / 27.0h | 2.10 / 3.6h | 0 / 0.9h | 0 / 900 k |
-| Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 2 | 7 | 29% | 0 / 27.0h | 0.47 / 3.6h | 0 / 0.9h | 0 / 900 k |
+| Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 3 | 7 | 43% | 0 / 27.0h | 0.67 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 0 | 9 | 0% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 0 | 5 | 0% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 0 | 9 | 0% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **15** | **98** | **15%** | **0 / 412.8h** | **3.40 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **16** | **98** | **16%** | **0 / 412.8h** | **3.60 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -525,10 +525,11 @@ test-plan: n/a (sin UI)
 ### T-16 — `admin prune-tables` por lotes con `--dry-run` y ventanas por tabla
 
 - **Descripción**: Añadir el subcomando `prune-tables` (por lotes, `--dry-run`) con ventanas configurables por tabla (P-03): `login_attempts` 30 d, `web_sessions` caducadas o revocadas 30 d, `audit_events` 365 d, `jobs` terminales `failed` sin recibo 90 d; `events` sin retención por defecto. Nunca en una migración. Fuente: CA-14; B-06; P-03.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Nuevo `admin prune-tables [--dry-run]` que borra por lotes las filas viejas de login_attempts (30 d), web_sessions caducadas o revocadas (30 d), audit_events (365 d) y trabajos fallidos sin recibo (90 d); `events` no se poda salvo ventana explícita.
+- **Estado**: completado
+- **Cerrada**: 2026-11-15
 - **Tiempo humano**: est. 5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.67h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.67h (estimado) · real 0.20h (medido)
 - **Supervisión**: est. 0.17h (≈25 % IA) · real —
 - **Previsión IA**: 184 k in / 16 k out tok · ⚠️ verificar €
 - **Dependencias**: T-15
@@ -538,18 +539,18 @@ test-plan: n/a (sin UI)
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_prune_tables|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] `prune-tables --dry-run` informa de lo que borraría por tabla y no borra nada; sin `--dry-run` borra por lotes según las ventanas
-- [ ] Variables `MEMORY_RETENTION_*` por tabla con los defaults de P-03; `events` solo se poda si se activa su ventana explícitamente
-- [ ] Un lote fallido no deja la tabla a medias (cada lote es una transacción) y la operación es repetible
-- [ ] `admin` usa conexión directa, sin el `statement_timeout` de servicio
+- [x] `prune-tables --dry-run` informa de lo que borraría por tabla y no borra nada; sin `--dry-run` borra por lotes según las ventanas
+- [x] Variables `MEMORY_RETENTION_*` por tabla con los defaults de P-03; `events` solo se poda si se activa su ventana explícitamente
+- [x] Un lote fallido no deja la tabla a medias (cada lote es una transacción) y la operación es repetible
+- [x] `admin` usa conexión directa, sin el `statement_timeout` de servicio
 
 **Subtareas**
-- [ ] Escribir primero las pruebas con filas sembradas (antiguas y recientes)
-- [ ] Implementar el subcomando y las ventanas
-- [ ] Añadir las claves a `config.py`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero las pruebas con filas sembradas (antiguas y recientes)
+- [x] Implementar el subcomando y las ventanas
+- [x] Añadir las claves a `config.py`
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `admin.py:240-321` (registro de subcomandos, `backup`, `restore-check`) y `schema.sql:7-19` (tablas). P-03: `events` lo leen `event_status`, la actividad y `get_tool_uses` (`store_documents.py:252-329`): borrarlo cambia respuestas visibles; declarar a la Iniciativa 7 si se activa.
+**Notas**: Patrón: `admin.py:240-321` (registro de subcomandos, `backup`, `restore-check`) y `schema.sql:7-19` (tablas). P-03: `events` lo leen `event_status`, la actividad y `get_tool_uses` (`store_documents.py:252-329`): borrarlo cambia respuestas visibles; declarar a la Iniciativa 7 si se activa. usage-meter reliable-operations/T-16 {inicio 20:27:16Z, fin 20:37:56Z, horas_ia 0.20, duracion 12m, medido}. RED: `test_prune_tables` falló con `ImportError: cannot import name 'prune_tables' from 'memory_platform.admin'` · 2026-11-15. Implementación: `config.py` gana `RETENTION_DEFAULTS`, `RETENTION_VARIABLES` y `retention_windows()` (`MEMORY_RETENTION_LOGIN_ATTEMPTS_DAYS`=30, `_WEB_SESSIONS_DAYS`=30, `_AUDIT_EVENTS_DAYS`=365, `_JOBS_FAILED_DAYS`=90, `_EVENTS_DAYS` sin valor = no se poda; entero de 1 a 36500, en blanco = defecto, mensaje `<VAR> must be an integer number of days between 1 and 36500`). SOLO `admin prune-tables` las lee y por tanto solo él rechaza un valor inválido: la API y el worker NO cambian su arranque (ninguna variable nueva les afecta). `admin.py` gana `RETENTION_TABLES`, `prune_tables(store, windows, *, batch=1000, dry_run=False, tables=None, now=None)` y el subcomando `prune-tables [--dry-run] [--batch 1..5000] [--table T ...]` (error de ventana o de `--batch` -> `parser.error`, exit 2, mensaje claro y nada tocado). Criterios: `login_attempts` `happened_at < corte`; `web_sessions` `expires_at < corte OR (revoked_at IS NOT NULL AND revoked_at < corte)` (una sesión viva nunca); `audit_events` `happened_at < corte`; `jobs` `state='failed'` con `created_at` y `available_at` < corte (la última programación) y `NOT EXISTS` recibo en `projection_receipts` (la FK `projection_receipts.job_id` lo impediría de todos modos: el predicado evita que un lote falle); `events` solo con ventana. El corte es estricto (una fila exactamente en el corte se queda) y único por ejecución (`now` de la base, o el inyectado en las pruebas): una ejecución termina aunque entren filas. Cada lote es su transacción: `DELETE … WHERE id IN (SELECT … ORDER BY id (login_attempts, audit_events) LIMIT n FOR UPDATE SKIP LOCKED)`: dos ejecuciones concurrentes se reparten el trabajo sin borrar dos veces ni esperarse (sin deadlock) y una segunda ejecución no encuentra nada. `--dry-run` cuenta con `SET TRANSACTION READ ONLY` y no emite DELETE/UPDATE/INSERT. Todos los valores van como parámetros; los nombres de tabla salen de una constante. Sin `DELETE` en migraciones (`test_ca34` sigue en verde: `admin.py` no es fuente de migración). `admin` usa conexión directa: construye `Store(settings.dsn)` sin opciones (hoy no existe `statement_timeout` de servicio; lo introducirá la Fase 4) y una prueba (`SHOW statement_timeout` = 0 dentro del comando) rompe si la Fase 4 lo añade al Store por defecto sin eximir a admin. Pruebas (`test_prune_tables.py`, 19, base propia por prueba y fechas sembradas respecto de un `NOW` fijo): ventanas (defectos, rangos, mensaje), dry-run (cuenta y no escribe, READ ONLY), borrado exacto por tabla con sesiones vivas y trabajo con recibo intactos, segunda ejecución = 0, `events` solo con ventana, `--table`, lotes de 4 (9 filas = 3 lotes), lote fallido (trigger que rechaza una fila: los lotes previos quedan comprometidos, el fallido no deja medias filas, se repite y termina), dos ejecuciones simultáneas (302 filas, cada una borrada una vez), fila bloqueada por otra transacción (la ejecución no espera), validación del lote/tabla, comando (informe JSON, entorno, ventana inválida, conexión directa). MUTANTES en copia temporal (cada uno en rojo): dry-run ignorado -> FAIL x3; sin `NOT EXISTS` de recibos -> ERROR x3 + FAIL; sesiones: borrar toda revocada -> FAIL x2; sin `SKIP LOCKED` -> FAIL (la ejecución espera la fila bloqueada); sin `LIMIT` del lote -> FAIL x2; corte inclusivo (`<=`) -> FAIL x5; `events` con ventana por defecto -> FAIL/ERROR x3; sin tope de 36500 -> FAIL; sin `READ ONLY` -> FAIL; una sola transacción para todos los lotes -> FAIL x2. VERIFICACIÓN (ejecutor rápido de módulos, imagen `kairos-test:i3p2fix1`, código montado): `test_admin test_store_surface test_prune_tables test_queue_indexes` -> Ran 50 tests OK. EOL conservado (admin.py y config.py CRLF; test nuevo LF; `git diff --stat` igual con y sin `--ignore-cr-at-eol`). VISIBLE para clientes/operadores (declarar a la Iniciativa 7): comando nuevo `admin prune-tables` (no se ejecuta solo: nadie lo programa todavía) y cinco variables nuevas `MEMORY_RETENTION_*_DAYS` que solo él lee. Al ejecutarlo: los trabajos `failed` sin recibo de más de 90 d desaparecen de `memory.jobs` (baja `kairos_jobs_failed`; `backfill-chunks` los cuenta en `failed` solo mientras existan); `events` NO se toca por defecto y, si un operador activa `MEMORY_RETENTION_EVENTS_DAYS`, cambian `event_status`, la actividad por proyecto y `get_tool_uses`. Contrato MCP intacto.
 
 ### T-17 — Invariantes de la retención: manifiesto, recibos y migraciones sin `DELETE`
 

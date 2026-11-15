@@ -148,6 +148,30 @@ def worker_write_retry_seconds(environ=None, lease_seconds=240):
     return value
 
 
+# Retention of the tables that only grow (decision P-03): the days after which `admin prune-tables` may delete a row, per table. `events` has NO window by default:
+# `event_status`, the activity feed and `get_tool_uses` read it, so deleting from it changes answers clients see (see docs/operations.md).
+RETENTION_DEFAULTS = {'login_attempts': 30, 'web_sessions': 30, 'audit_events': 365, 'jobs': 90, 'events': None}
+RETENTION_VARIABLES = {'login_attempts': 'MEMORY_RETENTION_LOGIN_ATTEMPTS_DAYS', 'web_sessions': 'MEMORY_RETENTION_WEB_SESSIONS_DAYS',
+                       'audit_events': 'MEMORY_RETENTION_AUDIT_EVENTS_DAYS', 'jobs': 'MEMORY_RETENTION_JOBS_FAILED_DAYS', 'events': 'MEMORY_RETENTION_EVENTS_DAYS'}
+RETENTION_MAX_DAYS = 36500
+
+
+def retention_windows(environ=None) -> dict:
+    """{table: days or None} from the `MEMORY_RETENTION_*_DAYS` variables: an integer between 1 and 36500; blank or unset is the default of P-03 (None for `events`: never
+    pruned). Only `admin prune-tables` reads them, so only it refuses an invalid value."""
+    environ = os.environ if environ is None else environ
+    windows = {}
+    for table, name in RETENTION_VARIABLES.items():
+        raw = environ.get(name, '').strip()
+        if not raw:
+            windows[table] = RETENTION_DEFAULTS[table]
+            continue
+        if not raw.isascii() or not raw.isdigit() or not 1 <= int(raw) <= RETENTION_MAX_DAYS:
+            raise ValueError(f'{name} must be an integer number of days between 1 and {RETENTION_MAX_DAYS}')
+        windows[table] = int(raw)
+    return windows
+
+
 def max_attempts(environ=None) -> int:
     """MEMORY_MAX_ATTEMPTS: the attempts a job is allowed (also the cap of claims of a job whose lease expires). An integer of 1 or more: with 0 or a negative
     number a job would never run or would be failed as `attempts_exhausted` on its first lost lease."""
