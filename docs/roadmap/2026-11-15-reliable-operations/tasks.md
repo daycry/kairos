@@ -158,10 +158,11 @@ test-plan: n/a (sin UI)
 ### T-04 — Pruebas de concesión expirada y ayudante para caducarla
 
 - **Descripción**: Dejar caracterizado el comportamiento actual de reclamo con concesión expirada (sin cambiarlo) y un ayudante `expire_lease` en el arnés, que usarán C-02 (trabajo venenoso, CA-12) y los tests de base caída. Fuente: CA-34 (concesión expirada y trabajo venenoso); B-15.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: pruebas de caracterización del reclamo con concesión expirada y un ayudante para caducarla sin esperas; no cambia el comportamiento del producto.
+- **Estado**: completado
+- **Cerrada**: 2026-11-15
 - **Tiempo humano**: est. 2h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real 0.04h (medido)
 - **Supervisión**: est. 0.07h (≈25 % IA) · real —
 - **Previsión IA**: 74 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-01
@@ -171,16 +172,16 @@ test-plan: n/a (sin UI)
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_job_leases|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Hay pruebas de que un trabajo `running` con concesión expirada se reclama de nuevo y se cuenta un intento (comportamiento actual, `store_jobs.py:92`, `:105`)
-- [ ] `expire_lease(store, job_id)` caduca la concesión sin esperas reales
-- [ ] Las pruebas no cambian código de producción
+- [x] Hay pruebas de que un trabajo `running` con concesión expirada se reclama de nuevo y se cuenta un intento (comportamiento actual, `store_jobs.py:92`, `:105`)
+- [x] `expire_lease(store, job_id)` caduca la concesión sin esperas reales
+- [x] Las pruebas no cambian código de producción
 
 **Subtareas**
-- [ ] Escribir las pruebas de caracterización
-- [ ] Añadir `expire_lease` al arnés
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir las pruebas de caracterización
+- [x] Añadir `expire_lease` al arnés
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `tests/test_jobs.py` (reclamo y reintento) y `store_jobs.py:89-192`. La prueba de trabajo venenoso (CA-12) se escribe en rojo en la Fase 2.
+**Notas**: Patrón: `tests/test_jobs.py` (reclamo y reintento) y `store_jobs.py:89-192`. La prueba de trabajo venenoso (CA-12) se escribe en rojo en la Fase 2. — CIERRE: usage-meter {inicio 15:42:43Z, fin 15:44:20Z, horas_ia 0.04, duracion 2m, medido}. Verificación (dev, imagen kairos-dev:i3p1): test_job_leases 6 tests ok (con test_jobs y test_fault_proxy, 15 ok, 0 fallos); suite completa en T-05. RED: test_job_leases falló con ImportError (expire_lease no existía) · 2026-11-15. Producción intacta (git diff solo en tests/).
 
 ### T-05 — Cierre de fase: suite completa y subida del mínimo
 
