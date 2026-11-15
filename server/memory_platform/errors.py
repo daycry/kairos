@@ -79,6 +79,24 @@ def is_store_unavailable(exc):
     return state is None or state.startswith('08') or state in SHUTDOWN_SQLSTATES
 
 
+TRANSIENT_SQLSTATES = frozenset({'40001', '40P01', '57014', '55P03'})
+
+
+def is_store_transient(exc):
+    """True for an error the database ANSWERED with that is worth repeating a little later: a serialization failure (40001), a deadlock (40P01), a cancelled
+    query (57014, `statement_timeout`), a lock that could not be taken (55P03) and any insufficient-resources error (class 53). It is not an outage
+    (`is_store_unavailable` is False for it); only the write of the outcome of a job repeats it, within its budget. Anything else (54xxx, a violated
+    constraint...) is not transient."""
+    try:
+        import psycopg
+    except ImportError:
+        return False
+    if not isinstance(exc, psycopg.Error) or is_store_unavailable(exc):
+        return False
+    state = _sqlstate(exc)
+    return state is not None and (state in TRANSIENT_SQLSTATES or state.startswith('53'))
+
+
 def is_store_error(exc):
     """True for an error the database ANSWERED with (any driver error that is not an outage, see `is_store_unavailable`): not the provider's failure either."""
     try:
