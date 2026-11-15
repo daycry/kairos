@@ -172,6 +172,27 @@ class StaticTests(unittest.TestCase):
             self.assertEqual(found, [], name)
 
 
+    def test_a_delete_in_any_migration_source_is_found_and_retention_is_not_a_migration_step(self):
+        """Mutants over the real text of every migration source: one `DELETE` appended (a statement in `schema.sql`, a statement string in each Python module) must be found,
+        so the rule cannot pass by looking at the wrong thing. The retention code (`admin prune-tables`) lives outside `MIGRATION_SOURCES` and nothing there refers to it."""
+        for name in MIGRATION_SOURCES:
+            text = (PACKAGE / name).read_text(encoding='utf-8')
+            allowed = ALLOWED_DELETES.get(name, frozenset())
+            if name.endswith('.sql'):
+                self.assertEqual(sql_findings(text), [], name)
+                self.assertTrue(sql_findings(text + "\nDELETE FROM memory.jobs WHERE state = 'failed';\n"), name)
+                self.assertTrue(sql_findings(text + "\nDO $x$ BEGIN EXECUTE 'DELETE FROM memory.jobs'; END $x$;\n"), name)
+            else:
+                self.assertEqual(python_findings(text, allowed), [], name)
+                self.assertTrue(python_findings(text + "\nc.execute('DELETE FROM memory.jobs WHERE state=%s', ('failed',))\n", allowed), name)
+                self.assertTrue(python_findings(text + "\nc.execute('DELETE FROM memory.agent_corpus_entries')\n", allowed), name)  # the allow-list is the exact bounded statement
+            self.assertNotIn('prune', text.lower(), name)
+        # `Store.migrate()` itself (store_auth.py) is the entry of every migration: it never calls the retention code either.
+        entry = (PACKAGE / 'store_auth.py').read_text(encoding='utf-8').lower()
+        self.assertTrue('def migrate' in entry and 'prune' not in entry and 'retention' not in entry)
+        self.assertNotIn('admin.py', MIGRATION_SOURCES)
+        self.assertIn('DELETE FROM memory.', (PACKAGE / 'admin.py').read_text(encoding='utf-8'))  # the delete lives there, outside the migration sources
+
     def test_every_registration_of_a_version_leaves_an_existing_one_alone(self):
         """Versions 8 to 12 register themselves inside `DO` blocks after a `RETURN` that a migrated database never passes, so no behavioural test reaches them
         on a repeated migrate: the statement itself is checked, in every migration source (a bare INSERT would collide, a DO UPDATE would rewrite the date)."""

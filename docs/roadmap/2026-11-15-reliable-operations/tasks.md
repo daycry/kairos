@@ -42,7 +42,7 @@ test-plan: n/a (sin UI)
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Arnés de fallos y tests de límites (C-07) | 6 | 6 | 100% | 0 / 32.4h | 0.83 / 4.3h | 0 / 1.1h | 0 / 1080 k |
 | Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 7 | 7 | 100% | 0 / 27.0h | 2.10 / 3.6h | 0 / 0.9h | 0 / 900 k |
-| Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 3 | 7 | 43% | 0 / 27.0h | 0.67 / 3.6h | 0 / 0.9h | 0 / 900 k |
+| Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 4 | 7 | 57% | 0 / 27.0h | 0.81 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 0 | 9 | 0% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 0 | 5 | 0% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 0 | 9 | 0% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **16** | **98** | **16%** | **0 / 412.8h** | **3.60 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **17** | **98** | **17%** | **0 / 412.8h** | **3.74 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -555,10 +555,11 @@ test-plan: n/a (sin UI)
 ### T-17 — Invariantes de la retención: manifiesto, recibos y migraciones sin `DELETE`
 
 - **Descripción**: Probar que podar no cambia lo que ven los clientes: `content_manifest()` de datos de memoria igual antes y después, ningún trabajo con recibo en `projection_receipts` se borra, ninguna migración contiene `DELETE`. Fuente: CA-14; R-04.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: pruebas que fijan que podar las tablas no cambia lo que ven los clientes (manifiesto, embeddings y recibos intactos, `events` intacta por defecto) y que ninguna migración borra.
+- **Estado**: completado
+- **Cerrada**: 2026-11-15
 - **Tiempo humano**: est. 3h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.14h (medido)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 110 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: T-16
@@ -568,18 +569,18 @@ test-plan: n/a (sin UI)
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_prune_tables|test_migrations_additive|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] `content_manifest()` (elementos, documentos, embeddings y recibos vigentes) es igual antes y después de `prune-tables`
-- [ ] Un trabajo `failed` con recibo en `projection_receipts` no se borra aunque supere la ventana (la clave foránea `schema.sql:20` lo protege y la prueba lo demuestra)
-- [ ] Una prueba recorre `MIGRATION_SOURCES` y falla si aparece `DELETE` (mutante comprobado)
-- [ ] `events` intacta con los valores por defecto
+- [x] `content_manifest()` (elementos, documentos, embeddings y recibos vigentes) es igual antes y después de `prune-tables`
+- [x] Un trabajo `failed` con recibo en `projection_receipts` no se borra aunque supere la ventana (la clave foránea `schema.sql:20` lo protege y la prueba lo demuestra)
+- [x] Una prueba recorre `MIGRATION_SOURCES` y falla si aparece `DELETE` (mutante comprobado)
+- [x] `events` intacta con los valores por defecto
 
 **Subtareas**
-- [ ] Sembrar datos con recibos y trabajos antiguos
-- [ ] Comparar manifiesto antes/después
-- [ ] Añadir el mutante `DELETE` a `test_migrations_additive.py`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Sembrar datos con recibos y trabajos antiguos
+- [x] Comparar manifiesto antes/después
+- [x] Añadir el mutante `DELETE` a `test_migrations_additive.py`
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `schema.sql:20` (`projection_receipts.job_id` referencia `jobs(id)`) y `scripts/deploy-memory.py:376` (uso de `content-manifest`).
+**Notas**: Patrón: `schema.sql:20` (`projection_receipts.job_id` referencia `jobs(id)`) y `scripts/deploy-memory.py:376` (uso de `content-manifest`). usage-meter reliable-operations/T-17 {inicio 20:39:21Z, fin 20:49:11Z, horas_ia 0.14, duracion 8m, medido}. TDD n/a (pruebas de invariantes sobre código de T-16 ya en verde; el valor está en los mutantes). Pruebas nuevas: `test_prune_tables.InvariantTests` (3: `content_manifest()` idéntico y las tablas `documents`, `memory_items`, `embeddings`, `projection_receipts`, `projects`, `actors` y las de versiones con la misma huella (`store_fingerprints`) tras podar con las cinco ventanas a 1 día, y solo las cinco tablas podadas cambian; el trabajo `failed` con recibo sobrevive aunque el reloj avance 40.000 días y la FK `projection_receipts.job_id` lo respalda (un `DELETE` directo da `ForeignKeyViolation`); `events` intacta con las ventanas por defecto en tres ejecuciones) y `test_migrations_additive.test_a_delete_in_any_migration_source_is_found_and_retention_is_not_a_migration_step` (para cada una de las 5 `MIGRATION_SOURCES`: el texto real no tiene hallazgos y el mismo texto con un `DELETE` añadido SÍ; ninguna fuente ni `store_auth.py` —la entrada de `Store.migrate()`— menciona `prune`/retención; el `DELETE` de la poda vive en `admin.py`, fuera de las fuentes). MUTANTES en copia temporal (cada uno en rojo): `DELETE` real metido en `schema.sql`, `store_vectors.py`, `agent_store.py`, `extended_store.py` y `corpus_answers.py` -> FAIL x2 cada uno (esta prueba y `test_ca34`); `prune` mencionado en `store_auth.py` (`migrate()`) -> FAIL (el primer intento pasaba: esa entrada no estaba cubierta y se añadió); la poda que borra `embeddings` -> FAIL (huella y manifiesto); la poda que marca `documents.deleted` -> FAIL (manifiesto); sin `NOT EXISTS` de recibos -> ERROR x6 + FAIL (FK); `events` con ventana por defecto -> FAIL x3 + ERROR. VERIFICACIÓN (ejecutor rápido de módulos, imagen `kairos-test:i3p2fix1`): `test_migrations_additive test_prune_tables` -> Ran 36 tests OK. EOL conservado (test_migrations_additive.py CRLF, test_prune_tables.py LF; `git diff --stat` igual con y sin `--ignore-cr-at-eol`). Visible para clientes: ninguno.
 
 ### T-18 — Documentar índices, retención y ventanas
 

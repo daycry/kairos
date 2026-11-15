@@ -3,6 +3,7 @@
 Every date is seeded relative to a fixed `NOW` that the run receives (no real clock), and every test has a database of its own."""
 import contextlib
 from datetime import datetime, timedelta, timezone
+import hashlib
 import io
 import json
 import os
@@ -12,7 +13,7 @@ from unittest.mock import Mock, patch
 import uuid
 
 from memory_platform import admin
-from memory_platform.admin import main, prune_tables
+from memory_platform.admin import content_manifest, main, prune_tables, store_fingerprints
 from memory_platform.config import RETENTION_DEFAULTS, retention_windows
 from memory_platform.store import Store
 
@@ -261,6 +262,58 @@ class PruneTests(PruneDatabase):
             prune_tables(self.store, self.windows(), tables=['actors'], now=NOW)
         with self.assertRaises(ValueError):
             prune_tables(self.store, {'jobs': 90}, now=NOW)
+
+
+class InvariantTests(PruneDatabase):
+    """Pruning does not change what a client sees: the memory data, the embeddings and the receipts stay exactly as they were (R-04)."""
+    PRUNED = {'login_attempts', 'web_sessions', 'audit_events', 'jobs', 'events'}
+
+    def seed_memory_data(self):
+        content = 'Contenido de ejemplo'
+        body = {'title': 'Doc', 'content': content, 'tags': ['a'], 'source': {'uri': 'fixture://1', 'sha256': hashlib.sha256(content.encode('utf-8')).hexdigest()}}
+        with self.psycopg.connect(self.dsn) as c:
+            c.execute("INSERT INTO memory.documents(project_id,id,version,canonical_hash,body) VALUES('p1','d1',1,repeat('b',64),%s::jsonb)", (json.dumps(body),))
+            c.execute("INSERT INTO memory.memory_items(project_id,id,version,canonical_hash,event_type,payload,session_id,agent_id,occurred_at,search_vector) "
+                      "VALUES('p1','m1',1,repeat('c',64),'note',%s::jsonb,'s1','ag',%s,to_tsvector('simple','t c'))", (json.dumps({'title': 't', 'content': 'c'}), ago(500)))
+            c.execute("INSERT INTO memory.embeddings(project_id,item_id,resource_type,version,canonical_hash,model,vector) VALUES('p1','d1','document',1,repeat('b',64),'nomic-embed-text',%s)", ([0.5, 0.25, 0.125],))
+            # The jobs of that document: one that worked (with its receipt) and one that failed long ago.
+            for name, state in (('j-d1-ok', 'succeeded'), ('j-d1-failed', 'failed')):
+                c.execute("INSERT INTO memory.jobs(id,project_id,item_id,version,canonical_hash,resource_type,destination,operation,state,created_at,available_at) "
+                          "VALUES(%s,'p1','d1',1,repeat('b',64),'document','embed',%s,%s,%s,%s)", (name, 'upsert' if state == 'succeeded' else 'delete', state, ago(400), ago(400)))
+            c.execute("INSERT INTO memory.projection_receipts(job_id,project_id,item_id,version,canonical_hash,destination,receipt) VALUES('j-d1-ok','p1','d1',1,repeat('b',64),'embed','{\"model\":\"m\"}')")
+
+    def test_the_manifest_the_embeddings_and_the_receipts_are_the_same_after_pruning_with_the_shortest_windows(self):
+        self.seed_memory_data()
+        manifest, tables = content_manifest(self.store), store_fingerprints(self.store)
+        self.assertEqual(len(manifest['documents']), 1)
+        self.assertEqual(len(manifest['items']), 1)
+        result = prune_tables(self.store, {table: 1 for table in self.PRUNED}, now=NOW)  # every window at its shortest, `events` included
+        self.assertGreater(sum(info['deleted'] for info in result['tables'].values()), 0)
+        self.assertEqual(content_manifest(self.store), manifest)
+        after = store_fingerprints(self.store)
+        self.assertEqual({table for table in tables if tables[table] != after[table]}, self.PRUNED, 'nothing outside the five pruned tables changed')
+        for table in ('documents', 'memory_items', 'embeddings', 'projection_receipts', 'projects', 'actors', 'item_versions', 'document_versions'):
+            self.assertEqual(after[table], tables[table], table)
+        self.assertEqual(self.rows('projection_receipts', 'job_id'), {'f-old-receipt', 's-old', 'j-d1-ok'})
+        self.assertNotIn('j-d1-failed', self.rows('jobs'))
+        self.assertIn('j-d1-ok', self.rows('jobs'))
+
+    def test_a_failed_job_with_a_receipt_survives_and_the_foreign_key_is_what_backs_it(self):
+        """The predicate of the run leaves the job out; if it ever did not, the foreign key of `projection_receipts` stops the DELETE (shown here directly)."""
+        with self.psycopg.connect(self.dsn) as c:
+            with self.assertRaises(self.psycopg.errors.ForeignKeyViolation):
+                c.execute("DELETE FROM memory.jobs WHERE id='f-old-receipt'")
+        for windows in (self.windows(), self.windows(jobs=1), self.windows(jobs=36500)):
+            prune_tables(self.store, windows, now=NOW + timedelta(days=40000))  # a clock far in the future makes every job older than any window
+            self.assertIn('f-old-receipt', self.rows('jobs'))
+            self.assertEqual(self.rows('projection_receipts', 'job_id'), {'f-old-receipt', 's-old'})
+
+    def test_events_is_intact_with_the_default_windows_however_many_times_it_runs(self):
+        before = self.fingerprint()['events']
+        for _ in range(3):
+            prune_tables(self.store, retention_windows({}), now=NOW + timedelta(days=40000))
+        self.assertEqual(self.fingerprint()['events'], before)
+        self.assertEqual(retention_windows({})['events'], None)
 
 
 class CommandTests(PruneDatabase):
