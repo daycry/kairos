@@ -1,20 +1,30 @@
 """Durable leased worker. Remote operations always occur outside database transactions."""
 from __future__ import annotations
 import asyncio
+import random
 from datetime import datetime, timedelta, timezone
 import signal
 import socket
 import time
 import uuid
 from . import observability
-from .config import Settings, embedding_job_timeout
+from .config import DEFAULT_BACKOFF_MAX, Settings, embedding_job_timeout
 from .store import Store
 from .store_jobs import stored_item_vector
 from .providers import Ollama, Embeddings, ProviderError
-from .errors import MemoryError
+from .errors import MemoryError, StoreUnavailable, is_store_unavailable
 from .chunking import chunk_text, embedding_text
 
 JOB_DEADLINE_MARGIN = 10  # seconds the job may outlive the provider's own deadline
+IDLE_SECONDS = 1.0  # wait between two claims when the queue is empty
+BACKOFF_FIRST = 1.0  # ceiling of the wait after the first consecutive database failure; it doubles up to MEMORY_WORKER_DB_BACKOFF_MAX
+
+
+def backoff_delay(failures, cap, rng=random.random):
+    """Seconds to wait after `failures` consecutive database failures: the ceiling doubles from BACKOFF_FIRST and stops at `cap`; the wait is a point of
+    [ceiling/2, ceiling] chosen with `rng` (equal jitter: many workers do not retry together, yet the wait still grows and reaches the cap)."""
+    ceiling = min(float(cap), BACKOFF_FIRST*2**min(max(failures, 1)-1, 30))
+    return ceiling/2+rng()*ceiling/2
 
 
 def embed_plan(settings, payload):
@@ -76,7 +86,9 @@ async def embed_receipt(provider, settings, payload, canonical_hash, item_vector
 
 
 class Worker:
-    def __init__(self, store, settings, providers=None, worker_id=None):
+    def __init__(self, store, settings, providers=None, worker_id=None, *, clock=None, rng=None, waiter=None, heartbeat_wait=None):
+        """`clock` (monotonic seconds), `rng` (jitter, [0, 1)), `waiter` (the wait between claims; default: ends early when the worker is told to stop)
+        and `heartbeat_wait` (the pause of the lease heartbeat) exist so that a test drives time and does not wait for it."""
         self.store, self.settings = store, settings
         self.id = worker_id or socket.gethostname()+':'+str(uuid.uuid4())
         if providers is None:
@@ -86,9 +98,38 @@ class Worker:
                 providers['extract'] = Ollama(settings)
         self.providers = providers
         self.stopping = asyncio.Event()
+        self.clock = clock or time.monotonic
+        self.rng = rng or random.random
+        self._wait = waiter or self._wait_or_stop
+        self._heartbeat_wait = heartbeat_wait or asyncio.sleep
+        self.last_store_ok = self.clock()  # `clock()` of the last access to the database that worked (R-01: an outage must not look healthy)
+        self.store_failures = 0  # consecutive failures of the database or of the loop; any access that works sets it back to 0
+
+    async def _wait_or_stop(self, seconds):
+        """Wait `seconds`, or less when the worker is told to stop: a stop never waits for a backoff."""
+        try:
+            await asyncio.wait_for(self.stopping.wait(), seconds)
+        except TimeoutError:
+            pass
+
+    async def _store(self, stage, call, *args):
+        """Every access of the worker to the database goes through here (claim, heartbeat, stored vector, complete, fail). A database that does not answer is
+        logged as `store_unavailable` (stage in `reason`, consecutive failures in `count`, never the DSN) and raised as `StoreUnavailable`; one that
+        answers advances `last_store_ok`. Every other error passes through for the caller to classify."""
+        try:
+            result = await asyncio.to_thread(call, *args)
+        except Exception as exc:
+            if not is_store_unavailable(exc):
+                raise
+            self.store_failures += 1
+            observability.log_failure('store_unavailable', exc, 'warning', reason=stage, count=self.store_failures)
+            raise StoreUnavailable(getattr(exc, 'cause_type', None) or type(exc).__name__) from None
+        self.store_failures = 0
+        self.last_store_ok = self.clock()
+        return result
 
     async def run_once(self):
-        job = await asyncio.to_thread(self.store.claim_job, self.id, self.settings.lease_seconds)
+        job = await self._store('claim', self.store.claim_job, self.id, self.settings.lease_seconds)
         if not job:
             return False
         lost = asyncio.Event()
@@ -96,13 +137,15 @@ class Worker:
         started, outcome = time.monotonic(), 'failed'
         async def heartbeat():
             while True:
-                await asyncio.sleep(max(0.1, self.settings.lease_seconds/3))
+                await self._heartbeat_wait(max(0.1, self.settings.lease_seconds/3))
                 try:
-                    renewed = await asyncio.to_thread(self.store.renew_lease, job['id'], job['fence'], self.settings.lease_seconds)
+                    renewed = await self._store('heartbeat', self.store.renew_lease, job['id'], job['fence'], self.settings.lease_seconds)
                     if not renewed:
                         observability.log_event('lease_lost', 'warning', destination=destination)
                         lost.set()
                         return
+                except StoreUnavailable:
+                    continue  # logged by `_store`: the lease is what the database says, so the next beat tries again; the job is lost only when it says so
                 except Exception as exc:
                     observability.log_failure('heartbeat_failed', exc, 'warning', destination=destination)
                     lost.set()
@@ -156,8 +199,7 @@ class Worker:
             observability.log_failure('job_failed', exc, 'warning', destination=destination, code='provider_timeout', duration_ms=observability.elapsed_ms(started))
             if not lost.is_set():
                 retry_at = datetime.now(timezone.utc)+timedelta(seconds=30) if job['attempts'] < self.settings.max_attempts else None
-                await asyncio.to_thread(self.store.fail_job, job['id'], job['fence'], 'provider_timeout',
-                                        retry_at, False)
+                await asyncio.to_thread(self.store.fail_job, job['id'], job['fence'], 'provider_timeout', retry_at, False)
         except MemoryError as exc:
             observability.log_failure('job_failed', exc, 'warning', destination=destination, code=exc.code, duration_ms=observability.elapsed_ms(started))
             if not lost.is_set():
@@ -176,12 +218,23 @@ class Worker:
         return True
 
     async def run(self):
+        """Claim and run jobs until told to stop. It never ends because of an error: while the last access to the database failed it waits
+        `backoff_delay` (growing, with jitter, up to MEMORY_WORKER_DB_BACKOFF_MAX) before the next claim; any access that works resets it."""
+        cap = getattr(self.settings, 'worker_db_backoff_max', DEFAULT_BACKOFF_MAX)
         while not self.stopping.is_set():
-            if not await self.run_once():
-                try:
-                    await asyncio.wait_for(self.stopping.wait(), 1)
-                except TimeoutError:
-                    pass
+            try:
+                worked = await self.run_once()
+            except Exception as exc:
+                worked = True
+                if not isinstance(exc, StoreUnavailable):  # a database failure is already logged and counted by `_store`
+                    self.store_failures += 1
+                    unavailable = is_store_unavailable(exc)
+                    observability.log_failure('store_unavailable' if unavailable else 'worker_loop_error', exc, 'warning' if unavailable else 'error',
+                                              reason='loop', count=self.store_failures)
+            if self.store_failures:
+                await self._wait(backoff_delay(self.store_failures, cap, self.rng))
+            elif not worked:
+                await self._wait(IDLE_SECONDS)
 
 
 async def serve():

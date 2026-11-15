@@ -115,6 +115,20 @@ def embed_batch_size(environ=None) -> int:
 
 
 DEFAULT_EMBED_BATCH_TIMEOUT, DEFAULT_EMBED_JOB_MAX_TIMEOUT = 60.0, 900.0
+DEFAULT_BACKOFF_MAX = 60.0
+
+
+def worker_db_backoff_max(environ=None) -> float:
+    """Longest wait, in seconds, of the worker between two claims while the database does not answer (MEMORY_WORKER_DB_BACKOFF_MAX, 1 to 3600)."""
+    environ = os.environ if environ is None else environ
+    raw = environ.get('MEMORY_WORKER_DB_BACKOFF_MAX', str(DEFAULT_BACKOFF_MAX)).strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        raise ValueError('MEMORY_WORKER_DB_BACKOFF_MAX must be a number of seconds between 1 and 3600') from None
+    if not 1 <= value <= 3600:  # also rejects NaN
+        raise ValueError('MEMORY_WORKER_DB_BACKOFF_MAX must be a number of seconds between 1 and 3600')
+    return value
 
 
 def embed_timeouts(environ=None) -> tuple:
@@ -233,6 +247,7 @@ class Settings:
     provider_timeout: float = 180.0
     lease_seconds: int = 240
     max_attempts: int = 3
+    worker_db_backoff_max: float = DEFAULT_BACKOFF_MAX  # MEMORY_WORKER_DB_BACKOFF_MAX
     max_body_bytes: int = 262144
     embed_enabled: bool = True
     embedding_query_timeout: float = 10.0
@@ -293,6 +308,7 @@ class Settings:
             provider_timeout=float(os.environ.get('MEMORY_PROVIDER_TIMEOUT', '180')),
             lease_seconds=int(os.environ.get('MEMORY_LEASE_SECONDS', '240')),
             max_attempts=int(os.environ.get('MEMORY_MAX_ATTEMPTS', '3')),
+            worker_db_backoff_max=worker_db_backoff_max(),
             max_body_bytes=int(os.environ.get('MEMORY_MAX_BODY_BYTES', '262144')),
             embed_enabled=os.environ.get('MEMORY_EMBED_ENABLED', '1') == '1',
             embedding_query_timeout=float(os.environ.get('MEMORY_EMBED_QUERY_TIMEOUT', '10')),

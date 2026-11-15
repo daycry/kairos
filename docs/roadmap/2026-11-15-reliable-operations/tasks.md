@@ -41,7 +41,7 @@ test-plan: n/a (sin UI)
 | Fase | Completadas | Total | Progreso | H. humanas (real/est) | H. IA ejec. (real/est) | Supervisión (real/est) | Tokens (real/est) |
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Arnés de fallos y tests de límites (C-07) | 6 | 6 | 100% | 0 / 32.4h | 0.83 / 4.3h | 0 / 1.1h | 0 / 1080 k |
-| Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 1 | 7 | 14% | 0 / 27.0h | 0.11 / 3.6h | 0 / 0.9h | 0 / 900 k |
+| Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 2 | 7 | 29% | 0 / 27.0h | 0.47 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 0 | 7 | 0% | 0 / 27.0h | 0 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 0 | 9 | 0% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 0 | 5 | 0% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **7** | **98** | **7%** | **0 / 412.8h** | **0.94 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **8** | **98** | **8%** | **0 / 412.8h** | **1.3 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -283,10 +283,11 @@ test-plan: n/a (sin UI)
 ### T-08 — Reclamo resiliente: espera exponencial con jitter y `MEMORY_WORKER_DB_BACKOFF_MAX`
 
 - **Descripción**: Meter `claim_job` dentro del control de errores de `run_once`/`run` con espera exponencial con jitter y tope (`MEMORY_WORKER_DB_BACKOFF_MAX`, 60 s); registrar `store_unavailable` sin DSN y seguir vivo. El `Worker` expone el instante del último acceso correcto a la base (lo usa el latido en la Fase 9). Fuente: CA-10; B-03.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: El worker ya no muere cuando la base de datos se cae: espera con pausas crecientes (hasta MEMORY_WORKER_DB_BACKOFF_MAX, 60 s por defecto), lo registra como store_unavailable y retoma la cola al volver.
+- **Estado**: completado
+- **Cerrada**: 2026-11-15
 - **Tiempo humano**: est. 4h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.53h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.53h (estimado) · real 0.36h (medido)
 - **Supervisión**: est. 0.13h (≈25 % IA) · real —
 - **Previsión IA**: 147 k in / 13 k out tok · ⚠️ verificar €
 - **Dependencias**: T-07
@@ -296,19 +297,19 @@ test-plan: n/a (sin UI)
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_worker_db_down|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Con la base cortada, `Worker.run()` no termina tras N reclamos fallidos (prueba con `FaultProxy`, reloj y espera inyectados)
-- [ ] Las esperas crecen con jitter y se detienen en `MEMORY_WORKER_DB_BACKOFF_MAX`; al `restore()` el worker procesa la cola
-- [ ] Se registra `store_unavailable` sin DSN ni contraseña
-- [ ] `Worker.last_store_ok` avanza solo con accesos correctos (R-01: una caída larga no parece sana)
+- [x] Con la base cortada, `Worker.run()` no termina tras N reclamos fallidos (prueba con `FaultProxy`, reloj y espera inyectados)
+- [x] Las esperas crecen con jitter y se detienen en `MEMORY_WORKER_DB_BACKOFF_MAX`; al `restore()` el worker procesa la cola
+- [x] Se registra `store_unavailable` sin DSN ni contraseña
+- [x] `Worker.last_store_ok` avanza solo con accesos correctos (R-01: una caída larga no parece sana)
 
 **Subtareas**
-- [ ] Escribir primero la prueba con la base cortada (rojo: `run()` termina)
-- [ ] Mover `claim_job` dentro del control de errores (`worker.py:91`)
-- [ ] Implementar espera, jitter y tope con reloj inyectado
-- [ ] Añadir `MEMORY_WORKER_DB_BACKOFF_MAX` a `config.py`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero la prueba con la base cortada (rojo: `run()` termina)
+- [x] Mover `claim_job` dentro del control de errores (`worker.py:91`)
+- [x] Implementar espera, jitter y tope con reloj inyectado
+- [x] Añadir `MEMORY_WORKER_DB_BACKOFF_MAX` a `config.py`
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `worker.py:78-184` (`run_once`, `run`; `claim_job` fuera del `try` en `:91`, `run()` en `:178-184`). Aprendizaje 2: relojes inyectados o `threading.Event`, sin esperas reales.
+**Notas**: Patrón: `worker.py:78-184` (`run_once`, `run`; `claim_job` fuera del `try` en `:91`, `run()` en `:178-184`). Aprendizaje 2: relojes inyectados o `threading.Event`, sin esperas reales. CIERRE: usage-meter {inicio 16:54:43Z, fin 17:06:58Z, horas_ia 0.36, duracion 22m, medido}; la ventana incluye la escritura de las pruebas y del codigo de T-09 (misma pasada sobre worker.py), por eso T-09 solo suma lo que le queda. Diseño (worker.py): TODO acceso del worker a la base pasa por `Worker._store(stage, call, *args)`: clasifica con `is_store_unavailable`, registra `store_unavailable` (stage en `reason`, fallos consecutivos en `count`, `exc_type`; nunca el mensaje del driver ni el DSN) y lo eleva como StoreUnavailable; un acceso correcto pone `store_failures=0` y mueve `last_store_ok`. En esta tarea pasan por ahi el reclamo y el latido (renew_lease); el resto lo cierra T-09. `run()` atrapa cualquier excepcion de `run_once`: un fallo de base ya contado por `_store`, o uno inesperado (se cuenta y se registra aparte como `worker_loop_error`, nivel error, para que un bug del bucle no gire en vacio ni se silencie); mientras `store_failures>0` espera `backoff_delay(n, cap, rng)` = techo min(cap, 1s·2^(n-1)) y un punto de [techo/2, techo] (jitter igual: crece y alcanza el tope); sin trabajo, la espera ociosa de 1 s (IDLE_SECONDS). La espera por defecto (`_wait_or_stop`) termina al instante si `stopping` se activa: ningun `time.sleep` ni sleep no interrumpible en el worker. Reloj, jitter, espera de reclamo y pausa del latido son inyectables (`clock`, `rng`, `waiter`, `heartbeat_wait`): ninguna prueba de la fase espera tiempo real. Latido: una caida de base en `renew_lease` ya no da el trabajo por perdido (antes `except Exception` -> `lost.set()`): se registra y reintenta en el siguiente latido; el trabajo solo se pierde si la base dice que la concesion ya no es suya (renew_lease False, comportamiento intacto). `Worker.last_store_ok` (time.monotonic por defecto, fijado en el constructor para no parecer sano sin base desde el arranque) lo leerá el latido de la Fase 9. Config: `MEMORY_WORKER_DB_BACKOFF_MAX` (config.py, `worker_db_backoff_max()`, defecto 60, rango 1-3600, valida NaN/inf/negativo/texto) y campo `Settings.worker_db_backoff_max`; config.py es CRLF y se conservó. Visible para clientes: ninguno (variable nueva opcional del worker, contrato MCP intacto). RED: las 19 pruebas de test_worker_db_down fallaban al importar (`ImportError: cannot import name 'BACKOFF_FIRST' from 'memory_platform.worker'`) antes del codigo · 2026-11-15. MUTANTES en copia temporal (cada uno mata pruebas): M1 `run()` sin atrapar errores del reclamo -> 8 ERROR (incl. test_run_survives_a_cut_database…, el del corte con FaultProxy); M2 sin tope -> 6 FAIL; M3 `store_failures` no se reinicia tras un acceso correcto -> 4 FAIL (test_one_access_that_works_sets_the_backoff_back_to_the_start); M4 espera no interrumpible (asyncio.sleep) -> 2 ERROR (test_a_stop_ends_the_wait_of_a_backoff_at_once, test_the_default_wait_returns_when_the_worker_is_told_to_stop_while_it_waits); M5 sin jitter -> 4 FAIL; M6 `last_store_ok` avanza en el fallo -> FAIL test_last_store_ok_moves_only_with_an_access_that_worked; M7 el registro incluye `code=str(exc)` (mensaje del driver con contraseña) -> FAIL test_store_unavailable_is_logged_with_its_stage_and_count_and_never_with_the_dsn_or_the_password; M8 tope fijo en vez del configurado -> 2 FAIL; M9 latido sin la clausula StoreUnavailable (vuelve a dar el trabajo por perdido) -> ERROR test_the_heartbeat_keeps_beating_through_a_database_failure_and_the_job_completes. Verificación (módulo en kairos-test:i3p1 con el paquete montado, `--network=none`): test_worker_db_down 19 tests ok + test_worker + test_chunk_jobs: DEV_RESULT 61 0 0 0; suite completa en T-12. (El test_worker de reloj real que fallaba en mi primer arranque pasó en este: es de temporizacion y sensible a la carga; no lo toca esta tarea.)
 
 ### T-09 — Un fallo de base al completar o fallar un trabajo no cambia su estado
 
