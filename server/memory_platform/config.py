@@ -131,6 +131,23 @@ def worker_db_backoff_max(environ=None) -> float:
     return value
 
 
+def worker_write_retry_seconds(environ=None, lease_seconds=240):
+    """Longest the worker keeps repeating the write of the OUTCOME of a job (`complete_job`/`fail_job`) once it failed, counted from the first failure
+    (MEMORY_WORKER_WRITE_RETRY_SECONDS, 1 to 86400; default: the lease, MEMORY_LEASE_SECONDS). Past it the worker stops renewing the lease and the job goes
+    back to the queue when the lease ends."""
+    environ = os.environ if environ is None else environ
+    raw = environ.get('MEMORY_WORKER_WRITE_RETRY_SECONDS', '').strip()
+    if not raw:
+        return float(lease_seconds)
+    try:
+        value = float(raw)
+    except ValueError:
+        raise ValueError('MEMORY_WORKER_WRITE_RETRY_SECONDS must be a number of seconds between 1 and 86400') from None
+    if not 1 <= value <= 86400:  # also rejects NaN
+        raise ValueError('MEMORY_WORKER_WRITE_RETRY_SECONDS must be a number of seconds between 1 and 86400')
+    return value
+
+
 def max_attempts(environ=None) -> int:
     """MEMORY_MAX_ATTEMPTS: the attempts a job is allowed (also the cap of claims of a job whose lease expires). An integer of 1 or more: with 0 or a negative
     number a job would never run or would be failed as `attempts_exhausted` on its first lost lease."""
@@ -258,6 +275,7 @@ class Settings:
     lease_seconds: int = 240
     max_attempts: int = 3
     worker_db_backoff_max: float = DEFAULT_BACKOFF_MAX  # MEMORY_WORKER_DB_BACKOFF_MAX
+    worker_write_retry_seconds: float | None = None  # MEMORY_WORKER_WRITE_RETRY_SECONDS; None = the lease (`lease_seconds`)
     max_body_bytes: int = 262144
     embed_enabled: bool = True
     embedding_query_timeout: float = 10.0
@@ -319,6 +337,7 @@ class Settings:
             lease_seconds=int(os.environ.get('MEMORY_LEASE_SECONDS', '240')),
             max_attempts=max_attempts(),
             worker_db_backoff_max=worker_db_backoff_max(),
+            worker_write_retry_seconds=worker_write_retry_seconds(None, int(os.environ.get('MEMORY_LEASE_SECONDS', '240'))),
             max_body_bytes=int(os.environ.get('MEMORY_MAX_BODY_BYTES', '262144')),
             embed_enabled=os.environ.get('MEMORY_EMBED_ENABLED', '1') == '1',
             embedding_query_timeout=float(os.environ.get('MEMORY_EMBED_QUERY_TIMEOUT', '10')),

@@ -65,6 +65,13 @@ def stored_item_vector(store,project_id,item_id,resource_type,version,canonical_
         return list(row['vector']) if row and any(row['vector']) else None
 
 
+def job_outcome(store,job_id,fence):
+    """`{state, error_code}` of the job as the database has it for exactly this fence (None when another claim has taken it over): the worker asks it after a write
+    whose answer was lost, to tell a write that landed from one that did not. A module function, not a Store method: `store_surface.json` does not change."""
+    with store.transaction() as c:
+        return c.execute('SELECT state,error_code FROM memory.jobs WHERE id=%s AND fence=%s',(job_id,fence)).fetchone()
+
+
 class JobsMixin:
     def retry_job(self,actor,job_id):
         with self.transaction() as c:

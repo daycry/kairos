@@ -10,13 +10,14 @@ import uuid
 from . import observability
 from .config import DEFAULT_BACKOFF_MAX, Settings, embedding_job_timeout
 from .store import Store
-from .store_jobs import stored_item_vector
+from .store_jobs import job_outcome, stored_item_vector
 from .providers import Ollama, Embeddings, ProviderError
-from .errors import MemoryError, StoreUnavailable, is_store_error, is_store_unavailable
+from .errors import MemoryError, StoreUnavailable, is_store_error, is_store_transient, is_store_unavailable
 from .chunking import chunk_text, embedding_text
 
 JOB_DEADLINE_MARGIN = 10  # seconds the job may outlive the provider's own deadline
 IDLE_SECONDS = 1.0  # wait between two claims when the queue is empty
+WRITE_RETRY_MAX = 5  # failed writes of one outcome (`complete_job`/`fail_job`) after which the worker stops repeating it, however well the renewal of the lease works
 BACKOFF_FIRST = 1.0  # ceiling of the wait after the first consecutive database failure; it doubles up to MEMORY_WORKER_DB_BACKOFF_MAX
 
 
@@ -137,28 +138,65 @@ class Worker:
         self.last_store_ok = self.clock()
         return result
 
+    async def _landed(self, job, stage, args):
+        """After an ambiguous failure of the write (the connection broke, the answer was lost) the lease can no longer be renewed because the write DID land: ask the
+        database. True only when the job is as this very write leaves it (`succeeded` after `complete_job`; `failed`/`pending`/`unknown` with the code of this
+        `fail_job`, under our fence). Any doubt, or a database that does not answer, is False: the job is the database's to say."""
+        try:
+            row = await self._store('read', job_outcome, self.store, job['id'], job['fence'])
+        except Exception as exc:  # StoreUnavailable (also logged by `_store`) or any other error: not proven
+            observability.log_failure('job_outcome_unread', exc, 'warning', reason=stage)
+            return False
+        if not row:
+            return False
+        if stage == 'complete':
+            return row['state'] == 'succeeded'
+        return row['state'] in ('failed', 'pending', 'unknown') and row['error_code'] == args[0]
+
     async def _persist(self, job, lease, lost, destination, stage, call, *args):
         """Write the OUTCOME of a job (`complete_job` or `fail_job`) and do not lose it to a database that does not answer: the result stays in memory and the
         write is repeated, each time after the same growing, jittered, stop-aware wait as a claim (`backoff_delay`), and once the database answers the lease is
-        renewed before writing again. It ends when the write lands (returns what the store answered; `False` means the lease or fence was no longer ours: logged
-        and returned, never counted as written) or raises `Abandoned` when the lease is gone (expired by the clock this worker keeps, or `renew_lease` says so)
-        or the worker is told to stop. Only then is the job left `running`, with the attempt its claim charged, to be claimed again. If the worker process
-        dies with the result in memory, that is the one case that does spend the attempt."""
+        renewed before writing again. An error the database ANSWERED with that is worth repeating (`is_store_transient`: 40001, 40P01, 57014, 55P03, class 53) is
+        repeated the same way. The repetition has a BUDGET per write: at most `MEMORY_WORKER_WRITE_RETRY_SECONDS` from the first failure (default: the lease) and
+        `WRITE_RETRY_MAX` failed writes, even while the renewal works. It ends when the write lands (returns what the store answered; `False` means the lease or
+        fence was no longer ours: logged and returned, never counted as written) or raises `Abandoned` when the lease is gone (expired by the clock this worker
+        keeps, or `renew_lease` says so and the job is not already as this write leaves it), the budget is spent (`retry_budget`: it stops renewing, so the job
+        returns to the queue when the lease ends and the cap of `claim_job` applies to a poisoned receipt) or the worker is told to stop. A transient error that
+        outlasts the budget of `complete_job` is raised as it is (the caller fails the job with `store_error` and a retry). Only an abandoned job is left
+        `running`, with the attempt its claim charged. If the worker process dies with the result in memory, or the outage outlasts the lease (a lease that
+        ran out is never revived), that attempt is lost with the result."""
         cap = getattr(self.settings, 'worker_db_backoff_max', DEFAULT_BACKOFF_MAX)
+        budget = getattr(self.settings, 'worker_write_retry_seconds', None)
+        if budget is None:
+            budget = self.settings.lease_seconds
         def abandon(reason):
             observability.log_event('job_write_abandoned', 'warning', destination=destination, reason=stage+':'+reason)  # `reason` is `<stage>:<why>`, e.g. complete:lease_expired
             raise Abandoned(reason)
+        failures, first = 0, None
         while True:
+            transient = None
             try:
                 written = await self._store(stage, call, job['id'], job['fence'], *args)
             except StoreUnavailable:
                 pass  # logged by `_store`
+            except Exception as exc:
+                if not is_store_transient(exc):
+                    raise
+                transient = exc
+                observability.log_failure('store_retry', exc, 'warning', reason=stage, count=failures+1)
             else:
                 if written is False:
                     observability.log_event('job_write_abandoned', 'warning', destination=destination, reason=stage+':fence')
                 return written
-            while True:  # the database did not answer: wait, then renew the lease as soon as it does
-                await self._wait(backoff_delay(self.store_failures, cap, self.rng))
+            failures += 1
+            if first is None:
+                first = self.clock()
+            while True:  # the write failed: wait, then renew the lease as soon as the database answers
+                if failures >= WRITE_RETRY_MAX or self.clock()-first >= budget:
+                    if transient is not None and stage == 'complete':
+                        raise transient
+                    abandon('retry_budget')
+                await self._wait(backoff_delay(self.store_failures or failures, cap, self.rng))
                 if self.stopping.is_set():
                     abandon('stopping')
                 if lost.is_set():
@@ -166,12 +204,20 @@ class Worker:
                 if self.clock() >= lease[0]:
                     lost.set()
                     abandon('lease_expired')
+                if self.clock()-first >= budget:
+                    continue  # the budget check at the top of the loop decides
                 try:
                     beat = self.clock()
                     renewed = await self._store('heartbeat', self.store.renew_lease, job['id'], job['fence'], self.settings.lease_seconds)
                 except StoreUnavailable:
                     continue
+                except Exception as exc:
+                    if is_store_transient(exc):
+                        continue
+                    raise
                 if not renewed:
+                    if await self._landed(job, stage, args):
+                        return True  # the write that looked lost had landed: it counts as written
                     lost.set()
                     abandon('lease_lost')
                 lease[0] = beat+self.settings.lease_seconds
@@ -208,6 +254,9 @@ class Worker:
                 except StoreUnavailable:
                     continue  # logged by `_store`: the lease is what the database says, so the next beat tries again; the job is lost only when it says so
                 except Exception as exc:
+                    if is_store_transient(exc):  # the database answered with an error worth repeating: the next beat tries again while the lease lives
+                        observability.log_failure('store_retry', exc, 'warning', reason='heartbeat')
+                        continue
                     observability.log_failure('heartbeat_failed', exc, 'warning', destination=destination)
                     lost.set()
                     return
@@ -281,7 +330,10 @@ class Worker:
             code = 'store_error' if is_store_error(exc) else 'provider_error'
             observability.log_failure('job_failed', exc, 'error', destination=destination, code=code, duration_ms=observability.elapsed_ms(started))
             if not lost.is_set():
-                if not await self._fail(job, lease, lost, destination, code):
+                retry_at = None
+                if is_store_transient(exc) and job['attempts'] < self.settings.max_attempts:
+                    retry_at = datetime.now(timezone.utc)+timedelta(seconds=min(60, 2**job['attempts']))  # it may well work next time; not terminal until the attempts run out
+                if not await self._fail(job, lease, lost, destination, code, retry_at, False):
                     outcome = 'lost'
         finally:
             observability.record_job(destination, time.monotonic()-started, 'lost' if lost.is_set() else outcome)

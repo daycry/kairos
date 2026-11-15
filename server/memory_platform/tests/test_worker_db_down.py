@@ -15,15 +15,16 @@ from unittest.mock import AsyncMock, Mock, patch
 import psycopg
 
 from memory_platform import observability
-from memory_platform.config import DEFAULT_BACKOFF_MAX, Settings, worker_db_backoff_max
-from memory_platform.errors import MemoryError, StoreUnavailable
+from memory_platform.config import DEFAULT_BACKOFF_MAX, Settings, worker_db_backoff_max, worker_write_retry_seconds
+from memory_platform.errors import MemoryError, StoreUnavailable, is_store_transient, is_store_unavailable
 from memory_platform.providers import ProviderError
 from memory_platform.store import Store
 from memory_platform.tests.fault_proxy import FaultProxy, expire_lease
 from memory_platform.tests.test_store import create_core, event, extraction_receipt
 from memory_platform.tests.test_worker import long_text
-from memory_platform.worker import BACKOFF_FIRST, IDLE_SECONDS, Worker, backoff_delay
+from memory_platform.worker import BACKOFF_FIRST, IDLE_SECONDS, WRITE_RETRY_MAX, Worker, backoff_delay
 
+TRANSIENT = ('40001', '40P01', '57014', '55P03', '53000', '53100', '53200', '53300', '53400')  # the SQLSTATEs the write of an outcome repeats
 SECRET = 'hunter2-never-in-a-log'
 DOWN = psycopg.OperationalError(f'connection to server at "10.20.30.40", port 5432 failed: password authentication failed password={SECRET}')
 
@@ -80,6 +81,21 @@ class BackoffTests(unittest.TestCase):
             self.assertEqual(Settings.from_env().worker_db_backoff_max, 60.0)
         with patch.dict(os.environ, {'MEMORY_DSN': 'postgresql://x', 'MEMORY_WORKER_DB_BACKOFF_MAX': '0'}, clear=True):
             with self.assertRaises(ValueError):
+                Settings.from_env()
+
+    def test_the_budget_to_write_again_defaults_to_the_lease_and_is_validated(self):
+        self.assertEqual(worker_write_retry_seconds({}, 240), 240.0)
+        self.assertEqual(worker_write_retry_seconds({}, 90), 90.0)
+        self.assertEqual(worker_write_retry_seconds({'MEMORY_WORKER_WRITE_RETRY_SECONDS': '12.5'}, 240), 12.5)
+        for bad in ('0', '0.5', '-1', 'abc', 'nan', 'inf', '99999'):
+            with self.assertRaises(ValueError, msg=bad):
+                worker_write_retry_seconds({'MEMORY_WORKER_WRITE_RETRY_SECONDS': bad}, 240)
+        with patch.dict(os.environ, {'MEMORY_DSN': 'postgresql://x', 'MEMORY_LEASE_SECONDS': '100'}, clear=True):
+            self.assertEqual(Settings.from_env().worker_write_retry_seconds, 100.0)  # no explicit value: the lease
+        with patch.dict(os.environ, {'MEMORY_DSN': 'postgresql://x', 'MEMORY_LEASE_SECONDS': '100', 'MEMORY_WORKER_WRITE_RETRY_SECONDS': '7'}, clear=True):
+            self.assertEqual(Settings.from_env().worker_write_retry_seconds, 7.0)
+        with patch.dict(os.environ, {'MEMORY_DSN': 'postgresql://x', 'MEMORY_WORKER_WRITE_RETRY_SECONDS': '0'}, clear=True):
+            with self.assertRaises(ValueError):  # every process refuses to start with an invalid value, as with the other worker variables
                 Settings.from_env()
 
 
@@ -278,19 +294,197 @@ class LoopTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(self.store.renew_lease.call_count, 2)
                 self.assertEqual(worker.store_failures, 0)
 
-    async def test_a_failure_that_is_the_databases_but_not_an_outage_is_failed_with_its_own_code_not_provider_error(self):
+    async def test_a_failure_that_is_the_databases_but_not_transient_is_failed_with_its_own_code_at_once(self):
         from psycopg import errors
-        for exc in (errors.QueryCanceled('canceling statement due to statement timeout'), errors.LockNotAvailable('lock timeout'), errors.SerializationFailure('x')):
+        for exc in (errors.ProgramLimitExceeded('too complex'), errors.lookup('54001')('x'), errors.UniqueViolation('x')):
             with self.subTest(type(exc).__name__):
                 self.store.reset_mock()
                 self.store.claim_job.return_value = self.job
                 self.store.complete_job.side_effect = exc
                 worker, waiter, _ = self.clocked()
                 self.assertTrue(await worker.run_once())
+                self.store.complete_job.assert_called_once()  # not repeated: it would fail the same way
                 self.store.fail_job.assert_called_once()
-                self.assertEqual(self.store.fail_job.call_args.args[:3], ('job', 4, 'store_error'))  # distinguishable from a provider failure
+                self.assertEqual(self.store.fail_job.call_args.args, ('job', 4, 'store_error', None, False))  # distinguishable from a provider failure, terminal
                 self.assertEqual(waiter.delays, [])  # and not waited for as if the database were gone
                 self.assertEqual(worker.store_failures, 0)
+
+    async def test_the_errors_the_database_answers_with_that_may_work_next_time_are_repeated_in_place_by_sqlstate(self):
+        from psycopg import errors
+        for state in TRANSIENT:
+            exc = errors.lookup(state)('x')
+            with self.subTest(state):
+                self.assertTrue(is_store_transient(exc))
+                self.assertFalse(is_store_unavailable(exc))  # answered by the database: not an outage for the rest of the worker
+                self.store.reset_mock()
+                self.store.claim_job.return_value = self.job
+                self.store.complete_job.side_effect = [exc, exc, True]
+                worker, waiter, _ = self.clocked()
+                stream = self.capture_log()
+                self.assertTrue(await worker.run_once())
+                self.assertEqual(self.store.complete_job.call_count, 3)  # the same result, written again until it lands
+                self.assertEqual(self.store.renew_lease.call_count, 2)
+                self.store.fail_job.assert_not_called()
+                self.assertIn('"event":"job_completed"', stream.getvalue())
+                self.assertEqual(stream.getvalue().count('"event":"store_retry"'), 2)
+                self.assertNotIn('store_unavailable', stream.getvalue())
+                observability.remove_logging()
+        for state in ('54000', '54001', '23505', '22003', '42501', '08006', '57P01'):  # not transient: a limit, data, rights, or an outage (its own path)
+            self.assertFalse(is_store_transient(errors.lookup(state)('x')), state)
+
+    async def test_a_transient_error_that_outlasts_the_budget_fails_the_job_with_store_error_and_a_retry_unless_the_attempts_ran_out(self):
+        from psycopg import errors
+        for attempts, scheduled in ((1, True), (2, True), (3, False)):  # max_attempts = 3: the third is the last
+            with self.subTest(attempts=attempts):
+                self.store.reset_mock()
+                self.store.claim_job.return_value = dict(self.job, attempts=attempts)
+                self.store.complete_job.side_effect = errors.QueryCanceled('x')
+                worker, waiter, _ = self.clocked()
+                self.assertTrue(await asyncio.wait_for(worker.run_once(), 30))
+                self.assertEqual(self.store.complete_job.call_count, WRITE_RETRY_MAX)  # repeated up to the cap of writes, then given up
+                self.store.fail_job.assert_called_once()
+                args = self.store.fail_job.call_args.args
+                self.assertEqual(args[:3], ('job', 4, 'store_error'))
+                self.assertEqual(args[3] is not None, scheduled)  # `pending` again, or terminal `failed` when no attempt is left
+                self.assertEqual(args[4:], (False,))
+
+    async def test_a_transient_error_of_the_write_of_a_failure_is_given_up_not_raised_out_of_the_worker(self):
+        from psycopg import errors
+        self.store.claim_job.return_value = self.job
+        self.provider.extract.side_effect = ProviderError('provider_rejected')
+        self.store.fail_job.side_effect = errors.SerializationFailure('x')
+        worker, waiter, _ = self.clocked()
+        stream = self.capture_log()
+        self.assertTrue(await asyncio.wait_for(worker.run_once(), 30))  # no exception escapes: the job stays as the database has it
+        self.assertEqual(self.store.fail_job.call_count, WRITE_RETRY_MAX)
+        self.assertIn('"reason":"fail:retry_budget"', stream.getvalue())
+
+    async def test_a_transient_error_in_the_heartbeat_does_not_lose_the_job_a_permanent_one_does(self):
+        from psycopg import errors
+        for exc, lost in ((errors.QueryCanceled('x'), False), (errors.LockNotAvailable('x'), False), (errors.ProgramLimitExceeded('x'), True)):
+            with self.subTest(type(exc).__name__):
+                self.store.reset_mock()
+                release = asyncio.Event()
+                loop = asyncio.get_running_loop()
+                async def extract(source):
+                    await release.wait()
+                    return self.receipt
+                self.provider.extract.side_effect = extract
+                beats = []
+                def renew(job_id, fence, lease):
+                    beats.append(job_id)
+                    if len(beats) == 1:
+                        raise exc
+                    loop.call_soon_threadsafe(release.set)
+                    return True
+                self.store.claim_job.return_value = self.job
+                self.store.renew_lease.side_effect = renew
+                async def beat(seconds):
+                    await asyncio.sleep(0)
+                worker = Worker(self.store, settings(), {'extract': self.provider}, rng=lambda: 1.0, waiter=Recorder(), heartbeat_wait=beat)
+                if lost:
+                    real = observability.log_failure
+                    def log_failure(name, *args, **fields):
+                        real(name, *args, **fields)
+                        if name == 'heartbeat_failed':
+                            release.set()
+                    with patch('memory_platform.worker.observability.log_failure', side_effect=log_failure):
+                        await asyncio.wait_for(worker.run_once(), 30)
+                    self.store.complete_job.assert_not_called()  # the lease was given up
+                else:
+                    await asyncio.wait_for(worker.run_once(), 30)
+                    self.assertGreaterEqual(len(beats), 2)  # it beat again, and the second beat renewed
+                    self.store.complete_job.assert_called_once_with('job', 4, self.receipt)
+
+    async def test_the_retry_of_the_write_is_bounded_in_attempts_even_when_the_renewal_works(self):
+        """The reviewer's scenario: `complete_job` breaks the connection every time and `renew_lease` always answers True. The worker must end, with no stop."""
+        self.store.claim_job.return_value = self.job
+        self.store.complete_job.side_effect = DOWN
+        self.store.renew_lease.return_value = True
+        worker, waiter, step = self.clocked()
+        step[0] = 0.0  # the clock never moves: only the cap of failed writes can end it
+        stream = self.capture_log()
+        self.assertTrue(await asyncio.wait_for(worker.run_once(), 10))
+        self.assertFalse(worker.stopping.is_set())
+        self.assertEqual(self.store.complete_job.call_count, WRITE_RETRY_MAX)
+        self.assertEqual(self.store.renew_lease.call_count, WRITE_RETRY_MAX-1)  # it did not renew once more after giving up
+        self.store.fail_job.assert_not_called()
+        lines = [line for line in stream.getvalue().splitlines() if '"event":"job_write_abandoned"' in line]
+        self.assertEqual(len(lines), 1)
+        self.assertIn('"reason":"complete:retry_budget"', lines[0])
+
+    async def test_the_retry_of_the_write_is_bounded_in_time_even_when_the_renewal_works(self):
+        self.store.claim_job.return_value = self.job
+        self.store.complete_job.side_effect = DOWN
+        self.store.renew_lease.return_value = True
+        worker, waiter, step = self.clocked(worker_write_retry_seconds=10.0)
+        step[0] = 4.0  # 4 s per wait: the third wait is already 12 s after the first failure
+        stream = self.capture_log()
+        self.assertTrue(await asyncio.wait_for(worker.run_once(), 10))
+        self.assertEqual(self.store.complete_job.call_count, 3)  # fewer writes than the cap: the time ended it
+        self.assertEqual(self.store.renew_lease.call_count, 2)  # and it stopped renewing the lease at the budget
+        self.assertEqual(len(waiter.delays), 3)
+        self.assertIn('"reason":"complete:retry_budget"', stream.getvalue())
+
+    async def test_the_budget_of_time_defaults_to_the_lease_and_the_configured_one_wins(self):
+        self.store.claim_job.return_value = self.job
+        self.store.complete_job.side_effect = DOWN
+        self.store.renew_lease.return_value = True
+        worker, waiter, step = self.clocked(lease=30)  # no explicit budget: the lease is the budget (and the lease clock agrees)
+        step[0] = 4.0
+        await asyncio.wait_for(worker.run_once(), 10)
+        self.assertEqual(self.store.complete_job.call_count, 5)  # 4 s per wait never reaches 30 s in five writes: only the cap of writes ended it
+        self.store.reset_mock()
+        self.store.claim_job.return_value = self.job
+        self.store.complete_job.side_effect = DOWN
+        self.store.renew_lease.return_value = True
+        worker, waiter, step = self.clocked(lease=240, worker_write_retry_seconds=5.0)
+        step[0] = 4.0
+        await asyncio.wait_for(worker.run_once(), 10)
+        self.assertEqual(self.store.complete_job.call_count, 2)  # the configured 5 s, not the 240 s lease
+
+    async def test_a_renewal_that_says_no_after_a_write_that_did_land_is_counted_as_written(self):
+        """(mock) The write reached the database, its answer was lost, and the renewal then finds the job finished: it is not `lost`."""
+        for stage in ('complete', 'fail'):
+            with self.subTest(stage):
+                self.store.reset_mock()
+                self.store.claim_job.return_value = self.job
+                self.store.renew_lease.return_value = False
+                if stage == 'complete':
+                    self.store.complete_job.side_effect = [DOWN]
+                    row = {'state': 'succeeded', 'error_code': None}
+                else:
+                    self.store.fail_job.side_effect = [DOWN]
+                    self.provider.extract.side_effect = ProviderError('provider_rejected')
+                    row = {'state': 'failed', 'error_code': 'provider_rejected'}
+                worker, waiter, _ = self.clocked()
+                stream = self.capture_log()
+                with patch('memory_platform.worker.job_outcome', return_value=row) as outcome:
+                    self.assertTrue(await worker.run_once())
+                outcome.assert_called_once_with(self.store, 'job', 4)
+                self.assertNotIn('job_write_abandoned', stream.getvalue())
+                self.assertEqual(('"event":"job_completed"' in stream.getvalue()), stage == 'complete')
+                observability.remove_logging()
+
+    async def test_a_job_another_claim_took_or_another_result_is_not_taken_for_ours(self):
+        for stage, row in (('complete', None), ('complete', {'state': 'failed', 'error_code': 'superseded'}), ('complete', {'state': 'running', 'error_code': None}),
+                           ('fail', None), ('fail', {'state': 'failed', 'error_code': 'superseded'}), ('fail', {'state': 'running', 'error_code': None})):
+            with self.subTest(stage=stage, row=row):
+                self.store.reset_mock()
+                self.store.claim_job.return_value = self.job
+                self.store.renew_lease.return_value = False
+                if stage == 'complete':
+                    self.store.complete_job.side_effect = [DOWN]
+                else:
+                    self.store.fail_job.side_effect = [DOWN]
+                    self.provider.extract.side_effect = ProviderError('provider_rejected')
+                worker, waiter, _ = self.clocked()
+                stream = self.capture_log()
+                with patch('memory_platform.worker.job_outcome', return_value=row):
+                    self.assertTrue(await worker.run_once())
+                self.assertIn('"reason":"%s:lease_lost"' % stage, stream.getvalue())
+                self.assertNotIn('"event":"job_completed"', stream.getvalue())
+                observability.remove_logging()
 
     async def test_when_the_lease_runs_out_before_the_database_returns_the_worker_gives_up_and_says_so(self):
         self.store.claim_job.return_value = self.job
@@ -590,6 +784,96 @@ class DatabaseDownTests(unittest.IsolatedAsyncioTestCase):
         await worker.run_once()  # the database goes away while completing and is back before the lease ends
         state = self.row()
         self.assertEqual((state['state'], state['attempts'], state['error_code']), ('succeeded', 2, None))
+
+
+    async def test_a_receipt_that_can_never_be_written_ends_as_attempts_exhausted_not_in_a_worker_stuck_on_it(self):
+        """The reviewer's scenario on a real database: `complete_job` breaks the connection every time while the lease can always be renewed. Each claim gives the
+        job up at the budget and the cap of `claim_job` takes over: after MEMORY_MAX_ATTEMPTS claims it is `failed/attempts_exhausted`."""
+        def poisoned(*args):
+            raise DOWN
+        self.store.complete_job = poisoned
+        async def extract(source):
+            return self.receipt
+        worker = self.worker(extract, waiter=Recorder(), clock=lambda: 5000.0)  # a clock that never moves: only the cap of failed writes ends each retry
+        stream = io.StringIO()
+        observability.configure_logging(stream)
+        self.addCleanup(observability.remove_logging)
+        for claim in (1, 2, 3):
+            self.assertTrue(await asyncio.wait_for(worker.run_once(), 30))  # it returns: no `stopping`, no hang
+            self.assertFalse(worker.stopping.is_set())
+            state = self.row()
+            self.assertEqual((state['state'], state['attempts'], state['error_code']), ('running', claim, None))
+            expire_lease(self.direct, self.jid)  # the worker stopped renewing: the lease ends
+        self.assertEqual(stream.getvalue().count('"reason":"complete:retry_budget"'), 3)
+        self.assertFalse(await worker.run_once())  # the 4th claim finds the poisoned job and fails it instead of taking it
+        state = self.row()
+        self.assertEqual((state['state'], state['attempts'], state['error_code']), ('failed', 3, 'attempts_exhausted'))
+
+    async def test_in_the_last_attempt_an_outage_longer_than_the_lease_costs_the_result_and_the_job_is_attempts_exhausted(self):
+        """The declared limit: a lease that ran out is never revived. The outage outlasts the lease during the write of the last attempt: the result is lost, the job
+        is `attempts_exhausted` at the next claim, and `job_write_abandoned` says `lease_expired`."""
+        self.at_attempt(3)
+        now = [5000.0]
+        waiter = Recorder(lambda n, seconds: now.__setitem__(0, now[0]+100.0))  # three waits and the 240 s lease is over; the proxy stays cut
+
+        async def extract(source):
+            self.proxy.cut()
+            return self.receipt
+        worker = self.worker(extract, waiter=waiter, clock=lambda: now[0])
+        stream = io.StringIO()
+        observability.configure_logging(stream)
+        self.addCleanup(observability.remove_logging)
+        self.assertTrue(await asyncio.wait_for(worker.run_once(), 60))
+        self.assertIn('"reason":"complete:lease_expired"', stream.getvalue())
+        state = self.row()
+        self.assertEqual((state['state'], state['attempts'], state['error_code']), ('running', 3, None))
+        self.proxy.restore()
+        expire_lease(self.direct, self.jid)
+        self.assertFalse(await worker.run_once())  # nothing left to claim: the job is exhausted, its result is gone
+        state = self.row()
+        self.assertEqual((state['state'], state['attempts'], state['error_code']), ('failed', 3, 'attempts_exhausted'))
+        with self.direct.transaction() as c:
+            self.assertEqual(c.execute('SELECT count(*) AS n FROM memory.projection_receipts WHERE job_id=%s', (self.jid,)).fetchone()['n'], 0)
+
+    async def test_a_commit_that_landed_but_whose_answer_was_lost_is_counted_as_completed_not_as_lost(self):
+        """The connection goes right after the COMMIT: the job is `succeeded`, the worker only never heard it. The renewal then says no (the job is finished)."""
+        real = self.store.complete_job
+        def commit_then_lose(*args):
+            real(*args)
+            raise DOWN
+        self.store.complete_job = commit_then_lose
+        async def extract(source):
+            return self.receipt
+        worker = self.worker(extract, waiter=Recorder())
+        stream = io.StringIO()
+        observability.configure_logging(stream)
+        self.addCleanup(observability.remove_logging)
+        completed = lambda: observability.REGISTRY.get_sample_value('kairos_worker_jobs_total', {'destination': 'extract', 'outcome': 'completed'}) or 0
+        lost = lambda: observability.REGISTRY.get_sample_value('kairos_worker_jobs_total', {'destination': 'extract', 'outcome': 'lost'}) or 0
+        before = completed(), lost()
+        self.assertTrue(await worker.run_once())
+        self.assertEqual(self.row()['state'], 'succeeded')
+        self.assertIn('"event":"job_completed"', stream.getvalue())
+        self.assertNotIn('job_write_abandoned', stream.getvalue())
+        self.assertEqual((completed(), lost()), (before[0]+1, before[1]))
+
+    async def test_a_failure_that_landed_but_whose_answer_was_lost_is_counted_as_failed_not_as_lost(self):
+        real = self.store.fail_job
+        def commit_then_lose(*args):
+            real(*args)
+            raise DOWN
+        self.store.fail_job = commit_then_lose
+        async def extract(source):
+            raise ProviderError('provider_rejected')
+        worker = self.worker(extract, waiter=Recorder())
+        stream = io.StringIO()
+        observability.configure_logging(stream)
+        self.addCleanup(observability.remove_logging)
+        self.assertTrue(await worker.run_once())
+        state = self.row()
+        self.assertEqual((state['state'], state['error_code']), ('failed', 'provider_rejected'))
+        self.assertNotIn('job_write_abandoned', stream.getvalue())
+        self.assertNotIn('lease_lost', stream.getvalue())
 
 
 if __name__ == '__main__':
