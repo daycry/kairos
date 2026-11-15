@@ -36,3 +36,19 @@ Cada fase cierra con su revisión adversarial. El detalle de cada intento está 
 | 2 | Minor | Transitorios que la base contesta; COMMIT con confirmación perdida; spec y coordinación | Corregidos |
 | 3 | Minor | Precisión del umbral del límite; `job_outcome_unread` en la coordinación | Corregidos en el cierre |
 | 3 | Minor | Observabilidad si el latido gana la carrera; prueba de `job_outcome_unread`; rango del defecto del presupuesto | Deuda aceptada para T-25 (Fase 4) |
+
+## Fase 3 — Cola: índices parciales y retención de tablas (T-14 a T-20)
+
+- **Fecha**: 2026-11-16
+- **Lentes**: intento 1, A, B, C y D (C por el SQL con f-string de `admin.py` y `ci.yml`; D por `schema.sql` y `store_jobs.py`); intento 2, A y B.
+- **Veredicto**: cerrada en el intento 2 de 3, sin hallazgos Critical ni Important abiertos.
+- **Evidencia**: suite del servidor 925 tests, 0 fallos, errores y omitidos; `KAIROS_MIN_TESTS` y `MIN_FLOOR` 925; `scope-check.py --base d23f4a7` exit 0; prueba de invariancia del contrato MCP antes y después de podar; mutantes en rojo en las Notas.
+- **Decisión del orquestador (intento 1)**: la poda conserva el contrato de las herramientas MCP; no borra trabajos citados por un evento conservado ni de la versión vigente.
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Important | Podar trabajos `failed` cambiaba `event_status`, el reenvío de `ingest_event`, `document_status` y `backfill-chunks` | Corregido: exclusiones (a) eventos conservados, (b) versión vigente, (c) recibo; prueba de invariancia |
+| 1 | Minor | Coordinación; promesa falsa del bloqueo de la migración; rastro de la poda; cursor; VACUUM/WAL | Corregidos (guarda `jobqueue`, fila `retention_prune`, cursor keyset, manual) |
+| 1 | Minor | Un reclamo concurrente puede esperar un ciclo por el trabajo que perdió la comparación | Deuda aceptada, documentada |
+| 2 | Minor | Textos de `configuration.md`, coordinación (`counts.jobs`), spec P-03, dry-run y `--table` | Corregidos en el cierre |
+| 2 | Minor | Invariancia sin `publish_document`/`revoke_document`/portal; NOT EXISTS sobre `events` sin índice | Deuda aceptada |

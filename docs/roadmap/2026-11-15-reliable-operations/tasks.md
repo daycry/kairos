@@ -42,7 +42,7 @@ test-plan: n/a (sin UI)
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Arnés de fallos y tests de límites (C-07) | 6 | 6 | 100% | 0 / 32.4h | 0.83 / 4.3h | 0 / 1.1h | 0 / 1080 k |
 | Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 7 | 7 | 100% | 0 / 27.0h | 2.10 / 3.6h | 0 / 0.9h | 0 / 900 k |
-| Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 6 | 7 | 86% | 0 / 27.0h | 0.99 / 3.6h | 0 / 0.9h | 0 / 900 k |
+| Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 7 | 7 | 100% | 0 / 27.0h | 0.99 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 0 | 9 | 0% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 0 | 5 | 0% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 0 | 9 | 0% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **19** | **98** | **19%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **20** | **98** | **20%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -462,7 +462,7 @@ test-plan: n/a (sin UI)
 
 ## Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06)
 
-**Estado**: en-progreso · **Hito**: A · **Estimado**: 27.0h (22.5h base, de ellas 7.5h de revisión adversarial) · **Real**: — · **Coste est.**: 1.350 € · **Tokens est.**: 900 k
+**Estado**: completado · **Hito**: A · **Estimado**: 27.0h (22.5h base, de ellas 7.5h de revisión adversarial) · **Real**: — · **Coste est.**: 1.350 € · **Tokens est.**: 900 k
 
 ### T-14 — Migración aditiva de esquema 12: índices parciales de cola
 
@@ -644,8 +644,8 @@ test-plan: n/a (sin UI)
 ### T-20 — Revisión adversarial de la fase (dos lentes)
 
 - **Descripción**: Revisión adversarial del diff de la fase con dos lentes: A (contrato, seguridad, regresiones, alcance declarado) y B (mutantes: cada control nuevo se quita y su prueba debe fallar). Cuidado: R-04 (retención que cambia lo que ven los clientes). Cada hallazgo se corrige para la clase entera y se anota con intento y evidencia en `review.md`; cada intento abre y cierra `usage-meter`. Fuente: Lección de la retro de la Iniciativa 2: la revisión es partida propia (0,5 × la implementación; 1,0 × en C-03 y C-05).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: revisión adversarial de la fase 3; la poda de tablas conserva el contrato de las herramientas MCP y deja rastro en la auditoría.
+- **Estado**: completado
 - **Tiempo humano**: est. 7.5h (base) · real —
 - **Tiempo IA (ejec.)**: est. 1.00h (estimado) · real —
 - **Supervisión**: est. 0.25h (≈25 % IA) · real —
@@ -660,18 +660,18 @@ test-plan: n/a (sin UI)
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
 
 **Criterios de aceptación**
-- [ ] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
-- [ ] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
-- [ ] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
-- [ ] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
+- [x] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
+- [x] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
+- [x] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
+- [x] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
 
 **Subtareas**
-- [ ] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
-- [ ] Lente B: mutantes en memoria sobre cada control nuevo
-- [ ] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
-- [ ] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
+- [x] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
+- [x] Lente B: mutantes en memoria sobre cada control nuevo
+- [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
+- [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas**: Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+**Notas**: Cerrada en el intento 2 de 3 (intento 1: A+B+C+D; intento 2: A+B; resumen en `review.md`). `scope-check.py --base d23f4a7` exit 0; suite 925 en verde. Los revisores no tienen medición propia. Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
 
 ---
 
@@ -3056,3 +3056,17 @@ Lentes: A+B+C+D (C por el SQL con f-string de `admin.py` y `ci.yml`; D por `sche
 | 5 | Minor | Cada lote de la poda vuelve a recorrer desde el principio (sin cursor): coste N²/B en la primera poda de una tabla grande | T-16 | corregido (cursor por clave ascendente: `id > after` con `max(id)` del lote; prueba y mutante) | Lente D n.º 1; `admin.py:290-297` |
 | 6 | Minor | El manual no avisa del bloat ni del WAL de una poda grande (VACUUM) | T-18 | corregido (nota de `VACUUM (ANALYZE)`, bloat y WAL en `operations.md`) | Lente D n.º 2 |
 | 7 | Minor | Con dos sondeos, el trabajo que pierde la comparación queda bloqueado hasta el COMMIT y otro reclamo concurrente lo salta durante un ciclo | T-15 | deuda aceptada (sin pérdida ni hambre permanente); efecto documentado en `operations.md` (un reclamo concurrente puede esperar un ciclo por el trabajo que perdió la comparación) | Lente B n.º 1; `store_jobs.py:82-83` |
+
+## Revisión de dos lentes — intento 2: Fase 3 tras fix1 (T-14, T-16, T-18, T-19)
+
+Lentes: A+B (re-evalúan solo lo corregido). Diff `029465f..6de2f21`. Veredicto: n.º 1-7 del intento 1 cerrados (n.º 2 parcial por documentación, corregido en el cierre). Sin Critical ni Important: **fase cerrada en el intento 2 de 3**. Suite 925, 0 fallos (Notas de T-19).
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Minor | `configuration.md` no recogía las exclusiones (b) y (c) ni que podar `events` libera trabajos en la misma ejecución | T-18 | corregido en el cierre | Lente A n.º 1 |
+| 2 | Minor | Faltaba en la coordinación y en el manual que `counts.jobs` de `projects` y `GET /v1/projects`, y la lista de trabajos, bajan con la poda | T-18 | corregido en el cierre (`improvement-plan.md`, `operations.md`) | Lente A n.º 2; `store_auth.py:101,108` |
+| 3 | Minor | La prueba de invariancia no incluye el reenvío de `publish_document`/`revoke_document` ni `list_projects`/portal | T-16 | deuda aceptada: los dos primeros los protege la exclusión (c) por la versión vigente y su FK; la bajada de los últimos es la declarada | Lente A n.º 3 |
+| 4 | Minor | La precisión de P-03 (exclusiones nuevas) no constaba en la spec | T-16 | corregido en el cierre (`spec.md`, fila P-03) | Lente A n.º 4 |
+| 5 | Minor | `--dry-run` cuenta de menos en `jobs` con la ventana de `events` activada | T-16, T-18 | documentado en el cierre (`operations.md`) | Lente B n.º 1 |
+| 6 | Minor | Con `--table` el orden lo fija el operador y `events` puede ir después de `jobs` | T-16, T-18 | documentado en el cierre (`operations.md`) | Lente B n.º 2 |
+| 7 | Minor | El NOT EXISTS sobre `events.receipt` se evalúa por candidato sin índice, en cada lote de `jobs` | T-16 | deuda aceptada (ya documentado: «no se ha medido con tablas de millones de filas»); a medir en el ensayo de la Iniciativa 5 | Lente B (fuera de lente) |
