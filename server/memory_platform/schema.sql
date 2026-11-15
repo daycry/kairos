@@ -226,3 +226,26 @@ BEGIN
     INSERT INTO memory.schema_versions(version) VALUES (11) ON CONFLICT DO NOTHING;
 END
 $failedjobs$;
+
+-- queue-indexes (schema version 12)
+-- Two partial indexes so that `claim_job` reads the live part of the queue, not the table: `memory_jobs_claim` holds the jobs that wait
+-- (`pending`, `unknown`) in the exact order of the claim (priority, available_at, created_at, id) and `memory_jobs_running_lease` holds the `running`
+-- ones by `lease_until`, for the expired leases. The terminal rows (`succeeded`, `failed`), the great majority of a long-lived queue, are in neither.
+-- Additive: no row, column or existing index is touched (`memory_job_queue` stays) and a previous release ignores them. They are not built with
+-- CONCURRENTLY on purpose: `Store.migrate()` runs ALL of schema.sql in ONE transaction, where it is not allowed (as for version 11). The first run therefore takes
+-- SHARE on `memory.jobs` (writes to jobs wait, reads do not) while the two partial indexes are built, until the COMMIT of the whole migration; `lock_timeout` makes
+-- it fail whole, and repeatable, instead of waiting for ever. The block is skipped once version 12 is registered and both indexes exist, so a repeated
+-- `admin migrate` takes no lock on `memory.jobs`. Window measured and mitigation: docs/operations.md.
+SET LOCAL lock_timeout = '5s';
+DO $queueindexes$
+BEGIN
+    IF EXISTS (SELECT 1 FROM memory.schema_versions WHERE version = 12)
+       AND to_regclass('memory.memory_jobs_claim') IS NOT NULL
+       AND to_regclass('memory.memory_jobs_running_lease') IS NOT NULL THEN
+        RETURN;
+    END IF;
+    CREATE INDEX IF NOT EXISTS memory_jobs_claim ON memory.jobs(priority, available_at, created_at, id) WHERE state IN ('pending','unknown');
+    CREATE INDEX IF NOT EXISTS memory_jobs_running_lease ON memory.jobs(lease_until) WHERE state = 'running';
+    INSERT INTO memory.schema_versions(version) VALUES (12) ON CONFLICT (version) DO NOTHING;
+END
+$queueindexes$;

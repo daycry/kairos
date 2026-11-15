@@ -42,7 +42,7 @@ test-plan: n/a (sin UI)
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Arnés de fallos y tests de límites (C-07) | 6 | 6 | 100% | 0 / 32.4h | 0.83 / 4.3h | 0 / 1.1h | 0 / 1080 k |
 | Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 7 | 7 | 100% | 0 / 27.0h | 2.10 / 3.6h | 0 / 0.9h | 0 / 900 k |
-| Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 0 | 7 | 0% | 0 / 27.0h | 0 / 3.6h | 0 / 0.9h | 0 / 900 k |
+| Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 1 | 7 | 14% | 0 / 27.0h | 0.28 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 0 | 9 | 0% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 0 | 5 | 0% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 0 | 9 | 0% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **13** | **98** | **13%** | **0 / 412.8h** | **2.93 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **14** | **98** | **14%** | **0 / 412.8h** | **3.21 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -462,15 +462,16 @@ test-plan: n/a (sin UI)
 
 ## Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06)
 
-**Estado**: borrador · **Hito**: A · **Estimado**: 27.0h (22.5h base, de ellas 7.5h de revisión adversarial) · **Real**: — · **Coste est.**: 1.350 € · **Tokens est.**: 900 k
+**Estado**: en-progreso · **Hito**: A · **Estimado**: 27.0h (22.5h base, de ellas 7.5h de revisión adversarial) · **Real**: — · **Coste est.**: 1.350 € · **Tokens est.**: 900 k
 
 ### T-14 — Migración aditiva de esquema 12: índices parciales de cola
 
 - **Descripción**: Añadir la versión de esquema 12 con un índice parcial `(priority, available_at, created_at, id) WHERE state IN ('pending','unknown')` y otro parcial para `running` por `lease_until`, solo con `CREATE INDEX IF NOT EXISTS`. Fuente: CA-13; B-06.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: la cola de trabajos gana dos índices parciales (esquema 12) que la migración añade sin tocar filas ni columnas; el cambio no se nota hasta que la cola crece.
+- **Estado**: completado
+- **Cerrada**: 2026-11-15
 - **Tiempo humano**: est. 2h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real 0.28h (medido)
 - **Supervisión**: est. 0.07h (≈25 % IA) · real —
 - **Previsión IA**: 74 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
@@ -480,17 +481,17 @@ test-plan: n/a (sin UI)
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_queue_indexes|test_migrations_additive|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Una base migrada hasta la versión 11 llega a la 12 con los dos índices y sin tocar filas ni columnas
-- [ ] `test_migrations_additive.py` pasa y no hay `DROP`, `DELETE` ni `ALTER ... DROP` en la migración
-- [ ] Una base nueva y una migrada tienen el mismo catálogo de índices (prueba por catálogo)
+- [x] Una base migrada hasta la versión 11 llega a la 12 con los dos índices y sin tocar filas ni columnas
+- [x] `test_migrations_additive.py` pasa y no hay `DROP`, `DELETE` ni `ALTER ... DROP` en la migración
+- [x] Una base nueva y una migrada tienen el mismo catálogo de índices (prueba por catálogo)
 
 **Subtareas**
-- [ ] Escribir primero la prueba de catálogo (rojo)
-- [ ] Añadir la versión 12 al final de `schema.sql`
-- [ ] Comprobar migración desde la 11
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero la prueba de catálogo (rojo)
+- [x] Añadir la versión 12 al final de `schema.sql`
+- [x] Comprobar migración desde la 11
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Deuda Minor heredada de la revisión de la Fase 1 (intento 2, n.º 3 y 4): cubrir la guarda en Python de los índices HNSW (`store_vectors.py:23-24`) frente a un `migrate()` repetido, y que las etiquetas de sección de la prueba genérica salgan de `schema.sql` en vez de ir a mano. Patrón: `schema.sql:7-19` (índice actual `(state, available_at)` en `:19`) y `:214-228` (bloque de la versión 11 como forma de registrar una versión nueva). Los tests por catálogo de la Fase 1 sostienen este cambio.
+**Notas**: Deuda Minor heredada de la revisión de la Fase 1 (intento 2, n.º 3 y 4): cubrir la guarda en Python de los índices HNSW (`store_vectors.py:23-24`) frente a un `migrate()` repetido, y que las etiquetas de sección de la prueba genérica salgan de `schema.sql` en vez de ir a mano. Patrón: `schema.sql:7-19` (índice actual `(state, available_at)` en `:19`) y `:214-228` (bloque de la versión 11 como forma de registrar una versión nueva). Los tests por catálogo de la Fase 1 sostienen este cambio. CIERRE (no se marcó `en-progreso` al empezar: se cerró en la misma sesión). usage-meter reliable-operations/T-14 {inicio 20:06:35Z, fin 20:15:06Z, horas_ia 0.28, duracion 17m, medido}. RED: `test_queue_indexes` (4 pruebas) falló antes de la migración con `AssertionError: 11 not greater than or equal to 12` y `('jobs','memory_jobs_claim') not found` · 2026-11-15. Migración 12 (`schema.sql`, sección `queueindexes`): `memory_jobs_claim (priority, available_at, created_at, id) WHERE state IN ('pending','unknown')` y `memory_jobs_running_lease (lease_until) WHERE state='running'`, ambos `CREATE INDEX IF NOT EXISTS`; guarda `IF EXISTS version 12 AND both indexes RETURN`; `INSERT … ON CONFLICT (version) DO NOTHING`; sin `DELETE`/`DROP`. DECISIÓN `CONCURRENTLY` (decidida y a documentar en T-18): NO, igual que la versión 11. `Store.migrate()` ejecuta todo `schema.sql` en UNA transacción (y un bloque `DO` es otra), donde `CREATE INDEX CONCURRENTLY` está prohibido; usarlo exigiría sacar la sección a una conexión en autocommit y partir la atomicidad de `migrate()`. Coste: la primera migración toma SHARE sobre `memory.jobs` (esperan las escrituras, no las lecturas) mientras se construyen dos índices que solo contienen filas vivas, con `lock_timeout 5s` (falla entera y repetible); la repetida no toma ningún bloqueo (guarda, medido). DEUDA DE LA FASE 1 (Minor 3 y 4) CUMPLIDA: `test_migrations_additive.py` gana `VectorIndexGuardTests` (la guarda Python de `store_vectors.py:23-24`: un `migrate()` repetido con dos modelos configurados no reconstruye ninguno de los 4 índices HNSW y `migrate_vector_indexes` no toma ningún bloqueo fuerte; control: con un índice borrado SÍ toma ShareLock sobre su tabla y solo construye ese) y `section_tags()` lee las etiquetas `DO $tag$` de `schema.sql` (una sección nueva queda medida sin que nadie la liste; control genérico: cada sección SIN su guarda toma algún bloqueo fuerte; `failedjobs` y `queueindexes` toman ShareLock sobre `jobs`). Registro de versiones: rango 1..12, y la prueba de «fila ya existente» borra también `memory_jobs_claim`. `test_queue_indexes.py` (4): v11→v12 solo añade (`additive_violations` vacío, md5 de las filas de `jobs` igual, mismas columnas, exactamente los dos índices nuevos), catálogo idéntico entre base nueva y migrada, migración repetida sin reconstruir (relfilenode/oid iguales) y un índice perdido se reconstruye sin mover la fecha de la versión. MUTANTES en copia temporal (cada uno en rojo): quitar el `continue` de la guarda HNSW (y `IF NOT EXISTS` para que no falle por otra vía) -> FAIL VectorIndexGuardTests x2; quitar la guarda `IF EXISTS … RETURN` de la sección 12 -> FAIL test_every_section_is_a_no_op…; quitar `ON CONFLICT` de la v12 -> FAIL test_every_registration_of_a_version_leaves_an_existing_one_alone; meter un `DELETE FROM memory.jobs` en la v12 -> FAIL test_ca34_no_migration_statement_destroys_anything. VERIFICACIÓN (ejecutor rápido de módulos sobre la imagen `kairos-test:i3p2fix1`, código montado; la suite completa y su `MEMORY_TEST_RESULT` los da T-19): `test_migrations_additive` + `test_queue_indexes` -> Ran 17 tests OK; con `test_chunk_schema test_fts_migration test_pgvector_migration test_jobs test_metrics test_job_leases` -> Ran 84 tests OK. EOL conservado (schema.sql y el test nuevo LF; test_migrations_additive.py CRLF). Visible para clientes: ninguno (contrato MCP intacto; esquema 12 aditivo).
 
 ### T-15 — `EXPLAIN` de `claim_job` sobre 10.000 trabajos y, si hace falta, dos sondeos
 

@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import re
 import unittest
+from unittest.mock import patch
 import uuid
 
 from memory_platform.store import Store
@@ -64,6 +65,13 @@ def assert_contiguous_versions(test, c, at_least=11):
 
 
 STRONG = {'ShareLock', 'ShareRowExclusiveLock', 'ExclusiveLock', 'AccessExclusiveLock'}  # every mode that blocks a writer, a reader, or both
+
+
+def section_tags():
+    """The tag of every `DO $tag$ ... $tag$;` block of `schema.sql`, read from the file: a section added by a later version is measured without anybody listing it here."""
+    tags = re.findall(r'^DO \$(\w+)\$', (PACKAGE / 'schema.sql').read_text(encoding='utf-8'), re.MULTILINE)
+    assert len(tags) == len(set(tags)) and {'pgvector', 'fts', 'chunks', 'failedjobs', 'queueindexes'} <= set(tags), tags
+    return tags
 
 
 def schema_section(tag, guarded=True):
@@ -165,7 +173,7 @@ class StaticTests(unittest.TestCase):
 
 
     def test_every_registration_of_a_version_leaves_an_existing_one_alone(self):
-        """Versions 8 to 11 register themselves inside `DO` blocks after a `RETURN` that a migrated database never passes, so no behavioural test reaches them
+        """Versions 8 to 12 register themselves inside `DO` blocks after a `RETURN` that a migrated database never passes, so no behavioural test reaches them
         on a repeated migrate: the statement itself is checked, in every migration source (a bare INSERT would collide, a DO UPDATE would rewrite the date)."""
         registered = set()
         for name in MIGRATION_SOURCES:
@@ -174,7 +182,7 @@ class StaticTests(unittest.TestCase):
             for statement in re.findall(r'INSERT\s+INTO\s+memory\.schema_versions\b[^;]*;', text, re.IGNORECASE):
                 self.assertRegex(statement, r'(?i)\bON\s+CONFLICT\s*(\(\s*version\s*\))?\s+DO\s+NOTHING\s*;$', statement)
                 registered.add(int(re.search(r'VALUES\s*\(\s*(\d+)\s*\)', statement, re.IGNORECASE).group(1)))
-        self.assertTrue(set(range(1, 12)) <= registered, registered)
+        self.assertTrue(set(range(1, 13)) <= registered, registered)
 
 
 class VersionRegistrationTests(unittest.TestCase):
@@ -200,7 +208,7 @@ class VersionRegistrationTests(unittest.TestCase):
         store = Store(self.dsn)
         store.migrate()
         with self.psycopg.connect(self.dsn) as c:
-            assert_contiguous_versions(self, c, 11)
+            assert_contiguous_versions(self, c, 12)
             # Move every registration into the past: a migration that rewrote its row (instead of leaving it) would show the present.
             c.execute("UPDATE memory.schema_versions SET applied_at=timestamptz '2001-01-01 00:00:00+00'")
             before = c.execute('SELECT version,applied_at FROM memory.schema_versions ORDER BY version').fetchall()
@@ -209,8 +217,8 @@ class VersionRegistrationTests(unittest.TestCase):
             self.assertEqual(c.execute('SELECT version,applied_at FROM memory.schema_versions ORDER BY version').fetchall(), before)
 
     def test_the_registrations_behind_the_guards_run_again_without_overwriting_one_that_exists(self):
-        """Versions 8-10 are registered again when their row is gone (the block runs from the top); version 11 is registered with its row ALREADY there when its
-        index is missing: that is the only route that reaches an INSERT of a version with a conflict, and it must neither fail nor move the date."""
+        """Versions 8-10 are registered again when their row is gone (the block runs from the top); versions 11 and 12 are registered with their row ALREADY there when
+        an index of theirs is missing: that is the only route that reaches an INSERT of a version with a conflict, and it must neither fail nor move the date."""
         store = Store(self.dsn)
         store.migrate()
         past = "timestamptz '2001-01-01 00:00:00+00'"
@@ -218,23 +226,29 @@ class VersionRegistrationTests(unittest.TestCase):
             c.execute(f'UPDATE memory.schema_versions SET applied_at={past}')
             c.execute('DELETE FROM memory.schema_versions WHERE version IN (8,9,10)')
             c.execute('DROP INDEX memory.memory_jobs_failed_code')
+            c.execute('DROP INDEX memory.memory_jobs_claim')
         store.migrate()
         with self.psycopg.connect(self.dsn) as c:
-            assert_contiguous_versions(self, c, 11)
+            assert_contiguous_versions(self, c, 12)
             rows = dict(c.execute(f'SELECT version,applied_at > {past} FROM memory.schema_versions').fetchall())
             self.assertEqual({v: rows[v] for v in (8, 9, 10)}, {8: True, 9: True, 10: True}, 'a deleted registration is written again')
-            self.assertEqual({v: rows[v] for v in (1, 5, 11)}, {1: False, 5: False, 11: False}, 'a registration that existed keeps its date')
-            self.assertIsNotNone(c.execute("SELECT to_regclass('memory.memory_jobs_failed_code')").fetchone()[0])
+            self.assertEqual({v: rows[v] for v in (1, 5, 11, 12)}, {1: False, 5: False, 11: False, 12: False}, 'a registration that existed keeps its date')
+            for index in ('memory_jobs_failed_code', 'memory_jobs_claim'):
+                self.assertIsNotNone(c.execute("SELECT to_regclass(%s)", ('memory.' + index,)).fetchone()[0])
 
     def test_every_section_is_a_no_op_on_a_migrated_database_and_the_measure_sees_it_when_it_is_not(self):
         """Behind its guard a section takes no strong lock on any table (the earlier `ADD COLUMN IF NOT EXISTS` of versions 2 and 3 live outside the sections and are not
         measured here). Control: the same sections without their guard DO, so the measurement can fail."""
         Store(self.dsn).migrate()
-        for tag in ('pgvector', 'fts', 'chunks', 'failedjobs'):
+        for tag in section_tags():  # every section of schema.sql, as the file has them
             held = section_table_locks(self.psycopg, self.dsn, tag)
             self.assertEqual({table: modes & STRONG for table, modes in held.items() if modes & STRONG}, {}, tag)
+            unguarded = section_table_locks(self.psycopg, self.dsn, tag, guarded=False)
+            self.assertTrue(any(modes & STRONG for modes in unguarded.values()), (tag, 'the measure must see the lock of the section without its guard', unguarded))
         for tag, table in (('pgvector', 'embeddings'), ('fts', 'documents'), ('fts', 'memory_items'), ('chunks', 'jobs')):
             self.assertIn('AccessExclusiveLock', section_table_locks(self.psycopg, self.dsn, tag, guarded=False).get(table, set()), (tag, table))
+        for tag in ('failedjobs', 'queueindexes'):  # a CREATE INDEX of a table that exists blocks its writers (SHARE)
+            self.assertIn('ShareLock', section_table_locks(self.psycopg, self.dsn, tag, guarded=False).get('jobs', set()), tag)
 
     def test_a_repeated_migrate_changes_nothing_in_the_catalog(self):
         store = Store(self.dsn)
@@ -257,6 +271,69 @@ class VersionRegistrationTests(unittest.TestCase):
         kinds = {item[0] for item in additive_violations(before, after)}
         self.assertEqual(kinds, {'column removed', 'index removed or redefined', 'versions removed'})
         self.assertEqual(additive_violations(before, before), [])
+
+
+class VectorIndexGuardTests(unittest.TestCase):
+    """`migrate_vector_indexes` (Python, not a section of `schema.sql`) skips an HNSW index that already exists BEFORE it asks for the table lock: a repeated
+    `admin migrate` neither rebuilds an HNSW index nor blocks the writers of `embeddings` and `embedding_chunks`."""
+    ENV = {'MEMORY_VECTOR_INDEXES': 'alpha-model:3,nomic-embed-text:768'}
+
+    def setUp(self):
+        dsn = os.getenv('MEMORY_TEST_DSN')
+        if not dsn:
+            raise unittest.SkipTest('MEMORY_TEST_DSN must point to an isolated PostgreSQL test database')
+        import psycopg
+        from psycopg.conninfo import make_conninfo
+        self.psycopg, self.base_dsn = psycopg, dsn
+        self.name = 'hnsw_' + uuid.uuid4().hex[:12]
+        with psycopg.connect(dsn, autocommit=True) as admin:
+            admin.execute(f'CREATE DATABASE {self.name}')
+        self.dsn = make_conninfo(dsn, dbname=self.name)
+        self.addCleanup(self.drop_database)
+
+    def drop_database(self):
+        with self.psycopg.connect(self.base_dsn, autocommit=True) as admin:
+            admin.execute(f'DROP DATABASE IF EXISTS {self.name} WITH (FORCE)')
+
+    def vector_index_locks(self):
+        """Run ONLY `migrate_vector_indexes` on the migrated database and return {table: strong lock modes} held before the COMMIT."""
+        from memory_platform.store_vectors import migrate_vector_indexes
+        with self.psycopg.connect(self.dsn) as c:
+            migrate_vector_indexes(c)
+            held = {}
+            for name, mode in c.execute("SELECT r.relname, l.mode FROM pg_locks l JOIN pg_class r ON r.oid=l.relation WHERE l.pid=pg_backend_pid() AND l.locktype='relation' "
+                                        "AND r.relnamespace='memory'::regnamespace AND r.relkind IN ('r','p')").fetchall():
+                if mode in STRONG:
+                    held.setdefault(name, set()).add(mode)
+        return held
+
+    def hnsw_identity(self):
+        with self.psycopg.connect(self.dsn) as c:
+            return c.execute("SELECT relname,relfilenode::text,oid::text FROM pg_class WHERE relnamespace='memory'::regnamespace AND relname LIKE '%hnsw%' ORDER BY relname").fetchall()
+
+    def test_a_repeated_migrate_takes_no_strong_lock_and_rebuilds_no_hnsw_index(self):
+        with patch.dict(os.environ, self.ENV):
+            Store(self.dsn).migrate()
+            first = self.hnsw_identity()
+            self.assertEqual(len(first), 4, first)  # two models x (embeddings, embedding_chunks)
+            Store(self.dsn).migrate()
+            self.assertEqual(self.hnsw_identity(), first, 'no HNSW index was rebuilt')
+            self.assertEqual(self.vector_index_locks(), {}, 'the guard asks for no table lock')
+
+    def test_the_measure_sees_the_lock_when_an_index_is_missing_and_only_that_one_is_built(self):
+        """Control: with one index gone the same call takes SHARE on its table (the measure can fail) and builds that index alone."""
+        with patch.dict(os.environ, self.ENV):
+            Store(self.dsn).migrate()
+            first = self.hnsw_identity()
+            with self.psycopg.connect(self.dsn) as c:
+                lost = c.execute("SELECT indexname FROM pg_indexes WHERE schemaname='memory' AND tablename='embedding_chunks' AND indexname LIKE 'memory_chunk_hnsw_%' ORDER BY 1 LIMIT 1").fetchone()[0]
+                c.execute(f'DROP INDEX memory.{lost}')
+            held = self.vector_index_locks()
+            self.assertIn('ShareLock', held.get('embedding_chunks', set()))
+            self.assertNotIn('embeddings', held, 'the indexes that exist do not lock their table')
+            after = {row[0]: row[1:] for row in self.hnsw_identity()}
+            self.assertEqual(set(after), {row[0] for row in first})
+            self.assertEqual({k: v for k, v in after.items() if k != lost}, {row[0]: row[1:] for row in first if row[0] != lost}, 'the others were not rebuilt')
 
 
 class FailedJobsIndexTests(unittest.TestCase):
