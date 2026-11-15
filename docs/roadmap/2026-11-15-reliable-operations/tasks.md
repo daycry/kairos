@@ -42,7 +42,7 @@ test-plan: n/a (sin UI)
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Arnés de fallos y tests de límites (C-07) | 6 | 6 | 100% | 0 / 32.4h | 0.83 / 4.3h | 0 / 1.1h | 0 / 1080 k |
 | Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 7 | 7 | 100% | 0 / 27.0h | 2.10 / 3.6h | 0 / 0.9h | 0 / 900 k |
-| Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 4 | 7 | 57% | 0 / 27.0h | 0.81 / 3.6h | 0 / 0.9h | 0 / 900 k |
+| Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 5 | 7 | 71% | 0 / 27.0h | 0.90 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 0 | 9 | 0% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 0 | 5 | 0% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 0 | 9 | 0% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **17** | **98** | **17%** | **0 / 412.8h** | **3.74 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **18** | **98** | **18%** | **0 / 412.8h** | **3.83 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -585,10 +585,11 @@ test-plan: n/a (sin UI)
 ### T-18 — Documentar índices, retención y ventanas
 
 - **Descripción**: Documentar la retención (`prune-tables`, ventanas, `--dry-run`, por qué `events` no se poda por defecto) y la nota de cola en los manuales. Fuente: CA-14 (documentación); B-06.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Manuales: nueva sección «Poda de tablas» (`prune-tables`, ventanas, `--dry-run`, por qué `events` no se poda por defecto) y nota de los índices parciales de la cola con su ventana de bloqueo medida; las cinco variables de retención en la tabla de configuración.
+- **Estado**: completado
+- **Cerrada**: 2026-11-15
 - **Tiempo humano**: est. 1.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real 0.09h (medido)
 - **Supervisión**: est. 0.05h (≈25 % IA) · real —
 - **Previsión IA**: 55 k in / 5 k out tok · ⚠️ verificar €
 - **Dependencias**: T-17
@@ -598,15 +599,15 @@ test-plan: n/a (sin UI)
 - **Verificación**: lectura: `docs/configuration.md` lista las `MEMORY_RETENTION_*` con sus defaults de P-03 y `docs/operations.md` explica `prune-tables --dry-run` y la excepción de `events`
 
 **Criterios de aceptación**
-- [ ] Valores y nombres iguales a `config.py`
-- [ ] La nota de que `events` cambia respuestas visibles y se declara a la Iniciativa 7
+- [x] Valores y nombres iguales a `config.py`
+- [x] La nota de que `events` cambia respuestas visibles y se declara a la Iniciativa 7
 
 **Subtareas**
-- [ ] Actualizar `docs/configuration.md`
-- [ ] Actualizar `docs/operations.md`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Actualizar `docs/configuration.md`
+- [x] Actualizar `docs/operations.md`
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Estilo: secciones existentes de `docs/operations.md`.
+**Notas**: Estilo: secciones existentes de `docs/operations.md`. usage-meter reliable-operations/T-18 {inicio 20:49:56Z, fin 20:53:13Z, horas_ia 0.09, duracion 5m, medido}. `docs/operations.md` (CRLF conservado): sección `## Poda de tablas (`prune-tables`)` (comandos, tabla de ventanas, `--dry-run`, lotes, concurrencia, conexión directa, qué ven los clientes de la poda de `jobs`, por qué `events` no se poda y que activarla es un cambio visible para la Iniciativa 7, que las migraciones no borran) y el párrafo «Cola de trabajos: índices parciales (versión de esquema 12)» (dos sondeos de `claim_job`: 111 ms -> 0,08 ms; ventana de bloqueo sin `CONCURRENTLY`, `SHARE` sobre `jobs`, `lock_timeout` 5 s, repetida sin bloqueos). Medido para ello el 2026-11-15 en una base aislada con 500.050 trabajos (tabla 100 MB, 300.000 `failed`): los dos `CREATE INDEX` tardaron 0,24 s y cada índice ocupa 16 kB. `docs/configuration.md` (LF): las cinco `MEMORY_RETENTION_*_DAYS` en la tabla de opciones avanzadas y la aclaración de que el Compose no las propaga (se pasan con `docker compose run -e`; `docker-compose.yml` no se toca). VERIFICACIÓN (lectura, comprobada por script contra `config.py`): las cinco variables aparecen en `docs/configuration.md` con los defectos de `RETENTION_DEFAULTS` (30, 30, 365, 90 y sin ventana para `events`) y en `docs/operations.md`; el ancla `#poda-de-tablas-prune-tables` (sin acentos, como `#el-worker-sin-base-de-datos-y-los-trabajos-agotados`) es la que enlazan ambos. `scripts/build-handbook.py` no corre en el host (falta `markdown_it`); el manual se genera en la etapa `handbook` de la imagen web (no ejecutada: no hay cambio de plantillas ni ficheros nuevos en el manual). EOL conservado (operations.md CRLF, configuration.md LF; `git diff --stat` igual con y sin `--ignore-cr-at-eol`). Visible para clientes: ninguno nuevo (documenta lo de T-16).
 
 ### T-19 — Cierre de fase: suite completa y subida del mínimo
 
