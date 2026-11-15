@@ -6,7 +6,7 @@ creado: 2026-11-15
 actualizado: 2026-11-15
 evaluacion: evaluation.md
 design: n/a
-plan: pendiente
+plan: improvement-plan.md
 generacion:
   inicio: 2026-11-15T14:42:54Z
   fin: 2026-11-15T14:55:57Z
@@ -21,7 +21,7 @@ generacion:
 # Operación fiable (Iniciativa 3 del plan director)
 
 > **Evaluación:** [`evaluation.md`](evaluation.md)
-> **Plan de implementación:** pendiente (lo crea `planner` tras el go)
+> **Plan de implementación:** [`improvement-plan.md`](improvement-plan.md) · [`tasks.md`](tasks.md)
 > **Origen:** [plan director](../2026-11-10-platform-audit/plan.md), «Iniciativa 3 — Operación fiable» (líneas 129-141); [auditoría](../2026-11-10-platform-audit/audit.md): O-01, O-02, O-03, O-05, O-06, S-06, B-02, B-03, B-05, B-06, B-07, B-15, M-01, M-06; §6.1 (severidades elevadas por el VPS).
 
 > **Terminología:**

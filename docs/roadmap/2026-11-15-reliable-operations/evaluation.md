@@ -21,7 +21,7 @@ generacion:
 | **Prioridad global** | Alta |
 | **Solicitante** | Daycry (plan director, Iniciativa 3; encargo del orquestador `/dev-cycle`) |
 | **Spec** | [`spec.md`](spec.md) |
-| **Plan** | pendiente |
+| **Plan** | [`improvement-plan.md`](improvement-plan.md) |
 | **Características evaluadas** | 7 |
 
 ---
@@ -344,3 +344,4 @@ Para **ejecutar** lo aprobado, genera el plan detallado con el agente **`planner
 
 - 2026-11-15 — Creación (evaluator). Estado `en-revision`. Spec creada en `borrador` y enlazada en ambos sentidos.
 - 2026-11-15 — Puerta **go** (orquestador, decisiones delegadas por el usuario): evaluación `completado`, spec `aprobada`; P-01 a P-10 adoptadas como se recomiendan.
+- 2026-11-15 — Plan creado (planner): 98 tareas en 16 fases, mismas cifras (412,8 h · 20.640 €); fila **Plan** enlazada.
