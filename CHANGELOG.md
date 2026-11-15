@@ -2,9 +2,26 @@
 
 All notable changes to Kairos are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Each section comes from a closed ledger in `docs/roadmap/`, which holds the full detail and evidence. The Spanish version is [CHANGELOG.es.md](CHANGELOG.es.md).
 
-Kairos has no tagged releases yet. Everything below is unreleased. The `@daycry/kairos` CLI is at 0.3.0 and has not been published to npm.
+Kairos has no tagged releases yet. Everything below is unreleased. The three components (server, kairos-mcp and the `@daycry/kairos` CLI) are at 0.4.0 and nothing has been published: the CLI is not on npm and no image is in a registry.
 
 ## [Unreleased]
+
+### Changed — `three-components` initiative (2026-11-12 to 2026-11-14)
+
+Kairos is split into three components: the server, kairos-mcp and the CLI, plus the web portal. The server no longer needs a language model. [Ledger](docs/roadmap/2026-11-12-three-components/tasks.md) · [final review](docs/roadmap/2026-11-12-three-components/review.md)
+
+- **Three components in one repository.** The server lives in `server/` (the Python package is still `memory_platform`, built with `server/memory_platform/Dockerfile`), kairos-mcp in `mcp/`, the CLI in `client/` (was `packages/kairos-cli/`) and the portal image in `web/` (`web/Dockerfile`, `web/nginx.conf`). Compose keeps the same services, names, volumes and networks; only the build paths changed. `npm pack` of the CLI lists the same files. Server, kairos-mcp and CLI are all 0.4.0.
+- **No extraction in the server by default.** `MEMORY_EXTRACT_ENABLED` is `0`: an event with `generate: true` (the CLI sends it with summaries) is accepted with 202 and creates no `extract` job. The receipt gains an additive `extraction: "disabled"` field. Jobs already queued are kept and marked `extraction_disabled`; `POST /v1/jobs/{id}/retry` queues them again once extraction is on.
+- **`corpus_answer` is off by default.** `MEMORY_CORPUS_ANSWER=off` keeps the tool in the list of 34 and rejects a new request with `corpus_answer_disabled` without calling any provider (repeating a saved `request_id` returns the saved answer while `MEMORY_LLM_MODEL` is unchanged, or a conflict if the request or the model differs); `corpus_answer_status` still reads saved answers.
+- **No default model.** `MEMORY_LLM_MODEL` has no value any more; turning on extraction or generated answers without it stops the startup with a message that names the variable. An installation that relied on the previous default must set it.
+- **A closed Ollama proxy.** The internal proxy only forwards `/api/embed` and `/api/version`; everything else gets 403 from the proxy. `OLLAMA_ALLOW_CHAT=1` also allows `/api/chat`. The proxy no longer runs as root.
+- **`/mcp` now goes to kairos-mcp.** The web proxy (`127.0.0.1:5173/mcp/`, the address `kairos mcp` uses) serves kairos-mcp instead of the server's own MCP, and `memory-web` joins the internal `mcp` network and waits for `memory-mcp`. The CLI bridge needs no change; the differences a client sees (Bearer credential only, `structuredContent` in 12 tools, a 401 without `X-Request-ID`) are in [integration](docs/integration.md#conectar-con-kairos-mcp).
+- **The internal MCP is deprecated and goes in 0.5.0.** It stays at `memory-api:8790/mcp/` through 0.4.x with `Deprecation: true` and `Sunset: 0.5.0` on every response and one `mcp_legacy_used` log event per call (method, status and request id, nothing else). `MEMORY_MOUNT_MCP=0` unmounts it and `/mcp` answers 404; the default is `1`. Migration notes: [integration](docs/integration.md#migración-el-mcp-interno-queda-en-desuso-y-se-retira-en-la-050) and [operations](docs/operations.md#retirada-del-mcp-interno).
+- **kairos-mcp, a container of its own.** The 34 MCP tools are served by `memory-mcp` (`mcp/`), which has no database access: it calls `/v1` with the caller's Bearer, wraps read results as untrusted data and publishes the same tools and contract as before (`docs/contracts/kairos-mcp.json` only gains `x-kairos-*` keys and `structured`).
+- **A REST `/v1` endpoint for every MCP tool.** Each tool has a `/v1` counterpart with the same permissions, so any HTTP client can do what the MCP tools do.
+- **Versioned observation and session-summary schemas.** `docs/contracts/observation.v1.schema.json` and `session-summary.v1.schema.json`, with valid and invalid examples checked by the tests.
+- **Continuous integration.** Six GitHub Actions jobs (server, retrieval-eval, mcp, client, web, contracts) run on every push and pull request, read-only and with actions pinned by SHA.
+- **Deployment check of `/mcp`.** `scripts/deploy-memory.py` checks `/mcp` with a temporary read key that it revokes at the end (the portal session no longer reaches kairos-mcp), says on the console when `/mcp` was not checked, and can run an isolated rehearsal with a simulated embedding provider (`--embed-stub`, `--roundtrip`). After updating, recreate the `ollama` service too: its template now uses `OLLAMA_ALLOW_CHAT`.
 
 ### Changed — `retrieval-quality` initiative (2026-11-09)
 

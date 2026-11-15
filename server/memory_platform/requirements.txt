@@ -1,0 +1,13 @@
+fastapi==0.136.1
+pydantic==2.12.4
+uvicorn[standard]==0.46.0
+httpx==0.28.1
+psycopg[binary]==3.3.7
+mcp==1.27.1
+jsonschema==4.26.0
+attrs==26.1.0
+jsonschema-specifications==2025.9.1
+referencing==0.37.0
+rpds-py==2026.9.1
+PyYAML==6.0.3
+prometheus_client==0.23.1

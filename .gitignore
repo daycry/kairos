@@ -9,7 +9,7 @@ backups/
 **/*.pyc
 **/node_modules/
 **/dist/
-packages/kairos-cli/artifacts/
+client/artifacts/
 **/.smoke/
 **/.npm-cache/
 **/.npx-smoke-cache/

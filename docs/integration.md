@@ -8,7 +8,7 @@ El equipo consumidor debe integrar un servidor MCP llamado `kairos`. El instalad
 
 Configura dirección base, proyecto y fichero de clave. Crea claves separadas por proyecto o integración y limita sus permisos. La política de captura es una condición adicional: disponer de `write` no permite saltarse una captura desactivada.
 
-El contrato real lo define [mcp.py](../memory_platform/mcp.py) con los tipos de [models.py](../memory_platform/models.py). `tools/list` debe ser la fuente del esquema que utilice el consumidor: evita mantener una copia divergente de sus argumentos.
+El contrato real lo define [mcp.py](../server/memory_platform/mcp.py) con los tipos de [models.py](../server/memory_platform/models.py). `tools/list` debe ser la fuente del esquema que utilice el consumidor: evita mantener una copia divergente de sus argumentos.
 
 ## Herramientas disponibles
 
@@ -86,6 +86,29 @@ Las herramientas adicionales responden mediante bloques de texto MCP. La mayorí
 
 Cada respuesta HTTP lleva `X-Request-ID`. Ese identificador aparece en los logs JSON del servidor, en la línea de acceso y en la de cada capa de la búsqueda, y permite al operador localizar una petición sin que el log contenga la consulta, el contenido ni los identificadores de proyecto. Cítalo en una incidencia. `GET /metrics` (formato Prometheus) no forma parte del contrato MCP ni del cliente: es solo de la red interna del servidor (ver [observabilidad](operations.md#observabilidad-logs-y-metricas)) y las herramientas MCP y sus esquemas no cambian por ello.
 
+## Conectar con kairos-mcp
+
+kairos-mcp (`memory-mcp`, versión 0.4.0) publica las mismas 34 herramientas por *streamable HTTP* en `/mcp/` del puerto `8791` de su red interna, con los mismos nombres, esquemas y anotaciones que el MCP interno (`docs/contracts/kairos-mcp.json`). La credencial es solo `Authorization: Bearer <clave>`; las sesiones con cookie del portal no se aceptan. Lo que ve un cliente respecto al MCP interno:
+
+- **Dato no fiable.** Las herramientas con `readOnlyHint` (todas las de lectura salvo `important_workflow`) y `query_corpus` (anotada como escritura, pero su resultado es contenido recuperado) añaden `untrusted: true` y `warning` al principio del objeto JSON de la respuesta; ningún otro campo cambia y el texto sigue siendo JSON. El MCP interno hace lo mismo.
+- **Errores.** Un fallo es un resultado con `isError` y el texto `Error executing tool <nombre>: <mensaje>`, con el mensaje del servidor. Caída, plazo (`KAIROS_API_TIMEOUT`, 30 s) o 5xx: `Memory service temporarily unavailable`. Sin cabecera `Authorization` o con otro esquema, y con una clave que `/v1` rechaza con 401: HTTP 401 con `{"error": {"code": "unauthorized", "message": "Authentication required"}, "request_id": ""}`. Cuerpo MCP mayor que `KAIROS_MAX_BODY_BYTES` (262144): 413 `body_too_large`. `initialize`, `tools/list` y `important_workflow` comprueban la credencial con `GET /v1/auth/me` (401 si la API la rechaza); si la API no responde no se rechaza la petición. Una respuesta de `/v1` con éxito pero cuerpo que no es un objeto JSON es un fallo de la llamada.
+- **Tope de bytes.** 32 768 bytes (`NORMAL_BYTES`) en las herramientas de agente y 262 144 (`DETAIL_BYTES`) en `get_observations`, las observaciones y el equipo, y los corpus; un texto cortado termina con el marcador `[Output shortened at the UTF-8 byte budget; narrow the selection to retrieve more.]`. Las 12 herramientas básicas se limitan también a `DETAIL_BYTES` (el MCP interno no las limita).
+- **`rebuild_corpus`.** Sin `expected_version` lee la versión actual y la envía; si otro `rebuild` la cambia entre la lectura y el envío, relee y reenvía como máximo 3 veces más, y después devuelve `Corpus version changed` (la herramienta montada en el MCP interno no tendría ese conflicto). Con `expected_version: 0` envía una versión que ningún corpus tiene: el servidor responde 403 o 404 en el orden del MCP interno y, para un corpus suyo, `Corpus version changed`, sin reconstruir. Una clave de solo lectura recibe el 403 de la herramienta con cualquier nombre.
+- **Argumentos.** Un UUID en cualquier forma que acepta `uuid.UUID` (mayúsculas, sin guiones, con llaves) es el mismo UUID, y uno inválido da el texto del MCP interno; un entero como `20.0` es `20`; `.` y `..` en un argumento de ruta son valores, no rutas. `GET /v1/events/{id}` y `GET /v1/projects/{p}/documents/{id}` aceptan también un UUID en cualquier forma.
+- **Diferencias con el MCP interno.** kairos-mcp añade `structuredContent` en las 12 herramientas básicas (el MCP interno solo envía el texto) y su 401 no lleva la cabecera `X-Request-ID` (el cuerpo es el mismo, con `request_id` vacío). Una llamada de herramienta que no llega a `/v1` (herramienta desconocida, argumentos que no cumplen el esquema o un UUID inválido) responde con el error de la herramienta a cualquier `Bearer` con esquema correcto, donde el MCP interno daría 401; no filtra datos. El texto `Input validation error: …` nombra el mejor de los 16 primeros errores del esquema (y cada rama de un `anyOf` aporta como máximo 16), así que con más de 16 fallos puede ser otro que el del SDK; con menos, es idéntico. El coste de validar es lineal en el tamaño de la entrada (hasta unos 2 s de CPU de Python para un cuerpo de 256 KiB, el mismo que cuesta una entrada válida de ese tamaño). Una entrada de hasta 1000 valores (cada elemento de un array y cada miembro de un objeto cuenta uno; una cadena larga es uno), que es casi toda llamada real, se valida en línea (unos 5 ms con elementos vacíos y hasta unos 15 ms con contenido real, como 140 `facts` o 990 cadenas de 256 B) y no hace cola detrás de las grandes: por HTTP, con 2, 6 y 40 validaciones grandes en curso, una llamada pequeña tarda 64-125 ms de mediana (6-15 ms sin carga; antes de 1 a 73 s), y con 40 cuerpos grandes llegando a la vez la primera puede tardar 1,6-4 s mientras el servidor lee esos cuerpos. Una entrada mayor se valida en un hilo de trabajo, fuera del event loop (el bucle se retrasa 12-55 ms en la imagen Linux de pruebas), de una en una por defecto (`KAIROS_VALIDATION_THREADS`, 1: el GIL comparte el CPU entre hilos de Python y con 2 no se midió ninguna mejora), y espera su turno como mucho 5 s: pasado ese plazo la llamada recibe `Memory service temporarily unavailable` sin llegar a `/v1`. Queda un límite: el CPU de un solo proceso es un techo de rendimiento (una validación grande ocupa 1-2 s de CPU) que un cliente con muchas peticiones grandes puede agotar, y las llamadas grandes legítimas pueden recibir ese error mientras tanto; acotar el ritmo por cliente es cosa del proxy o del rate limiting del operador. Una respuesta de `/v1` de hasta 64 MiB (el servidor produce unos 52 MB como máximo) se corta con el marcador del tope de su herramienta; más es `Memory service temporarily unavailable`.
+
+Configuración del servicio en [Configuración](configuration.md#kairos-mcp); pruebas en [mcp/README.md](../mcp/README.md).
+
+### Migración: el MCP interno queda en desuso y se retira en la 0.5.0
+
+Desde la 0.4.0 la entrada MCP de la web (`/mcp/` del puerto `5173`, la que usa `kairos mcp`) la sirve kairos-mcp, no el servidor. Un cliente que usa esa dirección no cambia nada (el puente stdio del CLI sigue funcionando) pero ve las diferencias de la lista de arriba: solo `Authorization: Bearer` (sin sesión del portal), `structuredContent` en las 12 herramientas básicas, 401 sin `X-Request-ID` y el trato de las llamadas que no llegan a `/v1`.
+
+- **El MCP interno sigue en `memory-api:8790/mcp/`** (el puerto `127.0.0.1:8790` publicado por el Compose) durante toda la 0.4.x, y también en `/memory-api/mcp/` de la entrada web (`5173`), el prefijo genérico de la API, que acepta la sesión del portal: quien publique solo el `5173` lo sigue exponiendo hasta poner `MEMORY_MOUNT_MCP=0`. Cada respuesta suya, también un 401 o un error, lleva `Deprecation: true` y `Sunset: 0.5.0` (la versión que lo retira; no hay fecha fijada, así que ninguno de los dos valores sigue el formato de fecha de RFC 9745 y RFC 8594: un cliente que los lea como fecha no podrá interpretarlos; la redirección 307 de `POST /mcp` sin barra final no los lleva), y cada una deja en el log JSON del servidor un evento `mcp_legacy_used` con `method`, `status` y `request_id`, sin credencial, argumentos ni contenido. Busca ese evento en el log para saber qué clientes siguen usándolo.
+- **`MEMORY_MOUNT_MCP`** (por defecto `1`). Con `0` el servidor no monta el MCP interno y cualquier ruta bajo `/mcp` de `memory-api` responde 404; un valor distinto de `0` y `1` detiene el arranque. Pruébalo antes de la 0.5.0 para comprobar que nadie lo usa; en la 0.5.0 desaparece el interruptor y el montaje.
+- **Sin modelo de lenguaje.** `MEMORY_LLM_MODEL` ya no tiene valor por defecto (antes `beam:cloud`) y solo es obligatorio si activas `MEMORY_EXTRACT_ENABLED=1` o `MEMORY_CORPUS_ANSWER=on`. Quien dependía del valor anterior debe fijarlo.
+- **Cambio en la captura de resúmenes (R-03).** Con `MEMORY_EXTRACT_ENABLED=0` (valor por defecto) un evento con `generate: true`, que el CLI envía en los resúmenes, se acepta con 202, queda guardado e indexado tal cual y no crea trabajo `extract`: el servidor ya no deriva aprendizajes del resumen, y el recibo añade `extraction: "disabled"`. Para recuperar la extracción en el servidor activa `MEMORY_EXTRACT_ENABLED=1` con un `MEMORY_LLM_MODEL`; los trabajos que ya estaban en cola quedan `extraction_disabled` y se reencolan con `POST /v1/jobs/{id}/retry`.
+- **Cómo desplegarlo.** Reconstruye y recrea `memory-web` (nueva ruta y red `mcp`) junto con `memory-mcp`; `memory-web` no arranca sin `memory-mcp` sano. Pasos y comprobaciones en [operaciones](operations.md#retirada-del-mcp-interno).
+
 ## Compartir el estado de trabajo con el panel
 
 Cada lista pertenece al actor autenticado y a un proyecto. Dos claves del mismo actor comparten sus listas dentro de los permisos concedidos. Actores diferentes no ven esas listas aunque puedan consultar el mismo proyecto. No se infiere el proyecto a partir del directorio del servidor.
@@ -151,6 +174,41 @@ Los UUID del ejemplo son ilustrativos. Genera los tuyos una sola vez y persíste
 Consulta `event_status(event_id)` después de una aceptación o timeout. `complete` significa que todos los trabajos asociados terminaron correctamente y el recibo no está sustituido. Guarda el resultado. Si faltan trabajos por terminar, deja el registro pendiente. Si el estado es incierto, concilia; no inventes un UUID nuevo.
 
 `generate: true` solicita procesamiento de generación cuando el flujo está permitido. No equivale a validación: los aprendizajes generados permanecen sin validar. Tipos admitidos: `note`, `summary`, `learning`, `correction`, `session_start`, `session_end` y `delete`. La política del servidor puede restringirlos.
+
+## Observaciones estructuradas con esquema versionado
+
+Cuando quieras que el servidor compruebe la forma de una observación o de un resumen de sesión, añade el documento a `payload.structured` del mismo evento de `remember` o de `observation_add`. Dos esquemas JSON (JSON Schema 2020-12) lo definen:
+
+| Esquema | Fichero | Campos (todos obligatorios) |
+|---|---|---|
+| `observation.v1` | `docs/contracts/observation.v1.schema.json` | `schema_version`, `type`, `title`, `facts`, `narrative`, `concepts`, `files_read`, `files_modified` |
+| `session-summary.v1` | `docs/contracts/session-summary.v1.schema.json` | `schema_version`, `request`, `investigated`, `learned`, `completed`, `next_steps` |
+
+`schema_version` es la constante del esquema (`"observation.v1"` o `"session-summary.v1"`) y elige con qué esquema se valida el documento. Ningún esquema admite campos sobrantes (`additionalProperties: false`). Límites de `observation.v1`: `type` es uno de `decision`, `bugfix`, `feature`, `refactor`, `change` o `discovery`; `title` de 1 a 200 caracteres; `narrative` de 1 a 20 000; `facts` hasta 20 elementos, cada uno con `statement` (1 a 500) y `evidence_quote` (1 a 2 000, la cita literal que respalda el hecho); `concepts` hasta 20 etiquetas únicas de 1 a 100 caracteres; `files_read` y `files_modified` hasta 50 rutas únicas de 1 a 500 caracteres. En `session-summary.v1`, los cinco campos de texto tienen de 1 a 4 000 caracteres. El límite de 256 KiB por evento sigue aplicándose, y el servidor no redacta `structured`: si contiene un bloque `<private>`, una clave privada o un dato con aspecto de secreto, rechaza el evento entero con 422 y no guarda nada: `sensitive_source_requires_review`, o `invalid_private_block` / `invalid_private_key_block` si el bloque está sin cerrar. Retira el dato sensible del documento antes de enviarlo. En el resto del evento se aplican las reglas de siempre: `title`, `content`, `problem`, `correction`, `evidence` y `tags` se redactan, y un elemento de `facts` con un dato sensible se descarta. Un documento de más de 1 000 valores (objetos, listas y escalares) se rechaza con `maxNodes`; uno válido en todos sus límites tiene menos de 200.
+
+```json
+{
+  "schema_version": "observation.v1",
+  "type": "bugfix",
+  "title": "Corregir el bucle de reintentos del worker",
+  "facts": [{"statement": "El bucle no esperaba entre intentos", "evidence_quote": "reintentaba cada 10 ms sin pausa"}],
+  "narrative": "Al leer el worker vi que reintentaba cada 10 ms sin pausa. Añadí una espera exponencial.",
+  "concepts": ["reintentos", "espera exponencial"],
+  "files_read": ["worker/sync.py"],
+  "files_modified": ["worker/sync.py"]
+}
+```
+
+**Solo se valida lo que declara `structured`.** Un evento sin `payload.structured` no se valida y se acepta como siempre; el CLI (0.3.0 y 0.4.0) no lo envía y no cambia. Si `structured` llega y no cumple su esquema (falta un campo, sobra uno, un texto o una lista excede su límite, el tipo es erróneo o `schema_version` falta o es desconocida), el servidor responde **422** con el código `invalid_observation` y un mensaje con la ruta JSON del primer error, por ejemplo `Structured observation does not match its schema: maxLength at /payload/structured/title`. El mensaje nunca reproduce valores del contenido. Corrige el documento y reenvía el evento con la misma identidad: un 422 no deja nada guardado.
+
+Valida un documento en local antes de enviarlo. Los ejemplos válidos e inválidos de cada esquema están en `docs/contracts/examples/<esquema>/valid/` y `.../invalid/`:
+
+```bash
+python -c "import json,sys,jsonschema;s=json.load(open('docs/contracts/observation.v1.schema.json',encoding='utf-8'));jsonschema.Draft202012Validator(s).validate(json.load(open(sys.argv[1],encoding='utf-8')))" mi-observacion.json
+python -m unittest discover -s scripts/tests -p test_contract_examples.py
+```
+
+La primera orden termina con error y la ruta del fallo si el documento no es válido; la segunda comprueba todos los ejemplos con `jsonschema`, un validador que no comparte código con el servidor.
 
 ## Publicar conocimiento aprobado
 

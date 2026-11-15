@@ -21,8 +21,9 @@ import uuid
 
 # The distributed SDK uses the same pure redaction policy as the server.
 _SDK_ROOT = Path(__file__).resolve().parents[1]
-if str(_SDK_ROOT) not in sys.path:
-    sys.path.insert(0, str(_SDK_ROOT))
+for _sdk_path in (_SDK_ROOT, _SDK_ROOT / 'server'):  # a checkout keeps the package under server/; a distribution keeps it beside scripts/
+    if str(_sdk_path) not in sys.path:
+        sys.path.insert(0, str(_sdk_path))
 
 MAX_EVENT_BYTES = 262144
 MAX_PENDING_BYTES = 10 * 1024 * 1024

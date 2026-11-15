@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kairos.invalid/contracts/session-summary.v1.schema.json",
+  "title": "Kairos session summary v1",
+  "description": "Structured session summary carried in `payload.structured` of an event sent to POST /v1/observations. Validated by the server only when the event carries `structured`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "request",
+    "investigated",
+    "learned",
+    "completed",
+    "next_steps"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "session-summary.v1"
+    },
+    "request": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000,
+      "description": "What the user asked for."
+    },
+    "investigated": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000,
+      "description": "What was investigated."
+    },
+    "learned": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000,
+      "description": "What was learned."
+    },
+    "completed": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000,
+      "description": "What was done."
+    },
+    "next_steps": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000,
+      "description": "What comes next."
+    }
+  }
+}

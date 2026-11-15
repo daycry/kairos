@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kairos.invalid/contracts/observation.v1.schema.json",
+  "title": "Kairos observation v1",
+  "description": "Structured observation carried in `payload.structured` of an event sent to POST /v1/observations. Validated by the server only when the event carries `structured`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "type",
+    "title",
+    "facts",
+    "narrative",
+    "concepts",
+    "files_read",
+    "files_modified"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "observation.v1"
+    },
+    "type": {
+      "enum": [
+        "decision",
+        "bugfix",
+        "feature",
+        "refactor",
+        "change",
+        "discovery"
+      ],
+      "description": "Kind of observation."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "Short title."
+    },
+    "facts": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "statement",
+          "evidence_quote"
+        ],
+        "properties": {
+          "statement": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "The fact, in one sentence."
+          },
+          "evidence_quote": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "Literal quote from the narrative that supports the fact."
+          }
+        }
+      },
+      "description": "Facts, each with the literal quote that supports it."
+    },
+    "narrative": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 20000,
+      "description": "Free narrative of what happened."
+    },
+    "concepts": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "description": "Short concept labels.",
+      "uniqueItems": true
+    },
+    "files_read": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+      },
+      "description": "Paths of files read.",
+      "uniqueItems": true
+    },
+    "files_modified": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+      },
+      "description": "Paths of files modified.",
+      "uniqueItems": true
+    }
+  }
+}

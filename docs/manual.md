@@ -279,4 +279,4 @@ El contexto y los listados están acotados. Un mapa es una instantánea, no una 
 
 ## Fuentes de este manual
 
-La interfaz descrita procede de [memory-portal.ts](../web/src/memory-portal.ts), sus peticiones de [memory-api.ts](../web/src/memory-api.ts), el mapa de [memory-map.ts](../web/src/memory-map.ts), los estados y límites de [models.py](../memory_platform/models.py) y las herramientas de [mcp.py](../memory_platform/mcp.py).
+La interfaz descrita procede de [memory-portal.ts](../web/src/memory-portal.ts), sus peticiones de [memory-api.ts](../web/src/memory-api.ts), el mapa de [memory-map.ts](../web/src/memory-map.ts), los estados y límites de [models.py](../server/memory_platform/models.py) y las herramientas de [mcp.py](../server/memory_platform/mcp.py).

@@ -5,6 +5,25 @@ evidence without calling a model. `corpus_answer` explicitly invokes the server'
 configured model and produces an **unverified generated answer** with literal
 source quotations. Generated text is not an approved learning or a validated fact.
 
+## Off by default
+
+`corpus_answer` is **off by default**: the server does not run a language model
+unless the operator turns this on with `MEMORY_CORPUS_ANSWER=on` and names a model
+in `MEMORY_LLM_MODEL` (there is no default model, and the server refuses to start
+with the switch on and no model). While it is off the tool stays in the list of 34
+MCP tools, so existing clients and the contract do not change, but a new
+request (over MCP or `POST /v1/projects/{id}/corpora/{name}/answers`) fails with the
+error `corpus_answer_disabled` (HTTP 403) before any reservation or provider call.
+Repeating a `request_id` stored while the switch was on with the same request
+returns the stored answer, and with a different request it is a conflict, exactly
+as when the switch is on. The configured `MEMORY_LLM_MODEL` is part of the
+request: if you clear or change it when you switch off, the retry is a conflict,
+and `corpus_answer_status` is the way to read the stored answer.
+`corpus_answer_status` keeps working and still reads answers stored while the
+switch was on. With the switch on, the proxy that fronts Ollama also needs
+`OLLAMA_ALLOW_CHAT=1`, otherwise `/api/chat` answers 403. See
+[configuration](configuration.md#servidor-sin-modelo-de-lenguaje).
+
 ## Agent workflow
 
 1. Use `build_corpus` to select existing, authorized observations for one project.
@@ -111,13 +130,13 @@ budget reset or unlimited retry loop.
 ## Implementation and validation
 
 The additive migration is `migrate_corpus_answers(connection)` in
-`memory_platform/corpus_answers.py`, run inside the Store migration transaction.
+`server/memory_platform/corpus_answers.py`, run inside the Store migration transaction.
 It preserves existing corpora, observations, models, ports and credentials.
 Admission and completion use short PostgreSQL transactions; the provider call
 runs after releasing database locks. Authorization/source fences are checked
 again before any result is stored or returned.
 
-`memory_platform/tests/test_corpus_answers.py` covers native transport/schema,
+`server/memory_platform/tests/test_corpus_answers.py` covers native transport/schema,
 single-attempt timeouts and 429, literal quotations, foreign reference rejection,
 Unicode punctuation, usage checks, actual PostgreSQL concurrent admission,
 idempotency, persistence/reload, continuity, withdrawal/revocation during the

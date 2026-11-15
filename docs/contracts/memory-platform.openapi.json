@@ -41,6 +41,35 @@
         "title": "AutomaticCapture",
         "type": "object"
       },
+      "CapturePolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "capture_allowed": {
+            "title": "Capture Allowed",
+            "type": "boolean"
+          },
+          "capture_mode": {
+            "enum": [
+              "off",
+              "summary",
+              "full"
+            ],
+            "title": "Capture Mode",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "capture_mode",
+          "capture_allowed"
+        ],
+        "title": "CapturePolicy",
+        "type": "object"
+      },
       "Context": {
         "additionalProperties": false,
         "properties": {
@@ -219,6 +248,29 @@
         "title": "CorpusPrime",
         "type": "object"
       },
+      "CorpusQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 10,
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "question": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "title": "CorpusQuery",
+        "type": "object"
+      },
       "CorpusRebuild": {
         "additionalProperties": false,
         "properties": {
@@ -250,6 +302,30 @@
             "maxItems": 100,
             "title": "Concepts",
             "type": "array"
+          },
+          "date_end": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date End"
+          },
+          "date_start": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Start"
           },
           "description": {
             "default": "",
@@ -860,6 +936,27 @@
         "title": "MatchedChunk",
         "type": "object"
       },
+      "ObservationIds": {
+        "additionalProperties": false,
+        "properties": {
+          "ids": {
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "title": "ObservationIds",
+        "type": "object"
+      },
       "Payload": {
         "additionalProperties": false,
         "properties": {
@@ -937,6 +1034,19 @@
                 "type": "null"
               }
             ]
+          },
+          "structured": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "description": "Structured document of schema_version observation.v1 or session-summary.v1; validated when present (docs/contracts).",
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Structured"
           },
           "supersedes": {
             "anyOf": [
@@ -2583,6 +2693,45 @@
         "summary": "Project"
       }
     },
+    "/v1/projects/{project_id}/capture-policy": {
+      "get": {
+        "operationId": "kairos_capture_policy",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapturePolicy"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Capture Policy"
+      }
+    },
     "/v1/projects/{project_id}/corpora": {
       "get": {
         "operationId": "kairos_corpora",
@@ -2832,6 +2981,62 @@
         "summary": "Prime Corpus"
       }
     },
+    "/v1/projects/{project_id}/corpora/{name}/query": {
+      "post": {
+        "operationId": "kairos_query_corpus",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorpusQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Query Corpus"
+      }
+    },
     "/v1/projects/{project_id}/corpora/{name}/rebuild": {
       "post": {
         "operationId": "kairos_rebuild_corpus",
@@ -2886,6 +3091,52 @@
           }
         },
         "summary": "Rebuild Corpus"
+      }
+    },
+    "/v1/projects/{project_id}/corpus": {
+      "get": {
+        "operationId": "kairos_corpus",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Corpus"
       }
     },
     "/v1/projects/{project_id}/documents": {
@@ -3035,6 +3286,53 @@
         "summary": "Document Status"
       }
     },
+    "/v1/projects/{project_id}/events/{event_id}/status": {
+      "get": {
+        "operationId": "kairos_event_status",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Event Status"
+      }
+    },
     "/v1/projects/{project_id}/manifest": {
       "get": {
         "operationId": "memory_document_manifest",
@@ -3098,6 +3396,172 @@
           }
         },
         "summary": "Manifest"
+      }
+    },
+    "/v1/projects/{project_id}/observations/context": {
+      "get": {
+        "operationId": "kairos_observation_context",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 4000,
+              "title": "Query",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Observation Context"
+      }
+    },
+    "/v1/projects/{project_id}/observations/get": {
+      "post": {
+        "operationId": "kairos_get_observations",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ObservationIds"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Observations"
+      }
+    },
+    "/v1/projects/{project_id}/observations/search": {
+      "get": {
+        "operationId": "kairos_observation_search",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "query",
+            "required": true,
+            "schema": {
+              "maxLength": 4000,
+              "title": "Query",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Observation Search"
       }
     },
     "/v1/projects/{project_id}/policy": {
@@ -3229,6 +3693,66 @@
           }
         },
         "summary": "Team Brief"
+      }
+    },
+    "/v1/projects/{project_id}/team-search": {
+      "get": {
+        "operationId": "kairos_team_search",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 2000,
+              "title": "Query",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Team Search"
       }
     },
     "/v1/projects/{project_id}/team-work": {

@@ -1,0 +1,8 @@
+{
+  "schema_version": "session-summary.v1",
+  "request": "Añadir «café» y 日本語 🦜",
+  "investigated": "The retry loop and its callers",
+  "learned": "The loop saturated the database",
+  "completed": "Added exponential backoff and a test",
+  "next_steps": "Revisar mañana"
+}

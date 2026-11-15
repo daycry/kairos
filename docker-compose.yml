@@ -6,7 +6,10 @@ x-memory-environment: &memory-environment
   MEMORY_ALLOWED_ORIGINS: ${MEMORY_ALLOWED_ORIGINS:-http://127.0.0.1:5173,http://localhost:5173}
   MEMORY_COOKIE_SECURE: ${MEMORY_COOKIE_SECURE:-0}
   MEMORY_OLLAMA_URL: http://ollama:11434
-  MEMORY_LLM_MODEL: ${MEMORY_LLM_MODEL:-beam:cloud}
+  MEMORY_LLM_MODEL: ${MEMORY_LLM_MODEL:-}
+  MEMORY_EXTRACT_ENABLED: ${MEMORY_EXTRACT_ENABLED:-0}
+  MEMORY_CORPUS_ANSWER: ${MEMORY_CORPUS_ANSWER:-off}
+  MEMORY_MOUNT_MCP: ${MEMORY_MOUNT_MCP:-1}  # the internal MCP of memory-api, deprecated; 0 unmounts it (T-51, removed in 0.5.0)
   MEMORY_EMBEDDING_MODEL: ${MEMORY_EMBEDDING_MODEL:-nomic-embed-text}
   MEMORY_BOOTSTRAP_PASSWORD_FILE: /run/secrets/memory_bootstrap
   MEMORY_EMBED_ENABLED: '1'
@@ -40,6 +43,7 @@ services:
     restart: unless-stopped
     environment:
       OLLAMA_UPSTREAM: ${OLLAMA_UPSTREAM:-host.docker.internal:11434}
+      OLLAMA_ALLOW_CHAT: ${OLLAMA_ALLOW_CHAT:-0}
       NGINX_ENTRYPOINT_QUIET_LOGS: '1'
     volumes: ['./ollama-proxy/default.conf.template:/etc/nginx/templates/default.conf.template:ro']
     networks:
@@ -50,11 +54,20 @@ services:
       interval: 10s
       timeout: 6s
       retries: 12
+    # Sin root (S-09, P-10): el proceso es el usuario `nginx` (101) y solo escribe en estos tmpfs; la plantilla se renderiza en conf.d.
+    user: '101:101'
+    read_only: true
+    tmpfs:
+      - /etc/nginx/conf.d:uid=101,gid=101,mode=0755
+      - /run:uid=101,gid=101,mode=0755
+      - /var/cache/nginx:uid=101,gid=101,mode=0755
+      - /tmp:uid=101,gid=101,mode=1777
+    cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
 
   memory-postgres:
     image: kairos-postgres:latest
-    build: {context: ., dockerfile: memory_platform/Dockerfile, target: postgres-pgvector}
+    build: {context: ., dockerfile: server/memory_platform/Dockerfile, target: postgres-pgvector}
     profiles: [memory]
     restart: unless-stopped
     environment:
@@ -74,7 +87,7 @@ services:
   memory-migrate:
     <<: *process
     image: kairos-api:latest
-    build: {context: ., dockerfile: memory_platform/Dockerfile, target: api}
+    build: {context: ., dockerfile: server/memory_platform/Dockerfile, target: api}
     profiles: [memory]
     restart: 'no'
     environment: *memory-environment
@@ -114,12 +127,12 @@ services:
   memory-api:
     <<: *process
     image: kairos-api:latest
-    build: {context: ., dockerfile: memory_platform/Dockerfile, target: api}
+    build: {context: ., dockerfile: server/memory_platform/Dockerfile, target: api}
     profiles: [memory]
     restart: unless-stopped
     environment: *memory-environment
     secrets: [memory_dsn]
-    networks: [memory-data, webui, inference]
+    networks: [memory-data, webui, inference, mcp]
     ports: ['127.0.0.1:8790:8790']
     depends_on:
       memory-migrate: {condition: service_completed_successfully}
@@ -130,10 +143,34 @@ services:
       retries: 6
     stop_grace_period: 30s
 
+  # kairos-mcp (C-03): the 34 MCP tools in front of /v1, with the caller's own credential. No database, no secret, no model proxy: its only
+  # peer is memory-api, on the network `mcp` that they alone share (CA-09). The proxy reaches it from memory-web (T-52).
+  memory-mcp:
+    <<: *process
+    image: kairos-mcp:latest
+    build: {context: ./mcp, dockerfile: Dockerfile}
+    profiles: [memory]
+    restart: unless-stopped
+    mem_limit: 1g  # one answer of up to 64 MiB is held about five times over while it is cut; see docs/configuration.md
+    environment:
+      KAIROS_API_URL: http://memory-api:8790
+      KAIROS_API_TIMEOUT: ${KAIROS_API_TIMEOUT:-30}
+      KAIROS_ALLOWED_ORIGINS: ${MEMORY_ALLOWED_ORIGINS:-http://127.0.0.1:5173,http://localhost:5173}
+      KAIROS_MAX_BODY_BYTES: ${KAIROS_MAX_BODY_BYTES:-262144}
+      KAIROS_VALIDATION_THREADS: ${KAIROS_VALIDATION_THREADS:-1}
+    networks: [mcp]
+    depends_on:
+      memory-api: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8791/health/live', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+
   memory-worker:
     <<: *process
     image: kairos-worker:latest
-    build: {context: ., dockerfile: memory_platform/Dockerfile, target: worker}
+    build: {context: ., dockerfile: server/memory_platform/Dockerfile, target: worker}
     profiles: [memory]
     restart: unless-stopped
     environment: *memory-environment
@@ -146,19 +183,20 @@ services:
   memory-web:
     <<: *process
     image: kairos-web:latest
-    build: {context: ., dockerfile: memory_platform/Dockerfile.web, target: final}
+    build: {context: ., dockerfile: web/Dockerfile, target: final}
     profiles: [memory]
     restart: unless-stopped
-    networks: [webui]
+    networks: [webui, mcp]  # `mcp` (internal): the only way from the proxy to kairos-mcp, which routes /mcp (T-52)
     ports: ['127.0.0.1:5173:8080']
     depends_on:
       memory-api: {condition: service_healthy}
+      memory-mcp: {condition: service_healthy}
     tmpfs: ['/tmp:uid=101,gid=101,mode=1777']
 
   memory-admin:
     <<: *process
     image: kairos-operator:latest
-    build: {context: ., dockerfile: memory_platform/Dockerfile, target: operator}
+    build: {context: ., dockerfile: server/memory_platform/Dockerfile, target: operator}
     profiles: [memory-admin]
     environment: *memory-environment
     secrets: [memory_dsn, memory_bootstrap]
@@ -171,6 +209,7 @@ networks:
   inference: {driver: bridge, internal: true, name: knowledge-graphs_inference}
   egress: {}
   webui: {driver: bridge, name: knowledge-graphs_webui}
+  mcp: {driver: bridge, internal: true, name: knowledge-graphs_mcp}
 
 volumes:
   memory-postgres-data: {name: knowledge-graphs_memory-postgres-data}

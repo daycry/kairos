@@ -555,7 +555,7 @@ class NativeAcceptanceTests(unittest.TestCase):
         admin.assert_not_called();runner.assert_not_called()
 
     def test_probe_events_match_the_real_api_schema_and_do_not_request_generation(self):
-        model_path=Path(__file__).resolve().parents[2]/'memory_platform/models.py'
+        model_path=Path(__file__).resolve().parents[2]/'server/memory_platform/models.py'
         spec=importlib.util.spec_from_file_location('native_probe_api_models',model_path)
         models=importlib.util.module_from_spec(spec);spec.loader.exec_module(models)
         with self.probe_environment():

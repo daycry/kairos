@@ -31,6 +31,19 @@ own generated learning; validation requires permission and evidence.
 The REST adapters accept the same Event JSON: `POST /v1/observations` creates an
 observation and `POST /v1/observations/events` records subsequent events.
 
+## Structured observations
+
+An event may carry a structured document in `payload.structured`, validated against
+a versioned JSON Schema (2020-12) in `docs/contracts/`: `observation.v1`
+(`type`, `title`, `facts` with a literal `evidence_quote`, `narrative`, `concepts`,
+`files_read`, `files_modified`) or `session-summary.v1` (`request`, `investigated`,
+`learned`, `completed`, `next_steps`). The document's own `schema_version` selects the
+schema; unknown fields are refused and every text has a length limit. A document that
+does not match is a 422 `invalid_observation` whose message names the JSON path of the
+first error and never echoes content. An event without `payload.structured` is not
+validated and is accepted as before. Limits and local validation are in
+`docs/integration.md` and `docs/contracts/README.md`.
+
 ## Recover tool summaries
 
 `get_tool_uses(project, session_id?, tool?, limit=20, cursor?)` returns authorized,
@@ -113,14 +126,14 @@ would destroy shared work and is not a recovery procedure.
 From the product directory, the isolated PostgreSQL test target is:
 
 ```sh
-docker build --no-cache --target test -f memory_platform/Dockerfile -t kairos-memory-tests .
+docker build --no-cache --target test -f server/memory_platform/Dockerfile -t kairos-memory-tests .
 ```
 
 For focused tests against an explicitly disposable PostgreSQL database, set
 `MEMORY_TEST_DSN` to that test database and run:
 
 ```sh
-python -m unittest memory_platform.tests.test_extended_tools memory_platform.tests.test_extended_gateway -v
+PYTHONPATH=server python -m unittest memory_platform.tests.test_extended_tools memory_platform.tests.test_extended_gateway -v
 ```
 
 Without `MEMORY_TEST_DSN`, integration cases skip. That result is not database

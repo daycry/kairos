@@ -1,0 +1,10 @@
+{
+  "schema_version": "observation.v1",
+  "type": "discovery",
+  "title": "x",
+  "facts": [],
+  "narrative": "n",
+  "concepts": [],
+  "files_read": [],
+  "files_modified": []
+}

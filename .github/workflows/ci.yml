@@ -1,0 +1,162 @@
+name: ci
+
+# Pull-request gate for Kairos. It only reads the repository: no secrets besides the implicit GITHUB_TOKEN,
+# no image or package is published, and nothing talks to a deployed Kairos installation.
+on:
+  pull_request:
+  # Branch pushes (never main) so a branch is verified without opening a pull request; main is only reached through a PR.
+  push:
+    branches-ignore:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Baseline of the backend suite (T-01: 483 tests; raised to 639 when kairos-mcp started, to 727 with its chain tests and to 743 with the corrections of the phase 5 review, to 756 with the MCP legacy and route tests and to 759 with the version tests of phase 7, to 764 with the phase 8 rehearsal tests, 0 failures, 0 errors, 0 skipped). The `server` job fails when fewer tests are
+# discovered. Single source: raise it when the suite grows, never lower it (checked by scripts/tests/test_ci_workflow.py).
+env:
+  KAIROS_MIN_TESTS: '764'
+
+# `shell: bash` runs with -eo pipefail; the unset default is only `bash -e` and a failed piped docker build would stay green.
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    # Full backend suite in the isolated PostgreSQL test image (same command as docs/operations.md).
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Run the backend suite (target test)
+        run: |
+          set -euo pipefail
+          # No layer cache on purpose: an imported cache replays a passing suite layer instead of running it.
+          docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:ci --progress=plain . 2>&1 | tee /tmp/server.log
+      - name: The suite really ran and nothing was skipped
+        run: |
+          line="$(grep -o 'MEMORY_TEST_RESULT {.*}' /tmp/server.log | tail -1)"
+          echo "$line"
+          echo "$line" | grep -q '"passed": true'
+          echo "$line" | grep -q '"failures": 0'
+          echo "$line" | grep -q '"errors": 0'
+          echo "$line" | grep -q '"skipped": 0'
+          tests="$(echo "$line" | grep -o '"tests": [0-9]*' | grep -o '[0-9]*$')"
+          echo "tests=$tests minimum=$KAIROS_MIN_TESTS"
+          test "${tests:-0}" -ge "$KAIROS_MIN_TESTS"
+
+  retrieval-eval:
+    # Quality gate with the simulated (offline) embedding provider: recall@5 >= 0.80 and MRR >= 0.60 or the build fails.
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Run the retrieval gate (target retrieval-eval)
+        run: |
+          set -euo pipefail
+          docker build --target retrieval-eval -f server/memory_platform/Dockerfile -t kairos-eval:ci --progress=plain . 2>&1 | tee /tmp/eval.log
+      - name: The gate really ran and passed
+        run: |
+          line="$(grep -o 'RETRIEVAL_EVAL_RESULT {.*' /tmp/eval.log | tail -1)"
+          echo "${line:0:300}"
+          echo "$line" | grep -q '"gate": {[^}]*"passed": true'
+
+  client:
+    # Installable CLI: its tests and the offline release check (it prepares the package, it never publishes).
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: Tests
+        working-directory: client
+        run: npm test
+      - name: Release check
+        working-directory: client
+        run: npm run release:check
+
+  mcp:
+    # kairos-mcp: its image carries no database driver and its own tests run inside it (the in-process chain tests are in `server`).
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Build the component image
+        run: docker build -f mcp/Dockerfile -t kairos-mcp:ci mcp/
+      - name: Run its tests in the image
+        run: docker run --rm kairos-mcp:ci python -m unittest discover -s tests
+      - name: The image has no database driver
+        run: |
+          if docker run --rm kairos-mcp:ci pip list | grep -i psycopg; then
+            echo 'kairos-mcp must not install a database driver' >&2
+            exit 1
+          fi
+
+  web:
+    # Portal: dependencies from the lockfile, typecheck, tests, build, and the nginx/web image test target.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: Install from the lockfile
+        working-directory: web
+        run: npm ci
+      - name: Typecheck
+        working-directory: web
+        run: npm run typecheck
+      - name: Tests
+        working-directory: web
+        run: npm test
+      - name: Build
+        working-directory: web
+        run: npm run build
+      - name: Web image test target
+        run: docker build --target test -f web/Dockerfile -t kairos-web-test:ci .
+
+  contracts:
+    # The MCP and OpenAPI contracts may only grow (test_contract_additive) and the exported files must match the versioned ones.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+      - name: Install the server dependencies
+        run: pip install --no-cache-dir -r server/memory_platform/requirements.txt
+      - name: Additive diff against the contracts of server/memory_platform/tests/contracts_base (T-26 reassigns that base)
+        run: PYTHONPATH=server python -m unittest memory_platform.tests.test_contract_additive
+      - name: Exported contracts equal the versioned ones
+        run: |
+          python scripts/export-contracts.py
+          git diff --ignore-cr-at-eol --exit-code -- docs/contracts
+          # `git diff` does not see a new (untracked) or a deleted contract file: `git status` does.
+          if git status --porcelain --untracked-files=all -- docs/contracts | grep -E '^(\?\?|.D|D.)'; then
+            echo 'A contract file is new (untracked) or missing compared with the versioned ones' >&2
+            exit 1
+          fi
+      - name: Workflow tests (suite-gate behaviour with mutants, hygiene rules)
+        run: python -m unittest discover -s scripts/tests -p test_ci_workflow.py

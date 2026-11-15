@@ -59,16 +59,20 @@ flowchart LR
   A[Claude Code / Codex / OpenCode] --> B[Puente MCP local<br/>@daycry/kairos]
   B -->|HTTPS + clave| C[Entrada web<br/>memory-web]
   D[Panel web] --> C
-  C --> E[API<br/>memory-api]
+  C -->|/mcp/| M[kairos-mcp<br/>memory-mcp]
+  M -->|/v1 + Bearer| E[Servidor<br/>memory-api]
+  C -->|/memory-api/| E
   E --> F[(PostgreSQL)]
   F --> G[Trabajador<br/>memory-worker]
-  G --> H[Ollama<br/>beam:cloud · nomic-embed-text]
+  G --> H[Proxy de Ollama<br/>nomic-embed-text]
   G --> F
 ```
 
-1. El agente llama a una herramienta MCP. El puente local la convierte en una petición HTTP autenticada con una clave privada.
+Kairos son tres componentes: el **servidor** (`memory-api` y `memory-worker`, único con acceso a PostgreSQL), **kairos-mcp** (`memory-mcp`, las 34 herramientas MCP delante de `/v1`, sin base de datos) y el **cliente** (`@daycry/kairos`), más la **web**. `/mcp/` de la entrada web es kairos-mcp. El servidor no usa ningún modelo de lenguaje: solo pide embeddings, por el proxy de Ollama. El MCP interno de `memory-api` (`:8790/mcp/`) está en desuso desde la 0.4.0 y se retira en la 0.5.0; los clientes antiguos que lo usen deben migrar, ver [integración](docs/integration.md#migración-el-mcp-interno-queda-en-desuso-y-se-retira-en-la-050).
+
+1. El agente llama a una herramienta MCP. El puente local la convierte en una petición HTTP autenticada con una clave privada hacia `/mcp/`, que atiende kairos-mcp y que traduce cada llamada a `/v1` con la misma clave.
 2. La API comprueba permisos por proyecto (`read`, `write`, `publish`, `validate`, `admin`) y la política de captura, y guarda la operación junto con sus trabajos.
-3. El trabajador procesa los trabajos de forma asíncrona: extracción, embeddings y relaciones, usando el servidor de modelos.
+3. El trabajador procesa los trabajos de forma asíncrona: extracción, embeddings y relaciones; los embeddings se piden al servidor de modelos por el proxy de Ollama, y la extracción y las respuestas generadas solo funcionan si activas un modelo de lenguaje (`MEMORY_LLM_MODEL`, sin valor por defecto).
 4. Las búsquedas combinan tres capas: **episódica** (experiencias), **documental** (fuentes aprobadas) y **temporal** (hechos y relaciones con evidencia), más una recuperación **semántica** por embeddings (pgvector, con los textos largos troceados en fragmentos). La búsqueda léxica entiende español e inglés sin tildes y completa con títulos parecidos; si falla solo la parte semántica, la respuesta léxica sigue siendo válida (`degraded`).
 
 Más detalle en [arquitectura](docs/architecture.md).
@@ -121,7 +125,7 @@ Los manuales de `docs/` se publican en `/docs/` sin dependencias externas.
 
 - Docker Desktop (Windows) o Docker Engine con Compose (Linux).
 - Python 3.11 o posterior para los scripts del operador.
-- **Ollama en marcha y accesible** con los modelos configurados (`beam:cloud`, `nomic-embed-text`). El servicio `ollama` del Compose es solo un proxy hacia él.
+- **Ollama en marcha y accesible** con el modelo de embeddings (`nomic-embed-text`); no hace falta ningún modelo de lenguaje salvo que actives la extracción o las respuestas generadas. El servicio `ollama` del Compose es solo un proxy hacia él.
 - Puertos libres: `5173` (web) y `8790` (API).
 
 ### Instalación nueva
@@ -147,22 +151,22 @@ El despliegue recorre diez fases: `engine → configuration → build → databa
 | `http://127.0.0.1:5173/` | Web pública |
 | `http://127.0.0.1:5173/app/` | Panel privado |
 | `http://127.0.0.1:5173/docs/` | Documentación publicada |
-| `http://127.0.0.1:5173/mcp/` | Entrada MCP para clientes |
+| `http://127.0.0.1:5173/mcp/` | Entrada MCP para clientes (kairos-mcp) |
 
 Guía completa: [servidor desde cero](docs/server-install.md) y [configuración](docs/configuration.md).
 
 ## Conectar un agente
 
-El instalador `@daycry/kairos` (versión 0.3.0) configura Claude Code, Codex y OpenCode. La 0.3.0 no está publicada en npm y el repositorio no incluye ningún tarball (`packages/kairos-cli/artifacts/` está en `.gitignore`): desde un clon, genera primero el tarball local y luego instálalo:
+El instalador `@daycry/kairos` (versión 0.4.0) configura Claude Code, Codex y OpenCode. La 0.4.0 no está publicada en npm y el repositorio no incluye ningún tarball (`client/artifacts/` está en `.gitignore`): desde un clon, genera primero el tarball local y luego instálalo:
 
 ```powershell
 # Generar el tarball (no publica nada)
-cd packages/kairos-cli
+cd client
 npm pack --ignore-scripts --offline --pack-destination ./artifacts
 cd ../..
 
 # Previsualizar (no modifica nada)
-npx --offline --yes --package ./packages/kairos-cli/artifacts/daycry-kairos-0.3.0.tgz kairos install `
+npx --offline --yes --package ./client/artifacts/daycry-kairos-0.4.0.tgz kairos install `
   --client all --root C:/laragon/www/mi-proyecto --url http://127.0.0.1:5173 `
   --project mi-proyecto --key-file C:/Private/kairos-agent.key --opencode-version 2 --dry-run
 
@@ -207,13 +211,23 @@ Contratos: [`docs/contracts/kairos-mcp.json`](docs/contracts/kairos-mcp.json) y 
 .
 ├── docker-compose.yml        Servicios, redes y volúmenes
 ├── .env.example              Plantilla de configuración (sin secretos)
-├── memory_platform/          Backend: API FastAPI, MCP, trabajador, migraciones, tests
-├── web/                      Web pública y panel (TypeScript + Vite)
-├── packages/kairos-cli/      Instalador y puente MCP local (@daycry/kairos)
+├── server/                   Servidor: paquete Python `memory_platform` (API FastAPI, MCP interno en desuso hasta la 0.5.0, trabajador, migraciones, tests) y su Dockerfile
+├── mcp/                      kairos-mcp: las 34 herramientas MCP delante de /v1, sin base de datos
+├── client/                   Instalador y puente MCP local (@daycry/kairos)
+├── web/                      Web pública y panel (TypeScript + Vite), con el Dockerfile y el nginx.conf de la imagen web
 ├── ollama-proxy/             Proxy nginx hacia el servidor Ollama
 ├── scripts/                  Despliegue, administración, manual y diagnóstico
 └── docs/                     Manuales, contratos, capturas y roadmap con evidencias
 ```
+
+Los tres componentes (servidor, kairos-mcp y cliente) comparten la versión 0.4.0 y nada de esto está publicado. Cada uno tiene su Dockerfile (o su paquete) y la orden de pruebas que ejecuta la CI:
+
+| Componente | Carpeta y versión | Dockerfile o paquete | Pruebas |
+|---|---|---|---|
+| Servidor | `server/` · `server/VERSION` | `server/memory_platform/Dockerfile` | `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:local .` |
+| kairos-mcp | `mcp/` · `mcp/VERSION` | `mcp/Dockerfile` | `docker build -f mcp/Dockerfile -t kairos-mcp:local mcp/` y `docker run --rm kairos-mcp:local python -m unittest discover -s tests` |
+| Cliente | `client/` · `client/package.json` | paquete npm `@daycry/kairos` (`client/Dockerfile.test` para las pruebas en contenedor) | en `client`: `npm test` y `npm run release:check` |
+| Portal | `web/` | `web/Dockerfile` | en `web`: `npm ci`, `npm run typecheck`, `npm test`, `npm run build`; y `docker build --target test -f web/Dockerfile -t kairos-web-test:local .` |
 
 ## Operación diaria
 
@@ -235,13 +249,15 @@ Copias, restauración aislada, claves e incidencias: [operación y recuperación
 
 | Ámbito | Cómo se verifica |
 |---|---|
-| Backend | Suite completa contra PostgreSQL aislado (480 pruebas) |
+| Backend | Suite completa contra PostgreSQL aislado (764 pruebas) |
 | Calidad de recuperación | Puerta `retrieval-eval` (recall@5, MRR y no regresión por subconjunto sobre un conjunto sintético congelado), con embeddings simulados en la suite y con un Ollama desechable en la medida con el modelo real |
 | Web | Pruebas unitarias (65), TypeScript y build de producción con Vite |
 | Interfaz | Navegación real en Chromium con Playwright (20 escenarios), escritorio y móvil |
 | Manuales | Generación sin conexión y comprobación en dos anchos de pantalla |
-| Instalador | `npm run release:check` en `packages/kairos-cli`: tests, instalación `npx` sin conexión y verificación byte a byte del tarball |
+| Instalador | `npm run release:check` en `client`: tests, instalación `npx` sin conexión y verificación byte a byte del tarball |
 | Despliegue | Fase `verify`: llamadas MCP reales, catálogo de herramientas y manifiesto documental |
+
+La integración continua (`.github/workflows/ci.yml`) repite en cada pull request y rama los trabajos `server`, `retrieval-eval`, `client`, `web` y `contracts`, sin secretos ni publicación; comandos y tiempos en [Operación](docs/operations.md#integración-continua).
 
 Las pruebas nunca se ejecutan contra la base de datos desplegada. Las evidencias de cada iniciativa (recibos, hashes y capturas) están en `docs/roadmap/<fecha>-<slug>/testing/`.
 
