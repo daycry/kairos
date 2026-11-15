@@ -25,7 +25,8 @@ class Store(AuthMixin, IngestMixin, DocumentsMixin, GraphMixin, JobsMixin, Vecto
     @contextmanager
     def transaction(self):
         """The one place that opens a connection. A database that does not answer (connect, query or commit) leaves as `StoreUnavailable`
-        (see `errors.is_store_unavailable`); every other error, including those of the caller's own code, passes through untouched."""
+        (see `errors.is_store_unavailable`: connection errors and the shutdown SQLSTATEs only); every other error, including those of the caller's own code
+        and the ones the server answered with (a cancelled query, a lock timeout), passes through untouched."""
         import psycopg
         from psycopg.rows import dict_row
         try:
