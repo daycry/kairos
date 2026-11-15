@@ -287,7 +287,7 @@ class ContractsJobTests(unittest.TestCase):
 
 
 GATE_STEP = 'The suite really ran and nothing was skipped'
-MIN_FLOOR = 764  # the suite with the kairos-mcp chain tests, the review corrections and the C-07 tests (T-01 began at 483, 639 when kairos-mcp started, 727 with the chain tests, 743 after phase 5, 756 with the MCP legacy and route tests, 759 with the phase 7 version tests, 764 with the phase 8 rehearsal tests); raise it when the suite grows, never lower it
+MIN_FLOOR = 801  # the suite with the kairos-mcp chain tests, the review corrections and the C-07 tests and the initiative 3 phase 1 tests (T-01 began at 483, 639 when kairos-mcp started, 727 with the chain tests, 743 after phase 5, 756 with the MCP legacy and route tests, 759 with the phase 7 version tests, 764 with the phase 8 rehearsal tests, 801 with the fault-injection harness and the limit, schema and lease tests of initiative 3 phase 1); raise it when the suite grows, never lower it
 GOOD = 'MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": %d}' % MIN_FLOOR
 
 
