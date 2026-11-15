@@ -41,7 +41,7 @@ test-plan: n/a (sin UI)
 | Fase | Completadas | Total | Progreso | H. humanas (real/est) | H. IA ejec. (real/est) | Supervisión (real/est) | Tokens (real/est) |
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Arnés de fallos y tests de límites (C-07) | 6 | 6 | 100% | 0 / 32.4h | 0.83 / 4.3h | 0 / 1.1h | 0 / 1080 k |
-| Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 4 | 7 | 57% | 0 / 27.0h | 0.75 / 3.6h | 0 / 0.9h | 0 / 900 k |
+| Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 5 | 7 | 71% | 0 / 27.0h | 0.78 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 0 | 7 | 0% | 0 / 27.0h | 0 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 0 | 9 | 0% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 0 | 5 | 0% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **10** | **98** | **10%** | **0 / 412.8h** | **1.58 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **11** | **98** | **11%** | **0 / 412.8h** | **1.61 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -373,10 +373,11 @@ test-plan: n/a (sin UI)
 ### T-11 — Documentar el comportamiento del worker sin base
 
 - **Descripción**: Documentar `MEMORY_WORKER_DB_BACKOFF_MAX`, el comportamiento sin base y `attempts_exhausted` en los manuales. Fuente: CA-10, CA-12 (documentación).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Los manuales explican qué hace el worker cuando la base de datos no responde (espera creciente, store_unavailable, MEMORY_WORKER_DB_BACKOFF_MAX) y cómo se reactiva un trabajo agotado.
+- **Estado**: completado
+- **Cerrada**: 2026-11-15
 - **Tiempo humano**: est. 1h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real 0.03h (medido)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 37 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: T-10
@@ -386,14 +387,14 @@ test-plan: n/a (sin UI)
 - **Verificación**: lectura: `docs/configuration.md` lista `MEMORY_WORKER_DB_BACKOFF_MAX` con su default y `docs/operations.md` explica `store_unavailable` y `attempts_exhausted` con `retry_job`
 
 **Criterios de aceptación**
-- [ ] Ambos manuales describen el comportamiento real (nombres y valores iguales a `config.py`)
+- [x] Ambos manuales describen el comportamiento real (nombres y valores iguales a `config.py`)
 
 **Subtareas**
-- [ ] Actualizar `docs/configuration.md`
-- [ ] Actualizar `docs/operations.md`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Actualizar `docs/configuration.md`
+- [x] Actualizar `docs/operations.md`
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Estilo: `docs/operations.md` ya tiene una sección de cola y trabajos (`kairos_jobs_failed`).
+**Notas**: Estilo: `docs/operations.md` ya tiene una sección de cola y trabajos (`kairos_jobs_failed`). CIERRE: usage-meter {inicio 17:19:47Z, fin 17:21:02Z, horas_ia 0.03, duracion 2m, medido}. docs/configuration.md (LF): fila nueva `MEMORY_WORKER_DB_BACKOFF_MAX` (60 s, 1 a 3600; solo la lee el worker), `MEMORY_MAX_ATTEMPTS` aclara que tambien es el tope de reclamos con concesion expirada, y la variable se anade a la lista de las que NO propaga el Compose (como `MEMORY_MAX_ATTEMPTS`: solo llega al contenedor si se anade a `x-memory-environment`; docker-compose.yml no se toca en esta fase). docs/operations.md (CRLF conservado, 331/331 lineas): seccion nueva «El worker sin base de datos y los trabajos agotados» (espera 1,2,4… con jitter y tope, reinicio tras un acceso correcto, interrupcion por apagado, fallo de base != fallo de proveedor, latido, `attempts_exhausted`, `POST /v1/jobs/{id}/retry`, limite honesto: aun no hay healthcheck que lea `last_store_ok`) y los eventos `store_unavailable` (con `reason` y `count`) y `worker_loop_error` en la lista de logs del worker. Verificación (lectura, contra el codigo): nombre y valor iguales a config.py (`MEMORY_WORKER_DB_BACKOFF_MAX`, `DEFAULT_BACKOFF_MAX = 60.0`, rango 1-3600 en `worker_db_backoff_max()`), espera inicial 1 s y ociosa 1 s = `BACKOFF_FIRST`/`IDLE_SECONDS` de worker.py, codigo `attempts_exhausted` y ruta de reintento = store_jobs.py y app.py:463; el ancla `#el-worker-sin-base-de-datos-y-los-trabajos-agotados` existe en operations.md y la usan las dos filas de configuration.md. Visible para clientes: ninguno.
 
 ### T-12 — Cierre de fase: suite completa y subida del mínimo
 
