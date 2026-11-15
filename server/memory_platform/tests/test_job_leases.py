@@ -1,16 +1,39 @@
 """The lease of a job (I3 / CA-34, CA-12): a `running` job whose lease expired is claimed again and the claim counts an attempt, until the attempts
 that `MEMORY_MAX_ATTEMPTS` allows are spent: then the claim that finds it fails it as `attempts_exhausted` (a poisoned job) instead of claiming it, and
 `retry_job` brings it back."""
+import contextlib
 import os
+import threading
 import unittest
 import uuid
 from unittest.mock import patch
 
 from memory_platform import observability
-from memory_platform.config import Settings
+from memory_platform.config import Settings, max_attempts
 from memory_platform.tests.fault_proxy import expire_lease
 from memory_platform.tests.test_store import create_core, event, extraction_receipt
 from memory_platform.worker import Worker
+
+
+class MaxAttemptsConfigTests(unittest.TestCase):
+    def test_max_attempts_is_an_integer_of_one_or_more_with_a_clear_message(self):
+        self.assertEqual(max_attempts({}), 3)
+        for good, expected in (('1', 1), ('3', 3), (' 7 ', 7), ('100', 100)):
+            self.assertEqual(max_attempts({'MEMORY_MAX_ATTEMPTS': good}), expected)
+        for bad in ('0', '-1', '-3', 'abc', '1.5', '', ' ', '3x', '\u0663', 'nan'):
+            with self.assertRaises(ValueError, msg=bad) as caught:
+                max_attempts({'MEMORY_MAX_ATTEMPTS': bad})
+            self.assertEqual(str(caught.exception), 'MEMORY_MAX_ATTEMPTS must be an integer of 1 or more')
+
+    def test_every_process_refuses_to_start_with_an_invalid_value(self):
+        with patch.dict(os.environ, {'MEMORY_DSN': 'postgresql://x', 'MEMORY_MAX_ATTEMPTS': '4'}, clear=True):
+            self.assertEqual(Settings.from_env().max_attempts, 4)
+        with patch.dict(os.environ, {'MEMORY_DSN': 'postgresql://x'}, clear=True):
+            self.assertEqual(Settings.from_env().max_attempts, 3)
+        for bad in ('0', '-2', 'many'):
+            with patch.dict(os.environ, {'MEMORY_DSN': 'postgresql://x', 'MEMORY_MAX_ATTEMPTS': bad}, clear=True):
+                with self.assertRaises(ValueError, msg=bad):
+                    Settings.from_env()
 
 
 class LeaseTests(unittest.TestCase):
@@ -110,6 +133,92 @@ class LeaseTests(unittest.TestCase):
         with self.store.transaction() as c:
             states = {r['id']: r['state'] for r in c.execute('SELECT id,state FROM memory.jobs').fetchall()}
         self.assertEqual(states, {self.jid: 'failed', healthy: 'running'})  # nothing is left in between
+
+    def test_a_cap_of_zero_is_not_turned_into_the_default(self):
+        job = self.claim('worker-a')
+        self.assertEqual(job['attempts'], 1)
+        expire_lease(self.store, self.jid)
+        self.store.max_attempts = 0  # config refuses it, but a store that is told 0 must not read it as "nobody said" (3)
+        self.assertIsNone(self.claim('worker-b'))
+        self.assertEqual((self.row()['state'], self.row()['attempts'], self.row()['error_code']), ('failed', 1, 'attempts_exhausted'))
+
+    def poison(self, count):
+        """`count` more jobs that are `running`, with an expired lease and every attempt spent (what a bulk load of dead workers leaves)."""
+        ids = [self.store.ingest_event(self.actor, event(self.pid))['jobs'][0] for _ in range(count)]
+        with self.store.transaction() as c:
+            c.execute("UPDATE memory.jobs SET state='running',attempts=3,fence=3,worker_id='dead',lease_until='1990-01-01T00:00:00Z' WHERE id=ANY(%s)", (ids,))
+        return ids
+
+    def counted_claim(self):
+        """claim_job with every statement it runs recorded: returns (job, statements)."""
+        statements, real = [], self.store.transaction
+
+        class Recording:
+            def __init__(self, connection):
+                self.connection = connection
+
+            def execute(self, sql, *args, **kwargs):
+                statements.append(sql)
+                return self.connection.execute(sql, *args, **kwargs)
+
+            def __getattr__(self, name):
+                return getattr(self.connection, name)
+
+        @contextlib.contextmanager
+        def recording():
+            with real() as connection:
+                yield Recording(connection)
+        self.store.transaction = recording
+        try:
+            job = self.store.claim_job('claimer')
+        finally:
+            del self.store.transaction
+        return job, statements
+
+    def test_the_poisoned_jobs_ahead_in_the_queue_are_failed_by_one_statement_however_many_they_are(self):
+        self.exhaust(3)  # the job of setUp is poisoned too
+        counts = {}
+        for extra in (0, 24):
+            self.poison(extra)
+            job, statements = self.counted_claim()
+            self.assertIsNone(job)
+            counts[extra] = len([sql for sql in statements if 'attempts_exhausted' in sql])
+            with self.store.transaction() as c:
+                states = {r['state'] for r in c.execute('SELECT state FROM memory.jobs').fetchall()}
+                codes = {r['error_code'] for r in c.execute("SELECT error_code FROM memory.jobs WHERE state='failed'").fetchall()}
+            self.assertEqual((states, codes), ({'failed'}, {'attempts_exhausted'}))
+        self.assertEqual(counts, {0: 1, 24: 1})  # one statement for 1 poisoned job and one for 25: not one per row
+
+    def test_the_set_statement_is_atomic_with_the_claim_that_follows(self):
+        self.poison(5)
+        job, statements = self.counted_claim()
+        self.assertEqual((job['id'], job['attempts']), (self.jid, 1))  # the pending job of setUp: claimed in the same transaction that failed the five
+        with self.store.transaction() as c:
+            rows = {r['id']: r['state'] for r in c.execute('SELECT id,state FROM memory.jobs').fetchall()}
+        self.assertEqual(sum(1 for state in rows.values() if state == 'failed'), 5)  # the five poisoned, all in the claim's own transaction
+        self.assertEqual(sum(1 for state in rows.values() if state == 'running'), 1)  # and the healthy job claimed: nothing in between
+        self.assertEqual(len([sql for sql in statements if 'attempts_exhausted' in sql]), 1)
+
+    def test_a_poisoned_job_another_transaction_holds_is_skipped_not_waited_for(self):
+        import psycopg
+        self.exhaust(3)
+        holder = psycopg.connect(self.store.dsn)
+        done = []
+        try:
+            holder.execute('SELECT id FROM memory.jobs WHERE id=%s FOR UPDATE', (self.jid,))  # a lock the claim must not wait for
+            thread = threading.Thread(target=lambda: done.append(self.store.claim_job('claimer')))
+            thread.start()
+            thread.join(15)
+            finished = not thread.is_alive()
+        finally:
+            holder.rollback()
+            holder.close()
+        thread.join(30)
+        self.assertTrue(finished, 'the claim waited for a row another transaction holds')
+        self.assertEqual(done, [None])
+        self.assertEqual(self.row()['state'], 'running')  # left to its holder: nothing was written to it
+        self.assertIsNone(self.claim('later'))  # the lock is gone: now it is failed
+        self.assertEqual((self.row()['state'], self.row()['error_code']), ('failed', 'attempts_exhausted'))
 
     def test_retry_job_brings_an_exhausted_job_back_to_pending_and_it_is_processed(self):
         self.exhaust(3)

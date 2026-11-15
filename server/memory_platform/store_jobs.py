@@ -89,8 +89,14 @@ class JobsMixin:
 
     def claim_job(self,worker_id,lease_seconds=120):
         # `store.max_attempts` is set by the worker (MEMORY_MAX_ATTEMPTS) and is not a parameter: the signature of the store is frozen (store_surface.json).
-        max_attempts=getattr(self,'max_attempts',None) or DEFAULT_MAX_ATTEMPTS
+        max_attempts=getattr(self,'max_attempts',None)
+        if max_attempts is None:  # only "nobody said": a 0 is not turned into the default (MEMORY_MAX_ATTEMPTS is validated to be 1 or more in config.py)
+            max_attempts=DEFAULT_MAX_ATTEMPTS
         with self.transaction() as c:
+            # Every poisoned job (its lease expired, every attempt it was allowed has been charged) is failed by ONE statement for the whole set, before the choice
+            # of the job to claim: the rows are locked by this transaction (SKIP LOCKED: one that another transaction holds is left to it), so nothing sits between the
+            # judgement and the write, and the cost does not grow with how many are ahead in the queue. Retired destinations keep their own code below.
+            c.execute("UPDATE memory.jobs SET state='failed',error_code='attempts_exhausted',lease_until=NULL WHERE id IN (SELECT id FROM memory.jobs WHERE state='running' AND lease_until<clock_timestamp() AND attempts>=%s AND destination IN ('extract','embed') FOR UPDATE SKIP LOCKED) AND state='running'",(max_attempts,))
             while True:
                 row=c.execute("SELECT * FROM memory.jobs WHERE (state IN ('pending','unknown') AND available_at<=clock_timestamp()) OR (state='running' AND lease_until<clock_timestamp()) ORDER BY priority,available_at,created_at,id FOR UPDATE SKIP LOCKED LIMIT 1").fetchone()
                 if not row:
@@ -99,9 +105,9 @@ class JobsMixin:
                     c.execute("UPDATE memory.jobs SET state='failed',error_code='destination_retired',lease_until=NULL WHERE id=%s",(row['id'],))
                     continue
                 if row['state']=='running' and row['attempts']>=max_attempts:
-                    # A poisoned job: its lease expired (its worker died or was lost) and every attempt it was allowed has been charged. It is failed in THIS transaction,
-                    # on the row this transaction holds locked, instead of being claimed one more time; `retry_job` brings it back. `unknown` and `pending` jobs are not
-                    # touched: reconciliation and the retry of a failed job keep their semantics.
+                    # Safety net for a lease that expired BETWEEN the statement above and this choice (microseconds): the same judgement, on the row this transaction
+                    # holds locked, instead of claiming it one more time. `retry_job` brings it back. `unknown` and `pending` jobs are not touched: reconciliation and
+                    # the retry of a failed job keep their semantics.
                     c.execute("UPDATE memory.jobs SET state='failed',error_code='attempts_exhausted',lease_until=NULL WHERE id=%s AND state='running' AND attempts>=%s",(row['id'],max_attempts))
                     continue
                 table='memory.documents' if row['resource_type']=='document' else 'memory.memory_items'

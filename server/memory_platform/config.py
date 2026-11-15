@@ -131,6 +131,16 @@ def worker_db_backoff_max(environ=None) -> float:
     return value
 
 
+def max_attempts(environ=None) -> int:
+    """MEMORY_MAX_ATTEMPTS: the attempts a job is allowed (also the cap of claims of a job whose lease expires). An integer of 1 or more: with 0 or a negative
+    number a job would never run or would be failed as `attempts_exhausted` on its first lost lease."""
+    environ = os.environ if environ is None else environ
+    value = environ.get('MEMORY_MAX_ATTEMPTS', '3').strip()
+    if not value.isascii() or not value.isdigit() or int(value) < 1:
+        raise ValueError('MEMORY_MAX_ATTEMPTS must be an integer of 1 or more')
+    return int(value)
+
+
 def embed_timeouts(environ=None) -> tuple:
     """(deadline per batch, global ceiling of one embed job) in seconds; MEMORY_EMBED_BATCH_TIMEOUT / MEMORY_EMBED_JOB_MAX_TIMEOUT."""
     environ = os.environ if environ is None else environ
@@ -307,7 +317,7 @@ class Settings:
             request_timeout=float(os.environ.get('MEMORY_REQUEST_TIMEOUT', '30')),
             provider_timeout=float(os.environ.get('MEMORY_PROVIDER_TIMEOUT', '180')),
             lease_seconds=int(os.environ.get('MEMORY_LEASE_SECONDS', '240')),
-            max_attempts=int(os.environ.get('MEMORY_MAX_ATTEMPTS', '3')),
+            max_attempts=max_attempts(),
             worker_db_backoff_max=worker_db_backoff_max(),
             max_body_bytes=int(os.environ.get('MEMORY_MAX_BODY_BYTES', '262144')),
             embed_enabled=os.environ.get('MEMORY_EMBED_ENABLED', '1') == '1',
