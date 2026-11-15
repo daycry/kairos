@@ -193,7 +193,7 @@ OUTCOMES = ('completed', 'failed', 'lost')
 CODES = frozenset({'provider_rate_limited', 'provider_rejected', 'provider_unavailable', 'provider_transport', 'provider_invalid_json',
                    'provider_timeout', 'provider_error', 'extraction_invalid', 'embedding_invalid', 'embedding_empty_input',
                    'embedding_unverified', 'unsupported_destination', 'extraction_disabled'})
-JOB_CODES = CODES | {'destination_retired', 'superseded', 'attempts_exhausted'}  # codes written to memory.jobs.error_code by the worker and the store
+JOB_CODES = CODES | {'destination_retired', 'superseded', 'attempts_exhausted', 'store_error'}  # codes written to memory.jobs.error_code by the worker and the store
 OTHER = 'other'
 QUEUE_CACHE_SECONDS = 10.0  # a loop of scrapes reads the database at most this often
 QUEUE_STATEMENT_TIMEOUT_MS = 2000

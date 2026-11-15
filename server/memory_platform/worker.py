@@ -12,12 +12,20 @@ from .config import DEFAULT_BACKOFF_MAX, Settings, embedding_job_timeout
 from .store import Store
 from .store_jobs import stored_item_vector
 from .providers import Ollama, Embeddings, ProviderError
-from .errors import MemoryError, StoreUnavailable, is_store_unavailable
+from .errors import MemoryError, StoreUnavailable, is_store_error, is_store_unavailable
 from .chunking import chunk_text, embedding_text
 
 JOB_DEADLINE_MARGIN = 10  # seconds the job may outlive the provider's own deadline
 IDLE_SECONDS = 1.0  # wait between two claims when the queue is empty
 BACKOFF_FIRST = 1.0  # ceiling of the wait after the first consecutive database failure; it doubles up to MEMORY_WORKER_DB_BACKOFF_MAX
+
+
+class Abandoned(Exception):
+    """The worker gave up writing the outcome of a job (the lease is gone, or it was told to stop): the job stays as the database has it and is claimed again."""
+
+    def __init__(self, reason):
+        super().__init__(reason)
+        self.reason = reason
 
 
 def backoff_delay(failures, cap, rng=random.random):
@@ -129,14 +137,53 @@ class Worker:
         self.last_store_ok = self.clock()
         return result
 
-    async def _fail(self, job, *args):
-        """`fail_job`, unless the database does not answer: then the job is left as it is (running, with its attempts), and it is claimed again when its lease
-        expires. Returns False in that case."""
+    async def _persist(self, job, lease, lost, destination, stage, call, *args):
+        """Write the OUTCOME of a job (`complete_job` or `fail_job`) and do not lose it to a database that does not answer: the result stays in memory and the
+        write is repeated, each time after the same growing, jittered, stop-aware wait as a claim (`backoff_delay`), and once the database answers the lease is
+        renewed before writing again. It ends when the write lands (returns what the store answered; `False` means the lease or fence was no longer ours: logged
+        and returned, never counted as written) or raises `Abandoned` when the lease is gone (expired by the clock this worker keeps, or `renew_lease` says so)
+        or the worker is told to stop. Only then is the job left `running`, with the attempt its claim charged, to be claimed again. If the worker process
+        dies with the result in memory, that is the one case that does spend the attempt."""
+        cap = getattr(self.settings, 'worker_db_backoff_max', DEFAULT_BACKOFF_MAX)
+        def abandon(reason):
+            observability.log_event('job_write_abandoned', 'warning', destination=destination, reason=stage+':'+reason)  # `reason` is `<stage>:<why>`, e.g. complete:lease_expired
+            raise Abandoned(reason)
+        while True:
+            try:
+                written = await self._store(stage, call, job['id'], job['fence'], *args)
+            except StoreUnavailable:
+                pass  # logged by `_store`
+            else:
+                if written is False:
+                    observability.log_event('job_write_abandoned', 'warning', destination=destination, reason=stage+':fence')
+                return written
+            while True:  # the database did not answer: wait, then renew the lease as soon as it does
+                await self._wait(backoff_delay(self.store_failures, cap, self.rng))
+                if self.stopping.is_set():
+                    abandon('stopping')
+                if lost.is_set():
+                    abandon('lease_lost')
+                if self.clock() >= lease[0]:
+                    lost.set()
+                    abandon('lease_expired')
+                try:
+                    beat = self.clock()
+                    renewed = await self._store('heartbeat', self.store.renew_lease, job['id'], job['fence'], self.settings.lease_seconds)
+                except StoreUnavailable:
+                    continue
+                if not renewed:
+                    lost.set()
+                    abandon('lease_lost')
+                lease[0] = beat+self.settings.lease_seconds
+                break
+
+    async def _fail(self, job, lease, lost, destination, *args):
+        """`fail_job` through `_persist`: the failure is recorded as the provider/application left it even if the database is down for a while. Returns False when
+        it could not be written (lease lost, fence lost, stop): the job is then the database's to say."""
         try:
-            await self._store('fail', self.store.fail_job, job['id'], job['fence'], *args)
-        except StoreUnavailable:
+            return await self._persist(job, lease, lost, destination, 'fail', self.store.fail_job, *args) is not False
+        except Abandoned:
             return False
-        return True
 
     async def run_once(self):
         job = await self._store('claim', self.store.claim_job, self.id, self.settings.lease_seconds)
@@ -145,12 +192,16 @@ class Worker:
         lost = asyncio.Event()
         destination = observability.closed(job['destination'], observability.DESTINATIONS)
         started, outcome = time.monotonic(), 'failed'
+        lease = [self.clock()+self.settings.lease_seconds]  # when this worker's own clock says the lease runs out; moved by every renewal that works
         async def heartbeat():
             while True:
                 await self._heartbeat_wait(max(0.1, self.settings.lease_seconds/3))
                 try:
+                    beat = self.clock()
                     renewed = await self._store('heartbeat', self.store.renew_lease, job['id'], job['fence'], self.settings.lease_seconds)
-                    if not renewed:
+                    if renewed:
+                        lease[0] = beat+self.settings.lease_seconds
+                    else:
                         observability.log_event('lease_lost', 'warning', destination=destination)
                         lost.set()
                         return
@@ -195,12 +246,16 @@ class Worker:
                 return True
             if job['destination'] == 'embed' and not receipt.get('verified'):
                 raise ProviderError('embedding_unverified')
-            await self._store('complete', self.store.complete_job, job['id'], job['fence'], receipt)
-            outcome = 'completed'
-            observability.log_event('job_completed', destination=destination, duration_ms=observability.elapsed_ms(started))
+            if await self._persist(job, lease, lost, destination, 'complete', self.store.complete_job, receipt) is False:
+                outcome = 'lost'  # the lease or fence was no longer ours: somebody else owns the job, nothing was completed
+            else:
+                outcome = 'completed'
+                observability.log_event('job_completed', destination=destination, duration_ms=observability.elapsed_ms(started))
+        except Abandoned:
+            outcome = 'lost'  # already logged (`job_write_abandoned`): the job stays as the database has it and is claimed again
         except StoreUnavailable:
-            # The database did not answer (reading the stored vector or completing): this is not the provider's failure, so the job is neither failed nor
-            # given a `provider_error`. It stays `running` and is claimed again, counting only that claim, when its lease expires.
+            # The database did not answer reading the stored vector: not the provider's failure, so the job is neither failed nor given a `provider_error`.
+            # It stays `running` and is claimed again when its lease expires (the attempt of this claim is spent; `complete_job`/`fail_job` are retried in place instead).
             outcome = 'lost'
         except ProviderError as exc:
             observability.log_failure('job_failed', exc, 'warning', destination=destination, code=exc.code, duration_ms=observability.elapsed_ms(started))
@@ -208,23 +263,25 @@ class Worker:
                 retry_at = None
                 if exc.retryable and job['attempts'] < self.settings.max_attempts:
                     retry_at = datetime.now(timezone.utc)+timedelta(seconds=min(60, 2**job['attempts']))
-                if not await self._fail(job, exc.code, retry_at, False):
+                if not await self._fail(job, lease, lost, destination, exc.code, retry_at, False):
                     outcome = 'lost'
         except TimeoutError as exc:
             observability.log_failure('job_failed', exc, 'warning', destination=destination, code='provider_timeout', duration_ms=observability.elapsed_ms(started))
             if not lost.is_set():
                 retry_at = datetime.now(timezone.utc)+timedelta(seconds=30) if job['attempts'] < self.settings.max_attempts else None
-                if not await self._fail(job, 'provider_timeout', retry_at, False):
+                if not await self._fail(job, lease, lost, destination, 'provider_timeout', retry_at, False):
                     outcome = 'lost'
         except MemoryError as exc:
             observability.log_failure('job_failed', exc, 'warning', destination=destination, code=exc.code, duration_ms=observability.elapsed_ms(started))
             if not lost.is_set():
-                if not await self._fail(job, exc.code):
+                if not await self._fail(job, lease, lost, destination, exc.code):
                     outcome = 'lost'
         except Exception as exc:
-            observability.log_failure('job_failed', exc, 'error', destination=destination, code='provider_error', duration_ms=observability.elapsed_ms(started))
+            # An error of the database that is not an outage (a cancelled query, a lock timeout...) is told apart from a provider failure by its code.
+            code = 'store_error' if is_store_error(exc) else 'provider_error'
+            observability.log_failure('job_failed', exc, 'error', destination=destination, code=code, duration_ms=observability.elapsed_ms(started))
             if not lost.is_set():
-                if not await self._fail(job, 'provider_error'):
+                if not await self._fail(job, lease, lost, destination, code):
                     outcome = 'lost'
         finally:
             observability.record_job(destination, time.monotonic()-started, 'lost' if lost.is_set() else outcome)

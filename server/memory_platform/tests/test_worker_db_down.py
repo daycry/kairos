@@ -221,28 +221,147 @@ class LoopTests(unittest.IsolatedAsyncioTestCase):
 
     # --- what happens to the job when the database goes while it runs (CA-09, CA-11) -------------------------------------------------
 
-    async def test_a_database_failure_while_completing_leaves_the_job_alone_whatever_the_provider_did(self):
-        self.store.claim_job.return_value = self.job
-        self.store.complete_job.side_effect = DOWN
-        worker = self.worker(Recorder())
-        self.assertTrue(await worker.run_once())  # it returns: the worker is alive
-        self.store.fail_job.assert_not_called()  # not failed, no `provider_error`
-        self.assertEqual(worker.store_failures, 1)
+    # The outcome of a job is never lost to a database that does not answer: `complete_job` and `fail_job` are repeated in place, with the claim's
+    # backoff, and the lease is renewed once the database answers (a decision of review 1 of phase 2; CA-09, CA-11).
 
-    async def test_a_database_failure_in_fail_job_does_not_end_the_worker_in_any_branch_of_the_provider_failure(self):
-        errors = {'retryable provider error': ProviderError('provider_unavailable', retryable=True), 'provider error': ProviderError('provider_rejected'),
-                  'provider timeout': TimeoutError(), 'domain error': MemoryError('invalid_embedding', 'x', 422), 'unexpected error': RuntimeError('boom')}
-        for name, error in errors.items():
+    def clocked(self, hook=None, lease=240, **changes):
+        """A worker whose clock only moves when a wait is asked for (`step` seconds per wait): the lease runs out by the test's clock, never the real one."""
+        now = [1000.0]
+        def on_wait(n, seconds):
+            now[0] += step[0]
+            if hook:
+                hook(n, seconds)
+        step = [1.0]
+        waiter = Recorder(on_wait)
+        worker = Worker(self.store, settings(lease_seconds=lease, **changes), {'extract': self.provider}, clock=lambda: now[0], rng=lambda: 1.0, waiter=waiter)
+        return worker, waiter, step
+
+    def capture_log(self):
+        stream = io.StringIO()
+        observability.configure_logging(stream)
+        self.addCleanup(observability.remove_logging)
+        return stream
+
+    async def test_a_database_failure_while_completing_is_repeated_in_place_with_the_same_result(self):
+        self.store.claim_job.return_value = self.job
+        self.store.complete_job.side_effect = [DOWN, DOWN, True]
+        worker, waiter, _ = self.clocked()
+        stream = self.capture_log()
+        self.assertTrue(await worker.run_once())
+        self.assertEqual(self.store.complete_job.call_count, 3)  # the result was kept and written again, not lost
+        self.assertTrue(all(call.args == ('job', 4, self.receipt) for call in self.store.complete_job.call_args_list))
+        self.assertEqual(waiter.delays, [1, 1])  # the claim's backoff (a renewal that works starts it over, as any access that works does)
+        self.assertEqual(self.store.renew_lease.call_count, 2)  # the lease is renewed each time the database answers again, before writing
+        self.store.fail_job.assert_not_called()  # not failed, no `provider_error`
+        self.assertEqual(worker.store_failures, 0)  # the write worked at last
+        self.assertIn('"event":"job_completed"', stream.getvalue())
+        self.assertEqual(stream.getvalue().count('"event":"store_unavailable"'), 2)
+        self.assertNotIn('job_write_abandoned', stream.getvalue())
+
+    async def test_a_database_failure_in_fail_job_is_repeated_in_place_in_every_branch_of_the_provider_failure(self):
+        errors = {'retryable provider error': (ProviderError('provider_unavailable', retryable=True), 'provider_unavailable'),
+                  'provider error': (ProviderError('provider_rejected'), 'provider_rejected'),
+                  'provider timeout': (TimeoutError(), 'provider_timeout'), 'domain error': (MemoryError('invalid_embedding', 'x', 422), 'invalid_embedding'),
+                  'unexpected error': (RuntimeError('boom'), 'provider_error')}
+        for name, (error, code) in errors.items():
             with self.subTest(name):
                 self.store.reset_mock()
                 self.store.claim_job.return_value = self.job
-                self.store.fail_job.side_effect = DOWN
+                self.store.fail_job.side_effect = [DOWN, DOWN, True]
                 self.provider.extract.side_effect = error
-                worker = self.worker(Recorder())
+                worker, waiter, _ = self.clocked()
                 self.assertTrue(await worker.run_once())
-                self.store.fail_job.assert_called_once()  # it tried, the database did not answer, and nothing else happened
+                self.assertEqual(self.store.fail_job.call_count, 3)  # it tried, the database did not answer, and the failure was written again
+                self.assertEqual({call.args[:3] for call in self.store.fail_job.call_args_list}, {('job', 4, code)})  # always the provider's own code
+                self.assertEqual(len({call.args for call in self.store.fail_job.call_args_list}), 1)
                 self.store.complete_job.assert_not_called()
-                self.assertEqual(worker.store_failures, 1)
+                self.assertEqual(self.store.renew_lease.call_count, 2)
+                self.assertEqual(worker.store_failures, 0)
+
+    async def test_a_failure_that_is_the_databases_but_not_an_outage_is_failed_with_its_own_code_not_provider_error(self):
+        from psycopg import errors
+        for exc in (errors.QueryCanceled('canceling statement due to statement timeout'), errors.LockNotAvailable('lock timeout'), errors.SerializationFailure('x')):
+            with self.subTest(type(exc).__name__):
+                self.store.reset_mock()
+                self.store.claim_job.return_value = self.job
+                self.store.complete_job.side_effect = exc
+                worker, waiter, _ = self.clocked()
+                self.assertTrue(await worker.run_once())
+                self.store.fail_job.assert_called_once()
+                self.assertEqual(self.store.fail_job.call_args.args[:3], ('job', 4, 'store_error'))  # distinguishable from a provider failure
+                self.assertEqual(waiter.delays, [])  # and not waited for as if the database were gone
+                self.assertEqual(worker.store_failures, 0)
+
+    async def test_when_the_lease_runs_out_before_the_database_returns_the_worker_gives_up_and_says_so(self):
+        self.store.claim_job.return_value = self.job
+        self.store.complete_job.side_effect = DOWN
+        self.store.renew_lease.side_effect = DOWN
+        worker, waiter, step = self.clocked(lease=240)
+        step[0] = 100.0  # every wait moves the clock 100 s: the third one is past the 240 s lease
+        stream = self.capture_log()
+        self.assertTrue(await asyncio.wait_for(worker.run_once(), 30))  # it returns: no hang
+        self.assertEqual(self.store.complete_job.call_count, 1)  # the database never answered: one attempt, the waits did the rest
+        self.assertEqual(len(waiter.delays), 3)
+        self.store.fail_job.assert_not_called()
+        lines = [line for line in stream.getvalue().splitlines() if '"event":"job_write_abandoned"' in line]
+        self.assertEqual(len(lines), 1, stream.getvalue())
+        for field in ('"reason":"complete:lease_expired"', '"destination":"extract"'):
+            self.assertIn(field, lines[0])
+        self.assertNotIn('"event":"job_completed"', stream.getvalue())
+
+    async def test_when_the_database_returns_but_the_lease_is_no_longer_ours_the_worker_gives_up_without_writing(self):
+        for stage, setup in (('complete', lambda: setattr(self.store.complete_job, 'side_effect', [DOWN, True])),
+                             ('fail', lambda: (setattr(self.store.fail_job, 'side_effect', [DOWN, True]), setattr(self.provider.extract, 'side_effect', ProviderError('provider_rejected'))))):
+            with self.subTest(stage):
+                self.store.reset_mock()
+                self.store.claim_job.return_value = self.job
+                setup()
+                self.store.renew_lease.return_value = False  # the database answers: the lease expired meanwhile
+                worker, waiter, _ = self.clocked()
+                stream = self.capture_log()
+                self.assertTrue(await worker.run_once())
+                self.assertEqual(self.store.complete_job.call_count + self.store.fail_job.call_count, 1)  # nothing written after the lease was lost
+                self.assertIn('"reason":"%s:lease_lost"' % stage, stream.getvalue())
+                self.assertNotIn('"event":"job_completed"', stream.getvalue())
+                observability.remove_logging()
+
+    async def test_a_complete_that_answers_false_is_not_counted_as_completed_in_the_log_or_the_metric(self):
+        self.store.claim_job.return_value = self.job
+        self.store.complete_job.return_value = False  # the fence moved: somebody else owns the job
+        worker, _, _ = self.clocked()
+        stream = self.capture_log()
+        before = observability.REGISTRY.get_sample_value('kairos_worker_jobs_total', {'destination': 'extract', 'outcome': 'completed'}) or 0
+        lost_before = observability.REGISTRY.get_sample_value('kairos_worker_jobs_total', {'destination': 'extract', 'outcome': 'lost'}) or 0
+        self.assertTrue(await worker.run_once())
+        self.assertNotIn('"event":"job_completed"', stream.getvalue())
+        self.assertIn('"reason":"complete:fence"', stream.getvalue())
+        self.assertEqual(observability.REGISTRY.get_sample_value('kairos_worker_jobs_total', {'destination': 'extract', 'outcome': 'completed'}) or 0, before)
+        self.assertEqual(observability.REGISTRY.get_sample_value('kairos_worker_jobs_total', {'destination': 'extract', 'outcome': 'lost'}) or 0, lost_before+1)
+
+    async def test_a_stop_ends_the_wait_to_write_again_and_the_worker_gives_up_the_job(self):
+        with patch('memory_platform.worker.BACKOFF_FIRST', 3600.0):  # a wait that would last an hour if a stop did not interrupt it
+            worker = Worker(self.store, settings(worker_db_backoff_max=3600), {'extract': self.provider}, rng=lambda: 1.0)
+            loop = asyncio.get_running_loop()
+            self.store.claim_job.return_value = self.job
+            def complete(*args):
+                loop.call_soon_threadsafe(worker.stopping.set)
+                raise DOWN
+            self.store.complete_job.side_effect = complete
+            stream = self.capture_log()
+            self.assertTrue(await asyncio.wait_for(worker.run_once(), 20))
+        self.assertEqual(self.store.complete_job.call_count, 1)
+        self.assertIn('"reason":"complete:stopping"', stream.getvalue())
+        self.store.fail_job.assert_not_called()
+
+    async def test_the_renewal_of_the_lease_waits_for_the_database_too(self):
+        self.store.claim_job.return_value = self.job
+        self.store.complete_job.side_effect = [DOWN, True]
+        self.store.renew_lease.side_effect = [DOWN, True]  # the database answers the write's retry only after a second wait
+        worker, waiter, _ = self.clocked()
+        self.assertTrue(await worker.run_once())
+        self.assertEqual(waiter.delays[:2], [1, 2])  # two waits: one for the write, one for the renewal
+        self.assertEqual(self.store.complete_job.call_count, 2)
+        self.assertEqual(self.store.renew_lease.call_count, 2)
 
     async def test_the_provider_failure_policy_is_the_one_it_always_was_when_the_database_answers(self):
         self.store.claim_job.return_value = self.job
@@ -366,72 +485,111 @@ class DatabaseDownTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({k: self.row()[k] for k in ('state', 'attempts', 'error_code')}, {'state': 'succeeded', 'attempts': 1, 'error_code': None})
         self.assertEqual(worker.store_failures, 0)
 
-    async def test_a_cut_during_complete_job_neither_fails_the_job_nor_charges_it_and_a_later_claim_completes_it(self):
-        plan = {'cut': True}
-        seen = {}
+    def at_attempt(self, attempts):
+        """The job as its `attempts`-th claim will find it: the claim of the test is that attempt."""
+        with self.direct.transaction() as c:
+            c.execute('UPDATE memory.jobs SET attempts=%s WHERE id=%s', (attempts-1, self.jid))
+
+    async def test_a_cut_during_complete_job_in_the_last_attempt_still_completes_the_job_with_its_result(self):
+        """(a) MEMORY_MAX_ATTEMPTS=3, the job in its 3rd attempt, the database goes after the provider answered and returns before the lease ends."""
+        self.at_attempt(3)
+        waiter = Recorder(lambda n, seconds: self.proxy.restore())
 
         async def extract(source):
-            seen['ok_after_claim'] = worker.last_store_ok
-            if plan['cut']:
-                self.proxy.cut()  # the database goes away after the claim and before the receipt is stored
+            self.proxy.cut()  # the database goes away after the claim and before the receipt is stored
             return self.receipt
-        ticks = itertools.count(1)
-        worker = self.worker(extract, clock=lambda: next(ticks), waiter=Recorder())
-        self.assertTrue(await worker.run_once())  # alive
-        state = self.row()
-        self.assertEqual((state['state'], state['attempts'], state['error_code']), ('running', 1, None))  # not failed, no provider_error, the claim is the only attempt
-        self.assertEqual(worker.last_store_ok, seen['ok_after_claim'])  # the failed access did not move it
-        self.assertEqual(worker.store_failures, 1)
-        plan['cut'] = False
-        self.proxy.restore()
-        expire_lease(self.direct, self.jid)
+        worker = self.worker(extract, waiter=waiter)
         self.assertTrue(await worker.run_once())
         state = self.row()
-        self.assertEqual((state['state'], state['attempts'], state['error_code']), ('succeeded', 2, None))  # the second attempt is the second claim, nothing else
+        self.assertEqual((state['state'], state['attempts'], state['error_code']), ('succeeded', 3, None))  # the result is there; never `attempts_exhausted`
+        with self.direct.transaction() as c:
+            self.assertEqual(c.execute('SELECT count(*) AS n FROM memory.projection_receipts WHERE job_id=%s', (self.jid,)).fetchone()['n'], 1)
+        self.assertEqual(len(waiter.delays), 1)
         self.assertEqual(worker.store_failures, 0)
-        self.assertGreater(worker.last_store_ok, seen['ok_after_claim'])
+        # and the next claim finds nothing to take (the job is not `running` any more): it is not exhausted by a later claim
+        self.assertFalse(await worker.run_once())
+        self.assertEqual(self.row()['state'], 'succeeded')
 
-    async def test_a_cut_during_fail_job_leaves_the_job_as_the_claim_left_it_and_the_provider_path_still_follows_its_policy(self):
-        plan = {'cut': True}
+    async def test_a_cut_during_fail_job_in_the_last_attempt_still_records_the_provider_code(self):
+        """(b) The same for the failure: a retryable provider error in the last attempt keeps its `provider_*` code, not `attempts_exhausted`."""
+        self.at_attempt(3)
+        waiter = Recorder(lambda n, seconds: self.proxy.restore())
 
         async def extract(source):
-            if plan['cut']:
-                self.proxy.cut()
+            self.proxy.cut()
             raise ProviderError('provider_unavailable', retryable=True)
-        worker = self.worker(extract, waiter=Recorder())
-        self.assertTrue(await worker.run_once())  # fail_job found no database: the worker is alive and says nothing to the table
+        worker = self.worker(extract, waiter=waiter)
+        self.assertTrue(await worker.run_once())
         state = self.row()
-        self.assertEqual((state['state'], state['attempts'], state['error_code']), ('running', 1, None))
-        plan['cut'] = False
+        self.assertEqual((state['state'], state['attempts'], state['error_code']), ('failed', 3, 'provider_unavailable'))  # no retry left, the code survives
+        self.assertEqual(len(waiter.delays), 1)
+
+    async def test_a_cut_during_fail_job_before_the_last_attempt_records_the_failure_and_schedules_the_retry(self):
+        waiter = Recorder(lambda n, seconds: self.proxy.restore())
+
+        async def extract(source):
+            self.proxy.cut()
+            raise ProviderError('provider_unavailable', retryable=True)
+        worker = self.worker(extract, waiter=waiter)
+        self.assertTrue(await worker.run_once())
+        state = self.row()
+        self.assertEqual((state['state'], state['attempts'], state['error_code']), ('pending', 1, 'provider_unavailable'))  # a retry, as when the database answers
+
+    async def test_when_the_database_does_not_return_before_the_lease_ends_the_worker_gives_up_and_a_later_claim_costs_one_attempt(self):
+        """(c) The database stays cut for longer than the lease: the worker abandons without hanging and says so; the job is claimed again, one attempt per claim."""
+        now = [5000.0]
+        waiter = Recorder(lambda n, seconds: now.__setitem__(0, now[0]+100.0))  # three waits and the 240 s lease is over; the proxy stays cut
+
+        async def extract(source):
+            self.proxy.cut()
+            return self.receipt
+        worker = self.worker(extract, waiter=waiter, clock=lambda: now[0])
+        stream = io.StringIO()
+        observability.configure_logging(stream)
+        self.addCleanup(observability.remove_logging)
+        self.assertTrue(await asyncio.wait_for(worker.run_once(), 60))
+        self.assertIn('"event":"job_write_abandoned"', stream.getvalue())
+        self.assertIn('"reason":"complete:lease_expired"', stream.getvalue())
+        state = self.row()
+        self.assertEqual((state['state'], state['attempts'], state['error_code']), ('running', 1, None))  # the claim is the only attempt it cost
         self.proxy.restore()
         expire_lease(self.direct, self.jid)
-        self.assertTrue(await worker.run_once())  # the database answers: the provider failure is recorded as it always was
-        state = self.row()
-        self.assertEqual((state['state'], state['attempts'], state['error_code']), ('pending', 2, 'provider_unavailable'))  # a retry, with one attempt per claim
 
-    async def test_both_paths_charge_exactly_one_attempt_per_claim(self):
-        """Three claims: a provider failure in the first, a database cut in the second, success in the third: `attempts` is 3, one per claim."""
-        outcomes = iter(['provider', 'database', 'done'])
+        async def again(source):
+            return self.receipt
+        retry = self.worker(again, waiter=Recorder())
+        self.assertTrue(await retry.run_once())
+        state = self.row()
+        self.assertEqual((state['state'], state['attempts'], state['error_code']), ('succeeded', 2, None))  # the second attempt is the second claim, nothing else
+
+    async def test_a_stop_while_the_database_is_cut_gives_the_job_up_at_once(self):
+        """(d) The stop interrupts the wait to write again (no hour-long sleep, no hang)."""
+        async def extract(source):
+            self.proxy.cut()
+            worker.stopping.set()
+            return self.receipt
+        with patch('memory_platform.worker.BACKOFF_FIRST', 3600.0):
+            worker = Worker(self.store, settings(worker_db_backoff_max=3600), {'extract': Mock(extract=extract)}, rng=lambda: 1.0)
+            self.assertTrue(await asyncio.wait_for(worker.run_once(), 30))
+        self.assertEqual({k: self.row()[k] for k in ('state', 'attempts')}, {'state': 'running', 'attempts': 1})
+
+    async def test_a_provider_failure_then_a_cut_while_completing_then_success_charges_one_attempt_per_claim(self):
+        """A provider failure in the first claim, a cut in the second (written in place), success: `attempts` is 2, one per claim."""
+        outcomes = iter(['provider', 'database'])
 
         async def extract(source):
-            outcome = next(outcomes)
-            if outcome == 'provider':
+            if next(outcomes) == 'provider':
                 raise ProviderError('provider_unavailable', retryable=True)
-            if outcome == 'database':
-                self.proxy.cut()
+            self.proxy.cut()
             return self.receipt
-        worker = self.worker(extract, waiter=Recorder())
+        worker = self.worker(extract, waiter=Recorder(lambda n, seconds: self.proxy.restore()))
         await worker.run_once()
         self.assertEqual((self.row()['state'], self.row()['attempts']), ('pending', 1))
         with self.direct.transaction() as c:
             c.execute("UPDATE memory.jobs SET available_at=clock_timestamp() WHERE id=%s", (self.jid,))
-        await worker.run_once()  # the database goes away while completing
-        self.assertEqual((self.row()['state'], self.row()['attempts'], self.row()['error_code']), ('running', 2, 'provider_unavailable'))
-        self.proxy.restore()
-        expire_lease(self.direct, self.jid)
-        await worker.run_once()
+        await worker.run_once()  # the database goes away while completing and is back before the lease ends
         state = self.row()
-        self.assertEqual((state['state'], state['attempts']), ('succeeded', 3))  # one claim, one attempt
+        self.assertEqual((state['state'], state['attempts'], state['error_code']), ('succeeded', 2, None))
 
 
 if __name__ == '__main__':
