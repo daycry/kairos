@@ -41,7 +41,7 @@ test-plan: n/a (sin UI)
 | Fase | Completadas | Total | Progreso | H. humanas (real/est) | H. IA ejec. (real/est) | Supervisión (real/est) | Tokens (real/est) |
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Arnés de fallos y tests de límites (C-07) | 6 | 6 | 100% | 0 / 32.4h | 0.83 / 4.3h | 0 / 1.1h | 0 / 1080 k |
-| Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 2 | 7 | 29% | 0 / 27.0h | 0.47 / 3.6h | 0 / 0.9h | 0 / 900 k |
+| Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 3 | 7 | 43% | 0 / 27.0h | 0.56 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 0 | 7 | 0% | 0 / 27.0h | 0 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 0 | 9 | 0% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 0 | 5 | 0% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **8** | **98** | **8%** | **0 / 412.8h** | **1.3 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **9** | **98** | **9%** | **0 / 412.8h** | **1.39 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -314,10 +314,11 @@ test-plan: n/a (sin UI)
 ### T-09 — Un fallo de base al completar o fallar un trabajo no cambia su estado
 
 - **Descripción**: Si la base cae durante `complete_job` o `fail_job`, el trabajo no pasa a `failed`, no recibe `provider_error` ni consume intento; vuelve a ser reclamable al expirar la concesión. Fuente: CA-09, CA-11; B-03.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Si la base de datos falla mientras el worker completa o marca un trabajo, ese trabajo ya no se da por fallado ni gasta un intento: queda en curso y se reclama de nuevo al expirar su concesión.
+- **Estado**: completado
+- **Cerrada**: 2026-11-15
 - **Tiempo humano**: est. 3h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.09h (medido)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 110 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: T-08
@@ -327,17 +328,17 @@ test-plan: n/a (sin UI)
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_worker_db_down|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Con la base cortada durante `complete_job`, el trabajo no queda `failed` ni con `provider_error`, y tras `restore()` se completa en una reclamación posterior (prueba con `FaultProxy` y `expire_lease`)
-- [ ] Los errores de proveedor reintentables conservan su política actual (`worker.py:148-160`) y los de base no incrementan `attempts` más allá del reclamo ya contado (prueba que compara ambos caminos)
-- [ ] Si `fail_job` también falla por base caída, el worker sigue vivo
+- [x] Con la base cortada durante `complete_job`, el trabajo no queda `failed` ni con `provider_error`, y tras `restore()` se completa en una reclamación posterior (prueba con `FaultProxy` y `expire_lease`)
+- [x] Los errores de proveedor reintentables conservan su política actual (`worker.py:148-160`) y los de base no incrementan `attempts` más allá del reclamo ya contado (prueba que compara ambos caminos)
+- [x] Si `fail_job` también falla por base caída, el worker sigue vivo
 
 **Subtareas**
-- [ ] Escribir primero la prueba de ambos caminos (rojo)
-- [ ] Separar `except StoreUnavailable` del `except Exception` de `worker.py:165-168`
-- [ ] Verificar con la base cortada en `complete_job` y en `fail_job`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero la prueba de ambos caminos (rojo)
+- [x] Separar `except StoreUnavailable` del `except Exception` de `worker.py:165-168`
+- [x] Verificar con la base cortada en `complete_job` y en `fail_job`
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `worker.py:145` (`complete_job`), `:148-160` (política de reintento del proveedor), `:165-168` (`except Exception` → `fail_job(..., 'provider_error')`).
+**Notas**: Patrón: `worker.py:145` (`complete_job`), `:148-160` (política de reintento del proveedor), `:165-168` (`except Exception` → `fail_job(..., 'provider_error')`). CIERRE: usage-meter {inicio 17:06:59Z, fin 17:11:04Z, horas_ia 0.09, duracion 5m, medido}; el codigo y las pruebas se escribieron en la misma pasada que T-08 (ver sus Notas), esta ventana es la verificacion, los mutantes y el cierre. Clase entera (worker.py): los cinco accesos a la base del worker pasan por `_store` (reclamo y latido en T-08; aqui `read` = stored_item_vector, `complete` y `fail`). `except StoreUnavailable` va PRIMERO en el try de `run_once`: un fallo de base al leer el vector guardado o al completar no cae ya en `except Exception` -> fail_job('provider_error'); el trabajo sigue `running` y se reclama al expirar la concesion (outcome de la metrica = 'lost'). Los cuatro `fail_job` de las ramas de fallo (ProviderError, TimeoutError, MemoryError, Exception) van por `_fail`, que traga StoreUnavailable (ya registrado por `_store`) y deja el trabajo como lo dejo el reclamo: el worker sigue vivo. Politica de reintento del proveedor intacta (args de fail_job identicos: prueba de caracterizacion test_the_provider_failure_policy_is_the_one_it_always_was_when_the_database_answers). Un fallo de base cuenta como `store_failures` y la espera de `run()` se aplica aunque el fallo ocurra tras un reclamo correcto. RED (pruebas nuevas contra el worker de T-08): 2 FAIL (test_a_database_failure_while_completing_leaves_the_job_alone_whatever_the_provider_did, test_a_database_failure_reading_the_stored_vector_is_not_a_provider_failure) + 8 ERROR (test_a_cut_during_complete_job…, test_a_cut_during_fail_job…, test_both_paths_charge_exactly_one_attempt_per_claim y las 5 ramas de test_a_database_failure_in_fail_job_does_not_end_the_worker…) · 2026-11-15. MUTANTES en copia temporal: N1 sin la clausula `except StoreUnavailable` de run_once -> 3 FAIL (incl. el de FaultProxy: el trabajo queda failed/provider_error); N2 `_fail` no traga el fallo de base -> 6 ERROR (la rama de FaultProxy y las 5 de fail_job); N3 stored_item_vector fuera de `_store` -> FAIL test_a_database_failure_reading_the_stored_vector…; N4 complete_job fuera de `_store` -> 2 FAIL (complete con base cortada). CA-11 en base real (FaultProxy, base propia por prueba, `expire_lease`): test_both_paths_charge_exactly_one_attempt_per_claim = fallo de proveedor, corte de base al completar, exito: attempts 1, 2, 3 (una por reclamo; error_code 'provider_unavailable' del primer fallo se conserva hasta completarse y se borra al completar). Visible para clientes: ninguno. Verificación (módulo en kairos-test:i3p1, paquete montado, `--network=none`): test_worker_db_down 26 tests ok + test_worker + test_chunk_jobs + test_jobs: DEV_RESULT 70 1 0 0 en la primera pasada, donde el unico fallo fue el test_worker de reloj real ya descrito (test_the_extra_call_for_other_dimensions_fits_inside_the_job_deadline: 0.4 s de sleeps contra 0.5 s de plazo, falla por carga tambien en el HEAD sin tocar); test_worker_db_down solo: 26 ok. suite completa en T-12.
 
 ### T-10 — Tope al reclamar: `attempts_exhausted` en el trabajo venenoso
 

@@ -128,6 +128,15 @@ class Worker:
         self.last_store_ok = self.clock()
         return result
 
+    async def _fail(self, job, *args):
+        """`fail_job`, unless the database does not answer: then the job is left as it is (running, with its attempts), and it is claimed again when its lease
+        expires. Returns False in that case."""
+        try:
+            await self._store('fail', self.store.fail_job, job['id'], job['fence'], *args)
+        except StoreUnavailable:
+            return False
+        return True
+
     async def run_once(self):
         job = await self._store('claim', self.store.claim_job, self.id, self.settings.lease_seconds)
         if not job:
@@ -169,7 +178,7 @@ class Worker:
                 if job['destination'] == 'embed':
                     stored = None
                     if planned > 1:
-                        stored = await asyncio.to_thread(stored_item_vector, self.store, job['project_id'], job['item_id'], job['resource_type'], job['version'], job['canonical_hash'], self.settings.embedding_model)
+                        stored = await self._store('read', stored_item_vector, self.store, job['project_id'], job['item_id'], job['resource_type'], job['version'], job['canonical_hash'], self.settings.embedding_model)
                         if stored:
                             limit.reschedule(limit.when()+embedding_job_timeout(self.settings, 1))
                     receipt = await embed_receipt(provider, self.settings, job['payload'], job['canonical_hash'], stored)
@@ -185,29 +194,37 @@ class Worker:
                 return True
             if job['destination'] == 'embed' and not receipt.get('verified'):
                 raise ProviderError('embedding_unverified')
-            await asyncio.to_thread(self.store.complete_job, job['id'], job['fence'], receipt)
+            await self._store('complete', self.store.complete_job, job['id'], job['fence'], receipt)
             outcome = 'completed'
             observability.log_event('job_completed', destination=destination, duration_ms=observability.elapsed_ms(started))
+        except StoreUnavailable:
+            # The database did not answer (reading the stored vector or completing): this is not the provider's failure, so the job is neither failed nor
+            # given a `provider_error`. It stays `running` and is claimed again, counting only that claim, when its lease expires.
+            outcome = 'lost'
         except ProviderError as exc:
             observability.log_failure('job_failed', exc, 'warning', destination=destination, code=exc.code, duration_ms=observability.elapsed_ms(started))
             if not lost.is_set():
                 retry_at = None
                 if exc.retryable and job['attempts'] < self.settings.max_attempts:
                     retry_at = datetime.now(timezone.utc)+timedelta(seconds=min(60, 2**job['attempts']))
-                await asyncio.to_thread(self.store.fail_job, job['id'], job['fence'], exc.code, retry_at, False)
+                if not await self._fail(job, exc.code, retry_at, False):
+                    outcome = 'lost'
         except TimeoutError as exc:
             observability.log_failure('job_failed', exc, 'warning', destination=destination, code='provider_timeout', duration_ms=observability.elapsed_ms(started))
             if not lost.is_set():
                 retry_at = datetime.now(timezone.utc)+timedelta(seconds=30) if job['attempts'] < self.settings.max_attempts else None
-                await asyncio.to_thread(self.store.fail_job, job['id'], job['fence'], 'provider_timeout', retry_at, False)
+                if not await self._fail(job, 'provider_timeout', retry_at, False):
+                    outcome = 'lost'
         except MemoryError as exc:
             observability.log_failure('job_failed', exc, 'warning', destination=destination, code=exc.code, duration_ms=observability.elapsed_ms(started))
             if not lost.is_set():
-                await asyncio.to_thread(self.store.fail_job, job['id'], job['fence'], exc.code)
+                if not await self._fail(job, exc.code):
+                    outcome = 'lost'
         except Exception as exc:
             observability.log_failure('job_failed', exc, 'error', destination=destination, code='provider_error', duration_ms=observability.elapsed_ms(started))
             if not lost.is_set():
-                await asyncio.to_thread(self.store.fail_job, job['id'], job['fence'], 'provider_error')
+                if not await self._fail(job, 'provider_error'):
+                    outcome = 'lost'
         finally:
             observability.record_job(destination, time.monotonic()-started, 'lost' if lost.is_set() else outcome)
             pulse.cancel()
