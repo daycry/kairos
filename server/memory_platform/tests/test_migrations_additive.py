@@ -70,7 +70,7 @@ STRONG = {'ShareLock', 'ShareRowExclusiveLock', 'ExclusiveLock', 'AccessExclusiv
 def section_tags():
     """The tag of every `DO $tag$ ... $tag$;` block of `schema.sql`, read from the file: a section added by a later version is measured without anybody listing it here."""
     tags = re.findall(r'^DO \$(\w+)\$', (PACKAGE / 'schema.sql').read_text(encoding='utf-8'), re.MULTILINE)
-    assert len(tags) == len(set(tags)) and {'pgvector', 'fts', 'chunks', 'failedjobs', 'queueindexes'} <= set(tags), tags
+    assert len(tags) == len(set(tags)) and {'pgvector', 'fts', 'chunks', 'failedjobs', 'queueindexes', 'jobqueue'} <= set(tags), tags
     return tags
 
 
@@ -268,8 +268,18 @@ class VersionRegistrationTests(unittest.TestCase):
             self.assertTrue(any(modes & STRONG for modes in unguarded.values()), (tag, 'the measure must see the lock of the section without its guard', unguarded))
         for tag, table in (('pgvector', 'embeddings'), ('fts', 'documents'), ('fts', 'memory_items'), ('chunks', 'jobs')):
             self.assertIn('AccessExclusiveLock', section_table_locks(self.psycopg, self.dsn, tag, guarded=False).get(table, set()), (tag, table))
-        for tag in ('failedjobs', 'queueindexes'):  # a CREATE INDEX of a table that exists blocks its writers (SHARE)
+        for tag in ('jobqueue', 'failedjobs', 'queueindexes'):  # a CREATE INDEX of a table that exists blocks its writers (SHARE), `IF NOT EXISTS` or not
             self.assertIn('ShareLock', section_table_locks(self.psycopg, self.dsn, tag, guarded=False).get('jobs', set()), tag)
+
+    def test_a_repeated_run_of_the_whole_schema_takes_no_strong_lock_on_jobs(self):
+        """The manual promises that a repeated `admin migrate` does not block the writers of `memory.jobs`: the whole file, run again as `Store.migrate()` runs it (one
+        transaction), holds no SHARE or stronger lock on that table before the COMMIT. `CREATE INDEX IF NOT EXISTS memory_job_queue` used to take SHARE on it."""
+        Store(self.dsn).migrate()
+        with self.psycopg.connect(self.dsn) as c:
+            c.execute((PACKAGE / 'schema.sql').read_text(encoding='utf-8'))
+            held = {row[0] for row in c.execute("SELECT l.mode FROM pg_locks l JOIN pg_class r ON r.oid=l.relation WHERE l.pid=pg_backend_pid() AND l.locktype='relation' "
+                                                "AND r.relname='jobs' AND r.relnamespace='memory'::regnamespace").fetchall()}
+        self.assertEqual(held & STRONG, set(), held)
 
     def test_a_repeated_migrate_changes_nothing_in_the_catalog(self):
         store = Store(self.dsn)

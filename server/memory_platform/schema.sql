@@ -16,7 +16,15 @@ CREATE TABLE IF NOT EXISTS memory.item_versions(project_id text NOT NULL, item_i
 CREATE TABLE IF NOT EXISTS memory.documents(project_id text NOT NULL REFERENCES memory.projects(id), id text NOT NULL, version integer NOT NULL, canonical_hash text NOT NULL, body jsonb NOT NULL, deleted boolean NOT NULL DEFAULT false, PRIMARY KEY(project_id,id));
 CREATE TABLE IF NOT EXISTS memory.document_versions(project_id text NOT NULL, document_id text NOT NULL, version integer NOT NULL, canonical_hash text NOT NULL, body jsonb NOT NULL, PRIMARY KEY(project_id,document_id,version));
 CREATE TABLE IF NOT EXISTS memory.jobs(id text PRIMARY KEY, project_id text NOT NULL REFERENCES memory.projects(id), item_id text NOT NULL, version integer NOT NULL, canonical_hash text NOT NULL, resource_type text NOT NULL, destination text NOT NULL, operation text NOT NULL, state text NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','running','succeeded','failed','unknown')), attempts integer NOT NULL DEFAULT 0, available_at timestamptz NOT NULL DEFAULT clock_timestamp(), lease_until timestamptz, worker_id text, fence bigint NOT NULL DEFAULT 0, error_code text, created_at timestamptz NOT NULL DEFAULT clock_timestamp(), UNIQUE(project_id,item_id,version,resource_type,destination,operation));
-CREATE INDEX IF NOT EXISTS memory_job_queue ON memory.jobs(state,available_at);
+-- Guarded like every later section: `CREATE INDEX IF NOT EXISTS` takes SHARE on `memory.jobs` even when the index exists, so a repeated `admin migrate` would block the writers of jobs.
+DO $jobqueue$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'memory' AND indexname = 'memory_job_queue') THEN
+        RETURN;
+    END IF;
+    CREATE INDEX IF NOT EXISTS memory_job_queue ON memory.jobs(state,available_at);
+END
+$jobqueue$;
 CREATE TABLE IF NOT EXISTS memory.projection_receipts(job_id text PRIMARY KEY REFERENCES memory.jobs(id), project_id text NOT NULL, item_id text NOT NULL, version integer NOT NULL, canonical_hash text NOT NULL, destination text NOT NULL, receipt jsonb NOT NULL, recorded_at timestamptz NOT NULL DEFAULT clock_timestamp());
 INSERT INTO memory.schema_versions(version) VALUES (1) ON CONFLICT DO NOTHING;
 ALTER TABLE memory.memory_items ADD COLUMN IF NOT EXISTS parent_item_id text;
