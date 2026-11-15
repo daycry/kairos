@@ -43,7 +43,7 @@ test-plan: n/a (sin UI)
 | Fase 1 — Arnés de fallos y tests de límites (C-07) | 6 | 6 | 100% | 0 / 32.4h | 0.83 / 4.3h | 0 / 1.1h | 0 / 1080 k |
 | Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 7 | 7 | 100% | 0 / 27.0h | 2.10 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 7 | 7 | 100% | 0 / 27.0h | 0.99 / 3.6h | 0 / 0.9h | 0 / 900 k |
-| Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 0 | 9 | 0% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
+| Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 1 | 9 | 11.1% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 0 | 5 | 0% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 0 | 9 | 0% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 0 | 6 | 0% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **20** | **98** | **20%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **21** | **98** | **21.4%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -682,10 +682,11 @@ test-plan: n/a (sin UI)
 ### T-21 — Medición previa: consultas, conexiones y latencia por búsqueda
 
 - **Descripción**: Medir antes del pool cuántas conexiones y consultas abre una búsqueda híbrida y su latencia, para comparar después. Fuente: CA-15, CA-18 (línea base); B-02.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: nuevo medidor de conexiones y consultas por búsqueda híbrida; no cambia el comportamiento del producto.
+- **Estado**: completado
+- **Cerrada**: 2026-11-16
 - **Tiempo humano**: est. 0.75h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.10h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.10h (estimado) · real 0.14h (medido)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 28 k in / 2 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
@@ -695,15 +696,15 @@ test-plan: n/a (sin UI)
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "MEASURE_CONNECTIONS|MEMORY_TEST_RESULT"` → una línea `MEASURE_CONNECTIONS` con conexiones y consultas por búsqueda y `MEMORY_TEST_RESULT` sin fallos
 
 **Criterios de aceptación**
-- [ ] La medición (conexiones por búsqueda, consultas por búsqueda, latencia p50) queda anotada en `Notas`, sobre PostgreSQL efímero
-- [ ] El script no es una prueba de la suite (no cambia el recuento)
+- [x] La medición (conexiones por búsqueda, consultas por búsqueda, latencia p50) queda anotada en `Notas`, sobre PostgreSQL efímero
+- [x] El script no es una prueba de la suite (no cambia el recuento)
 
 **Subtareas**
-- [ ] Escribir el medidor sobre `Store` y la búsqueda híbrida
-- [ ] Anotar la cifra «antes» en `Notas`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir el medidor sobre `Store` y la búsqueda híbrida
+- [x] Anotar la cifra «antes» en `Notas`
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `store.py:24-30` (una conexión nueva por `transaction()`), `retrieval.py:87-148` (una transacción por capa) y `tests/measure_vector_candidates.py` (medidor existente fuera de la suite).
+**Notas**: Patrón: `store.py:24-30` (una conexión nueva por `transaction()`), `retrieval.py:87-148` (una transacción por capa) y `tests/measure_vector_candidates.py` (medidor existente fuera de la suite). MEDICIÓN ANTES del pool (PostgreSQL efímero, 3 proyectos × 300 documentos + 300 notas con vector de 768, búsqueda híbrida episodic+documental+semantic, 10 calentamientos + 30 medidas, `measure_connections.py`, sin red): **7 conexiones, 7 transacciones y 49 consultas por búsqueda; latencia p50 384,6 ms (p95 471,6; máx 493,0) híbrida y p50 333,0 ms solo léxica**. Las 7 transacciones son: 3 de `_scope` (una por proyecto) + episodic + documental + has_vectors + vectores. Se ejecuta con `docker run --rm --network=none -e MEASURE_CONNECTIONS=1 kairos-test:IMG python -m memory_platform.tests.measure_connections` (el script no es de la suite: el recuento no cambia). Usage-meter T-21: 0.14h (medido).
 
 ### T-22 — `psycopg_pool` en `Store.transaction()` con `MEMORY_POOL_*`
 
