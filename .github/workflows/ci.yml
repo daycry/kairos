@@ -13,10 +13,10 @@ on:
 permissions:
   contents: read
 
-# Baseline of the backend suite (T-01: 483 tests; raised to 639 when kairos-mcp started, to 727 with its chain tests and to 743 with the corrections of the phase 5 review, to 756 with the MCP legacy and route tests and to 759 with the version tests of phase 7, to 764 with the phase 8 rehearsal tests, to 801 with the fault-injection harness and the limit, schema and lease tests of initiative 3 phase 1, to 806 with the corrections of its review, 0 failures, 0 errors, 0 skipped). The `server` job fails when fewer tests are
+# Baseline of the backend suite (T-01: 483 tests; raised to 639 when kairos-mcp started, to 727 with its chain tests and to 743 with the corrections of the phase 5 review, to 756 with the MCP legacy and route tests and to 759 with the version tests of phase 7, to 764 with the phase 8 rehearsal tests, to 801 with the fault-injection harness and the limit, schema and lease tests of initiative 3 phase 1, to 806 with the corrections of its review, to 852 with the database-down worker tests of phase 2, 0 failures, 0 errors, 0 skipped). The `server` job fails when fewer tests are
 # discovered. Single source: raise it when the suite grows, never lower it (checked by scripts/tests/test_ci_workflow.py).
 env:
-  KAIROS_MIN_TESTS: '806'
+  KAIROS_MIN_TESTS: '852'
 
 # `shell: bash` runs with -eo pipefail; the unset default is only `bash -e` and a failed piped docker build would stay green.
 defaults:
