@@ -41,7 +41,7 @@ test-plan: n/a (sin UI)
 | Fase | Completadas | Total | Progreso | H. humanas (real/est) | H. IA ejec. (real/est) | Supervisión (real/est) | Tokens (real/est) |
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Arnés de fallos y tests de límites (C-07) | 6 | 6 | 100% | 0 / 32.4h | 0.83 / 4.3h | 0 / 1.1h | 0 / 1080 k |
-| Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 6 | 7 | 86% | 0 / 27.0h | 2.10 / 3.6h | 0 / 0.9h | 0 / 900 k |
+| Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 7 | 7 | 100% | 0 / 27.0h | 2.10 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 0 | 7 | 0% | 0 / 27.0h | 0 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 0 | 9 | 0% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 0 | 5 | 0% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **12** | **98** | **12%** | **0 / 412.8h** | **2.93 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **13** | **98** | **13%** | **0 / 412.8h** | **2.93 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -249,7 +249,7 @@ test-plan: n/a (sin UI)
 
 ## Fase 2 — Worker resistente a la caída de base (C-02, B-03)
 
-**Estado**: en-progreso · **Hito**: A · **Estimado**: 27.0h (22.5h base, de ellas 7.5h de revisión adversarial) · **Real**: — · **Coste est.**: 1.350 € · **Tokens est.**: 900 k
+**Estado**: completado · **Hito**: A · **Estimado**: 27.0h (22.5h base, de ellas 7.5h de revisión adversarial) · **Real**: — · **Coste est.**: 1.350 € · **Tokens est.**: 900 k
 
 ### T-07 — Clase `StoreUnavailable` y clasificación de errores de base
 
@@ -429,8 +429,8 @@ test-plan: n/a (sin UI)
 ### T-13 — Revisión adversarial de la fase (dos lentes)
 
 - **Descripción**: Revisión adversarial del diff de la fase con dos lentes: A (contrato, seguridad, regresiones, alcance declarado) y B (mutantes: cada control nuevo se quita y su prueba debe fallar). Cuidado: el reclamo y su reconciliación son delicados; R-01 (esperas que esconden una caída). Cada hallazgo se corrige para la clase entera y se anota con intento y evidencia en `review.md`; cada intento abre y cierra `usage-meter`. Fuente: Lección de la retro de la Iniciativa 2: la revisión es partida propia (0,5 × la implementación; 1,0 × en C-03 y C-05).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: revisión adversarial de la fase 2; endurece el worker frente a caídas de la base, sin otro cambio para quien usa Kairos que los ya descritos en T-07 a T-12.
+- **Estado**: completado
 - **Tiempo humano**: est. 7.5h (base) · real —
 - **Tiempo IA (ejec.)**: est. 1.00h (estimado) · real —
 - **Supervisión**: est. 0.25h (≈25 % IA) · real —
@@ -445,18 +445,18 @@ test-plan: n/a (sin UI)
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
 
 **Criterios de aceptación**
-- [ ] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
-- [ ] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
-- [ ] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
-- [ ] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
+- [x] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
+- [x] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
+- [x] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
+- [x] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
 
 **Subtareas**
-- [ ] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
-- [ ] Lente B: mutantes en memoria sobre cada control nuevo
-- [ ] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
-- [ ] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
+- [x] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
+- [x] Lente B: mutantes en memoria sobre cada control nuevo
+- [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
+- [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas**: Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+**Notas**: Cerrada en el intento 3 de 3 (intento 1: A+B+C+D; intentos 2 y 3: A+B; tablas al final del ledger y en `execution-history.md`; resumen en `review.md`). `scope-check.py --base 920c1f0` exit 0; suite 884 en verde. Los revisores no tienen medición propia (telemetría de los subagentes). Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
 
 ---
 
@@ -810,7 +810,7 @@ test-plan: n/a (sin UI)
 - [ ] Aplicar los mutantes en memoria
 - [ ] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `tests/fault_proxy.py` (Fase 1) y `tests/test_api.py` (cliente de prueba de la API). DEUDA HEREDADA de la revision intento 1 de la Fase 2 (gaps 3 y 4, T-08/T-09): esta tarea debe incluir pruebas EXPLICITAS con `FaultProxy.mute()` de (i) un reclamo del worker contra un servidor mudo que falla dentro del plazo y no se cuelga ~2 min ni exige SIGKILL al apagar (gap 4) y (ii) la lectura del vector guardado (`stored_item_vector`, fase `read`) contra un servidor mudo: debe acabar como caida de base y no como `provider_timeout` (gap 3). Los cierra el `connect_timeout`/`statement_timeout` de T-23; aqui se verifican.
+**Notas**: Deuda Minor de la revisión de la Fase 2 (intento 3, n.º 3-5): (a) que `_persist` llame a la comprobación del COMMIT (`_landed`) también cuando el latido marca la concesión perdida; (b) una prueba que haga fallar `job_outcome` y pruebas de `_persist` con el latido activo; (c) validar el defecto de `MEMORY_WORKER_WRITE_RETRY_SECONDS` contra su rango cuando hereda `MEMORY_LEASE_SECONDS`. Patrón: `tests/fault_proxy.py` (Fase 1) y `tests/test_api.py` (cliente de prueba de la API). DEUDA HEREDADA de la revision intento 1 de la Fase 2 (gaps 3 y 4, T-08/T-09): esta tarea debe incluir pruebas EXPLICITAS con `FaultProxy.mute()` de (i) un reclamo del worker contra un servidor mudo que falla dentro del plazo y no se cuelga ~2 min ni exige SIGKILL al apagar (gap 4) y (ii) la lectura del vector guardado (`stored_item_vector`, fase `read`) contra un servidor mudo: debe acabar como caida de base y no como `provider_timeout` (gap 3). Los cierra el `connect_timeout`/`statement_timeout` de T-23; aqui se verifican.
 
 ### T-26 — Medición posterior del pool y defaults de `MEMORY_POOL_*`
 
@@ -3022,3 +3022,15 @@ Lentes: A+B (re-evalúan solo lo corregido). Diff `94a3eeb..9530702`. Veredicto:
 ## Historial archivado
 
 - 2026-11-15 · «Revisión de dos lentes — intento 1: Fase 1 (T-01..T-05): 3 Important, 4 Minor (T-01, T-02, T-03, T-04, T-05)» → [execution-history.md](execution-history.md) · SHA-256 `b4eb7fffcb4d331e41818669864cdc3828c91bdf163f8913b0b1489c1e4ca774`
+
+## Revisión de dos lentes — intento 3: Fase 2 tras fix2 (T-07, T-09, T-10, T-11, T-12)
+
+Lentes: A+B (re-evalúan solo lo corregido en el intento 2). Diff `9530702..f0a4e0f`. Veredicto: n.º 1-6 del intento 2 cerrados; la decisión de declarar el límite no se reabre. Sin Critical ni Important: **fase cerrada en el intento 3 de 3**. Suite 884, 0 fallos (Notas de T-12 en `execution-history.md`).
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Minor | El umbral del límite declarado no era exacto: la concesión que queda al empezar la caída está entre 2L/3 y L (el latido renueva cada L/3), y CA-09 no citaba el presupuesto menor que la concesión | T-11 | corregido en el cierre (spec fila y CA-09, `operations.md`, `configuration.md`) | Lente A n.º 1 |
+| 2 | Minor | `job_outcome_unread` faltaba en la coordinación con la Iniciativa 7 | T-10 | corregido en el cierre (`improvement-plan.md`) | Lente A n.º 2 |
+| 3 | Minor | Si el latido recibe el «no» antes que la renovación de `_persist`, un COMMIT que sí entró se registra como `lease_lost`/`job_write_abandoned` (los datos quedan bien; solo la observabilidad) | T-09 | deuda aceptada → T-25 | Lente B n.º 1; `worker.py:202-203`, `:250-253` |
+| 4 | Minor | Ninguna prueba hace fallar `job_outcome` (rama `job_outcome_unread`) y en las pruebas de `_persist` el latido nunca late | T-09 | deuda aceptada → T-25 | Lente B n.º 2 |
+| 5 | Minor | Sin fijar `MEMORY_WORKER_WRITE_RETRY_SECONDS`, su defecto (la concesión) no pasa por el rango 1-86400 | T-09 | deuda aceptada → T-25 | Lente A (fuera de lente); `config.py:139-141` |
