@@ -1,7 +1,6 @@
 """Additive fragment table (schema version 10): `memory.embedding_chunks`, its keys and its partial HNSW index."""
 import json
 import os
-from pathlib import Path
 import re
 import unittest
 from unittest.mock import patch
@@ -9,16 +8,10 @@ import uuid
 
 from memory_platform.admin import content_manifest
 from memory_platform.store import Store
+from memory_platform.tests.schema_history import SCHEMA_V9
+from memory_platform.tests.test_migrations_additive import STRONG, additive_violations, assert_contiguous_versions, catalog_snapshot, migration_locks
 
-SCHEMA = Path(__file__).parents[1] / 'schema.sql'
-MARKER = '-- embedding-chunks (schema version 10)'
 MODEL = 'nomic-embed-text'
-
-
-def previous_schema():
-    """schema.sql exactly as the previous release (FTS, version 9) left the database."""
-    text = SCHEMA.read_text(encoding='utf-8')
-    return text[:text.index(MARKER)] if MARKER in text else text
 
 
 class ChunkSchemaTests(unittest.TestCase):
@@ -48,7 +41,7 @@ class ChunkSchemaTests(unittest.TestCase):
         from memory_platform.extended_store import migrate_extended_schema
         from memory_platform.store_vectors import migrate_vector_indexes
         with self.psycopg.connect(self.admin_dsn) as c:
-            c.execute(previous_schema())
+            c.execute(SCHEMA_V9)  # the previous release, frozen (schema_history.py); the assertion below checks it against the catalog
             migrate_vector_indexes(c)  # must tolerate the missing fragment table
             migrate_agent_schema(c)
             migrate_extended_schema(c)
@@ -69,8 +62,7 @@ class ChunkSchemaTests(unittest.TestCase):
         store.migrate()
         self.assertEqual(content_manifest(store)['sha256'], before)
         with self.psycopg.connect(self.admin_dsn) as c:
-            self.assertEqual({row[0] for row in c.execute('SELECT version FROM memory.schema_versions').fetchall()}, set(range(1, 12)),
-                             'versions 10 (fragments) and 11 (failed jobs index) must follow 9 (FTS) without colliding with 5, 6, 7 and 8')
+            assert_contiguous_versions(self, c, 11)  # versions 10 (fragments) and 11 (failed jobs index) follow 9 (FTS) with no gap and no collision
             self.assertEqual(c.execute('SELECT md5(string_agg(md5(vector::text),$$,$$ ORDER BY item_id)) FROM memory.embeddings').fetchone()[0], vectors_before)
             columns = {row[0]: row[1] for row in c.execute("SELECT column_name,data_type FROM information_schema.columns WHERE table_schema='memory' AND table_name='embedding_chunks'").fetchall()}
             self.assertEqual(set(columns), {'project_id', 'item_id', 'resource_type', 'version', 'canonical_hash', 'model', 'ordinal', 'char_start', 'char_end', 'embedding', 'dims', 'created_at'})
@@ -118,21 +110,31 @@ class ChunkSchemaTests(unittest.TestCase):
             self.assertEqual(identity(c), first)
             self.assertEqual(c.execute('SELECT count(*) FROM memory.schema_versions WHERE version=10').fetchone()[0], 1)
 
-    def test_repeated_new_section_takes_no_lock_on_the_embedding_tables(self):
-        Store(self.admin_dsn).migrate()
-        section = SCHEMA.read_text(encoding='utf-8')
-        section = section[section.index(MARKER):]
-        holder = self.psycopg.connect(self.admin_dsn)
-        self.addCleanup(holder.close)
-        holder.execute('LOCK TABLE memory.embeddings, memory.embedding_chunks, memory.projects IN ACCESS SHARE MODE')
-        with self.psycopg.connect(self.admin_dsn) as runner:
-            runner.execute("SET lock_timeout='1500ms'")  # any stronger request would abort here
-            runner.execute(section)
+    def test_repeated_migrate_takes_no_lock_on_the_fragment_table_or_its_indexes(self):
+        """The migration of an already migrated database creates nothing, so the fragment table, its indexes and `projects` are not even locked
+        (measured in `pg_locks` at the end of the migration transaction, before it commits)."""
+        store = Store(self.admin_dsn)
+        migration_locks(store)
+        with self.psycopg.connect(self.admin_dsn) as c:
+            relations = {row[0] for row in c.execute("SELECT relname FROM pg_class WHERE relnamespace='memory'::regnamespace AND relname LIKE '%chunk%'").fetchall()}
+        self.assertGreaterEqual(len(relations), 3, relations)  # table, primary key, HNSW index
+        held = migration_locks(store)
+        for relation in relations | {'projects'}:
+            self.assertEqual(held.get('memory.' + relation, set()) & STRONG, set(), relation)
 
-    def test_the_new_schema_section_is_additive_only(self):
-        text = SCHEMA.read_text(encoding='utf-8')
-        self.assertIn(MARKER, text)
-        self.assertNotRegex(text[text.index(MARKER):], re.compile(r'\b(DROP|TRUNCATE|DELETE)\b|ALTER\s+.*\s+TYPE', re.I))
+    def test_the_first_migration_over_the_previous_version_only_adds(self):
+        """Catalog before and after: nothing disappears or changes type, and the fragment table, `priority` and `chunked` arrive."""
+        self.seed_previous_version()
+        with self.psycopg.connect(self.admin_dsn) as c:
+            before = catalog_snapshot(c)
+        Store(self.admin_dsn).migrate()
+        with self.psycopg.connect(self.admin_dsn) as c:
+            after = catalog_snapshot(c)
+        self.assertEqual(additive_violations(before, after), [])
+        for key in (('embedding_chunks', 'embedding'), ('jobs', 'priority'), ('embeddings', 'chunked')):
+            self.assertIn(key, after['columns'])
+            self.assertNotIn(key, before['columns'])
+        self.assertTrue({10, 11} <= after['versions'] - before['versions'])
 
 
     def test_the_queue_priority_and_the_chunked_flag_are_additive_columns_with_a_cheap_probe(self):

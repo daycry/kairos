@@ -1,22 +1,15 @@
 """Additive FTS migration (schema version 9): unaccent + pg_trgm, Spanish/English vectors and their indexes."""
 import json
 import os
-from pathlib import Path
 import unittest
 import uuid
 
 from memory_platform.admin import content_manifest
 from memory_platform.store import Store
+from memory_platform.tests.schema_history import SCHEMA_V8
+from memory_platform.tests.test_migrations_additive import STRONG, additive_violations, assert_contiguous_versions, catalog_snapshot, migration_locks
 
-SCHEMA = Path(__file__).parents[1] / 'schema.sql'
-MARKER = '-- fts-language (schema version 9)'
 CONTENT = 'La configuración de las canciones se guarda en el servidor.'
-
-
-def previous_schema():
-    """schema.sql exactly as the previous release (pgvector, version 8) left the database."""
-    text = SCHEMA.read_text(encoding='utf-8')
-    return text[:text.index(MARKER)] if MARKER in text else text
 
 
 class FtsMigrationTests(unittest.TestCase):
@@ -46,7 +39,7 @@ class FtsMigrationTests(unittest.TestCase):
         from memory_platform.store_vectors import migrate_vector_indexes
         import hashlib
         with self.psycopg.connect(self.admin_dsn) as c:
-            c.execute(previous_schema())
+            c.execute(SCHEMA_V8)  # the previous release, frozen (schema_history.py); the assertion below checks it against the catalog
             migrate_vector_indexes(c)
             migrate_agent_schema(c)
             migrate_extended_schema(c)
@@ -70,8 +63,7 @@ class FtsMigrationTests(unittest.TestCase):
         with self.psycopg.connect(self.admin_dsn) as c:
             for extension in ('unaccent', 'pg_trgm'):
                 self.assertEqual(c.execute('SELECT extnamespace::regnamespace::text FROM pg_extension WHERE extname=%s', (extension,)).fetchone()[0], 'public')
-            self.assertEqual({row[0] for row in c.execute('SELECT version FROM memory.schema_versions').fetchall()}, set(range(1, 12)),
-                             'versions 1..11 exactly: 9 (FTS) follows 8 (pgvector), 10 (fragments) and 11 (failed jobs index) follow it, without colliding with 5, 6 and 7')
+            assert_contiguous_versions(self, c, 11)  # 9 (FTS) follows 8 (pgvector), 10 (fragments) and 11 (failed jobs index) follow it, without colliding with 5, 6 and 7
             for table in ('documents', 'memory_items'):
                 for column in ('search_vector_es', 'search_vector_en'):
                     self.assertEqual(c.execute(f'SELECT count(*) FROM memory.{table} WHERE {column} IS NULL').fetchone()[0], 0, (table, column))
@@ -131,25 +123,37 @@ class FtsMigrationTests(unittest.TestCase):
         with self.psycopg.connect(self.admin_dsn) as c:
             self.assertEqual(self.storage_identity(c), first)
 
-    def test_repeated_new_section_takes_no_exclusive_lock_on_the_content_tables(self):
-        """Earlier versions (`ADD COLUMN IF NOT EXISTS` of 2 and 3) still lock briefly; the new section must not."""
+    def test_repeated_migrate_does_not_rebuild_the_language_indexes(self):
+        """Earlier versions (`ADD COLUMN IF NOT EXISTS` of 2 and 3) still lock `documents` and `memory_items` briefly; the FTS version must not add to it:
+        the second migration creates no language or trigram index, so none of them is locked (measured in `pg_locks` before the COMMIT)."""
         self.seed_previous_version()
         store = Store(self.admin_dsn)
-        store.migrate()
-        section = SCHEMA.read_text(encoding='utf-8')
-        section = section[section.index(MARKER):]
-        reader = self.psycopg.connect(self.admin_dsn)
-        self.addCleanup(reader.close)
-        reader.execute('LOCK TABLE memory.documents, memory.memory_items IN ACCESS SHARE MODE')
-        with self.psycopg.connect(self.admin_dsn) as writer:
-            writer.execute("SET lock_timeout='1500ms'")  # an ACCESS EXCLUSIVE request would abort here
-            writer.execute(section)
+        migration_locks(store)
+        with self.psycopg.connect(self.admin_dsn) as c:
+            indexes = {row[0] for row in c.execute("SELECT indexname FROM pg_indexes WHERE schemaname='memory' AND tablename IN ('documents','memory_items') "
+                                                   "AND (indexdef LIKE '%search_vector_es%' OR indexdef LIKE '%search_vector_en%' OR indexdef LIKE '%gin_trgm_ops%')").fetchall()}
+        self.assertEqual(len(indexes), 6, indexes)
+        held = migration_locks(store)
+        for index in indexes:
+            self.assertEqual(held.get('memory.' + index, set()) & STRONG, set(), index)
 
-    def test_the_new_schema_section_is_additive_only(self):
-        import re
-        text = SCHEMA.read_text(encoding='utf-8')
-        self.assertIn(MARKER, text)
-        self.assertNotRegex(text[text.index(MARKER):], re.compile(r'\b(DROP|TRUNCATE|DELETE)\b|ALTER\s+.*\s+TYPE', re.I))
+    def test_the_first_migration_over_the_previous_version_only_adds(self):
+        """Catalog before and after: nothing disappears or changes type; the language columns, their indexes, the trigger and the extensions arrive."""
+        self.seed_previous_version()
+        with self.psycopg.connect(self.admin_dsn) as c:
+            before = catalog_snapshot(c)
+        Store(self.admin_dsn).migrate()
+        with self.psycopg.connect(self.admin_dsn) as c:
+            after = catalog_snapshot(c)
+        self.assertEqual(additive_violations(before, after), [])
+        for table in ('documents', 'memory_items'):
+            for column in ('search_vector_es', 'search_vector_en'):
+                self.assertIn((table, column), after['columns'])
+                self.assertNotIn((table, column), before['columns'])
+        self.assertTrue({'unaccent', 'pg_trgm'} <= after['extensions'] - before['extensions'])
+        self.assertIn('kairos_unaccent', after['functions'] - before['functions'])
+        self.assertTrue(after['triggers'] - before['triggers'])
+        self.assertTrue({9, 10, 11} <= after['versions'] - before['versions'])
 
 
 if __name__ == '__main__':

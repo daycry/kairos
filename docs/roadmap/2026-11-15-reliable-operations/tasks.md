@@ -128,31 +128,32 @@ test-plan: n/a (sin UI)
 ### T-03 — Tests de esquema por catálogo y comportamiento, no por texto SQL
 
 - **Descripción**: Sustituir los tests que trocean `schema.sql` por marcador o comparan texto SQL por comprobaciones sobre el catálogo (`information_schema`, `pg_indexes`) o el comportamiento, sin bajar el recuento. Fuente: CA-36; B-15.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: las pruebas de migración parten de un esquema histórico fijo y comprueban el catálogo en vez de trocear el texto de schema.sql, así añadir índices no las rompe.
+- **Estado**: completado
+- **Cerrada**: 2026-11-15
 - **Tiempo humano**: est. 6h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.80h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.80h (estimado) · real 0.42h (medido)
 - **Supervisión**: est. 0.20h (≈25 % IA) · real —
 - **Previsión IA**: 221 k in / 19 k out tok · ⚠️ verificar €
 - **Dependencias**: T-01
 - **Tipo**: test
-- **Archivos**: `server/memory_platform/tests/test_chunk_schema.py`, `server/memory_platform/tests/test_fts_migration.py`, `server/memory_platform/tests/test_pgvector_migration.py`, `server/memory_platform/tests/test_migrations_additive.py`
+- **Archivos**: `server/memory_platform/tests/test_chunk_schema.py`, `server/memory_platform/tests/test_fts_migration.py`, `server/memory_platform/tests/test_pgvector_migration.py`, `server/memory_platform/tests/test_migrations_additive.py`, `server/memory_platform/tests/schema_history.py`
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_chunk_schema|test_fts_migration|test_pgvector_migration|test_migrations_additive|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Ningún test de la lista depende de un marcador de texto de `schema.sql` para construir la «versión anterior»; usa catálogo o aplica las versiones por la API de migración
-- [ ] El recuento de la suite no baja respecto de 764 (línea base de la iniciativa) y los casos sustituidos conservan su intención
-- [ ] `test_migrations_additive.py` sigue fallando si una migración contiene `DROP`/`DELETE` (mutante comprobado)
-- [ ] Los equivalentes que localice el recorrido (`grep -n "schema.sql" tests/*.py`) están en la lista de `Archivos` o se declaran fuera de alcance con motivo
+- [x] Ningún test de la lista depende de un marcador de texto de `schema.sql` para construir la «versión anterior»; usa catálogo o aplica las versiones por la API de migración
+- [x] El recuento de la suite no baja respecto de 764 (línea base de la iniciativa) y los casos sustituidos conservan su intención
+- [x] `test_migrations_additive.py` sigue fallando si una migración contiene `DROP`/`DELETE` (mutante comprobado)
+- [x] Los equivalentes que localice el recorrido (`grep -n "schema.sql" tests/*.py`) están en la lista de `Archivos` o se declaran fuera de alcance con motivo
 
 **Subtareas**
-- [ ] Inventariar con `grep` los tests que leen `schema.sql` (hoy cuatro; `test_chunk_schema.py:13` los trocea por marcador)
-- [ ] Reescribir cada uno contra catálogo/comportamiento
-- [ ] Comprobar el recuento antes y después
-- [ ] `usage-meter start/close` de la tarea
+- [x] Inventariar con `grep` los tests que leen `schema.sql` (hoy cuatro; `test_chunk_schema.py:13` los trocea por marcador)
+- [x] Reescribir cada uno contra catálogo/comportamiento
+- [x] Comprobar el recuento antes y después
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `tests/test_chunk_schema.py:13-21` (`SCHEMA`, «schema.sql exactly as the previous release left the database»), `tests/test_fts_migration.py:11`, `tests/test_pgvector_migration.py:12`, `tests/test_migrations_additive.py:12-19` (`MIGRATION_SOURCES`). El nuevo `schema.sql` (versión 12) llegará en la Fase 3: estos tests no deben romperse al añadir índices.
+**Notas**: Patrón: `tests/test_chunk_schema.py:13-21` (`SCHEMA`, «schema.sql exactly as the previous release left the database»), `tests/test_fts_migration.py:11`, `tests/test_pgvector_migration.py:12`, `tests/test_migrations_additive.py:12-19` (`MIGRATION_SOURCES`). El nuevo `schema.sql` (versión 12) llegará en la Fase 3: estos tests no deben romperse al añadir índices. — CIERRE: usage-meter {inicio 15:30:55Z, fin 15:42:01Z, horas_ia 0.42, duracion 25m, medido}. Verificación (dev, imagen kairos-dev:i3p1): test_chunk_schema + test_fts_migration + test_pgvector_migration + test_migrations_additive 32 tests ok, DEV_RESULT 32 0 0 0. Recuento: antes 7+7+10+6=30, ahora 7+7+10+8=32 (no baja; +2). DESVIACIÓN (Archivos ampliado): fichero nuevo tests/schema_history.py con el texto congelado de las versiones 5, 8 y 9 (historia inmutable; ya no se lee schema.sql para construir la versión anterior; el fixture se sigue comprobando por catálogo). Los asserts de versiones pasan de range(1,12) exacto a contiguo 1..N con N>=11 (no se rompen con la versión 12 de la Fase 3). Los tests de bloqueo por sección (trozo de schema.sql) pasan a medirse con pg_locks al final de la transacción de migrate (helper migration_locks): comprueban que la segunda migración no bloquea ni reconstruye los objetos de la versión (tabla de fragmentos e índices, índices de idioma); LÍMITE declarado: ya no se aísla el bloqueo de la sección sobre documents/memory_items (las versiones 2 y 3 ya los bloquean). Los tests de aditividad por texto de sección pasan a instantánea de catálogo antes/después (catalog_snapshot/additive_violations); el escaneo estático de DROP/DELETE sobre las fuentes de migración se conserva a propósito. Mutantes (copia temporal del paquete): schema.sql con DROP INDEX al final -> 5 FAIL (3 de catálogo, ca34 estático, catálogo repetido); con DELETE de la versión 8 -> 8 FAIL + 1 ERROR (incluye el escaneo estático y los de versiones contiguas).
 
 ### T-04 — Pruebas de concesión expirada y ayudante para caducarla
 
