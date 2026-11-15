@@ -69,10 +69,11 @@ test-plan: n/a (sin UI)
 ### T-01 — Arnés `FaultProxy`: proxy TCP cortable delante del PostgreSQL efímero
 
 - **Descripción**: Crear un proxy TCP en proceso que se interpone entre el código y el PostgreSQL efímero y permite cortar, restaurar y dejar «mudo» el destino por orden explícito (sin esperas). Es el oráculo de C-02 y C-03. Fuente: CA-34; B-15.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: arnés de pruebas que corta, restaura o silencia la conexión con la base para probar caídas; no cambia el comportamiento del producto.
+- **Estado**: completado
+- **Cerrada**: 2026-11-15
 - **Tiempo humano**: est. 4.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.60h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.60h (estimado) · real 0.05h (medido)
 - **Supervisión**: est. 0.15h (≈25 % IA) · real —
 - **Previsión IA**: 166 k in / 14 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
@@ -82,18 +83,18 @@ test-plan: n/a (sin UI)
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_fault_proxy|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] `FaultProxy` ofrece `cut()`, `restore()` y `mute()` deterministas (sin `sleep` para esperar un estado) y se cierra limpio en `tearDown`
-- [ ] Una consulta por el proxy tras `cut()` falla con `psycopg.OperationalError` y tras `restore()` vuelve a funcionar
-- [ ] Una conexión por el proxy en modo `mute()` acepta y no responde (base de CA-17)
-- [ ] No abre puertos fuera de `127.0.0.1` ni toca recursos `knowledge-graphs-*`
+- [x] `FaultProxy` ofrece `cut()`, `restore()` y `mute()` deterministas (sin `sleep` para esperar un estado) y se cierra limpio en `tearDown`
+- [x] Una consulta por el proxy tras `cut()` falla con `psycopg.OperationalError` y tras `restore()` vuelve a funcionar
+- [x] Una conexión por el proxy en modo `mute()` acepta y no responde (base de CA-17)
+- [x] No abre puertos fuera de `127.0.0.1` ni toca recursos `knowledge-graphs-*`
 
 **Subtareas**
-- [ ] Escribir primero `test_fault_proxy.py` (rojo: no existe el módulo)
-- [ ] Implementar `FaultProxy` con hilos y `threading.Event`
-- [ ] Probar corte, restauración, modo mudo y cierre
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero `test_fault_proxy.py` (rojo: no existe el módulo)
+- [x] Implementar `FaultProxy` con hilos y `threading.Event`
+- [x] Probar corte, restauración, modo mudo y cierre
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `tests/run_postgres.py:30-31` (PostgreSQL efímero en `127.0.0.1:55432`, `MEMORY_TEST_DSN`) y `tests/llm_spy.py` / `tests/chain_services.py` (servidores en proceso con `.start()`/`.stop()`). Aprendizaje 2 de la retro: nada de `sleep` para esperar un estado.
+**Notas**: Patrón: `tests/run_postgres.py:30-31` (PostgreSQL efímero en `127.0.0.1:55432`, `MEMORY_TEST_DSN`) y `tests/llm_spy.py` / `tests/chain_services.py` (servidores en proceso con `.start()`/`.stop()`). Aprendizaje 2 de la retro: nada de `sleep` para esperar un estado. — CIERRE: usage-meter {inicio 15:18:35Z, fin 15:19:51Z, horas_ia 0.05, duracion 3m, medido}. Verificación (dev, módulo test_fault_proxy en imagen kairos-dev:i3p1): 7 tests ok, DEV_RESULT 7 0 0 0; suite completa en T-05. RED: test_fault_proxy falló con ModuleNotFoundError (fault_proxy no existía) · 2026-11-15
 
 ### T-02 — Tests de `body_too_large`, `/v1/users`, `/health/ready` y `work_budget_exceeded`
 
