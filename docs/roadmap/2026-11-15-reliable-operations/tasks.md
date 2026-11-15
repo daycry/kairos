@@ -99,10 +99,11 @@ test-plan: n/a (sin UI)
 ### T-02 — Tests de `body_too_large`, `/v1/users`, `/health/ready` y `work_budget_exceeded`
 
 - **Descripción**: Añadir pruebas que fallan si se retira el control: 413 `body_too_large`, `/v1/users` (permitido, sin permiso, ajeno), `/health/ready` (listo y no listo) y 409 `work_budget_exceeded`. Fuente: CA-35; B-15.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: pruebas que fallan si se quita el límite de cuerpo, el permiso de usuarios, la comprobación de disponibilidad o el presupuesto de trabajo; no cambia el comportamiento del producto.
+- **Estado**: completado
+- **Cerrada**: 2026-11-15
 - **Tiempo humano**: est. 5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.67h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.67h (estimado) · real 0.25h (medido)
 - **Supervisión**: est. 0.17h (≈25 % IA) · real —
 - **Previsión IA**: 184 k in / 16 k out tok · ⚠️ verificar €
 - **Dependencias**: T-01
@@ -112,17 +113,17 @@ test-plan: n/a (sin UI)
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_api_limits|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Cada uno de los cuatro controles tiene al menos una prueba positiva y una negativa en `test_api_limits.py`
-- [ ] Mutante comprobado por prueba: quitar el control (límite de cuerpo, comprobación de permiso de `/v1/users`, sondeo de `/health/ready`, presupuesto de trabajo) deja la prueba en rojo; la evidencia va en `Notas`
-- [ ] `/v1/users` cubre «permitido», «sin permiso» y «usuario ajeno»
+- [x] Cada uno de los cuatro controles tiene al menos una prueba positiva y una negativa en `test_api_limits.py`
+- [x] Mutante comprobado por prueba: quitar el control (límite de cuerpo, comprobación de permiso de `/v1/users`, sondeo de `/health/ready`, presupuesto de trabajo) deja la prueba en rojo; la evidencia va en `Notas`
+- [x] `/v1/users` cubre «permitido», «sin permiso» y «usuario ajeno»
 
 **Subtareas**
-- [ ] Escribir las pruebas primero
-- [ ] Aplicar cada mutante en memoria y anotar el rojo
-- [ ] Dejar el código de producción intacto
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir las pruebas primero
+- [x] Aplicar cada mutante en memoria y anotar el rojo
+- [x] Dejar el código de producción intacto
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `app.py:36` (`body_too_large`), `agent_store.py:186` (`work_budget_exceeded`), `tests/test_observability.py:216` (caso 503 de `/health/ready` ya existente: se reutiliza el estilo, no se duplica). La ruta `/v1/users` se localiza en `app.py`.
+**Notas**: Patrón: `app.py:36` (`body_too_large`), `agent_store.py:186` (`work_budget_exceeded`), `tests/test_observability.py:216` (caso 503 de `/health/ready` ya existente: se reutiliza el estilo, no se duplica). La ruta `/v1/users` se localiza en `app.py`. — CIERRE: usage-meter {inicio 15:19:51Z, fin 15:30:54Z, horas_ia 0.25, duracion 15m, medido}. Verificación (dev, imagen kairos-dev:i3p1): test_api_limits 22 tests ok, DEV_RESULT 22 0 0 0; suite completa en T-05. RED/mutantes aplicados en copia temporal del paquete (producción intacta): M1 BodyLimit sin tope -> 3 FAIL (413 por Content-Length, por trozos y un byte sobre el límite); M2 list_users sin _global_admin -> 2 FAIL (administrador de proyecto y clave admin listan usuarios); M3 /health/ready sin 503 not_ready -> 2 FAIL + 1 ERROR; M4 umbrales de presupuesto subidos a 10**6/10**9 -> 1 FAIL + 1 ERROR. /v1/users: caso ajeno devuelve 403 o 404 según la regla de _require (404 si el proyecto no es suyo).
 
 ### T-03 — Tests de esquema por catálogo y comportamiento, no por texto SQL
 
