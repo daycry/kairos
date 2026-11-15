@@ -41,6 +41,44 @@ class BodyLimitTests(unittest.TestCase):
         self.assertEqual((response.status_code, response.json()['error']['code']), (413, 'body_too_large'))
         auth.authenticate_bearer.assert_not_called()
 
+    def asgi(self, chunks):
+        """Drive `BodyLimit` itself with one `http.request` event per chunk (the test client joins an iterator into a single event, so it never splits a body).
+        Returns (events sent, body the application received or None)."""
+        import asyncio
+        from memory_platform.app import BodyLimit
+        seen, sent = [], []
+
+        async def application(scope, receive, send):
+            event = await receive()
+            seen.append((event['body'], event.get('more_body')))
+
+        async def run():
+            events = [{'type': 'http.request', 'body': chunk, 'more_body': index < len(chunks) - 1} for index, chunk in enumerate(chunks)]
+
+            async def receive():
+                return events.pop(0)
+
+            async def send(message):
+                sent.append(message)
+
+            await BodyLimit(application, LIMIT)({'type': 'http', 'method': 'POST', 'path': '/v1/search', 'headers': [], 'query_string': b''}, receive, send)
+            return len(chunks) - len(events)
+
+        consumed = asyncio.run(run())
+        return consumed, sent, seen
+
+    def test_chunks_that_each_fit_but_together_exceed_the_limit_are_refused_as_a_whole(self):
+        consumed, sent, seen = self.asgi([b'a' * 200, b'b' * 100])  # 200 < 256 and 100 < 256, 300 > 256
+        self.assertEqual(consumed, 2, 'both events were really delivered')
+        self.assertEqual([message.get('status') for message in sent if message['type'] == 'http.response.start'], [413])
+        self.assertEqual(seen, [], 'the application never sees an over-limit body')
+
+    def test_chunks_within_the_limit_reach_the_application_as_one_body(self):
+        consumed, sent, seen = self.asgi([b'a' * 200, b'b' * 56])  # exactly 256
+        self.assertEqual(consumed, 2)
+        self.assertEqual(seen, [(b'a' * 200 + b'b' * 56, False)])
+        self.assertEqual(sent, [])
+
     def test_a_body_of_exactly_the_limit_is_not_refused(self):
         response, auth = self.post(b' ' * LIMIT)  # whitespace: not valid JSON, so a 422 from the contract, which proves the body got through
         self.assertEqual(response.status_code, 422, response.text)
