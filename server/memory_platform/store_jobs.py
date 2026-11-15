@@ -8,6 +8,14 @@ from .store_common import canonical, digest, clean
 
 DEFAULT_MAX_ATTEMPTS = 3  # the cap of `claim_job` when nobody told the store otherwise; the worker passes MEMORY_MAX_ATTEMPTS (`store.max_attempts`)
 LEGACY_EMBED_CHARS = 8000  # what a receipt without `chunks` (a previous worker) embedded: the first 8,000 characters
+# The two places a claim can take a job from, each read in claim order through its own partial index (schema version 12) with ONE row locked at most. They are two
+# statements, not one with an `OR`: with the `OR` the planner cannot return the rows in index order, so every claim read and sorted the whole backlog (measured with
+# 10,000 finished jobs and 50,000 waiting ones: 111 ms and a sequential scan against 0.08 ms for the first statement here and 0.2 ms for the second).
+CLAIM_ORDER = 'ORDER BY priority,available_at,created_at,id FOR UPDATE SKIP LOCKED LIMIT 1'
+CLAIM_WAITING = "SELECT * FROM memory.jobs WHERE state IN ('pending','unknown') AND available_at<=clock_timestamp() "+CLAIM_ORDER  # index memory_jobs_claim
+CLAIM_EXPIRED = "SELECT * FROM memory.jobs WHERE state='running' AND lease_until<clock_timestamp() "+CLAIM_ORDER  # index memory_jobs_running_lease
+# Every poisoned job (its lease expired, every attempt it was allowed has been charged), failed by ONE statement for the whole set; parameter: the attempts allowed.
+FAIL_EXHAUSTED = "UPDATE memory.jobs SET state='failed',error_code='attempts_exhausted',lease_until=NULL WHERE id IN (SELECT id FROM memory.jobs WHERE state='running' AND lease_until<clock_timestamp() AND attempts>=%s AND destination IN ('extract','embed') FOR UPDATE SKIP LOCKED) AND state='running'"
 
 
 def vector_literal(values):
@@ -65,6 +73,23 @@ def stored_item_vector(store,project_id,item_id,resource_type,version,canonical_
         return list(row['vector']) if row and any(row['vector']) else None
 
 
+def next_claimable(c):
+    """The job a claim would take now, locked by this transaction (None when there is none): the first of the waiting jobs and the first of the expired leases in
+    claim order (priority, available_at, created_at, id), the earlier of the two when both exist; exactly what one ordered query over both sets returns.
+
+    Both probes lock their row (SKIP LOCKED: one that another transaction holds is left to it), so when both find one the loser stays locked until this transaction
+    ends (milliseconds): another worker takes the next job instead of it, and nothing is lost or taken twice. A module function, not a Store method: `store_surface.json` does not change."""
+    waiting=c.execute(CLAIM_WAITING).fetchone()
+    expired=c.execute(CLAIM_EXPIRED).fetchone()
+    if not (waiting and expired):
+        return waiting or expired
+    for field in ('priority','available_at','created_at'):
+        if waiting[field]!=expired[field]:
+            return waiting if waiting[field]<expired[field] else expired
+    # `id` is ordered by the collation of the database, not by Python: the database says which comes first.
+    return waiting if c.execute('SELECT %s::text < %s::text AS first',(waiting['id'],expired['id'])).fetchone()['first'] else expired
+
+
 def job_outcome(store,job_id,fence):
     """`{state, error_code}` of the job as the database has it for exactly this fence (None when another claim has taken it over): the worker asks it after a write
     whose answer was lost, to tell a write that landed from one that did not. A module function, not a Store method: `store_surface.json` does not change."""
@@ -103,9 +128,9 @@ class JobsMixin:
             # Every poisoned job (its lease expired, every attempt it was allowed has been charged) is failed by ONE statement for the whole set, before the choice
             # of the job to claim: the rows are locked by this transaction (SKIP LOCKED: one that another transaction holds is left to it), so nothing sits between the
             # judgement and the write, and the cost does not grow with how many are ahead in the queue. Retired destinations keep their own code below.
-            c.execute("UPDATE memory.jobs SET state='failed',error_code='attempts_exhausted',lease_until=NULL WHERE id IN (SELECT id FROM memory.jobs WHERE state='running' AND lease_until<clock_timestamp() AND attempts>=%s AND destination IN ('extract','embed') FOR UPDATE SKIP LOCKED) AND state='running'",(max_attempts,))
+            c.execute(FAIL_EXHAUSTED,(max_attempts,))
             while True:
-                row=c.execute("SELECT * FROM memory.jobs WHERE (state IN ('pending','unknown') AND available_at<=clock_timestamp()) OR (state='running' AND lease_until<clock_timestamp()) ORDER BY priority,available_at,created_at,id FOR UPDATE SKIP LOCKED LIMIT 1").fetchone()
+                row=next_claimable(c)
                 if not row:
                     return None
                 if row['destination'] not in {'extract','embed'}:

@@ -42,7 +42,7 @@ test-plan: n/a (sin UI)
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Arnés de fallos y tests de límites (C-07) | 6 | 6 | 100% | 0 / 32.4h | 0.83 / 4.3h | 0 / 1.1h | 0 / 1080 k |
 | Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 7 | 7 | 100% | 0 / 27.0h | 2.10 / 3.6h | 0 / 0.9h | 0 / 900 k |
-| Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 1 | 7 | 14% | 0 / 27.0h | 0.28 / 3.6h | 0 / 0.9h | 0 / 900 k |
+| Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 2 | 7 | 29% | 0 / 27.0h | 0.47 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 0 | 9 | 0% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 0 | 5 | 0% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 0 | 9 | 0% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **14** | **98** | **14%** | **0 / 412.8h** | **3.21 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **15** | **98** | **15%** | **0 / 412.8h** | **3.40 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -496,10 +496,11 @@ test-plan: n/a (sin UI)
 ### T-15 — `EXPLAIN` de `claim_job` sobre 10.000 trabajos y, si hace falta, dos sondeos
 
 - **Descripción**: Comprobar con `EXPLAIN (FORMAT JSON)` que `claim_job` usa un índice nuevo sobre una tabla con ≥ 10.000 trabajos terminales; si el `OR` sobre `running` caducado lo impide, dividir el reclamo en dos sondeos ordenados con la misma semántica. Fuente: CA-13; B-06.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Reclamar un trabajo de la cola deja de recorrer y ordenar todo lo pendiente: con decenas de miles de trabajos en cola pasa de unos 110 ms a menos de 1 ms por reclamo; el orden y la semántica no cambian.
+- **Estado**: completado
+- **Cerrada**: 2026-11-15
 - **Tiempo humano**: est. 2h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real 0.19h (medido)
 - **Supervisión**: est. 0.07h (≈25 % IA) · real —
 - **Previsión IA**: 74 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-14
@@ -509,17 +510,17 @@ test-plan: n/a (sin UI)
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_queue_indexes|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] El plan de `claim_job` sobre ≥ 10.000 trabajos terminales usa un índice nuevo y no un recorrido secuencial (`EXPLAIN (FORMAT JSON)` en la prueba)
-- [ ] Si se divide en dos sondeos, la semántica de prioridad, `available_at`, `created_at`, `id` y reconciliación es idéntica (prueba de equivalencia sobre una cola mixta)
-- [ ] Las pruebas de reclamo existentes (`test_jobs.py`, `test_worker.py`) siguen en verde
+- [x] El plan de `claim_job` sobre ≥ 10.000 trabajos terminales usa un índice nuevo y no un recorrido secuencial (`EXPLAIN (FORMAT JSON)` en la prueba)
+- [x] Si se divide en dos sondeos, la semántica de prioridad, `available_at`, `created_at`, `id` y reconciliación es idéntica (prueba de equivalencia sobre una cola mixta)
+- [x] Las pruebas de reclamo existentes (`test_jobs.py`, `test_worker.py`) siguen en verde
 
 **Subtareas**
-- [ ] Sembrar 10.000 trabajos terminales y medir el plan actual
-- [ ] Decidir un sondeo o dos y anotarlo en `Notas`
-- [ ] Probar equivalencia de semántica
-- [ ] `usage-meter start/close` de la tarea
+- [x] Sembrar 10.000 trabajos terminales y medir el plan actual
+- [x] Decidir un sondeo o dos y anotarlo en `Notas`
+- [x] Probar equivalencia de semántica
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `store_jobs.py:92` (`ORDER BY priority, available_at, created_at, id` con `OR` sobre `running` caducado) y `:104` (reconciliación). Hipótesis de la spec: un índice parcial sirve; si no, dos sondeos.
+**Notas**: Patrón: `store_jobs.py:92` (`ORDER BY priority, available_at, created_at, id` con `OR` sobre `running` caducado) y `:104` (reconciliación). Hipótesis de la spec: un índice parcial sirve; si no, dos sondeos. usage-meter reliable-operations/T-15 {inicio 20:16:55Z, fin 20:24:57Z, horas_ia 0.19, duracion 11m, medido}. RED: `test_queue_indexes` falló con `ImportError: cannot import name 'CLAIM_EXPIRED' from 'memory_platform.store_jobs'` · 2026-11-15; la medida del estado anterior es el control de la propia prueba (`OLD_CLAIM` ordena: nodos Sort/Seq Scan). EXPLAIN (ejecutado en una base aislada, 10.000 terminales + 50.000 en espera + 1 caducado; `EXPLAIN (ANALYZE)`): la sentencia única con `OR` -> Seq Scan + Sort, 111,7 ms; con solo 5 trabajos vivos el plan era BitmapOr (`memory_jobs_claim` + `memory_job_queue`) + Sort + LockRows: usa el índice nuevo pero ordena TODO lo vivo en cada reclamo (el `OR` impide devolver filas en orden de índice). Sondeo de espera -> Index Scan `memory_jobs_claim`, sin Sort, 0,08 ms; sondeo de caducadas -> `memory_jobs_running_lease`, 0,22 ms; la sentencia `attempts_exhausted` (T-10) -> sin Seq Scan (usa `memory_job_queue` y, sin éste, `memory_jobs_running_lease`). DECISIÓN (dos sondeos, no uno): `store_jobs.py` gana `CLAIM_WAITING`, `CLAIM_EXPIRED`, `FAIL_EXHAUSTED` y la función `next_claimable(c)` (función de módulo, no método: `store_surface.json` intacto). Devuelve el primero de cada conjunto y, si hay ambos, el anterior en (priority, available_at, created_at, id); el desempate por `id` lo decide la base (`SELECT a::text < b::text`), no Python, porque el colador de la base puede ordenar distinto (en ICU 'a' < 'B'). Misma semántica que la consulta única: ambos sondeos llevan `FOR UPDATE SKIP LOCKED`; si los dos encuentran fila, la perdedora queda bloqueada por esta transacción hasta su COMMIT (milisegundos): otro worker toma el siguiente en vez de ella, nada se pierde ni se toma dos veces (no se usa un sondeo sin bloqueo para decidir: bajo contención devolvería una fila que otro tiene y el reclamo giraría o devolvería vacío con trabajo pendiente). Reconciliación, `destination_retired`, `attempts_exhausted` de seguridad y `superseded` intactos. Pruebas (`test_queue_indexes.py` 4 -> 8): QueuePlanTests (2: plan de ambos sondeos y de la sentencia agotada sobre 10.000 terminales + 2.000 en espera + 40 en curso; controles: sin el índice, o con la sentencia `OR`, el plan ordena o recorre) y ClaimOrder (2: equivalencia con la consulta única ordenada sobre una cola mixta de 56+4 trabajos con empates, en la base por defecto y en una base ICU). Base propia por prueba, sin reloj real (fechas sembradas). MUTANTES en copia temporal (cada uno en rojo): `CLAIM_WAITING` con el `OR` -> FAIL plan del sondeo de espera; desempate con `<` de Python -> FAIL equivalencia ICU; sin `priority` en la comparación -> FAIL x2; devolver siempre el de espera -> FAIL x2; `FAIL_EXHAUSTED` sin `state='running'` -> FAIL plan (Seq Scan). VERIFICACIÓN (ejecutor rápido de módulos, imagen `kairos-test:i3p2fix1`, código montado): `test_queue_indexes test_jobs test_worker test_job_leases` -> Ran 62 tests OK (las de reclamo existentes siguen verdes). EOL conservado (LF). Visible para clientes: ninguno (contrato MCP intacto; mismo orden de reclamo).
 
 ### T-16 — `admin prune-tables` por lotes con `--dry-run` y ventanas por tabla
 
