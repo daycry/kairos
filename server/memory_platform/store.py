@@ -4,6 +4,7 @@ Facade: the implementation lives in the store_* domain mixins; helpers are re-ex
 """
 from contextlib import contextmanager
 
+from .errors import StoreUnavailable, is_store_unavailable
 from .store_auth import AuthMixin
 from .store_common import as_dict, canonical, clean, digest, lexical_query, new_id
 from .store_documents import DocumentsMixin
@@ -23,8 +24,15 @@ class Store(AuthMixin, IngestMixin, DocumentsMixin, GraphMixin, JobsMixin, Vecto
 
     @contextmanager
     def transaction(self):
+        """The one place that opens a connection. A database that does not answer (connect, query or commit) leaves as `StoreUnavailable`
+        (see `errors.is_store_unavailable`); every other error, including those of the caller's own code, passes through untouched."""
         import psycopg
         from psycopg.rows import dict_row
-        with psycopg.connect(self.dsn, row_factory=dict_row) as connection:
-            with connection.transaction():
-                yield connection
+        try:
+            with psycopg.connect(self.dsn, row_factory=dict_row) as connection:
+                with connection.transaction():
+                    yield connection
+        except Exception as exc:
+            if is_store_unavailable(exc) and not isinstance(exc, StoreUnavailable):
+                raise StoreUnavailable(type(exc).__name__) from None
+            raise

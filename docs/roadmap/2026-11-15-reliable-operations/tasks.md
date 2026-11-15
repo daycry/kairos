@@ -41,7 +41,7 @@ test-plan: n/a (sin UI)
 | Fase | Completadas | Total | Progreso | H. humanas (real/est) | H. IA ejec. (real/est) | Supervisión (real/est) | Tokens (real/est) |
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Arnés de fallos y tests de límites (C-07) | 6 | 6 | 100% | 0 / 32.4h | 0.83 / 4.3h | 0 / 1.1h | 0 / 1080 k |
-| Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 0 | 7 | 0% | 0 / 27.0h | 0 / 3.6h | 0 / 0.9h | 0 / 900 k |
+| Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 1 | 7 | 14% | 0 / 27.0h | 0.11 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 0 | 7 | 0% | 0 / 27.0h | 0 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 0 | 9 | 0% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 0 | 5 | 0% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **6** | **98** | **6%** | **0 / 412.8h** | **0.83 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **7** | **98** | **7%** | **0 / 412.8h** | **0.94 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -249,15 +249,16 @@ test-plan: n/a (sin UI)
 
 ## Fase 2 — Worker resistente a la caída de base (C-02, B-03)
 
-**Estado**: borrador · **Hito**: A · **Estimado**: 27.0h (22.5h base, de ellas 7.5h de revisión adversarial) · **Real**: — · **Coste est.**: 1.350 € · **Tokens est.**: 900 k
+**Estado**: en-progreso · **Hito**: A · **Estimado**: 27.0h (22.5h base, de ellas 7.5h de revisión adversarial) · **Real**: — · **Coste est.**: 1.350 € · **Tokens est.**: 900 k
 
 ### T-07 — Clase `StoreUnavailable` y clasificación de errores de base
 
 - **Descripción**: Introducir `StoreUnavailable` para `psycopg.OperationalError`/`InterfaceError` (y, más adelante, agotamiento del pool) y un clasificador que distinga «la base no responde» de «el proveedor falló». Fuente: CA-10, CA-11; B-03.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Una base de datos que no responde se distingue ya de un fallo del proveedor: el error de base se señala aparte, sin dirección ni contraseña.
+- **Estado**: completado
+- **Cerrada**: 2026-11-15
 - **Tiempo humano**: est. 3h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.11h (medido)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 110 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
@@ -267,17 +268,17 @@ test-plan: n/a (sin UI)
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_store_unavailable|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] `StoreUnavailable` y un `is_store_unavailable(exc)` cubren `OperationalError`, `InterfaceError` y cortes de conexión a mitad de consulta con el `FaultProxy`
-- [ ] Un error de proveedor (`provider_error`) nunca se clasifica como base no disponible, y al revés (prueba de ambos caminos)
-- [ ] El mensaje registrado nunca incluye el DSN ni la contraseña
+- [x] `StoreUnavailable` y un `is_store_unavailable(exc)` cubren `OperationalError`, `InterfaceError` y cortes de conexión a mitad de consulta con el `FaultProxy`
+- [x] Un error de proveedor (`provider_error`) nunca se clasifica como base no disponible, y al revés (prueba de ambos caminos)
+- [x] El mensaje registrado nunca incluye el DSN ni la contraseña
 
 **Subtareas**
-- [ ] Escribir primero las pruebas con `FaultProxy` (rojo)
-- [ ] Implementar clase y clasificador
-- [ ] Probar la redacción del DSN
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero las pruebas con `FaultProxy` (rojo)
+- [x] Implementar clase y clasificador
+- [x] Probar la redacción del DSN
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `errors.py` (jerarquía de errores del servidor) y `store.py:24-30` (único punto de `psycopg.connect`). Clase entera: todas las rutas de error de base, no un caso (aprendizaje 1 de la retro).
+**Notas**: Patrón: `errors.py` (jerarquía de errores del servidor) y `store.py:24-30` (único punto de `psycopg.connect`). Clase entera: todas las rutas de error de base, no un caso (aprendizaje 1 de la retro). CIERRE: usage-meter {inicio 16:45:41Z, fin 16:49:26Z, horas_ia 0.11, duracion 7m, medido}. Diseño: `StoreUnavailable(Exception)` (NO subclase de MemoryError: no lleva código público, así ningún `except MemoryError` la convierte en fail_job; mensaje fijo 'Database unavailable', `cause_type` = nombre de la clase del driver, sin cadena `from None`) e `is_store_unavailable(exc)` en errors.py (OperationalError, InterfaceError y StoreUnavailable; solo mira la excepción, nunca `__cause__`, de modo que un ProviderError que envuelve un error de base sigue siendo de proveedor). `Store.transaction()` (store.py, único `psycopg.connect`) convierte esos errores en StoreUnavailable al conectar, a mitad de consulta y al confirmar; el resto de errores del cuerpo pasan intactos (UniqueViolation, MemoryError, ValueError). Firma y flag contextmanager de `transaction` no cambian: test_store_surface verde. ALCANCE DE LA CLASE: OperationalError incluye QueryCanceled (statement_timeout), DeadlockDetected y AdminShutdown; los tres sitios que atrapan QueryCanceled lo hacen DENTRO de un savepoint del cuerpo (store_documents.py:33, store_vectors.py:115 y :223), así que no cambian; una cancelación que escape de `transaction()` pasa a StoreUnavailable (antes: excepción cruda, en la API el mismo 500 genérico de app.py:128). Para el worker es lo correcto: base con problemas, no fallo de proveedor. Visible para clientes: ninguno (la API ya devolvía el 500 genérico; el contrato MCP no cambia). RED: no hubo rojo previo al código (pruebas escritas junto con la implementación); el rojo se demuestra con mutantes en copia temporal del paquete: M1 `transaction()` sin envoltura -> 4 ERROR (corte al conectar, a mitad de consulta, antes del commit y el de redacción: llegan psycopg.OperationalError/InterfaceError crudos); M2 clasificador solo con OperationalError -> FAIL test_the_connection_errors_of_the_driver_and_the_class_itself_are_the_database_not_answering (InterfaceError); M3 `raise ... from exc` -> FAIL test_the_error_names_neither_the_password_nor_the_address_and_keeps_no_chain_that_could. Verificación (módulo en imagen kairos-test:i3p1 con el paquete montado, `docker run --network=none`): test_store_unavailable 11 tests ok, DEV_RESULT 11 0 0 0; test_store_surface + test_store + test_jobs + test_job_leases verdes en el mismo arranque; suite completa en T-12. NOTA DE ENTORNO: test_worker.test_the_extra_call_for_other_dimensions_fits_inside_the_job_deadline (reloj real, 0.4 s de sleeps contra un plazo de 0.5 s) falla en mi ejecutor rápido de módulos tanto con el árbol de HEAD (comprobado con `git archive HEAD`) como con el modificado, y pasa en `docker build --target test` (806 en verde); es preexistente y de temporización, no de esta tarea.
 
 ### T-08 — Reclamo resiliente: espera exponencial con jitter y `MEMORY_WORKER_DB_BACKOFF_MAX`
 

@@ -31,3 +31,28 @@ class Conflict(MemoryError):
 
 
 DomainError = MemoryError
+
+
+class StoreUnavailable(Exception):
+    """The database did not answer: refused or lost connection, a connection closed in the middle of a query or of the commit.
+
+    It is NOT a `MemoryError` on purpose: it carries no public code, and the worker must never turn it into a failure of a job (`fail_job`),
+    which is what a provider failure does. The message is fixed and `cause_type` is the class name of the driver error: the driver message may name
+    the host, the port or the user, so it is neither kept nor chained (`raise ... from None`)."""
+
+    def __init__(self, cause_type=None):
+        super().__init__('Database unavailable')
+        self.cause_type = cause_type
+
+
+def is_store_unavailable(exc):
+    """True when `exc` says the database is unreachable (a `StoreUnavailable`, or the driver's `OperationalError` / `InterfaceError`), False for every
+    other error: a provider error, an application error (`MemoryError`), a data error such as a violated constraint. Only the exception itself is
+    looked at, never its `__cause__`: a provider failure that happens to wrap something else stays a provider failure."""
+    if isinstance(exc, StoreUnavailable):
+        return True
+    try:
+        import psycopg
+    except ImportError:
+        return False
+    return isinstance(exc, (psycopg.OperationalError, psycopg.InterfaceError))
