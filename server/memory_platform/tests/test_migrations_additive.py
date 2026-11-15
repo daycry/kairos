@@ -1,6 +1,5 @@
 """CA-34: the migrations only ADD (no DROP, TRUNCATE, DELETE, RENAME, ALTER ... TYPE or SET NOT NULL), and the failed-jobs index of schema version 11 is additive and usable."""
 import ast
-import contextlib
 import os
 from pathlib import Path
 import re
@@ -64,25 +63,29 @@ def assert_contiguous_versions(test, c, at_least=11):
     test.assertGreaterEqual(max(versions), at_least)
 
 
-def migration_locks(store):
-    """Run `store.migrate()` and return {relation: {lock modes}} held by its transaction when the whole migration is about to COMMIT."""
-    held = {}
-
-    class Probe(type(store)):
-        @contextlib.contextmanager
-        def transaction(self):
-            with super().transaction() as c:
-                yield c
-                for row in c.execute("SELECT relation::regclass::text AS rel, mode FROM pg_locks WHERE pid=pg_backend_pid() AND locktype='relation'").fetchall():
-                    held.setdefault(row['rel'], set()).add(row['mode'])
-
-    probe = Probe.__new__(Probe)
-    probe.__dict__.update(store.__dict__)
-    probe.migrate()
-    return held
-
-
 STRONG = {'ShareLock', 'ShareRowExclusiveLock', 'ExclusiveLock', 'AccessExclusiveLock'}  # every mode that blocks a writer, a reader, or both
+
+
+def schema_section(tag, guarded=True):
+    """The `DO $tag$ ... $tag$;` block of `schema.sql` (one schema version), with the `SET LOCAL lock_timeout` that precedes it. `guarded=False` strips its
+    `IF EXISTS ... END IF;` early return: the block as it would run without the guard (a positive control for the lock measurement)."""
+    text = (PACKAGE / 'schema.sql').read_text(encoding='utf-8')
+    block = re.search(r'DO \$%s\$.*?\$%s\$;' % (tag, tag), text, re.DOTALL).group(0)
+    if not guarded:
+        block = re.sub(r'IF EXISTS .*?END IF;', '', block, count=1, flags=re.DOTALL)
+    return "SET LOCAL lock_timeout = '5s';\n" + block
+
+
+def section_table_locks(psycopg, dsn, tag, guarded=True):
+    """Run ONE section of `schema.sql` alone, on a database that is already migrated, and return {table: {lock modes}} held by its transaction before the COMMIT.
+    Only tables are watched (an index is locked as a consequence of locking its table), every table of the schema `memory`: `documents`, `memory_items`, `embeddings`, `jobs`..."""
+    with psycopg.connect(dsn) as c:
+        c.execute(schema_section(tag, guarded))
+        held = {}
+        for name, mode in c.execute("SELECT r.relname, l.mode FROM pg_locks l JOIN pg_class r ON r.oid=l.relation WHERE l.pid=pg_backend_pid() AND l.locktype='relation' "
+                                    "AND r.relnamespace='memory'::regnamespace AND r.relkind IN ('r','p')").fetchall():
+            held.setdefault(name, set()).add(mode)
+    return held
 
 
 def statements(text):
@@ -161,6 +164,19 @@ class StaticTests(unittest.TestCase):
             self.assertEqual(found, [], name)
 
 
+    def test_every_registration_of_a_version_leaves_an_existing_one_alone(self):
+        """Versions 8 to 11 register themselves inside `DO` blocks after a `RETURN` that a migrated database never passes, so no behavioural test reaches them
+        on a repeated migrate: the statement itself is checked, in every migration source (a bare INSERT would collide, a DO UPDATE would rewrite the date)."""
+        registered = set()
+        for name in MIGRATION_SOURCES:
+            text = statements((PACKAGE / name).read_text(encoding='utf-8')) if name.endswith('.sql') else '\n'.join(
+                node.value for node in ast.walk(ast.parse((PACKAGE / name).read_text(encoding='utf-8'))) if isinstance(node, ast.Constant) and isinstance(node.value, str))
+            for statement in re.findall(r'INSERT\s+INTO\s+memory\.schema_versions\b[^;]*;', text, re.IGNORECASE):
+                self.assertRegex(statement, r'(?i)\bON\s+CONFLICT\s*(\(\s*version\s*\))?\s+DO\s+NOTHING\s*;$', statement)
+                registered.add(int(re.search(r'VALUES\s*\(\s*(\d+)\s*\)', statement, re.IGNORECASE).group(1)))
+        self.assertTrue(set(range(1, 12)) <= registered, registered)
+
+
 class VersionRegistrationTests(unittest.TestCase):
     """Behaviour of the registration of versions (it used to be a regular expression over `schema.sql`)."""
     def setUp(self):
@@ -191,6 +207,34 @@ class VersionRegistrationTests(unittest.TestCase):
         store.migrate()
         with self.psycopg.connect(self.dsn) as c:
             self.assertEqual(c.execute('SELECT version,applied_at FROM memory.schema_versions ORDER BY version').fetchall(), before)
+
+    def test_the_registrations_behind_the_guards_run_again_without_overwriting_one_that_exists(self):
+        """Versions 8-10 are registered again when their row is gone (the block runs from the top); version 11 is registered with its row ALREADY there when its
+        index is missing: that is the only route that reaches an INSERT of a version with a conflict, and it must neither fail nor move the date."""
+        store = Store(self.dsn)
+        store.migrate()
+        past = "timestamptz '2001-01-01 00:00:00+00'"
+        with self.psycopg.connect(self.dsn) as c:
+            c.execute(f'UPDATE memory.schema_versions SET applied_at={past}')
+            c.execute('DELETE FROM memory.schema_versions WHERE version IN (8,9,10)')
+            c.execute('DROP INDEX memory.memory_jobs_failed_code')
+        store.migrate()
+        with self.psycopg.connect(self.dsn) as c:
+            assert_contiguous_versions(self, c, 11)
+            rows = dict(c.execute(f'SELECT version,applied_at > {past} FROM memory.schema_versions').fetchall())
+            self.assertEqual({v: rows[v] for v in (8, 9, 10)}, {8: True, 9: True, 10: True}, 'a deleted registration is written again')
+            self.assertEqual({v: rows[v] for v in (1, 5, 11)}, {1: False, 5: False, 11: False}, 'a registration that existed keeps its date')
+            self.assertIsNotNone(c.execute("SELECT to_regclass('memory.memory_jobs_failed_code')").fetchone()[0])
+
+    def test_every_section_is_a_no_op_on_a_migrated_database_and_the_measure_sees_it_when_it_is_not(self):
+        """Behind its guard a section takes no strong lock on any table (the earlier `ADD COLUMN IF NOT EXISTS` of versions 2 and 3 live outside the sections and are not
+        measured here). Control: the same sections without their guard DO, so the measurement can fail."""
+        Store(self.dsn).migrate()
+        for tag in ('pgvector', 'fts', 'chunks', 'failedjobs'):
+            held = section_table_locks(self.psycopg, self.dsn, tag)
+            self.assertEqual({table: modes & STRONG for table, modes in held.items() if modes & STRONG}, {}, tag)
+        for tag, table in (('pgvector', 'embeddings'), ('fts', 'documents'), ('fts', 'memory_items'), ('chunks', 'jobs')):
+            self.assertIn('AccessExclusiveLock', section_table_locks(self.psycopg, self.dsn, tag, guarded=False).get(table, set()), (tag, table))
 
     def test_a_repeated_migrate_changes_nothing_in_the_catalog(self):
         store = Store(self.dsn)

@@ -9,7 +9,7 @@ import uuid
 from memory_platform.admin import content_manifest
 from memory_platform.store import Store
 from memory_platform.tests.schema_history import SCHEMA_V9
-from memory_platform.tests.test_migrations_additive import STRONG, additive_violations, assert_contiguous_versions, catalog_snapshot, migration_locks
+from memory_platform.tests.test_migrations_additive import STRONG, additive_violations, assert_contiguous_versions, catalog_snapshot, section_table_locks
 
 MODEL = 'nomic-embed-text'
 
@@ -110,17 +110,15 @@ class ChunkSchemaTests(unittest.TestCase):
             self.assertEqual(identity(c), first)
             self.assertEqual(c.execute('SELECT count(*) FROM memory.schema_versions WHERE version=10').fetchone()[0], 1)
 
-    def test_repeated_migrate_takes_no_lock_on_the_fragment_table_or_its_indexes(self):
-        """The migration of an already migrated database creates nothing, so the fragment table, its indexes and `projects` are not even locked
-        (measured in `pg_locks` at the end of the migration transaction, before it commits)."""
-        store = Store(self.admin_dsn)
-        migration_locks(store)
-        with self.psycopg.connect(self.admin_dsn) as c:
-            relations = {row[0] for row in c.execute("SELECT relname FROM pg_class WHERE relnamespace='memory'::regnamespace AND relname LIKE '%chunk%'").fetchall()}
-        self.assertGreaterEqual(len(relations), 3, relations)  # table, primary key, HNSW index
-        held = migration_locks(store)
-        for relation in relations | {'projects'}:
-            self.assertEqual(held.get('memory.' + relation, set()) & STRONG, set(), relation)
+    def test_the_fragments_section_alone_takes_no_strong_lock_on_a_migrated_database(self):
+        """The fragments section (version 10) of `schema.sql`, run alone over an already migrated database, locks no table of the schema (`embedding_chunks`, `projects`,
+        `jobs` and `embeddings` above all) in a mode that blocks a writer. A section that runs again (guard lost) would take ACCESS EXCLUSIVE on `jobs`
+        (its `ADD COLUMN`): the control proves the measure sees it."""
+        Store(self.admin_dsn).migrate()
+        held = section_table_locks(self.psycopg, self.admin_dsn, 'chunks')
+        self.assertEqual({table: modes & STRONG for table, modes in held.items() if modes & STRONG}, {})
+        unguarded = section_table_locks(self.psycopg, self.admin_dsn, 'chunks', guarded=False)
+        self.assertIn('AccessExclusiveLock', unguarded.get('jobs', set()))
 
     def test_the_first_migration_over_the_previous_version_only_adds(self):
         """Catalog before and after: nothing disappears or changes type, and the fragment table, `priority` and `chunked` arrive."""

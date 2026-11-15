@@ -7,7 +7,7 @@ import uuid
 from memory_platform.admin import content_manifest
 from memory_platform.store import Store
 from memory_platform.tests.schema_history import SCHEMA_V8
-from memory_platform.tests.test_migrations_additive import STRONG, additive_violations, assert_contiguous_versions, catalog_snapshot, migration_locks
+from memory_platform.tests.test_migrations_additive import STRONG, additive_violations, assert_contiguous_versions, catalog_snapshot, section_table_locks
 
 CONTENT = 'La configuración de las canciones se guarda en el servidor.'
 
@@ -123,19 +123,17 @@ class FtsMigrationTests(unittest.TestCase):
         with self.psycopg.connect(self.admin_dsn) as c:
             self.assertEqual(self.storage_identity(c), first)
 
-    def test_repeated_migrate_does_not_rebuild_the_language_indexes(self):
-        """Earlier versions (`ADD COLUMN IF NOT EXISTS` of 2 and 3) still lock `documents` and `memory_items` briefly; the FTS version must not add to it:
-        the second migration creates no language or trigram index, so none of them is locked (measured in `pg_locks` before the COMMIT)."""
+    def test_the_fts_section_alone_takes_no_strong_lock_on_a_migrated_database(self):
+        """The FTS section (version 9) of `schema.sql`, run alone over an already migrated database, locks no table of the schema (`documents` and `memory_items` above all,
+        but also `embeddings`) in a mode that blocks a writer. Measured per section because earlier versions (`ADD COLUMN IF NOT EXISTS` of 2 and 3) lock those two tables
+        in a whole `migrate()`. A section that runs again (guard lost) would take ACCESS EXCLUSIVE on both tables: the control proves the measure sees it."""
         self.seed_previous_version()
-        store = Store(self.admin_dsn)
-        migration_locks(store)
-        with self.psycopg.connect(self.admin_dsn) as c:
-            indexes = {row[0] for row in c.execute("SELECT indexname FROM pg_indexes WHERE schemaname='memory' AND tablename IN ('documents','memory_items') "
-                                                   "AND (indexdef LIKE '%search_vector_es%' OR indexdef LIKE '%search_vector_en%' OR indexdef LIKE '%gin_trgm_ops%')").fetchall()}
-        self.assertEqual(len(indexes), 6, indexes)
-        held = migration_locks(store)
-        for index in indexes:
-            self.assertEqual(held.get('memory.' + index, set()) & STRONG, set(), index)
+        Store(self.admin_dsn).migrate()
+        held = section_table_locks(self.psycopg, self.admin_dsn, 'fts')
+        self.assertEqual({table: modes & STRONG for table, modes in held.items() if modes & STRONG}, {})
+        unguarded = section_table_locks(self.psycopg, self.admin_dsn, 'fts', guarded=False)
+        for table in ('documents', 'memory_items'):
+            self.assertIn('AccessExclusiveLock', unguarded.get(table, set()), table)
 
     def test_the_first_migration_over_the_previous_version_only_adds(self):
         """Catalog before and after: nothing disappears or changes type; the language columns, their indexes, the trigger and the extensions arrive."""
