@@ -43,9 +43,10 @@ class FaultProxyTests(unittest.TestCase):
         with self.connect() as again:
             self.assertEqual(again.execute('SELECT 2').fetchone()[0], 2)
 
-    def test_cut_takes_effect_before_it_returns_even_for_a_connection_being_opened(self):
-        # Many threads connect while the proxy is cut and restored: every connection either works or fails with OperationalError,
-        # and after the final cut() none survives (no registered socket is left behind).
+    def test_a_cut_proxy_refuses_every_connection_that_arrives_from_many_threads_and_serves_again_after_restore(self):
+        # Eight threads connect while the proxy is cut: each one fails with OperationalError (none is forwarded). This does NOT exercise the race between an
+        # accept() and a cut() in progress (that interleaving is not reproducible without a hook inside the accept loop); what it pins is the cut mode of the
+        # acceptor under concurrent clients, and that restore() leaves the proxy usable.
         outcomes, lock = [], threading.Lock()
 
         def attempt():
@@ -65,12 +66,10 @@ class FaultProxyTests(unittest.TestCase):
         for thread in threads:
             thread.join(timeout=30)
         self.assertEqual(outcomes, ['down'] * 8)
+        self.assertEqual(self.proxy.accepted, 8)  # accepted and closed at once, never forwarded
         self.proxy.restore()
         with self.connect() as c:
-            c.execute('SELECT 1')
-        self.proxy.cut()
-        with self.proxy._lock:
-            self.assertEqual(len(self.proxy._held), 0)
+            self.assertEqual(c.execute('SELECT 1').fetchone()[0], 1)
 
     def test_mute_accepts_and_does_not_answer(self):
         self.proxy.mute()
