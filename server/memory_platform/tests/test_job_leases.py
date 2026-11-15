@@ -1,6 +1,9 @@
 """Characterisation of the lease of a job as it behaves today (I3 / CA-34): a `running` job whose lease expired is claimed again and the
 claim counts an attempt. Nothing here changes production code: the poisoned-job cap (CA-12) arrives in a later phase and rewrites one test."""
+import os
 import unittest
+import uuid
+from unittest.mock import patch
 
 from memory_platform.tests.fault_proxy import expire_lease
 from memory_platform.tests.test_store import create_core, event, extraction_receipt
@@ -8,18 +11,33 @@ from memory_platform.tests.test_store import create_core, event, extraction_rece
 
 class LeaseTests(unittest.TestCase):
     def setUp(self):
-        self.store, self.actor, self.pid = create_core(extraction=True)
+        dsn = os.getenv('MEMORY_TEST_DSN')
+        if not dsn:
+            raise unittest.SkipTest('MEMORY_TEST_DSN must point to an isolated PostgreSQL test database')
+        import psycopg
+        from psycopg.conninfo import make_conninfo
+        # A database of its own: the queue holds only the job of this test, so a claim can never take (and leave `running`) a job of another test,
+        # and the 1990 `available_at` that `expire_lease` writes cannot move ahead of anybody else's job. Dropping it cleans everything this test made.
+        self.name = 'lease_' + uuid.uuid4().hex[:12]
+        with psycopg.connect(dsn, autocommit=True) as admin:
+            admin.execute(f'CREATE DATABASE {self.name}')
+
+        def drop():
+            with psycopg.connect(dsn, autocommit=True) as admin:
+                admin.execute(f'DROP DATABASE IF EXISTS {self.name} WITH (FORCE)')
+
+        self.addCleanup(drop)
+        with patch.dict(os.environ, {'MEMORY_TEST_DSN': make_conninfo(dsn, dbname=self.name)}):
+            self.store, self.actor, self.pid = create_core(extraction=True)
         self.jid = self.store.ingest_event(self.actor, event(self.pid))['jobs'][0]
         with self.store.transaction() as c:
             c.execute("UPDATE memory.jobs SET available_at='1990-01-01T00:00:00Z' WHERE id=%s", (self.jid,))
 
     def claim(self, worker):
-        """The next claim of this test's job. Other tests leave jobs in the shared database; claim until ours comes up (it is the first in line)."""
-        for _ in range(50):
-            job = self.store.claim_job(worker)
-            if job is None or job['id'] == self.jid:
-                return job
-        self.fail('the claims never reached the job of this test')
+        """The next claim: this database holds no other job, so it is this test's job or nothing."""
+        job = self.store.claim_job(worker)
+        self.assertTrue(job is None or job['id'] == self.jid, job)
+        return job
 
     def row(self):
         with self.store.transaction() as c:

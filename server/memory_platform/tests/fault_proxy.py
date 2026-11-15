@@ -183,9 +183,9 @@ class FaultProxy:
 def expire_lease(store, job_id: str) -> None:
     """Make the lease of a `running` job expire now, without waiting for it (I3 / CA-12, CA-34).
 
-    Only the lease moves: `state`, `attempts`, `fence` and `worker_id` stay as the claim left them, so the next `claim_job` finds exactly what a
-    worker that died mid-job leaves behind. `available_at` goes to 1990 so the job is the first one a claim sees among whatever other tests left
-    in the shared test database. Raises when the job is not `running` (a helper that silently did nothing would make a test pass for nothing).
+    Two columns move: `lease_until` (to the past) and `available_at` (to 1990, so the job is the first one a claim sees among whatever other tests
+    left in the shared test database). `state`, `attempts`, `fence` and `worker_id` stay as the claim left them, so the next `claim_job` finds exactly
+    what a worker that died mid-job leaves behind. Raises when the job is not `running` (a helper that silently did nothing would make a test pass for nothing).
     """
     with store.transaction() as c:
         row = c.execute("UPDATE memory.jobs SET lease_until=clock_timestamp()-interval '1 second', available_at=timestamptz '1990-01-01 00:00:00+00' "
