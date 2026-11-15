@@ -287,7 +287,7 @@ class ContractsJobTests(unittest.TestCase):
 
 
 GATE_STEP = 'The suite really ran and nothing was skipped'
-MIN_FLOOR = 884  # the suite with the kairos-mcp chain tests, the review corrections and the C-07 tests and the initiative 3 phase 1 tests (T-01 began at 483, 639 when kairos-mcp started, 727 with the chain tests, 743 after phase 5, 756 with the MCP legacy and route tests, 759 with the phase 7 version tests, 764 with the phase 8 rehearsal tests, 801 with the fault-injection harness and the limit, schema and lease tests of initiative 3 phase 1, 806 with the corrections of its review, 852 with the database-down worker tests of initiative 3 phase 2, 870 with the corrections of its review, 884 with the corrections of its second review); raise it when the suite grows, never lower it
+MIN_FLOOR = 917  # the suite with the kairos-mcp chain tests, the review corrections and the C-07 tests and the initiative 3 phase 1 tests (T-01 began at 483, 639 when kairos-mcp started, 727 with the chain tests, 743 after phase 5, 756 with the MCP legacy and route tests, 759 with the phase 7 version tests, 764 with the phase 8 rehearsal tests, 801 with the fault-injection harness and the limit, schema and lease tests of initiative 3 phase 1, 806 with the corrections of its review, 852 with the database-down worker tests of initiative 3 phase 2, 870 with the corrections of its review, 884 with the corrections of its second review, 917 with the queue-index and table-pruning tests of phase 3); raise it when the suite grows, never lower it
 GOOD = 'MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": %d}' % MIN_FLOOR
 
 
@@ -386,7 +386,7 @@ def log_line(tests=MIN_FLOOR, failures=0, errors=0, skipped=0, passed='true'):
 # (name, simulated build log, must the step succeed)
 GATE_CASES = (
     ('baseline, nothing wrong', 'noise\n' + GOOD + '\nmore noise\n', True),
-    ('more tests than the baseline', log_line(tests=900) + '\n', True),
+    ('more tests than the baseline', log_line(tests=MIN_FLOOR + 16) + '\n', True),
     ('one below the minimum', log_line(tests=MIN_FLOOR - 1) + '\n', False),
     ('1 failure', log_line(failures=1) + '\n', False),
     ('1 error', log_line(errors=1) + '\n', False),

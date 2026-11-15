@@ -67,11 +67,12 @@ class NativeRuntimeTests(unittest.TestCase):
     def test_retired_pending_job_is_failed_without_provider_execution(self):
         store = Store('unused')
         connection = Mock()
-        selected = iter([{'id': 'owned-retired-job', 'destination': 'retired-adapter'}, None])
+        waiting = iter([{'id': 'owned-retired-job', 'destination': 'retired-adapter'}, None])
         def execute(query, parameters=None):
             result = Mock()
             if query.startswith('SELECT * FROM memory.jobs'):
-                result.fetchone.return_value = next(selected)
+                # A claim reads two sets in order (schema version 12): the waiting jobs hold the retired job once, the expired leases hold nothing.
+                result.fetchone.return_value = next(waiting) if "state IN ('pending','unknown')" in query else None
             return result
         connection.execute.side_effect = execute
         store.transaction = lambda: nullcontext(connection)
