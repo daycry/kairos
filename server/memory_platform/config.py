@@ -315,6 +315,39 @@ def backup_keep(environ=None) -> int:
     return int(raw)
 
 
+BACKUP_REMOTE_KEEP_DEFAULT = 30
+BACKUP_INTERVAL_DEFAULT = '24h'
+BACKUP_INTERVAL_UNITS = {'': 1, 's': 1, 'm': 60, 'h': 3600, 'd': 86400}
+BACKUP_INTERVAL_MAX_SECONDS = 30 * 86400
+
+
+def backup_destination(environ=None):
+    """MEMORY_BACKUP_DESTINATION: where `backup-cycle` sends the copies (`dir:<absolute path>` or `rclone:<remote>:<path>`); blank or unset is None (no destination: the cycle refuses to run)."""
+    environ = os.environ if environ is None else environ
+    return environ.get('MEMORY_BACKUP_DESTINATION', '').strip() or None
+
+
+def backup_remote_keep(environ=None) -> int:
+    """MEMORY_BACKUP_REMOTE_KEEP: the copies `backup-cycle` keeps at the destination (default 30); an integer of 1 or more."""
+    environ = os.environ if environ is None else environ
+    raw = environ.get('MEMORY_BACKUP_REMOTE_KEEP', '').strip()
+    if not raw:
+        return BACKUP_REMOTE_KEEP_DEFAULT
+    if not raw.isascii() or not raw.isdigit() or not 1 <= int(raw) <= BACKUP_KEEP_MAX:
+        raise ValueError(f'MEMORY_BACKUP_REMOTE_KEEP must be an integer between 1 and {BACKUP_KEEP_MAX}')
+    return int(raw)
+
+
+def backup_interval_seconds(environ=None) -> int:
+    """MEMORY_BACKUP_INTERVAL: the time between two cycles of `backup-cycle --loop` (default 24h): a whole number with an optional unit s, m, h or d (no unit: seconds), from 1 second to 30 days."""
+    environ = os.environ if environ is None else environ
+    raw = (environ.get('MEMORY_BACKUP_INTERVAL', '').strip() or BACKUP_INTERVAL_DEFAULT).lower()
+    number, unit = raw[:-1] if raw[-1:] in 'smhd' and raw[-1:] else raw, raw[-1:] if raw[-1:] in 'smhd' and raw[-1:] else ''
+    if not number.isascii() or not number.isdigit() or not 1 <= int(number) * BACKUP_INTERVAL_UNITS[unit] <= BACKUP_INTERVAL_MAX_SECONDS:
+        raise ValueError('MEMORY_BACKUP_INTERVAL must be a duration such as 90s, 30m, 24h or 1d (from 1 second to 30 days)')
+    return int(number) * BACKUP_INTERVAL_UNITS[unit]
+
+
 def max_attempts(environ=None) -> int:
     """MEMORY_MAX_ATTEMPTS: the attempts a job is allowed (also the cap of claims of a job whose lease expires). An integer of 1 or more: with 0 or a negative
     number a job would never run or would be failed as `attempts_exhausted` on its first lost lease."""

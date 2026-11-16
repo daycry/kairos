@@ -46,7 +46,7 @@ test-plan: n/a (sin UI)
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 9 | 9 | 100% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 5 | 5 | 100% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 9 | 9 | 100% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
-| Fase 7 — Copia externa programada y runbook de restauración (C-01) | 0 | 6 | 0% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
+| Fase 7 — Copia externa programada y runbook de restauración (C-01) | 1 | 6 | 16.7% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 0 | 4 | 0% | 0 / 7.2h | 0 / 1.0h | 0 / 0.2h | 0 / 240 k |
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 0 | 7 | 0% | 0 / 19.8h | 0 / 2.6h | 0 / 0.7h | 0 / 660 k |
 | Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 0 | 7 | 0% | 0 / 34.2h | 0 / 4.6h | 0 / 1.1h | 0 / 1140 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **43** | **98** | **43.9%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **44** | **98** | **44.9%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1373,30 +1373,35 @@ test-plan: n/a (sin UI)
 ### T-44 — `admin backup-cycle` con destinos `dir:` y `rclone:`
 
 - **Descripción**: Subcomando que encadena `pg_dump` → cifrado → manifiesto → `verify-backup` → subida al destino (`dir:<ruta>` o `rclone:<remoto>:<ruta>`) → verificación del sha256 en destino → retención local y remota. `rclone` fijado por versión en `operator`. Ejecución opcional de `prune-tables` al final del ciclo. Fuente: CA-06; O-01; P-02.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Nuevo comando `backup-cycle`: copia cifrada y verificada que se envía a un directorio o a un remoto `rclone`, se lee de vuelta para comprobar el sha256 y aplica la retención; `prune-tables` opcional.
+- **Cerrada**: 2026-11-16
+- **Estado**: completado
 - **Tiempo humano**: est. 5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.67h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.67h (estimado) · real 0.46h (medido)
 - **Supervisión**: est. 0.17h (≈25 % IA) · real —
 - **Previsión IA**: 184 k in / 16 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/admin.py`, `server/memory_platform/config.py`, `server/memory_platform/Dockerfile`, `server/memory_platform/tests/test_backup_cycle.py`
+- **Archivos**: `server/memory_platform/admin.py`, `server/memory_platform/config.py`, `server/memory_platform/Dockerfile`, `server/memory_platform/tests/test_backup_cycle.py`, `server/memory_platform/offsite.py` (módulo nuevo: destinos y ciclo; añadido), `server/memory_platform/observability.py` (las dos series de la copia externa; añadido, es de T-45)
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_backup_cycle|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
+  - Salida (2026-11-16; imagen `kairos-test:i3p6f2` con el árbol de trabajo montado y `rclone` 1.60.1 instalado; la suite completa y su `MEMORY_TEST_RESULT` se pegan en T-48): `test_backup_cycle` → `Ran 23 tests ... OK` (17 de T-44 y 6 de T-45), con las 3 de `rclone` ejecutadas; junto a `test_deploy`, `test_deploy_isolation` y `test_observability`: `DEVRUN 109 0 0 0` (pruebas, fallos, errores, omitidas).
 
 **Criterios de aceptación**
-- [ ] Con un destino `dir:` en un directorio temporal, `backup-cycle` sube copia cifrada y manifiesto, verifica el sha256 en destino y aplica `MEMORY_BACKUP_REMOTE_KEEP` (30)
-- [ ] Con un remoto `rclone` de tipo `local` configurado por el test, hace lo mismo (el test se omite solo si `rclone` falta, y el recuento de la suite lo exige presente)
-- [ ] Ningún servicio de nube real ni credencial en el repositorio; la configuración del remoto vive en el test
+- [x] Con un destino `dir:` en un directorio temporal, `backup-cycle` sube copia cifrada y manifiesto, verifica el sha256 en destino y aplica `MEMORY_BACKUP_REMOTE_KEEP` (30)
+- [x] Con un remoto `rclone` de tipo `local` configurado por el test, hace lo mismo (el test se omite solo si `rclone` falta, y el recuento de la suite lo exige presente)
+- [x] Ningún servicio de nube real ni credencial en el repositorio; la configuración del remoto vive en el test
 
 **Subtareas**
-- [ ] Escribir primero las pruebas de `dir:` (rojo)
-- [ ] Implementar el ciclo y los dos destinos
-- [ ] Fijar `rclone` por versión en `operator`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero las pruebas de `dir:` (rojo)
+- [x] Implementar el ciclo y los dos destinos
+- [x] Fijar `rclone` por versión en `operator`
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `admin.py:286-313` (`backup`, `restore-check`) y las piezas de F6 (manifiesto, `age`, `--prune`). Hipótesis: `rclone` disponible en bookworm; si no, binario oficial con sha256 verificado. Nada se sube a un proveedor real.
+**Notas**: Módulo `offsite.py` (destinos `dir:`/`rclone:`, ciclo, retención, bucle) y gauges de `observability.py` añadidos a Archivos. `rclone` 1.60.1 de Debian fijado por versión (trixie `-4` en operator, bookworm `-2+b5` en test); sin binario externo. Se sube la copia, se lee de vuelta el sha256 y solo entonces su manifiesto; las copias locales recientes que el destino no tiene se reenvían (reintento de T-45, mismo flujo). Mutantes M1,M2,M6,M7,M9,M10,M11 en rojo. Horas: ventana común T-44..T-46 = 1.01h IA (medido), repartida por estimado.
+
+
+RED: `server/memory_platform/tests/test_backup_cycle.py::CommandTests` falló con usage: ... argument command: invalid choice: 'backup-cycle' (los 4 tests de la linea de comandos fallaron antes de cablear admin.py) · 2026-11-16.
 
 ### T-45 — Fallos del destino externo: `backup_offsite_failed`, métrica y reintento
 

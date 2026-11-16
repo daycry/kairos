@@ -1,0 +1,351 @@
+"""The external copy (C-01, P-02): `backup-cycle` makes a copy, verifies it, sends it to a destination, verifies it THERE and applies the retention of both places.
+
+Destinations: `dir:<absolute path>` (a mounted directory) and `rclone:<remote>:<path>` (a remote of the operator's rclone configuration). Both implement the same few
+operations (`names`, `put`, `fetch`, `digest`, `delete`) and fail with `OffsiteError`, whose text never carries what the destination or `rclone` printed: it could hold
+a URL, a token or a path.
+
+The order is the safety. A copy goes up first and its manifest last (a remote copy without manifest is not complete and is sent again); the sha256 of what the destination
+now holds is read back and compared with the manifest BEFORE the manifest goes up and before anything is deleted anywhere. A copy whose bytes differ at the destination is
+never completed with its manifest and nothing is deleted, locally or remotely. When the destination cannot be reached nothing local is deleted either (a copy that never
+left must not be pruned), the result is logged as `backup_offsite_failed`, `kairos_backup_offsite_success` goes to 0 and the next cycle sends again every copy the destination lacks.
+"""
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+
+from .backup import (BackupError, COPY_NAME, FUTURE_TOLERANCE_SECONDS, HASH_BLOCK, manifest_path, prune_backups, read_manifest, sha256_file, terminate_as_exit, verify_backup,
+                     write_atomic)
+from . import observability
+
+UPLOAD_PREFIX = '.kairos-upload-'  # a half-sent file at a `dir:` destination: never at a name that looks like a copy
+UPLOAD_MAX_AGE_SECONDS = 3600
+RCLONE_TIMEOUT_SECONDS = 6 * 3600  # one transfer; rclone's own --timeout ends a stalled one sooner
+RCLONE_SHORT_TIMEOUT_SECONDS = 300  # listing, deleting
+RCLONE_FLAGS = ('--contimeout', '30s', '--timeout', '120s', '--retries', '2', '--low-level-retries', '3', '--ask-password=false')
+RCLONE_REMOTE = re.compile(r'[A-Za-z0-9_][A-Za-z0-9_.-]*:[^\x00-\x1f]*')  # `<remote>:<path>`: never a connection string (`:backend:`) and never something that starts like an option
+METRICS_NAME = 'kairos-offsite.prom'  # next to the local copies; a textfile collector reads it
+CYCLE_KIND = 'cycle'
+
+
+class OffsiteError(Exception):
+    """The destination could not be read or written. The message names the kind of destination and never anything it printed."""
+
+
+class CycleError(BackupError):
+    """A `backup-cycle` that stopped after the local copy existed: `report` says what was done (and is printed by the command)."""
+
+    def __init__(self, code, message, report):
+        super().__init__(code, message)
+        self.report = report
+
+
+class DirDestination:
+    kind = 'dir'
+
+    def __init__(self, path):
+        self.root = Path(path)
+
+    def names(self):
+        try:
+            with os.scandir(self.root) as scan:
+                return {entry.name for entry in scan if entry.is_file(follow_symlinks=False)}
+        except OSError:
+            raise OffsiteError('the dir destination cannot be read') from None
+
+    def sweep(self, now=None):
+        """Delete the half-sent files (`.kairos-upload-*`, older than an hour) a killed run left; nothing else is ever deleted here."""
+        moment = time.time() if now is None else now
+        try:
+            with os.scandir(self.root) as scan:
+                for entry in scan:
+                    if entry.name.startswith(UPLOAD_PREFIX) and entry.is_file(follow_symlinks=False) and moment - entry.stat(follow_symlinks=False).st_mtime > UPLOAD_MAX_AGE_SECONDS:
+                        os.unlink(entry.path)
+        except OSError:
+            pass
+
+    def put(self, source, name):
+        try:
+            descriptor, temporary = tempfile.mkstemp(prefix=UPLOAD_PREFIX, dir=self.root)
+            try:
+                with os.fdopen(descriptor, 'wb') as out, open(source, 'rb') as origin:
+                    shutil.copyfileobj(origin, out, HASH_BLOCK)
+                    out.flush()
+                    os.fsync(out.fileno())
+                os.chmod(temporary, 0o600)
+                os.replace(temporary, self.root / name)
+            except BaseException:
+                Path(temporary).unlink(missing_ok=True)
+                raise
+        except OSError:
+            raise OffsiteError('the dir destination cannot be written') from None
+
+    def fetch(self, name, directory):
+        try:
+            target = Path(directory) / name
+            shutil.copyfile(self.root / name, target)
+            return target
+        except OSError:
+            raise OffsiteError('the dir destination cannot be read') from None
+
+    def digest(self, name):
+        path = self.root / name
+        try:
+            if path.is_symlink():
+                raise OSError
+            return sha256_file(path)
+        except OSError:
+            raise OffsiteError('the dir destination cannot be read') from None
+
+    def delete(self, name):
+        try:
+            (self.root / name).unlink(missing_ok=True)
+        except OSError:
+            raise OffsiteError('the dir destination cannot be written') from None
+
+
+class RcloneDestination:
+    kind = 'rclone'
+
+    def __init__(self, remote):
+        self.remote = remote
+
+    def target(self, name):
+        return self.remote + name if self.remote.endswith((':', '/')) else self.remote + '/' + name
+
+    def run(self, *args, timeout=RCLONE_SHORT_TIMEOUT_SECONDS, capture=False):
+        """One `rclone` command: its output is returned only when `capture` (a listing) and its diagnostics are never kept."""
+        try:
+            result = subprocess.run(['rclone', *RCLONE_FLAGS, *args], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL, timeout=timeout)
+        except FileNotFoundError:
+            raise OffsiteError('the rclone program is not installed here') from None
+        except (OSError, subprocess.SubprocessError):
+            raise OffsiteError('the rclone destination cannot be reached (rclone failed to run or timed out)') from None
+        if result.returncode:
+            raise OffsiteError(f'the rclone destination cannot be reached or written (rclone exit {result.returncode})')
+        return result.stdout.decode('utf-8', 'replace') if capture else None
+
+    def names(self):
+        return {line for line in self.run('lsf', '--files-only', self.remote, capture=True).splitlines() if line}
+
+    def put(self, source, name):
+        self.run('copyto', str(source), self.target(name), timeout=RCLONE_TIMEOUT_SECONDS)
+
+    def fetch(self, name, directory):
+        target = Path(directory) / name
+        self.run('copyto', self.target(name), str(target), timeout=RCLONE_TIMEOUT_SECONDS)
+        return target
+
+    def digest(self, name):
+        """(sha256, bytes) of what the remote holds, by reading it back (`rclone cat`): every backend can do it, a hash listing is not offered by all of them."""
+        digest, size = hashlib.sha256(), 0
+        try:
+            child = subprocess.Popen(['rclone', *RCLONE_FLAGS, 'cat', self.target(name)], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        except FileNotFoundError:
+            raise OffsiteError('the rclone program is not installed here') from None
+        except OSError:
+            raise OffsiteError('the rclone destination cannot be reached (rclone failed to run)') from None
+        try:
+            for block in iter(lambda: child.stdout.read(HASH_BLOCK), b''):
+                digest.update(block)
+                size += len(block)
+            status = child.wait(timeout=RCLONE_SHORT_TIMEOUT_SECONDS)
+        except (OSError, subprocess.SubprocessError):
+            raise OffsiteError('the rclone destination cannot be read') from None
+        finally:
+            if child.poll() is None:
+                child.kill()
+                child.wait()
+            child.stdout.close()
+        if status:
+            raise OffsiteError(f'the rclone destination cannot be read (rclone exit {status})')
+        return digest.hexdigest(), size
+
+    def delete(self, name):
+        self.run('deletefile', self.target(name))
+
+
+def parse_destination(spec):
+    """The destination of MEMORY_BACKUP_DESTINATION: `dir:<absolute path>` or `rclone:<remote>:<path>`. `BackupError` `backup_destination_invalid` otherwise; the message never echoes the value."""
+    text = (spec or '').strip()
+    if text.startswith('dir:'):
+        path = text[4:]
+        if not path or '\x00' in path or not (os.path.isabs(path) or path.startswith('/')):
+            raise BackupError('backup_destination_invalid', 'MEMORY_BACKUP_DESTINATION dir: needs an absolute path (dir:/path)')
+        return DirDestination(path)
+    if text.startswith('rclone:'):
+        remote = text[7:]
+        if not RCLONE_REMOTE.fullmatch(remote):
+            raise BackupError('backup_destination_invalid', 'MEMORY_BACKUP_DESTINATION rclone: needs a remote of the rclone configuration and a path (rclone:<remote>:<path>)')
+        return RcloneDestination(remote)
+    raise BackupError('backup_destination_invalid', 'MEMORY_BACKUP_DESTINATION must be dir:<absolute path> or rclone:<remote>:<path>' if text else 'MEMORY_BACKUP_DESTINATION is not set')
+
+
+def cycle_name(now=None):
+    """The name a cycle gives its copy: `kairos-cycle-<UTC time to the microsecond>Z.dump` (an encrypted copy gets `.age` from the command)."""
+    return f'kairos-{CYCLE_KIND}-{(now or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%S%fZ")}.dump'
+
+
+def local_copies(directory, remote_keep, now):
+    """The complete, readable copies of this tool in `directory` (newest first, at most `remote_keep`), as (created_at, name, manifest)."""
+    limit = (now + timedelta(seconds=FUTURE_TOLERANCE_SECONDS)).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+    found = []
+    with os.scandir(directory) as scan:
+        names = sorted(entry.name for entry in scan if COPY_NAME.fullmatch(entry.name))
+    for name in names:
+        path = Path(directory) / name
+        try:
+            if path.is_symlink() or not path.is_file():
+                continue
+            manifest = read_manifest(path)
+        except BackupError:
+            continue
+        if manifest['created_at'] <= limit:
+            found.append((manifest['created_at'], name, manifest))
+    found.sort(key=lambda item: item[:2], reverse=True)
+    return found[:remote_keep]
+
+
+def upload(destination, directory, current, remote_keep, recipients_file, now):
+    """Send `current` and every other recent local copy the destination lacks (newest first); each one is read back and compared with its manifest before its manifest goes up.
+
+    Returns {uploaded, skipped}. `current` was verified by the caller. An older copy that no longer verifies locally is skipped (and said so), never sent. A copy that differs at the
+    destination raises `backup_checksum_mismatch` with its manifest NOT sent and nothing deleted.
+    """
+    remote = destination.names()
+    uploaded, skipped = [], []
+    for created_at, name, manifest in local_copies(directory, remote_keep, now):
+        if name in remote and name + '.json' in remote:
+            continue
+        path = Path(directory) / name
+        if name != current:
+            try:
+                verify_backup(path, recipients_file)
+            except BackupError as error:
+                skipped.append({'name': name, 'code': error.code})
+                continue
+        destination.put(path, name)
+        sha, size = destination.digest(name)
+        if sha != manifest['sha256'] or size != manifest['bytes']:
+            raise BackupError('backup_checksum_mismatch', f'The copy {name} differs at the {destination.kind} destination from its manifest; its manifest was not sent and nothing was deleted')
+        destination.put(manifest_path(path), name + '.json')
+        uploaded.append(name)
+    return {'uploaded': uploaded, 'skipped': skipped}
+
+
+def prune_remote(destination, keep, protect, now):
+    """Delete from the destination the copies beyond the `keep` newest (by the `created_at` of their manifests); `protect` (verified at the destination a moment ago) is always kept.
+
+    Only names of this tool with a manifest that reads are candidates; anything else is left alone. Oldest first, the copy before its manifest. Returns {kept, deleted, skipped}.
+    """
+    limit = (now + timedelta(seconds=FUTURE_TOLERANCE_SECONDS)).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+    names = destination.names()
+    candidates, skipped = [], []
+    with tempfile.TemporaryDirectory(prefix='kairos-offsite-') as scratch:
+        for name in sorted(n for n in names if COPY_NAME.fullmatch(n) and n + '.json' in names):
+            try:
+                destination.fetch(name + '.json', scratch)
+                manifest = read_manifest(Path(scratch) / name)
+                if manifest['created_at'] > limit:
+                    raise BackupError('backup_created_in_the_future', f'The manifest of {name} is dated in the future')
+            except BackupError as error:
+                skipped.append({'name': name, 'code': error.code})
+                continue
+            candidates.append((manifest['created_at'], name))
+    candidates.sort(reverse=True)
+    if protect not in {name for created_at, name in candidates}:
+        raise BackupError('backup_offsite_failed', f'The copy just sent is not complete at the {destination.kind} destination; nothing was deleted there')
+    kept = [item for item in candidates if item[1] == protect]
+    doomed = []
+    for item in candidates:
+        if item in kept:
+            continue
+        if len(kept) < keep:
+            kept.append(item)
+        else:
+            doomed.append(item)
+    deleted = []
+    for created_at, name in reversed(doomed):
+        destination.delete(name)
+        destination.delete(name + '.json')
+        deleted.append(name)
+    return {'kept': len(kept), 'deleted': sorted(deleted, reverse=True), 'skipped': skipped}
+
+
+def write_metrics(directory):
+    """The two offsite series as a file next to the copies; a failure to write it is not a failure of the cycle."""
+    try:
+        write_atomic(Path(directory) / METRICS_NAME, observability.render_offsite_metrics(), 0o644)
+    except OSError:
+        pass
+
+
+def run_cycle(make_copy, directory, destination, *, keep, remote_keep, recipients_file=None, now=None):
+    """One cycle: local copy -> verify -> send -> verify there -> remote retention -> local retention. Returns the report; raises `CycleError` (with the report) when it stopped.
+
+    `make_copy(output)` writes the copy and its manifest (`create_backup`) and returns its report; `output` is the plain name, the copy may get `.age`. A copy that does not verify
+    locally raises its own code and is never sent. A failure of the offsite stage logs `backup_offsite_failed`, sets the metric to 0 and keeps every local copy.
+    """
+    directory = Path(directory)
+    now = now or datetime.now(timezone.utc)
+    if isinstance(destination, DirDestination) and destination.root.resolve() == directory.resolve():
+        raise BackupError('backup_destination_invalid', 'MEMORY_BACKUP_DESTINATION is the directory of the local copies; the external copy must be somewhere else')
+    with terminate_as_exit():
+        report = make_copy(directory / cycle_name(now))
+        copy = Path(report['path'])
+        verify_backup(copy, recipients_file)
+        if isinstance(destination, DirDestination):
+            destination.sweep()
+        try:
+            offsite = upload(destination, directory, copy.name, remote_keep, recipients_file, now)
+            remote = prune_remote(destination, remote_keep, copy.name, now)
+            offsite.update(destination=destination.kind, kept=remote['kept'], deleted=remote['deleted'], remote_skipped=remote['skipped'])
+        except (OffsiteError, BackupError) as error:
+            code = error.code if isinstance(error, BackupError) else 'backup_offsite_failed'
+            observability.record_offsite(False)
+            observability.log_event('backup_offsite_failed', 'error', destination=destination.kind, code=code)
+            write_metrics(directory)
+            report['offsite'] = {'destination': destination.kind, 'status': 'failed', 'code': code}
+            raise CycleError(code, str(error) if isinstance(error, BackupError) else f'the {destination.kind} destination failed ({error}); the copy is kept locally and the next cycle sends it again', report) from None
+        observability.record_offsite(True)
+        write_metrics(directory)
+        report['offsite'] = dict(offsite, status='verified')
+        try:
+            report['prune'] = prune_backups(directory, keep, protect=copy, now=now)
+        except (BackupError, OSError) as error:  # the copy exists and is at the destination: its report is printed whatever stopped the local retention
+            code = error.code if isinstance(error, BackupError) else 'backup_prune_failed'
+            report['prune'] = {'status': 'failed', 'code': code}
+            raise CycleError(code, str(error) if isinstance(error, BackupError) else f'the local retention failed ({type(error).__name__})', report) from None
+    return report
+
+
+def run_loop(cycle, interval, *, sleep=None, cycles=None, out=print):
+    """`cycle()` every `interval` seconds, for ever (or `cycles` times): a cycle that fails is reported (its code, never a message that could carry a secret) and the next one retries.
+
+    Only SystemExit and KeyboardInterrupt (a stop of the service) end the loop.
+    """
+    done = 0
+    while cycles is None or done < cycles:
+        done += 1
+        try:
+            out(json.dumps(cycle(), sort_keys=True))
+        except CycleError as error:
+            out(json.dumps(error.report, sort_keys=True))
+            print(f'{error.code}: {error}', file=sys.stderr, flush=True)
+        except BackupError as error:
+            print(f'{error.code}: {error}', file=sys.stderr, flush=True)
+        except Exception as error:
+            observability.log_failure('backup_cycle_failed', error)
+            print(f'backup_cycle_failed: the cycle failed ({type(error).__name__}); the next one retries', file=sys.stderr, flush=True)
+        if cycles is None or done < cycles:
+            (sleep or time.sleep)(interval)

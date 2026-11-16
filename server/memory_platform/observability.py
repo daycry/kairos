@@ -212,6 +212,10 @@ EMBED_IN_USE = Gauge('kairos_embedding_slots_in_use', 'Embeddings slots held rig
 WORKER_JOBS = Counter('kairos_worker_jobs', 'Jobs finished by this process, by destination and outcome', ['destination', 'outcome'], registry=REGISTRY)
 WORKER_JOB_SECONDS = Histogram('kairos_worker_job_seconds', 'Duration of a job in this process, by destination', ['destination'], registry=REGISTRY,
                                buckets=(0.1, 0.5, 1, 5, 15, 60, 180, 600, 1200))
+OFFSITE_REGISTRY = CollectorRegistry()  # apart from REGISTRY: memory-api never runs a cycle, so its /metrics must not claim a result (a constant 0 would page someone)
+BACKUP_OFFSITE_SUCCESS = Gauge('kairos_backup_offsite_success', '1 when the last `backup-cycle` copy reached its destination and was verified there, 0 when it did not (the copy stays local and the next cycle retries)',
+                               registry=OFFSITE_REGISTRY)
+BACKUP_OFFSITE_LAST_RUN = Gauge('kairos_backup_offsite_last_run_timestamp_seconds', 'Unix time at which the last `backup-cycle` finished its offsite stage, whatever its result', registry=OFFSITE_REGISTRY)
 
 
 def closed(value, allowed):
@@ -321,6 +325,17 @@ def refresh_queue_depth(store):
     QUEUE_SCRAPE_SUCCESS.set(1 if ok else 0)
     _QUEUE_CACHE['ok'] = ok
     return ok
+
+
+def record_offsite(ok, now=None):
+    """The result of the offsite stage of one `backup-cycle`: `kairos_backup_offsite_success` 1 or 0 and the time it finished."""
+    BACKUP_OFFSITE_SUCCESS.set(1 if ok else 0)
+    BACKUP_OFFSITE_LAST_RUN.set(time.time() if now is None else now)
+
+
+def render_offsite_metrics():
+    """Only the two offsite series, in the text exposition format: `backup-cycle` writes them to a file (a textfile collector reads them; no process of the service serves HTTP)."""
+    return generate_latest(OFFSITE_REGISTRY)
 
 
 def render_metrics():

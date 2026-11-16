@@ -10,11 +10,15 @@ import subprocess
 import tempfile
 import hashlib
 
-from .backup import BackupError, check_keep, create_backup, encrypted_name, encryption_plan, manifest_path, prune_backups, table_fingerprints, verify_backup
+from . import observability
+from .backup import BackupError, check_keep, create_backup, encrypted_name, encryption_plan, manifest_path, prune_backups, table_fingerprints, terminate_as_exit, verify_backup
 from .chunking import chunk_text, embedding_text
-from .config import Settings, backup_keep, backup_recipients_file, backup_require_encryption, retention_windows
+from .config import (Settings, backup_destination, backup_interval_seconds, backup_keep, backup_recipients_file, backup_remote_keep, backup_require_encryption, retention_windows)
+from .offsite import CycleError, parse_destination, run_cycle, run_loop
 from .store import Store
 from .store_vectors import CURRENT_RESOURCE
+
+LOOP_CYCLES = None  # `backup-cycle --loop` runs for ever; a test sets a number
 
 
 
@@ -340,6 +344,10 @@ def main(argv=None):
     backup.add_argument('--output', required=True)
     backup.add_argument('--prune', action='store_true', help='After the copy, delete the older verified copies of this tool beyond the --keep newest (never anything else)')
     backup.add_argument('--keep', default=None, help='With --prune: copies to keep, 1 or more (default MEMORY_BACKUP_KEEP, 7)')
+    cycle = commands.add_parser('backup-cycle', help='A copy, encrypted, verified, sent to MEMORY_BACKUP_DESTINATION (dir: or rclone:) and verified there, with the retention of both places (--loop: every MEMORY_BACKUP_INTERVAL)')
+    cycle.add_argument('--output-dir', default='/backups', help='Where the local copies are written and kept (default /backups, the volume of the service)')
+    cycle.add_argument('--loop', action='store_true', help='Repeat the cycle every MEMORY_BACKUP_INTERVAL (default 24h); a failed cycle is reported and the next one retries')
+    cycle.add_argument('--prune-tables', action='store_true', help='At the end of each cycle also run prune-tables with the MEMORY_RETENTION_*_DAYS windows')
     verify = commands.add_parser('verify-backup', help='Recompute the sha256 of a copy and compare it with its manifest (never decrypts)')
     verify.add_argument('--backup', required=True)
     verify.add_argument('--manifest', default=None, help='The manifest of the ENCRYPTED copy (<copy>.age.json) when --backup is its decrypted dump: its sha256 is compared with content_sha256')
@@ -356,6 +364,26 @@ def main(argv=None):
             windows = retention_windows()
         except ValueError as error:
             parser.error(str(error))  # a clear message and nothing touched
+    if args.command == 'backup-cycle':  # every setting is validated before a copy exists
+        try:
+            def setting(read, code):
+                try:
+                    return read()
+                except ValueError as error:
+                    raise BackupError(code, str(error)) from None
+            destination = parse_destination(backup_destination())
+            remote_keep, keep = setting(backup_remote_keep, 'backup_keep_invalid'), setting(backup_keep, 'backup_keep_invalid')
+            interval = setting(backup_interval_seconds, 'backup_config_invalid')
+            require_encryption = setting(backup_require_encryption, 'backup_config_invalid')
+            recipients_file = backup_recipients_file()
+            encryption_plan(recipients_file, require_encryption)  # a copy that must be encrypted and cannot be fails here, in the clear it is never written
+        except BackupError as error:
+            raise SystemExit(f'{error.code}: {error}') from None
+        if args.prune_tables:
+            try:
+                windows = retention_windows()
+            except ValueError as error:
+                parser.error(str(error))
     if args.command == 'verify-backup':  # needs no database: it reads the copy and its manifest
         try:
             manifest = verify_backup(Path(args.backup), backup_recipients_file(), args.manifest)
@@ -430,6 +458,41 @@ def main(argv=None):
                         print(json.dumps(dict(report, prune={'status': 'failed', 'code': code}), sort_keys=True))
                         raise BackupError(code, str(error) if isinstance(error, BackupError) else f'the prune failed ({type(error).__name__})') from None
                 print(json.dumps(report, sort_keys=True))
+        except BackupError as error:
+            raise SystemExit(f'{error.code}: {error}') from None
+    elif args.command == 'backup-cycle':
+        observability.configure_logging()  # `backup_offsite_failed` goes to stderr as one JSON line
+        output_dir = Path(args.output_dir).resolve()
+
+        def one_cycle():
+            recipients = encryption_plan(recipients_file, require_encryption)  # each cycle: a rotated recipients file is picked up
+            tables = {}
+
+            def end_with_tables():
+                if args.prune_tables:
+                    try:
+                        tables['prune_tables'] = {'status': prune_tables(store, windows)['status']}
+                    except Exception as error:  # the copy is made: what stopped the retention of the tables is a field of its report
+                        tables['prune_tables'] = {'status': 'failed', 'error': type(error).__name__}
+            with pg_environment(settings.dsn) as environment:
+                try:
+                    report = run_cycle(lambda output: create_backup(store, encrypted_name(output, recipients), environment=environment, recipients=recipients),
+                                       output_dir, destination, keep=keep, remote_keep=remote_keep, recipients_file=recipients_file)
+                except CycleError as error:
+                    end_with_tables()
+                    error.report.update(tables)
+                    raise
+            end_with_tables()
+            return dict(report, **tables)
+        try:
+            if args.loop:
+                with terminate_as_exit():
+                    run_loop(one_cycle, interval, cycles=LOOP_CYCLES)
+            else:
+                print(json.dumps(one_cycle(), sort_keys=True))
+        except CycleError as error:
+            print(json.dumps(error.report, sort_keys=True))
+            raise SystemExit(f'{error.code}: {error}') from None
         except BackupError as error:
             raise SystemExit(f'{error.code}: {error}') from None
     elif args.command == 'restore-check':
