@@ -45,7 +45,7 @@ test-plan: n/a (sin UI)
 | Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 7 | 7 | 100% | 0 / 27.0h | 0.99 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 9 | 9 | 100% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 5 | 5 | 100% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
-| Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 6 | 9 | 66.7% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
+| Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 7 | 9 | 77.8% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 0 | 6 | 0% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 0 | 4 | 0% | 0 / 7.2h | 0 / 1.0h | 0 / 0.2h | 0 / 240 k |
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 0 | 7 | 0% | 0 / 19.8h | 0 / 2.6h | 0 / 0.7h | 0 / 660 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **40** | **98** | **40.8%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **41** | **98** | **41.8%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1308,28 +1308,30 @@ RED: sin captura del rojo previo (no se guardó). Evidencia real: mutantes M1, M
 ### T-41 — Documentar copias, cifrado, retención y verificación
 
 - **Descripción**: Documentar `backup`, `verify-backup`, `MEMORY_BACKUP_*`, `--backup-timeout`, `--verify-backup` y la custodia de la clave privada fuera del VPS. Fuente: CA-01 a CA-05 (documentación); R-03.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: La documentación explica el manifiesto, `verify-backup`, el cifrado con age, la retención, `--backup-timeout` y `--verify-backup`, y avisa de que perder la clave privada es perder las copias.
+- **Cerrada**: 2026-11-16
+- **Estado**: completado
 - **Tiempo humano**: est. 2h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real 0.01h (medido)
 - **Supervisión**: est. 0.07h (≈25 % IA) · real —
 - **Previsión IA**: 74 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-40, T-37
 - **Tipo**: docs
 - **Archivos**: `docs/operations.md`, `docs/configuration.md`
 - **Cubre (tests)**: —
-- **Verificación**: lectura: `docs/configuration.md` lista `MEMORY_BACKUP_RECIPIENTS_FILE`, `MEMORY_BACKUP_REQUIRE_ENCRYPTION` y `MEMORY_BACKUP_KEEP` con defaults iguales a `config.py`, y `docs/operations.md` exige custodiar la clave privada fuera del VPS
+- **Verificación**: lectura: `docs/configuration.md` lista `MEMORY_BACKUP_RECIPIENTS_FILE`, `MEMORY_BACKUP_REQUIRE_ENCRYPTION` y `MEMORY_BACKUP_KEEP` con defaults iguales a `config.py`, y `docs/operations.md` exige custodiar la clave privada fuera del VPS Salida (2026-11-16): lectura: `docs/configuration.md` lista `MEMORY_BACKUP_RECIPIENTS_FILE` (sin valor), `MEMORY_BACKUP_REQUIRE_ENCRYPTION` (`0`) y `MEMORY_BACKUP_KEEP` (`7`) como `config.py`; `docs/operations.md` exige custodiar la clave privada fuera del VPS (comprobado por script).
 
 **Criterios de aceptación**
-- [ ] Nombres y defaults iguales al código
-- [ ] La advertencia R-03 (clave privada perdida = copias perdidas) está explícita
+- [x] Nombres y defaults iguales al código
+- [x] La advertencia R-03 (clave privada perdida = copias perdidas) está explícita
 
 **Subtareas**
-- [ ] Actualizar `docs/configuration.md`
-- [ ] Actualizar `docs/operations.md`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Actualizar `docs/configuration.md`
+- [x] Actualizar `docs/operations.md`
+- [x] `usage-meter start/close` de la tarea
 
 **Notas**: Estilo: sección de copias de `docs/operations.md:128-201`.
+**Cierre**: secciones «Inspección y copia de base» y «Probar una restauración» reescritas (manifiesto, verify-backup y sus códigos, cifrado y R-03, retención, plazo del despliegue, `--verify-backup` e `integrity_only`, `restore-check --from-manifest`, coste de las huellas) y 3 filas + 1 frase en `configuration.md` (el Compose no propaga `MEMORY_BACKUP_*`). Medido `reliable-operations/T-41`.
 
 ### T-42 — Cierre de fase: suite completa y subida del mínimo
 
