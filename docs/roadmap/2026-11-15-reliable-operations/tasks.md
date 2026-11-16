@@ -3120,3 +3120,18 @@ Lentes: A+B (re-evalúan solo lo corregido). Diff `078b465..5d8a75c`. Veredicto:
 | 5 | Minor | Carrera en `saturated()`: entre devolver y entregar la conexión, `/health/ready` puede dar 503 con el pool saturado | T-24 | deuda → T-30 | Lente B n.º 2; `store_pool.py:169-178` |
 | 6 | Minor | La regla de 1 s no deja la clasificación determinista con hosts de varias direcciones (`connect_timeout` por dirección) ni con todas las conexiones cerradas por el plazo a mitad de sentencia | T-24 | deuda → T-30 | Lente B n.º 3; `config.py:61-67` |
 | 7 | Minor | Un `StoreUnavailable` dentro de una capa de búsqueda sigue dando 200 `partial` con todas las capas `unavailable` | T-24 | deuda → T-30 | Lente B n.º 4; `retrieval.py:126-130` |
+
+## Revisión de dos lentes — intento 1: Fase 5 (T-30..T-33) (T-30, T-31, T-32, T-33)
+
+Lentes: A+B+C+D (C por `auth.py`, `auth_scope.py`, `store_auth.py` y `ci.yml`; D por `test_auth_cache.py`). Diff `04822a0..425f2bb`. `scope-check.py --base 04822a0` exit 0. Veredicto: T-30 a T-33 ✓; sin Critical ni Important (D: sin hallazgos). Decisión del orquestador: corregir los Minor de seguridad y de pruebas antes de cerrar (n.º 1-6) y relanzar A+B sobre ese diff.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Minor | Comprobar-esperar-comprobar fuera de `FOR SHARE` responde ahora desde la caché: tras esperar un lock asesor o un `FOR UPDATE`, la segunda comprobación (`validate` en la ingesta, `_protect_validated`, documentos) no ve una revocación confirmada durante la espera | T-30 | pendiente | Lente C n.º 1 (CWE-367/863), Lente B n.º 2; `store_ingest.py:149,165,29`, `store_documents.py:121-126` |
+| 2 | Minor | La prueba estática «todo bloqueo vacía la caché» solo detecta `FOR SHARE`, no comprueba el orden y la de savepoints solo busca el nombre `c`; el recorrido de escritores solo ve SQL literal | T-31 | pendiente | Lente B n.º 3, Lente A (fuera de lente); `test_auth_cache.py:283,298,310-319` |
+| 3 | Minor | Una prueba de savepoints no revierte ningún savepoint y no falla al quitar el control | T-31 | pendiente | Lente B n.º 4; `test_auth_cache.py:195-200` |
+| 4 | Minor | La tabla de rutas excluye `/v1/auth/me` y `/v1/auth/logout`, que aceptan bearer | T-31 | pendiente | Lente A n.º 2; `test_auth_cache.py:435-436` |
+| 5 | Minor | La documentación dice «la misma instantánea» (falso en READ COMMITTED) y «la respuesta de su comienzo» (es la de la primera lectura) | T-30, T-32 | pendiente | Lente A n.º 1, Lente B n.º 2; `architecture.md:63`, `auth_scope.py:4-5,48` |
+| 6 | Minor | Del lado de quien recibe la conexión sigue la carrera de `saturated()`; con el pool creciendo y la base sana, un `PoolTimeout` con `_in_use < max` sale como `service_unavailable` | T-30 | pendiente | Lente B n.º 1, Lente A (fuera de lente); `store_pool.py:158-166,405-407` |
+| 7 | Minor | Sin línea `RED:` en T-30/T-31 y evidencia de Verificación resumida en T-30/T-32 | T-30, T-31, T-32 | pendiente | Lente A n.º 3 y 4 |
+| 8 | Minor | Con un `StoreUnavailable`, `gather` devuelve el 503 sin cancelar las capas hermanas, que retienen conexiones hasta su plazo | T-30 | deuda aceptada (ya ocurría con `StoreBusy`; acotado por el plazo de sentencia) | Lente B (fuera de lente); `retrieval.py:175` |
