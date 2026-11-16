@@ -16,7 +16,7 @@ from .auth import Auth
 from .config import Settings
 from .errors import MemoryError, StoreBusy, Unauthorized, Forbidden, public_store_failure
 from .store import Store
-from .store_pool import attach_pool, close_pool
+from .store_pool import attach_pool, close_pool, ready_probe
 
 COOKIE = 'memory_session'
 # Headers a reverse proxy adds: a request that carries any of them did not come from inside the internal network.
@@ -175,9 +175,10 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
 
     @app.get('/health/ready', operation_id='memory_readiness')
     def ready():
+        # Short plazos of its own (`ready_probe`): the healthcheck client gives up at 3 s. A pool whose every connection is in use is a busy service, not a dead database: ready.
         try:
-            with store.transaction() as c:
-                c.execute('SELECT version FROM memory.schema_versions LIMIT 1')
+            if ready_probe(store) == 'saturated':
+                observability.log_event('readiness_pool_saturated', 'warning')
         except Exception as exc:
             observability.log_failure('readiness_failed', exc, 'warning')
             raise MemoryError('not_ready', 'Database migration is unavailable', 503)

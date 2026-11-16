@@ -7,7 +7,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from . import models as m
-from .errors import MemoryError, NotFound
+from .errors import MemoryError, NotFound, StoreBusy
 from .observability import count_provider_error, log_failure, record_layer
 from .providers import Embeddings, canonical, sha
 
@@ -124,6 +124,8 @@ class Retrieval:
                     outcome = status['status']
                     return layer, values, status
             except Exception as exc:
+                if isinstance(exc, StoreBusy):
+                    raise  # a saturated pool is the whole request's 503 `store_busy` (as the scope check), not a silent `partial` answer that looks like a thin corpus
                 log_failure('layer_failed', exc, 'warning', layer=layer)
                 return layer, [], {'status': 'unavailable', 'count': 0}
             finally:
@@ -160,6 +162,8 @@ class Retrieval:
                 record_layer('semantic', time.monotonic()-started, status)
                 return 'semantic', values, {'status': status, 'count': len(values), 'candidate_limit': candidate_limit, 'candidates_truncated': truncated}
             except Exception as exc:
+                if isinstance(exc, StoreBusy):
+                    raise  # same as the other layers: 503 `store_busy`, never a lexical-only answer presented as complete
                 timed_out = isinstance(exc, TimeoutError) or getattr(exc, 'code', None) == 'semantic_deadline_exceeded'
                 if phase == 'provider' and isinstance(exc, TimeoutError) and not getattr(exc, 'kairos_counted', False):
                     # The layer's own plazo expired while the embedding was in flight: `counted` only saw the cancellation, so it is counted here.
