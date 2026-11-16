@@ -9,9 +9,9 @@ What each route answers (API; every 503 carries `request_id`, a fixed message an
 | read   GET /v1/projects   | 503 service_unavailable            | 503 store_busy                | 503 store_timeout                               |
 | write  POST /v1/projects  | 503 service_unavailable            | 503 store_busy                | 503 store_timeout                               |
 | search POST /v1/search    | 503 service_unavailable (scope)    | 503 store_busy (scope)        | 200, the slow layer `unavailable`, `partial`    |
-| ready  GET /health/ready  | 503 not_ready                      | 503 not_ready                 | (a one-row read: not slow-able)                 |
+| ready  GET /health/ready  | 503 not_ready                      | 200 (`saturated`, no fault)   | (a one-row read: not slow-able)                 |
 
-Mute with a cold pool is `store_busy` and not `service_unavailable` because a connection attempt that has not failed yet is not an error: the pool simply had nothing to give within MEMORY_POOL_TIMEOUT (the connect plazo is longer than the wait in these tests; with the defaults it is shorter, see `ConnectAndWaitTests`). A connection that was already in the pool and dies is an outage (`service_unavailable`).
+Mute with a cold pool is `store_busy` and not `service_unavailable` because a connection attempt that has not failed yet is not an error: the pool simply had nothing to give within MEMORY_POOL_TIMEOUT (the connect plazo is longer than the wait in these tests; with the defaults it is shorter, see `ConnectAndWaitTests`), and `/health/ready` follows the same rule (T-30 fix1: no fault on record = busy, ready; the attempt that fails a few seconds later is the fault that turns it into 503). A connection that was already in the pool and dies is an outage (`service_unavailable`).
 The worker treats `store_busy` as an outage (it waits and tries again without spending the attempt) and a cancelled statement (57014) as a transient error of the database."""
 import asyncio
 import io
@@ -115,11 +115,11 @@ class ApiFaultTests(unittest.TestCase):
                 self.proxy.restore()
                 self.assertTrue(self.recovered(), 'the API did not recover after the database came back')
 
-    def test_a_mute_database_gives_service_unavailable_within_the_pool_wait_and_the_api_recovers(self):
-        """A database that is mute BEFORE the pool made a connection: its first attempt has neither worked nor failed within the wait (connect plazo 2 s > wait 0.5 s). The pool still has free
-        slots, so nobody is using them up: it is `service_unavailable` on every route (T-30: `store_busy` is only for a pool with EVERY connection in use, which no timer decides).
+    def test_a_mute_database_before_the_first_connection_is_busy_within_the_pool_wait_and_the_api_recovers(self):
+        """A database that is mute BEFORE the pool made a connection: its first attempt has neither worked nor failed within the wait (connect plazo 2 s > wait 0.5 s), so no connection fault is on
+        record: `store_busy` on every route and `/health/ready` ready (T-30 fix1: only a recorded fault is `service_unavailable`, the free slots and `_in_use` decide nothing).
         One fresh pool per route (a pool that already holds a connection that dies is the next test)."""
-        expected = {'read': (503, 'service_unavailable'), 'write': (503, 'service_unavailable'), 'search': (503, 'service_unavailable'), 'ready': (503, 'not_ready')}
+        expected = {'read': (503, 'store_busy'), 'write': (503, 'store_busy'), 'search': (503, 'store_busy'), 'ready': (200, None)}
         for route in expected:
             with self.subTest(route=route):
                 self.proxy.mute()
@@ -127,7 +127,8 @@ class ApiFaultTests(unittest.TestCase):
                 self.addCleanup(close_pool, store)
                 response = self.bounded(self.routes_of(self.client_for(store))[route])
                 self.assertEqual((response.status_code, answer_code(response)), expected[route])
-                self.assertEqual(response.json()['request_id'], response.headers['X-Request-ID'])
+                if response.status_code == 503:
+                    self.assertEqual(response.json()['request_id'], response.headers['X-Request-ID'])
                 self.proxy.restore()
                 self.assertTrue(self.recovered(), 'the API did not recover after the database came back')
 

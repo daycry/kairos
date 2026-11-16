@@ -1,6 +1,7 @@
 """Store mixin: job queue, leases and receipts."""
 
 from .chunking import embedding_text
+from .auth_scope import invalidate_auth
 from .config import CHUNK_MAX_LIMIT
 from .errors import MemoryError, NotFound
 from .privacy import has_sensitive, sanitize_payload
@@ -103,6 +104,7 @@ class JobsMixin:
         with self.transaction() as c:
             self._active(c,actor)
             row=c.execute('SELECT * FROM memory.jobs WHERE id=%s FOR UPDATE',(job_id,)).fetchone()
+            invalidate_auth(c)  # the row lock may have waited for a revocation: the check below reads the database again (CWE-367)
             if not row:
                 raise NotFound()
             self._require(c,actor,row['project_id'],'write')

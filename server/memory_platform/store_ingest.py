@@ -3,6 +3,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
+from .auth_scope import invalidate_auth
 from .errors import Conflict, Forbidden, MemoryError, NotFound
 from . import schemas
 from .privacy import has_sensitive, sanitize_payload
@@ -26,6 +27,7 @@ class IngestMixin:
         children=c.execute('SELECT payload FROM memory.memory_items WHERE project_id=%s AND parent_item_id=%s AND NOT deleted FOR UPDATE',(project_id,item_id)).fetchall()
         protected=protected or any(child['payload'].get('validation_status')=='validated' for child in children)
         if protected:
+            invalidate_auth(c)  # the locks above may have waited for a transaction that revoked `validate`: read the rows again, not what an earlier check of this transaction saw (CWE-367)
             self._require(c,actor,project_id,'validate')
 
     def _validate_facts(self,payload,source,include_payload_context=True):
@@ -157,6 +159,7 @@ class IngestMixin:
                 return previous['receipt']
             c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', ('item:'+pid+':'+iid,))
             project = c.execute('SELECT * FROM memory.projects WHERE id=%s FOR SHARE', (pid,)).fetchone()
+            invalidate_auth(c)  # the two advisory locks and this one may have waited for a revocation: every check below reads the database again, not the answer of the first one (CWE-367)
             if project['policy']['capture_mode'] == 'off' and event['event_type'] != 'delete':
                 raise Forbidden('Capture is disabled for this project')
             if auto_mode == 'full' and project['policy']['capture_mode'] != 'full' and event['event_type'] != 'delete':

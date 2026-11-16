@@ -7,7 +7,7 @@ from datetime import datetime
 
 from .errors import Conflict, MemoryError, NotFound
 from .privacy import has_sensitive
-from .auth_scope import savepoint
+from .auth_scope import invalidate_auth, savepoint
 from .store_common import TRIGRAM_FALLBACK_MS, TRIGRAM_THRESHOLD, LexicalResults, as_dict, canonical, digest, fts_match, fts_rank, item_columns, lexical_query, clean, trigram_wanted
 
 
@@ -103,6 +103,9 @@ class DocumentsMixin:
             data['validation']['validated_by'] = actor['id']
             c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', ('doc:'+project_id+':'+iid,))
             old = c.execute('SELECT * FROM memory.documents WHERE project_id=%s AND id=%s FOR UPDATE',(project_id,iid)).fetchone()
+            invalidate_auth(c)  # the advisory lock and the row lock may have waited for a revocation: publishing is decided by what the database says NOW (CWE-367)
+            self._require(c,actor,project_id,'publish')
+            self._require(c,actor,project_id,'validate')
             if old and old['version']==data['version'] and old['canonical_hash']==content_hash:
                 jobs = c.execute("SELECT id FROM memory.jobs WHERE project_id=%s AND item_id=%s AND version=%s AND resource_type='document' ORDER BY id",(project_id,iid,data['version'])).fetchall()
                 return {'event_id':iid,'item_id':iid,'version':data['version'],'status':'accepted','jobs':[j['id'] for j in jobs]}
@@ -120,6 +123,8 @@ class DocumentsMixin:
         with self.transaction() as c:
             self._require(c,actor,project_id,'publish')
             old=c.execute('SELECT * FROM memory.documents WHERE project_id=%s AND id=%s FOR UPDATE',(project_id,document_id)).fetchone()
+            invalidate_auth(c)  # the row lock may have waited for a revocation (CWE-367)
+            self._require(c,actor,project_id,'publish')
             if not old:
                 raise NotFound()
             if old['body'].get('validation',{}).get('status')=='validated':

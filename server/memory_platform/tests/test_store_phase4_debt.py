@@ -106,15 +106,16 @@ class PoolClassificationTests(unittest.TestCase):
         self.addCleanup(lambda: (release.set(), thread.join(30)))
         return release
 
-    def test_a_timeout_with_free_slots_is_an_outage_whatever_the_timers_say(self):
+    def test_a_timeout_with_free_slots_and_no_fault_on_record_is_busy(self):
+        # the pool growing under load with a healthy database, and the window in which a connection is being handed to the one that waits: `_in_use < max_size` and no fault
         store = self.opened(4)
-        with patch.object(store.pool._pool, 'getconn', side_effect=PoolTimeout('slow')):
-            with self.assertRaises(StoreUnavailable) as raised:
+        self.assertLess(store.pool._in_use, store.pool.max_size)
+        with patch.object(store.pool._pool, 'getconn', side_effect=PoolTimeout('growing')):
+            with self.assertRaises(StoreBusy):
                 with store.transaction():
                     pass
-        self.assertIsNot(type(raised.exception), StoreBusy)
 
-    def test_a_timeout_with_every_connection_in_use_is_busy(self):
+    def test_a_timeout_with_every_connection_in_use_and_no_fault_is_busy(self):
         store = self.opened(1)
         self.hold(store)
         with patch.object(store.pool._pool, 'getconn', side_effect=PoolTimeout('full')):
@@ -122,15 +123,26 @@ class PoolClassificationTests(unittest.TestCase):
                 with store.transaction():
                     pass
 
-    def test_a_full_pool_whose_connect_attempts_failed_is_still_an_outage(self):
-        store = self.opened(1)
-        self.hold(store)
-        store.pool._failed_checks += 1  # a connect error or a failed check since the last connection it gave
-        with patch.object(store.pool._pool, 'getconn', side_effect=PoolTimeout('down')):
-            with self.assertRaises(StoreUnavailable) as raised:
-                with store.transaction():
-                    pass
-        self.assertIsNot(type(raised.exception), StoreBusy)
+    def test_a_timeout_with_a_fault_on_record_is_an_outage_with_free_slots_or_without(self):
+        for maximum, held in ((1, True), (4, False)):
+            with self.subTest(maximum=maximum, held=held):
+                store = self.opened(maximum)
+                if held:
+                    self.hold(store)
+                store.pool._failed_checks += 1  # a connect error or a failed check since the last connection it gave
+                with patch.object(store.pool._pool, 'getconn', side_effect=PoolTimeout('down')):
+                    with self.assertRaises(StoreUnavailable) as raised:
+                        with store.transaction():
+                            pass
+                self.assertIsNot(type(raised.exception), StoreBusy)
+
+    def test_ready_probe_follows_the_same_rule(self):
+        store = self.opened(4)
+        with patch.object(store.pool._pool, 'getconn', side_effect=PoolTimeout('growing')):
+            self.assertEqual(ready_probe(store), 'saturated')  # free slots, healthy database: busy, not a dead database
+            store.pool._failed_checks += 1
+            with self.assertRaises(StoreUnavailable):
+                ready_probe(store)
 
     def test_ready_probe_says_saturated_while_a_connection_is_being_given_back(self):
         store = self.opened(1)

@@ -6,9 +6,10 @@ is not (every test and every `admin` command). The pool lives in an attribute of
 
 What the pool guarantees, and `tests/test_store_pool.py` / `tests/test_store_faults.py` hold it:
 * the sizes (`MEMORY_POOL_MIN`/`MEMORY_POOL_MAX`) and the wait (`MEMORY_POOL_TIMEOUT`) are validated in `config.py`; a transaction that finds no connection within the wait
-  raises `StoreBusy` (503 `store_busy` in the API) ONLY when every connection the pool may have was in use at that moment (the service is busy: the one fact that does not depend on a
-  timer); in any other case (a connect error or a failed check since the last connection it gave, or free slots that did not become a connection in time: a host with several
-  addresses that each take their `connect_timeout`, connections closed by the client-side plazo that the pool is replacing) it raises `StoreUnavailable` (the database does not answer);
+  raises `StoreBusy` (503 `store_busy` in the API) when the pool has recorded NO connection fault since the last connection it gave (no connect error, no failed check): the database
+  answered every time it was asked, so the pool is busy or still growing under load (the free slots that are becoming connections, the one that is being handed over to a waiter);
+  `StoreUnavailable` (503 `service_unavailable`, the database does not answer) ONLY when a connect error or a failed check IS on record since then. Neither depends on how many
+  connections are in use at that instant, which is a race with the connection coming back, nor on a timer;
 * a connection is checked when it is handed out (`ConnectionPool.check_connection`): one that broke while idle is discarded and replaced, never given to a request;
 * a connection that comes back is reset (`RESET ALL`) before it is given back: the code only sets transaction-local settings (`set_config(..., true)`, `SET LOCAL`), so this is
   the net under it, and one request can never see what another one set in the session. It is done here, in the request, and not with the `reset=` callback of the pool: that one
@@ -157,9 +158,8 @@ class StorePool:
         try:
             connection = pool.getconn(timeout=wait)
         except PoolTimeout:
-            with self._lock:
-                saturated = self._in_use >= self.max_size
-            raise (StoreBusy() if saturated and self._faults(pool) <= self._faults_at_ok else StoreUnavailable('PoolTimeout')) from None
+            # no timer and no look at `_in_use` (a race with a connection coming back or being handed over): only a fault on record says the database does not answer
+            raise (StoreUnavailable('PoolTimeout') if self._faults(pool) > self._faults_at_ok else StoreBusy()) from None
         except PoolClosed:
             raise StoreUnavailable('PoolClosed') from None
         with self._lock:
@@ -220,8 +220,8 @@ def attach_pool(store, settings, role):
 
 
 def ready_probe(store):
-    """What `/health/ready` runs: a one-row read on its own short plazos, `'ready'` when it worked and `'saturated'` when the pool had no free connection within `READY_WAIT` while every one of
-    its connections exists and is in use (a busy service is not a dead database: the healthcheck must not take it out). Anything else (a database that does not answer, a pool that cannot connect,
+    """What `/health/ready` runs: a one-row read on its own short plazos, `'ready'` when it worked and `'saturated'` when the pool had no free connection within `READY_WAIT` and
+    no connection fault is on record (the same rule as `StorePool.connection`: a busy service is not a dead database, the healthcheck must not take it out). Anything else (a database that does not answer, a pool that cannot connect,
     a connection that stopped answering) raises. A store without a pool (or a test double) just reads."""
     pool = getattr(store, 'pool', None)
     if not isinstance(pool, StorePool):
@@ -232,7 +232,7 @@ def ready_probe(store):
         with pool.connection(wait=READY_WAIT, guard=READY_GUARD) as c:
             c.execute('SELECT version FROM memory.schema_versions LIMIT 1')
     except StoreBusy:
-        return 'saturated'  # `StoreBusy` is only raised with every connection in use, decided at the timeout itself: asking again afterwards would race with a connection coming back
+        return 'saturated'  # `StoreBusy` is decided at the timeout itself, from the faults on record: asking again afterwards would race with a connection coming back
     return 'ready'
 
 

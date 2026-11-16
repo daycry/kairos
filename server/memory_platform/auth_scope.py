@@ -4,9 +4,12 @@ from contextlib import contextmanager
 # Permissions resolved ONCE per transaction (I3 / CA-18, B-02). What `_active` (actor and credential) and `_require` (grants of a project) read is kept in a dict that lives on the
 # connection from the start of `Store.transaction()` to its COMMIT or ROLLBACK and in no other place: not in the module, not in the store, not in the pool (it is a plain attribute of
 # the connection that `auth_scope` sets and unsets around the transaction, so a connection that goes back to the pool carries none). A revocation committed elsewhere is seen by the NEXT
-# transaction of any request; within one transaction the answer is the one it started with (the same snapshot every query of the search reads).
-# The dict is emptied (`invalidate_auth`) by everything that changes who may do what from inside a transaction (the writers below and in `auth.py`) and by a savepoint that fails
-# (`savepoint`): a rolled-back savepoint takes its writes with it, and what was read after them must not outlive them. `tests/test_auth_cache.py` holds each of these.
+# transaction of any request. Within one transaction (READ COMMITTED: each statement sees what was committed when it started, there is no snapshot of the transaction) the answer is the one
+# of the FIRST read of that key in the transaction, not the state of its start nor the one other queries of the transaction read. Waiting for a lock (an advisory lock, `FOR UPDATE`, `FOR SHARE`,
+# `FOR NO KEY UPDATE`, `FOR KEY SHARE`) can mean a revocation committed meanwhile, so every function that waits for one empties the dict AFTER the wait and BEFORE it checks again
+# (check, wait, check: CWE-367); `tests/test_auth_race.py` proves it with two connections and `tests/test_auth_cache.py` walks the package for the order.
+# The dict is emptied (`invalidate_auth`) by everything that changes who may do what from inside a transaction (the writers below and in `auth.py`), after every wait for a lock that precedes
+# a check, and by a savepoint that fails (`savepoint`): a rolled-back savepoint takes its writes with it, and what was read after them must not outlive them. `tests/test_auth_cache.py` holds each of these.
 _CACHE = '_kairos_auth'
 
 
