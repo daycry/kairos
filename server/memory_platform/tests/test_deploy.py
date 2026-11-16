@@ -145,6 +145,97 @@ class BackfillPhaseTests(unittest.TestCase):
         self.assertEqual(type(raised.exception).__name__, 'DeploymentError')
 
 
+class BackupTimeoutTests(unittest.TestCase):
+    """O-03 / CA-04: `content-manifest`, `backup` (and `verify-backup`) get `--backup-timeout` (3,600 s by default) instead of the 120 s of `operator()`; the other phases keep theirs."""
+    LONG = ('content-manifest', 'backup')
+
+    def phases(self, **changes):
+        from memory_platform.tests.test_deploy_isolation import IsolatedDeploymentTests
+        helper = IsolatedDeploymentTests('migrate_run')
+        instance, commands = helper.migrate_run(**changes)
+        verbs = []
+        for command, timeout in zip(commands, helper.timeouts):
+            if 'run' in command and 'memory-admin' in command[command.index('run'):]:  # the service after `run`, not the profile of every command
+                verbs.append((next(part for part in command if part in ('inspect', 'content-manifest', 'backup', 'verify-backup', 'migrate', 'bootstrap', 'backfill-chunks')), timeout, command))
+        return instance, verbs
+
+    def test_the_default_is_3600_seconds_for_the_long_commands_and_it_is_in_the_report(self):
+        instance, verbs = self.phases()
+        long_ones = [(verb, timeout) for verb, timeout, _ in verbs if verb in self.LONG]
+        self.assertEqual(long_ones, [('content-manifest', 3600), ('backup', 3600), ('content-manifest', 3600), ('content-manifest', 3600)])
+        self.assertEqual(deploy.BACKUP_TIMEOUT_SECONDS, 3600)
+        self.assertEqual(instance.report['backup_timeout_seconds'], 3600)
+
+    def test_an_explicit_timeout_is_propagated_to_every_long_command(self):
+        instance, verbs = self.phases(backup_timeout=7200)
+        self.assertEqual({timeout for verb, timeout, _ in verbs if verb in self.LONG}, {7200})
+        self.assertEqual(instance.report['backup_timeout_seconds'], 7200)
+
+    def test_the_other_phases_keep_their_own_timeouts(self):
+        _, verbs = self.phases(backup_timeout=7200)
+        others = {verb: timeout for verb, timeout, _ in verbs if verb not in self.LONG}
+        self.assertEqual(others, {'inspect': 120, 'migrate': deploy.MIGRATE_TIMEOUT_SECONDS, 'backfill-chunks': deploy.BACKFILL_TIMEOUT_SECONDS})
+
+    def test_a_long_command_runs_in_a_named_container_that_the_deployment_can_stop(self):
+        _, verbs = self.phases()
+        for verb, _, command in verbs:
+            if verb in self.LONG:
+                name = command[command.index('--name') + 1]
+                self.assertRegex(name, r'^kairos-deploy-' + verb + r'-[0-9a-f]{10}$')
+                self.assertNotIn('knowledge-graphs', name)
+                self.assertLess(command.index('--name'), command.index('memory-admin', command.index('run')))
+            else:
+                self.assertNotIn('--name', command)
+
+    def test_an_invalid_timeout_is_refused_by_the_deployment_and_by_the_command_line(self):
+        for bad in (0, -5, True, 86401, '10', 1.5):
+            with self.subTest(bad=bad), workspace() as root, self.assertRaises(deploy.DeploymentError):
+                deploy.Deployment(arguments(backup_timeout=bad), root)
+        with workspace() as root:
+            self.assertEqual(deploy.Deployment(arguments(backup_timeout=86400), root).backup_timeout, 86400)
+        for argv in (['--backup-timeout', '0'], ['--backup-timeout', '86401'], ['--backup-timeout', 'soon'], ['--apply', '--backup-timeout', '-1']):
+            with self.subTest(argv=argv), patch.object(deploy.subprocess, 'run') as run, contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
+                deploy.main(argv)
+            self.assertEqual(raised.exception.code, 2)
+            run.assert_not_called()
+
+    def test_the_plan_states_the_timeout(self):
+        for argv, expected in (([], 3600), (['--backup-timeout', '90'], 90)):
+            with patch.object(deploy.subprocess, 'run'), contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(deploy.main(argv), 0)
+            self.assertEqual(json.loads(output.getvalue())['backup_timeout_seconds'], expected)
+
+    def test_a_command_that_times_out_has_its_container_stopped_and_removed_and_the_error_is_kept(self):
+        with workspace() as root:
+            instance = deploy.Deployment(arguments(), root)
+            calls = []
+
+            def record(command, **kwargs):
+                calls.append(command)
+                return Mock(returncode=0)
+            with patch.object(instance, 'run', side_effect=deploy.DeploymentError('Command unavailable or timed out')) as run, patch.object(deploy.subprocess, 'run', side_effect=record):
+                with self.assertRaises(deploy.DeploymentError) as raised:
+                    instance.long_operator('backup', '--output', '/backups/x.dump')
+            self.assertIn('timed out', str(raised.exception))
+            self.assertEqual(run.call_args.kwargs['timeout'], 3600)
+            compose = run.call_args.args[0]
+            name = compose[compose.index('--name') + 1]
+            self.assertEqual(calls, [['docker', 'stop', '--time', '20', name], ['docker', 'rm', '--force', '--volumes', name]])
+            self.assertEqual(instance.report['reaped_containers'], [name])
+
+    def test_a_failing_stop_does_not_hide_the_timeout_and_a_command_that_succeeds_is_not_reaped(self):
+        with workspace() as root:
+            instance = deploy.Deployment(arguments(), root)
+            with patch.object(instance, 'run', side_effect=deploy.DeploymentError('timed out')), patch.object(deploy.subprocess, 'run', side_effect=OSError('docker is gone')):
+                with self.assertRaises(deploy.DeploymentError):
+                    instance.long_operator('content-manifest')
+            instance = deploy.Deployment(arguments(), root)
+            with patch.object(instance, 'run', return_value='{"sha256": "s"}'), patch.object(deploy.subprocess, 'run') as docker:
+                self.assertEqual(instance.long_operator('content-manifest'), {'sha256': 's'})
+            docker.assert_not_called()
+            self.assertNotIn('reaped_containers', instance.report)
+
+
 class McpServiceTests(unittest.TestCase):
     """T-40 (CA-09): `memory-mcp` lives on a network of its own with `memory-api` alone: no database, no secrets, no model proxy."""
 

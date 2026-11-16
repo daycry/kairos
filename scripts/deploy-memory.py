@@ -25,6 +25,8 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PROJECT = 'knowledge-graphs'
 DEFAULT_API_PORT, DEFAULT_WEB_PORT = 8790, 5173
 MIGRATE_TIMEOUT_SECONDS = 3600  # the first pgvector migration rewrites and indexes embeddings; the default 120 s would abort it
+BACKUP_TIMEOUT_SECONDS = 3600  # O-03: `content-manifest`, `backup` and `verify-backup` read or dump the whole database; the default 120 s of `operator()` aborts a large one
+BACKUP_TIMEOUT_MAX_SECONDS = 86400  # a timeout is a bound: 0 or "no limit" would let a stuck copy hang the deployment
 ISOLATED_PRIVATE_FILES = ('memory-platform.env', 'compose.override.yml', 'deployment-status.json', 'deployment-status.tmp')
 VOLUMES = (DEFAULT_PROJECT + '_memory-postgres-data', DEFAULT_PROJECT + '_memory-backups')
 SERVICES = ('memory-api', 'memory-worker', 'memory-mcp', 'memory-web')
@@ -58,6 +60,15 @@ def validate_isolation(project, api_port, web_port):
     ports = (api_port, web_port)
     if len(set(ports)) != 2 or any(not 1024 <= port <= 65535 or port in (DEFAULT_API_PORT, DEFAULT_WEB_PORT) for port in ports):
         raise DeploymentError('An isolated rehearsal needs two distinct ports in 1024-65535, not ' + f'{DEFAULT_API_PORT} or {DEFAULT_WEB_PORT}')
+
+
+def check_backup_timeout(value):
+    """`--backup-timeout` in seconds: None is the default; otherwise a whole number between 1 and a day (never 0 or unbounded)."""
+    if value is None:
+        return BACKUP_TIMEOUT_SECONDS
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= BACKUP_TIMEOUT_MAX_SECONDS:
+        raise DeploymentError(f'--backup-timeout must be a whole number of seconds between 1 and {BACKUP_TIMEOUT_MAX_SECONDS}')
+    return value
 
 
 def isolated_image(project, name):
@@ -213,6 +224,7 @@ class Deployment:
             raise DeploymentError('--embed-stub and --roundtrip are only for an isolated --project-name: the installed project keeps its own embedding provider')
         if self.roundtrip and not self.embed_stub:
             raise DeploymentError('--roundtrip needs --embed-stub: the rehearsal must prove that no language model was asked for')
+        self.backup_timeout = check_backup_timeout(getattr(args, 'backup_timeout', None))
         self.volumes = project_volumes(self.project)
         self.private = safe_path(root / '.private' / ('rehearsal-' + self.project) if self.isolated else root / '.private')
         if self.isolated:
@@ -254,8 +266,29 @@ class Deployment:
         self.report['phases'].append(name)
         print(f'Kairos: {name}', flush=True)
 
-    def operator(self, *args, timeout=120):
-        return decode_json(self.run(self.compose + ['run', '--rm', '--no-deps', '-T', 'memory-admin', *args], timeout=timeout))
+    def operator(self, *args, timeout=120, name=None):
+        """One `memory-admin` command. A command with a `name` runs in a container of that name, which is stopped and removed if the command fails or times out: the client that
+        `subprocess` kills at the timeout is not the container, and a dump that kept running would leave a copy half written (the SIGTERM of `docker stop` makes the dump clean up)."""
+        command = self.compose + ['run', '--rm', '--no-deps', '-T'] + (['--name', name] if name else []) + ['memory-admin', *args]
+        try:
+            return decode_json(self.run(command, timeout=timeout))
+        except BaseException:
+            if name:
+                self.reap(name)
+            raise
+
+    def reap(self, name):
+        """Stop (SIGTERM first, so the command removes what it had half written) and remove the container `name`; nothing here may hide the error that is propagating."""
+        for command, wait in ((['docker', 'stop', '--time', '20', name], 60), (['docker', 'rm', '--force', '--volumes', name], 60)):
+            try:
+                subprocess.run(command, capture_output=True, env=self.environment, timeout=wait)
+            except Exception:
+                pass
+        self.report.setdefault('reaped_containers', []).append(name)
+
+    def long_operator(self, verb, *args):
+        """A command that reads or dumps the whole database: the `--backup-timeout`, in a container that is reaped on failure."""
+        return self.operator(verb, *args, timeout=self.backup_timeout, name=f'kairos-deploy-{verb}-{uuid.uuid4().hex[:10]}')
 
     def spy_report(self):
         report = decode_json(self.run(self.compose + ['exec', '-T', STUB_SERVICE, 'python', '-c', SPY_QUERY]))
@@ -373,11 +406,12 @@ class Deployment:
         existing = counts.get('actors', 0) > 0
         if not existing and not self.args.fresh:
             raise DeploymentError('Expected the existing database; refusing to bootstrap an empty replacement')
-        before = self.operator('content-manifest') if existing else None
+        self.report['backup_timeout_seconds'] = self.backup_timeout
+        before = self.long_operator('content-manifest') if existing else None
         self.step('backup')
         if existing:
             stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
-            self.report['backup'] = self.operator('backup', '--output', f'/backups/kairos-before-{stamp}.dump')
+            self.report['backup'] = self.long_operator('backup', '--output', f'/backups/kairos-before-{stamp}.dump')
         self.step('migrate')
         if getattr(self.args, 'stop_services_before_migrate', False):
             # Opt-in: the migration holds ACCESS EXCLUSIVE locks until its COMMIT (docs/operations.md); the services of the
@@ -391,7 +425,7 @@ class Deployment:
         self.step('bootstrap')
         if not existing:
             self.operator('bootstrap')
-        after = self.operator('content-manifest')
+        after = self.long_operator('content-manifest')
         if before:
             compare_content(before, after)
         # Decision P-07: fragments for the existing content are queued at deployment. Only `embed` jobs are inserted (no content table is
@@ -407,7 +441,7 @@ class Deployment:
         self.run(self.compose + ['up', '-d', '--no-deps', '--wait', '--wait-timeout', '90',
                                  *((STUB_SERVICE,) if self.embed_stub else ()), 'ollama', *SERVICES])
         self.step('verify')
-        final = self.operator('content-manifest')
+        final = self.long_operator('content-manifest')
         if before:
             compare_content(before, final)
         self.report['verification'] = verify_runtime(final, self.secret_dir,
@@ -751,6 +785,9 @@ def main(argv=None):
                         help='Isolated rehearsal only: a simulated embedding provider instead of the Ollama of the host; it also counts any language-model call (must be 0)')
     parser.add_argument('--roundtrip', action='store_true',
                         help='Isolated rehearsal only (needs --embed-stub): the CLI writes an observation through memory-web -> kairos-mcp -> /v1 and finds it by search')
+    parser.add_argument('--backup-timeout', type=int, default=None,
+                        help=f'Seconds the content-manifest, backup and verify-backup commands may take (1..{BACKUP_TIMEOUT_MAX_SECONDS}, default {BACKUP_TIMEOUT_SECONDS}); '
+                             'the container of a command that exceeds it is stopped and removed')
     parser.add_argument('--stop-services-before-migrate', action='store_true',
                         help='Stop memory-api and memory-worker before the migrate phase (they are started again by the start phase); default: leave them running')
     args = parser.parse_args(argv)
@@ -759,6 +796,7 @@ def main(argv=None):
     if not args.apply:
         try:
             validate_isolation(args.project_name, args.api_port, args.web_port)
+            check_backup_timeout(args.backup_timeout)
             if (args.embed_stub or args.roundtrip) and args.project_name == DEFAULT_PROJECT:
                 raise DeploymentError('--embed-stub and --roundtrip are only for an isolated --project-name')
             if args.roundtrip and not args.embed_stub:
@@ -767,7 +805,7 @@ def main(argv=None):
             parser.error(str(exc))
         phases = PHASES + (('roundtrip',) if args.roundtrip else ())
         print(json.dumps({'mode': 'dry-run', 'phases': phases, 'services': SERVICES + ((STUB_SERVICE,) if args.embed_stub else ()), 'fresh': args.fresh, 'project': args.project_name,
-                          'volumes': project_volumes(args.project_name), 'models': 'simulated embedding provider; no language model' if args.embed_stub else 'preserve configuration',
+                          'backup_timeout_seconds': check_backup_timeout(args.backup_timeout), 'volumes': project_volumes(args.project_name), 'models': 'simulated embedding provider; no language model' if args.embed_stub else 'preserve configuration',
                           'data_removed': False}, indent=2))
         return 0
     try:

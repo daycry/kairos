@@ -181,12 +181,14 @@ class IsolatedDeploymentTests(unittest.TestCase):
             (own / 'memory-platform.env').write_text('MEMORY_SECRETS_DIR=' + secrets.as_posix() + '\n', encoding='utf-8')
             instance = deploy.Deployment(arguments(secret_dir=str(secrets), project_name='kairos-rehearsal', api_port=18790, web_port=15173, **changes), root)
             commands = []
+            self.timeouts = []  # the timeout of each call of `commands`, in step
             answers = {'inspect': '{"tables":{"actors":1}}', 'content-manifest': '{"sha256":"s","documents":[],"projects":[]}',
                        'backup': '{"status":"backed_up"}', 'migrate': '{"status":"migrated"}',
                        'backfill-chunks': backfill_answer or '{"status":"backfilled","enqueued":7,"remaining":0,"batches":1,"embedding_filled":0}'}
 
             def run(command, **kwargs):
                 commands.append(command)
+                self.timeouts.append(kwargs.get('timeout'))
                 if fail_stop and 'stop' in command:
                     raise RuntimeError('stop failed')
                 if command[-3:] == ['config', '--format', 'json']:

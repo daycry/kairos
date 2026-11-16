@@ -45,7 +45,7 @@ test-plan: n/a (sin UI)
 | Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 7 | 7 | 100% | 0 / 27.0h | 0.99 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 9 | 9 | 100% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 5 | 5 | 100% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
-| Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 3 | 9 | 33.3% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
+| Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 4 | 9 | 44.4% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 0 | 6 | 0% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 0 | 4 | 0% | 0 / 7.2h | 0 / 1.0h | 0 / 0.2h | 0 / 240 k |
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 0 | 7 | 0% | 0 / 19.8h | 0 / 2.6h | 0 / 0.7h | 0 / 660 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **37** | **98** | **37.8%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **38** | **98** | **38.8%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1218,28 +1218,30 @@ RED: sin captura del rojo previo (no se guardó). Evidencia real: mutantes M1, M
 ### T-38 — `--backup-timeout` en el despliegue (O-03)
 
 - **Descripción**: `scripts/deploy-memory.py` llama a `content-manifest`, `backup` y `verify-backup` con `--backup-timeout` (por defecto 3.600 s) en lugar del plazo de 120 s. Fuente: CA-04; O-03.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: El despliegue da a la copia, al manifiesto de contenido y a su verificación el plazo `--backup-timeout` (3.600 s por defecto, hasta 24 h) y, si agotan el plazo, detiene y elimina su contenedor.
+- **Cerrada**: 2026-11-16
+- **Estado**: completado
 - **Tiempo humano**: est. 1.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real 0.23h (medido)
 - **Supervisión**: est. 0.05h (≈25 % IA) · real —
 - **Previsión IA**: 55 k in / 5 k out tok · ⚠️ verificar €
 - **Dependencias**: T-35
 - **Tipo**: devops
-- **Archivos**: `scripts/deploy-memory.py`, `server/memory_platform/tests/test_deploy.py`
+- **Archivos**: `scripts/deploy-memory.py`, `server/memory_platform/tests/test_deploy.py`, `server/memory_platform/tests/test_deploy_isolation.py` (el doble `migrate_run` registra los plazos)
 - **Cubre (tests)**: —
-- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_deploy|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
+- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_deploy|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos Salida (2026-11-16): bucle rápido `Ran 44 tests ... OK` (test_deploy, test_deploy_isolation); 0 fallos, errores y omitidos. CA-04: `verify-backup` recibe el mismo plazo en T-39.
 
 **Criterios de aceptación**
-- [ ] `test_deploy.py` comprueba que `content-manifest`, `backup` y `verify-backup` reciben `--backup-timeout` (3.600 s por defecto) y que `--backup-timeout 7200` se propaga
-- [ ] Las demás fases del despliegue conservan su plazo (`operator()` por defecto 120 s)
+- [x] `test_deploy.py` comprueba que `content-manifest`, `backup` y `verify-backup` reciben `--backup-timeout` (3.600 s por defecto) y que `--backup-timeout 7200` se propaga
+- [x] Las demás fases del despliegue conservan su plazo (`operator()` por defecto 120 s)
 
 **Subtareas**
-- [ ] Escribir primero la prueba con el doble de `subprocess` (rojo)
-- [ ] Añadir `--backup-timeout` y pasarlo a las tres llamadas
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero la prueba con el doble de `subprocess` (rojo)
+- [x] Añadir `--backup-timeout` y pasarlo a las tres llamadas
+- [x] `usage-meter start/close` de la tarea
 
 **Notas**: Patrón: `deploy-memory.py:27` (`MIGRATE_TIMEOUT_SECONDS`), `:257-258` (`operator()` con `timeout=120`), `:376` y `:380` (llamadas), `tests/test_deploy.py` (dobles de `subprocess`). El script no se ejecuta contra la instalación real.
+**Cierre**: `long_operator` = `operator(timeout=backup_timeout, name=kairos-deploy-<orden>-<hex>)`; si falla o agota el plazo, `reap` hace `docker stop --time 20` (SIGTERM: el volcado limpia lo parcial) y `docker rm -f`, sin tapar el error. Mutantes en rojo D1-D13 (plazo por defecto en backup y en los tres content-manifest, plazo no propagado, sin reap, sin `--name`, 0/bool/sin tope aceptados, inspect con plazo largo, sin stop, reap que tapa el error, informe sin el plazo). Medido `reliable-operations/T-38`.
 
 ### T-39 — `--verify-backup`: restauración en PostgreSQL efímero antes de `migrate`
 
