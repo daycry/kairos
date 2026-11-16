@@ -3053,3 +3053,7 @@ Lentes: A+B+C+D (re-evalúan lo corregido y lo que introduce el fix). Diff `155d
 | 9 | Minor | Un fallo de `age` a media copia se informa como fallo de `pg_dump` (EPIPE) y pierde `backup_encryption_failed`; la prueba no lo ve porque su `age` falso lee toda la entrada | T-36 | corregido (fix2, 80a9a36) | Lente B n.º 4 (reproducido); `backup.py:317-321`, `test_backup_encryption.py:186` |
 | 10 | Minor | `restore-check --from-manifest` vuelve a hashear la copia que `verify-backup` acaba de verificar | T-39 | descartado (rebatido): corre en otro contenedor y más tarde; justificado en `operations.md` y Notas de T-39 | Lente D n.º 2, Lente A n.º 14 |
 | 11 | Minor | El nombre del efímero (hostname) puede pasar de 63 caracteres con proyectos de más de 33 y romper la resolución | T-39 | corregido (fix2, 6a0a08b) | Lente B n.º 5; `deploy-memory.py:332,363` |
+
+## Revisión de dos lentes — intento 3: Fase 6 tras fix2 (T-35, T-36, T-37, T-39, T-40, T-42)
+
+Pendiente de revisión; sin veredicto.
