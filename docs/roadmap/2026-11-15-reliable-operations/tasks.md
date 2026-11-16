@@ -1720,7 +1720,7 @@ RED: `scripts/tests/test_rehearse_restore.py::RunbookTests` falló con IndexErro
 - [ ] Documentar
 - [ ] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `docker-compose.yml:154` (`mem_limit` en `memory-mcp`) y `tests/test_deploy_isolation.py:43-48` (lectura del compose). R-08: no tocar `ollama-proxy/default.conf.template` (lo monta `docker-compose.yml:48`).
+**Notas**: Deuda Minor de la revisión de la Fase 7 (intento 1, n.º 10): `memory-backup` no debe tener la red `egress` con destino `dir:` (p. ej. override o servicio aparte para `rclone:`), con prueba sobre `compose config`. Patrón: `docker-compose.yml:154` (`mem_limit` en `memory-mcp`) y `tests/test_deploy_isolation.py:43-48` (lectura del compose). R-08: no tocar `ollama-proxy/default.conf.template` (lo monta `docker-compose.yml:48`).
 
 ### T-55 — Rotación de logs en `ollama` y `memory-postgres` y `extra_hosts`
 
@@ -3088,4 +3088,20 @@ Lentes: A+B+D (re-evalúan lo corregido; C sin hallazgos en el intento 2). Diff 
 
 ## Revisión de dos lentes — intento 1: Fase 7 (T-44..T-48) (T-44, T-45, T-46, T-47, T-48)
 
-Pendiente de revisión; sin veredicto.
+Lentes: A+B+C (C por `ci.yml`, `docker-compose.yml`, `Dockerfile`, credenciales de `rclone` y clave del ensayo; D no aplica). Diff `eaff0d1..22e6457`. `scope-check.py --base eaff0d1` exit 0. Veredicto A: criterios de T-44 a T-48 ✓ (T-48.3 sin JSON de usage-meter). 1 Critical, 1 Important y 12 Minor. Decisión del orquestador: fix1 corrige n.º 1-12 salvo el 10; n.º 10 y 13 como se indica.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Critical | `upload` sube al destino externo cualquier copia local con nombre válido aunque esté EN CLARO: la `kairos-before-*` que escribe cada despliegue (memory-admin sin destinatarios) o una copia manual sale en claro del servidor en el siguiente ciclo | T-44, T-46 | pendiente (fix1) | Lente C n.º 1 (CWE-311, reproducido), Lente B n.º 1 (reproducido); `offsite.py:199-216,227-237`, `deploy-memory.py:518` |
+| 2 | Important | `kairos_backup_offsite_success` sigue en 1 y el `.prom` no se reescribe cuando el ciclo falla antes de la etapa externa (base caída, `pg_dump`, cifrado, verificación local); sin evento estructurado en `run_loop` | T-45 | pendiente (fix1) | Lente B n.º 2 (reproducido), Lente A (fuera de lente); `offsite.py:303-319,345-346` |
+| 3 | Minor | Evento `backup_cycle_failed` no declarado en `operations.md` ni en Coordinación | T-44 | pendiente (fix1) | Lente A n.º 1; `offsite.py:348` |
+| 4 | Minor | Coordinación presenta `backup_config_invalid` como código nuevo de la Fase 7 (es de la Fase 6; lo nuevo es su uso con `MEMORY_BACKUP_INTERVAL`) | T-46 | pendiente (fix1) | Lente A n.º 2; `improvement-plan.md:246` |
+| 5 | Minor | El ensayo restaura en una base vacía del MISMO clúster de origen, no en un clúster nuevo como pide CA-07 «proyecto aislado vacío» | T-47 | pendiente (fix1: restaurar en un PostgreSQL efímero nuevo) | Lente A n.º 3; `rehearse-restore.py:172-177`, `spec.md:185` |
+| 6 | Minor | `rclone.conf` sin propietario/permisos documentados: la salida fácil (`chmod 644`) expone las credenciales del remoto; los backends OAuth no pueden renovar el token con `:ro` | T-46 | pendiente (fix1: documentar) | Lente C n.º 2 (CWE-732); `configuration.md:112` |
+| 7 | Minor | Limpieza de la clave del ensayo no garantizada (sin SIGTERM, `shred` y `rmtree` tragan errores, `identity.txt` 0644, `chmod` con EPERM en Linux sin root) ni comprobada en `cleanup()` | T-47 | pendiente (fix1) | Lente C n.º 4 (CWE-459) y fuera de lente; `rehearse-restore.py:130,185-193,217-223` |
+| 8 | Minor | La retención remota no distingue origen y puede borrar copias más nuevas que la protegida (dos ciclos concurrentes con `REMOTE_KEEP=1`; destino compartido) | T-44 | pendiente (fix1: no borrar más nuevas que la protegida y documentar destino exclusivo) | Lente B n.º 3; `offsite.py:255-276` |
+| 9 | Minor | Un manifiesto truncado en el destino (rclone 1.60 escribe sobre el nombre final) nunca se repara: el ciclo lo omite y la poda lo salta | T-44 | pendiente (fix1: validar el manifiesto remoto antes de omitir) | Lente B n.º 4; `offsite.py:228` |
+| 10 | Minor | La red `egress` está conectada también con destino `dir:` | T-46 | deuda → Fase 9 (redes y límites del Compose) | Lente C n.º 3 (CWE-250); `docker-compose.yml:235` |
+| 11 | Minor | Una excepción en `cleanup()` del ensayo aborta el resto de la limpieza y pierde el fallo original; el filtro `name=<proyecto>` casa por subcadena | T-47 | pendiente (fix1) | Lente B n.º 5; `rehearse-restore.py:66-67,205-218,243` |
+| 12 | Minor | En la carrera real de dos `--prune` la copia borrada sale como `backup_not_found` en `skipped` y no como desaparecida; la prueba inyecta un `FileNotFoundError` sintético | T-46 | pendiente (fix1) | Lente B n.º 6; `backup.py:450-451` |
+| 13 | Minor | T-48.3 marcado sin el JSON de usage-meter en Notas | T-48 | deuda aceptada (mismo patrón aceptado en T-42; las horas medidas están) | Lente A n.º 4 |
