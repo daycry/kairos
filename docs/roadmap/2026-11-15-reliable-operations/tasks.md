@@ -3108,3 +3108,7 @@ Lentes: A+B+C (C re-evalúa su hallazgo de seguridad). Diff `425f2bb..afdc228`. 
 | 6 | Minor | La tabla «Respuesta de la API por ruta y fallo» de `operations.md` no sigue a fix1 | T-30, T-32 | corregido en el cierre: tabla de `operations.md` igual al comportamiento final y a las pruebas | Lente A n.º 1; `operations.md:248-250` |
 | 7 | Minor | La coordinación de la Fase 5 (1) describe mal el cambio frente a la Fase 4 y no declara el de `/health/ready` | T-30 | corregido en el cierre: punto (1) de la Fase 5 y (11) de la Fase 4 en `improvement-plan.md` | Lente A n.º 2 |
 | 8 | Minor | Changelog de T-30 y T-33 desactualizados; comentario de `app.py:178` desfasado | T-30, T-33 | corregido en el cierre: Changelog de T-30 y T-33 (1054) y comentario de `app.py` | Lente A n.º 3, Lente B (fuera de lente) |
+
+## Revisión de dos lentes — intento 1: Fase 6 (T-35..T-42) (T-35, T-36, T-37, T-38, T-39, T-40, T-41, T-42)
+
+Pendiente de revisión; sin veredicto.
