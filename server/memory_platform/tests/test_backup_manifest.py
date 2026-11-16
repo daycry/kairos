@@ -23,7 +23,7 @@ def write_copy(root, name='kairos-before-20261116T090000000000Z.dump', payload=P
     """A copy and a manifest written here, independently of `backup.py`, the way the tool documents them."""
     copy = root / name
     copy.write_bytes(payload)
-    manifest = {'format': 1, 'file': name, 'sha256': hashlib.sha256(payload).hexdigest(), 'bytes': len(payload), 'content_sha256': hashlib.sha256(payload).hexdigest(),
+    manifest = {'format': 2, 'file': name, 'sha256': hashlib.sha256(payload).hexdigest(), 'bytes': len(payload), 'content_sha256': hashlib.sha256(payload).hexdigest(),
                 'content_bytes': len(payload), 'schema_version': 12, 'created_at': '2026-11-16T09:00:00.000000Z', 'encrypted': False,
                 'fingerprints': {'actors': {'rows': 1, 'sha256': 'a' * 64}}}
     manifest.update(changes)
@@ -96,7 +96,7 @@ class VerifyBackupTests(unittest.TestCase):
             self.assertEqual(raised.exception.code, 'backup_not_found')
 
     def test_a_manifest_that_cannot_be_trusted_is_refused_by_shape_without_leaking_paths(self):
-        broken = {'not json': None, 'not an object': '[1]', 'format 2': {'format': 2}, 'other file': {'file': 'other.dump'}, 'bad sha': {'sha256': 'xyz'},
+        broken = {'not json': None, 'not an object': '[1]', 'format 3': {'format': 3}, 'other file': {'file': 'other.dump'}, 'bad sha': {'sha256': 'xyz'},
                   'bytes as text': {'bytes': '10'}, 'bool as number': {'bytes': True}, 'no fingerprints': {'fingerprints': []}, 'bad time': {'created_at': 'yesterday'},
                   'encrypted as text': {'encrypted': 'false'}, 'negative size': {'bytes': -1}}
         for label, change in broken.items():
@@ -169,7 +169,7 @@ class BackupWritesManifestTests(unittest.TestCase):
             data = copy.read_bytes()
             self.assertTrue(data.startswith(b'PGDMP'))
             self.assertEqual((manifest['sha256'], manifest['bytes']), (hashlib.sha256(data).hexdigest(), len(data)))
-            self.assertEqual((manifest['content_sha256'], manifest['encrypted'], manifest['file'], manifest['format']), (manifest['sha256'], False, copy.name, 1))
+            self.assertEqual((manifest['content_sha256'], manifest['encrypted'], manifest['file'], manifest['format']), (manifest['sha256'], False, copy.name, 2))
             self.assertEqual(manifest['fingerprints'], store_fingerprints(self.store))
             with self.store.transaction() as c:
                 self.assertEqual(manifest['schema_version'], c.execute('SELECT max(version) AS v FROM memory.schema_versions').fetchone()['v'])

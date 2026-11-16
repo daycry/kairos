@@ -29,7 +29,12 @@ import subprocess
 import sys
 import tempfile
 
-MANIFEST_FORMAT = 1
+try:
+    import fcntl
+except ImportError:  # Windows: no flock; the sweep then goes by age alone
+    fcntl = None
+
+MANIFEST_FORMAT = 2  # 2: the fingerprints are additive sums of row hashes (1: sorted-rows sha256, which could not be computed in one pass); a format-1 manifest is refused with its own code
 MANIFEST_KEYS = {'format': int, 'file': str, 'sha256': str, 'bytes': int, 'content_sha256': str, 'content_bytes': int, 'schema_version': int,
                  'created_at': str, 'encrypted': bool, 'fingerprints': dict}
 PG_DUMP_MAGIC = b'PGDMP'
@@ -42,7 +47,8 @@ FUTURE_TOLERANCE_SECONDS = 86400  # a manifest dated further ahead than this is 
 TIMESTAMP = re.compile(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z')
 PARTIAL_PREFIX = '.kairos-partial-'
 PARTIAL_MAX_AGE_SECONDS = 3600  # a partial directory untouched for this long belongs to a run that is gone
-FINGERPRINT_BUDGET = 64 << 20  # characters of encoded rows a fingerprint holds at once (about twice that at the peak); a bigger table is read again per slice, never held whole
+FINGERPRINT_MASK = (1 << 256) - 1  # the sum of the row hashes wraps at 2^256
+LOCK_NAME = 'lock'  # inside a partial directory: the process that is writing the copy holds a flock on it for as long as it runs
 FINGERPRINT_ITERSIZE = 200  # rows the server-side cursor brings per round trip
 
 
@@ -91,69 +97,37 @@ def encode_row(value):
     return json.dumps(value, sort_keys=True, ensure_ascii=False, default=str)
 
 
-def trim_to_budget(kept, budget):
-    """Sort `kept` and drop its largest strings until it fits `budget` (a group of equal strings is kept whole or dropped whole, and at least one group stays).
-
-    Returns the smallest dropped string, which is the new limit, or None if nothing was dropped.
-    """
-    kept.sort()
-    keep, total = 0, 0
-    while keep < len(kept) and total + len(kept[keep]) <= budget:
-        total += len(kept[keep])
-        keep += 1
-    while 0 < keep < len(kept) and kept[keep] == kept[keep - 1]:
-        keep -= 1
-    if keep == 0:
-        keep = 1
-        while keep < len(kept) and kept[keep] == kept[0]:
-            keep += 1
-    if keep >= len(kept):
-        return None
-    limit = kept[keep]
-    del kept[keep:]
-    return limit
+def row_digest(text):
+    """The sha256 of one canonically encoded row, as the whole number it spells (big endian)."""
+    return int.from_bytes(hashlib.sha256(text.encode('utf-8')).digest(), 'big')
 
 
-def table_digest(connection, table, budget=None):
-    """(rows, sha256) of one table: the sha256 of its rows as sorted JSON lines joined by newlines.
+def table_digest(connection, table):
+    """(rows, sum) of one table: the number of rows and the SUM, modulo 2^256, of the sha256 of every row's canonical encoding (a sorted-keys JSON line), as 64 hex digits.
 
-    The rows come through a server-side cursor and only the rows of one slice of the sort order are held (`budget`), so the memory does not grow with the table:
-    a table that does not fit is read again for the next slice (strictly after the last string already hashed). The result is the one of sorting every row at once.
+    One pass over a server-side cursor, a few rows in memory whatever the table's size. The sum is over a MULTISET: it does not depend on the order the rows come in
+    (a restored table is read in another physical order) and an exact duplicate counts as many times as it occurs. It detects a row altered, added or removed by accident;
+    it is not a defence against someone who can compute the sum for rows of their choosing (the manifest has no MAC either).
     """
     from psycopg import sql
-    budget = FINGERPRINT_BUDGET if budget is None else budget
     query = sql.SQL('SELECT to_jsonb(t) AS value FROM memory.{} t').format(sql.Identifier(table))
-    digest, rows, watermark = hashlib.sha256(), 0, None
-    while True:
-        kept, size, limit = [], 0, None
-        with connection.cursor(name='kairos_fingerprint') as cursor:
-            cursor.itersize = FINGERPRINT_ITERSIZE
-            cursor.execute(query)
-            for record in cursor:
-                text = encode_row(record['value'])
-                if (watermark is not None and text <= watermark) or (limit is not None and text >= limit):
-                    continue
-                kept.append(text)
-                size += len(text)
-                if size > 2 * budget:
-                    limit = trim_to_budget(kept, budget) or limit
-                    size = sum(len(item) for item in kept)
-        kept.sort()
-        for text in kept:
-            digest.update((text if rows == 0 else chr(10) + text).encode('utf-8'))
+    total, rows = 0, 0
+    with connection.cursor(name='kairos_fingerprint') as cursor:
+        cursor.itersize = FINGERPRINT_ITERSIZE
+        cursor.execute(query)
+        for record in cursor:
+            total = (total + row_digest(encode_row(record['value']))) & FINGERPRINT_MASK
             rows += 1
-        if limit is None or not kept:
-            return rows, digest.hexdigest()
-        watermark = kept[-1]
+    return rows, format(total, '064x')
 
 
-def table_fingerprints(connection, budget=None):
-    """Rows and sha256 of every table of the `memory` schema (provenance, grants, jobs, versions and tombstones included), in bounded memory."""
+def table_fingerprints(connection):
+    """Rows and additive sha256 sum of every table of the `memory` schema (provenance, grants, jobs, versions and tombstones included), one pass per table, constant memory."""
     result = {}
     tables = connection.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='memory' ORDER BY table_name").fetchall()
     for row in tables:
-        rows, sha = table_digest(connection, row['table_name'], budget)
-        result[row['table_name']] = {'rows': rows, 'sha256': sha}
+        rows, total = table_digest(connection, row['table_name'])
+        result[row['table_name']] = {'rows': rows, 'sha256': total}
     return result
 
 
@@ -228,11 +202,46 @@ def fsync_path(path, directory=False):
         os.close(descriptor)
 
 
-def sweep_partials(directory, *, now=None, max_age=PARTIAL_MAX_AGE_SECONDS):
-    """Delete the `.kairos-partial-*` directories of `directory` untouched for more than `max_age` seconds (the leftovers of a run that was killed); returns their names.
+def hold_partial_lock(partial):
+    """Take the exclusive flock of `partial`'s lock file (created here, never through a link) and return its descriptor, or None where flock does not exist.
 
-    "Untouched" is the newest modification time of the directory and of what is inside, so a copy that is still being written is never swept. A link or a file with that
-    name is not one of ours and is left alone. Every swept name is announced on stderr: a leftover means a run ended badly.
+    The process that writes a copy holds it from the moment its partial directory exists until it is gone, so `sweep_partials` can tell a live run from a dead one
+    by trying the same lock: the kernel releases it when the holder exits, however it exits.
+    """
+    if fcntl is None:
+        return None
+    descriptor = os.open(Path(partial) / LOCK_NAME, os.O_RDWR | os.O_CREAT | getattr(os, 'O_NOFOLLOW', 0), 0o600)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+    except BaseException:
+        os.close(descriptor)
+        raise
+    return descriptor
+
+
+def try_partial_lock(path):
+    """(state, descriptor) of the lock file of the partial directory `path`: 'held' (a live run owns it), 'free' (we now hold it) or 'none' (no readable lock file)."""
+    if fcntl is None:
+        return 'none', None
+    try:
+        descriptor = os.open(os.path.join(path, LOCK_NAME), os.O_RDWR | getattr(os, 'O_NOFOLLOW', 0))
+    except OSError:  # missing, or a link (refused by O_NOFOLLOW), or unreadable
+        return 'none', None
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:  # BlockingIOError: somebody holds it
+        os.close(descriptor)
+        return 'held', None
+    return 'free', descriptor
+
+
+def sweep_partials(directory, *, now=None, max_age=PARTIAL_MAX_AGE_SECONDS):
+    """Delete the `.kairos-partial-*` directories of `directory` that belong to a run that is gone; returns their names.
+
+    A partial whose lock file is held by a live process (`hold_partial_lock`) is NEVER deleted, however old: a run that spends hours hashing or encrypting writes nothing
+    into it meanwhile. One whose lock is free, or that has no readable lock file, is deleted only if it was also untouched for more than `max_age` seconds (the newest
+    modification time of the directory and of what is inside), which covers a run that has created the directory but not yet taken the lock. A link or a file with
+    that name is not one of ours and is left alone. Every swept name is announced on stderr: a leftover means a run ended badly.
     """
     swept = []
     moment = (now or datetime.now(timezone.utc)).timestamp()
@@ -244,8 +253,12 @@ def sweep_partials(directory, *, now=None, max_age=PARTIAL_MAX_AGE_SECONDS):
     for entry in entries:
         if not entry.name.startswith(PARTIAL_PREFIX):
             continue
+        descriptor = None
         try:
             if entry.is_symlink() or not entry.is_dir(follow_symlinks=False):
+                continue
+            state, descriptor = try_partial_lock(entry.path)
+            if state == 'held':
                 continue
             newest = entry.stat(follow_symlinks=False).st_mtime
             with os.scandir(entry.path) as inside:
@@ -257,6 +270,9 @@ def sweep_partials(directory, *, now=None, max_age=PARTIAL_MAX_AGE_SECONDS):
             swept.append(entry.name)
         except OSError:
             continue
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
     if swept:
         print(f'warning: removed {len(swept)} orphan partial director{"y" if len(swept) == 1 else "ies"} left by a run that ended badly ({", ".join(swept)})', file=sys.stderr)
     return swept
@@ -315,10 +331,10 @@ def encrypted_dump(environment, snapshot, recipients, target, workdir, children)
                 except OSError:
                     pass
         dump_status, cipher_status = dump.wait(), cipher.wait()
+    if cipher_status:  # first: when `age` dies early `pg_dump` is left with a closed pipe (EPIPE) and fails too, and the cause is `age`
+        raise BackupError('backup_encryption_failed', f'age failed to encrypt the copy (exit {cipher_status})')
     if dump_status:
         raise subprocess.CalledProcessError(dump_status, 'pg_dump')
-    if cipher_status:
-        raise BackupError('backup_encryption_failed', f'age failed to encrypt the copy (exit {cipher_status})')
     return digest.hexdigest(), size
 
 
@@ -338,7 +354,9 @@ def create_backup(store, output, *, environment, recipients=None):
     children = []
     with terminate_as_exit():
         partial = Path(tempfile.mkdtemp(prefix=PARTIAL_PREFIX, dir=final.parent))  # 0700, never at a name that looks like a copy
+        lock = None
         try:
+            lock = hold_partial_lock(partial)  # for the whole run: a sweep by another process skips this directory however long the hashing takes
             with store.transaction() as connection:
                 connection.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
                 snapshot = connection.execute('SELECT pg_export_snapshot() AS snapshot').fetchone()['snapshot']
@@ -367,6 +385,8 @@ def create_backup(store, output, *, environment, recipients=None):
         finally:
             reap(children)
             shutil.rmtree(partial, ignore_errors=True)
+            if lock is not None:
+                os.close(lock)
     report = {'status': 'backed_up', 'path': str(final), 'bytes': size, 'sha256': sha, 'encrypted': manifest['encrypted'], 'schema_version': version,
               'created_at': manifest['created_at']}
     if swept:
@@ -431,10 +451,15 @@ def prune_backups(directory, keep, *, protect=None, now=None):
                 skipped.append({'name': name, 'code': error.code})
                 continue
             kept.append(item)
-        elif (directory / name).stat().st_size != manifest['bytes']:
-            skipped.append({'name': name, 'code': 'backup_checksum_mismatch'})
         else:
-            doomed.append(item)
+            try:
+                size = (directory / name).stat().st_size
+            except FileNotFoundError:  # another run deleted it meanwhile: it is gone, which is what was wanted
+                continue
+            if size != manifest['bytes']:
+                skipped.append({'name': name, 'code': 'backup_checksum_mismatch'})
+            else:
+                doomed.append(item)
     kept.sort(key=lambda item: item[:2], reverse=True)
     deleted, failed = [], []
     for created_at, name, manifest in reversed(doomed):  # oldest first
@@ -472,6 +497,9 @@ def read_manifest(copy, explicit=None):
         raise BackupError('backup_manifest_missing', f'The copy {copy.name} has no manifest ({path.name}); it is not a complete copy') from None
     except (OSError, ValueError):
         raise BackupError('backup_manifest_invalid', f'The manifest {path.name} cannot be read as JSON') from None
+    if isinstance(manifest, dict) and type(manifest.get('format')) is int and manifest['format'] < MANIFEST_FORMAT:
+        raise BackupError('backup_manifest_format_unsupported', f"The manifest {path.name} is format {manifest['format']}; this tool reads format {MANIFEST_FORMAT} (its fingerprints were computed another way): "
+                          'make a new copy, copies of the old format cannot be checked against their tables')
     if not isinstance(manifest, dict) or any(type(manifest.get(key)) is not kind for key, kind in MANIFEST_KEYS.items()) or manifest['format'] != MANIFEST_FORMAT:
         raise BackupError('backup_manifest_invalid', f'The manifest {path.name} is not a version {MANIFEST_FORMAT} manifest of this tool')
     recipients = manifest.get('recipients')

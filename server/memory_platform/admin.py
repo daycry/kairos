@@ -425,9 +425,10 @@ def main(argv=None):
                 if keep is not None:
                     try:
                         report['prune'] = prune_backups(output.parent, keep, protect=output)
-                    except BackupError as error:  # the copy exists and is valid: say so before failing
-                        print(json.dumps(dict(report, prune={'status': 'failed', 'code': error.code}), sort_keys=True))
-                        raise
+                    except (BackupError, OSError) as error:  # the copy exists and is valid: its report is printed whatever stopped the prune
+                        code = error.code if isinstance(error, BackupError) else 'backup_prune_failed'
+                        print(json.dumps(dict(report, prune={'status': 'failed', 'code': code}), sort_keys=True))
+                        raise BackupError(code, str(error) if isinstance(error, BackupError) else f'the prune failed ({type(error).__name__})') from None
                 print(json.dumps(report, sort_keys=True))
         except BackupError as error:
             raise SystemExit(f'{error.code}: {error}') from None
