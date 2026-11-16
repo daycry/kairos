@@ -43,7 +43,7 @@ test-plan: n/a (sin UI)
 | Fase 1 — Arnés de fallos y tests de límites (C-07) | 6 | 6 | 100% | 0 / 32.4h | 0.83 / 4.3h | 0 / 1.1h | 0 / 1080 k |
 | Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 7 | 7 | 100% | 0 / 27.0h | 2.10 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 7 | 7 | 100% | 0 / 27.0h | 0.99 / 3.6h | 0 / 0.9h | 0 / 900 k |
-| Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 5 | 9 | 55.6% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
+| Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 6 | 9 | 66.7% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 0 | 5 | 0% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 0 | 9 | 0% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 0 | 6 | 0% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **25** | **98** | **25.5%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **26** | **98** | **26.5%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -840,10 +840,11 @@ RED: `tests/test_store_faults.py::PersistWithTheHeartbeatTests` falló con test_
 ### T-26 — Medición posterior del pool y defaults de `MEMORY_POOL_*`
 
 - **Descripción**: Repetir la medición con el pool y fijar los valores por defecto del pool y de los plazos con la cifra. Fuente: CA-15 (medición); B-02.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: medición posterior del pool; una búsqueda híbrida con el pool caliente abre 0 conexiones (antes 7) y baja a casi la mitad de latencia; los valores por defecto del pool se mantienen.
+- **Estado**: completado
+- **Cerrada**: 2026-11-16
 - **Tiempo humano**: est. 0.75h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.10h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.10h (estimado) · real 0.05h (medido)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 28 k in / 2 k out tok · ⚠️ verificar €
 - **Dependencias**: T-25
@@ -853,15 +854,15 @@ RED: `tests/test_store_faults.py::PersistWithTheHeartbeatTests` falló con test_
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "MEASURE_CONNECTIONS|MEMORY_TEST_RESULT"` → conexiones por búsqueda = 0 tras calentar y `MEMORY_TEST_RESULT` sin fallos
 
 **Criterios de aceptación**
-- [ ] Cifras «antes» y «después» anotadas en `Notas` (conexiones, consultas, latencia)
-- [ ] Defaults del pool justificados con la medición
+- [x] Cifras «antes» y «después» anotadas en `Notas` (conexiones, consultas, latencia)
+- [x] Defaults del pool justificados con la medición
 
 **Subtareas**
-- [ ] Medir
-- [ ] Ajustar los defaults de `config.py` si la medición lo pide
-- [ ] `usage-meter start/close` de la tarea
+- [x] Medir
+- [x] Ajustar los defaults de `config.py` si la medición lo pide
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Comparar con la línea base de la tarea de medición previa.
+**Notas**: Comparar con la línea base de la tarea de medición previa. MEDICIÓN POSTERIOR (misma base sintética, 3 proyectos × 300 documentos + 300 notas, búsqueda híbrida, 10 calentamientos + 30 medidas, imagen del build con psycopg-pool, mismo arranque de cada variante, sin red). ANTES (sin pool, la medición de T-21 repetida en la misma sesión que las demás: la primera dio p50 384,6 ms porque la máquina estaba cargada, no es comparable): **7 conexiones, 7 transacciones y 49 consultas por búsqueda; p50 127,2 / 130,4 ms (dos pasadas), p95 156 / 278 ms; transacción mínima `SELECT 1` p50 11,5 / 6,2 ms**. DESPUÉS, pool por defecto 1/10/5 s: **0 conexiones por búsqueda tras calentar (2 abiertas en total contando los 10 calentamientos), 7 transacciones, 63 consultas; p50 69,3 ms, p95 80,1 ms; léxica sola p50 68,7 ms (antes 94,3 / 96,3); transacción mínima p50 1,0 ms, p95 2,2 ms** (−45 % de latencia de búsqueda y ~6-10× en la transacción mínima). Con MEMORY_POOL_MIN=4: 0 conexiones también durante los calentamientos, p50 73,3 ms (dentro del ruido: la diferencia de 4 ms no la justifica). Las 63 consultas son las 49 de negocio + 14 del pool: 2 por transacción, el `check` al entregar la conexión y el `RESET ALL` al devolverla (cuestan un viaje cada uno, ~0,1 ms en red local; ya incluidos en las latencias de arriba). PARA LA FASE 5 (CA-18): quien cuente consultas por búsqueda debe contar solo las de negocio (la lectura de actor y clave), o descontar esos 2 por transacción; el número de transacciones (7) no cambia con el pool. DEFAULTS JUSTIFICADOS Y SIN CAMBIO (`config.py` no se toca): min 1 (huella en reposo mínima; el pool crece a lo que pide la concurrencia —una búsqueda usa hasta 3 transacciones paralelas— y tras calentar no abre nada; con min 4 solo se ahorran 2 conexiones de arranque), max 10 (cubre ~3 búsquedas simultáneas; el resto espera <= 5 s y recibe 503 store_busy en vez de abrir hasta 70 conexiones; PostgreSQL por defecto admite 100), espera 5 s (< el plazo de 15 s de sentencia y de 30 s de la petición); plazos de sentencia 15.000/30.000 ms: la búsqueda más lenta medida (p95 280 ms) y la transacción mínima (1-2 ms) quedan >50× por debajo, y el presupuesto semántico (10 s) por debajo de los 15 s. Verificación: el comando `MEASURE_CONNECTIONS` se ejecutó cuatro veces (salidas arriba); la suite completa NO se repitió porque solo cambió un script fuera de la suite (`measure_connections.py`, el recuento sigue siendo 984 del cierre de T-25). Usage-meter T-26: 0.05h (medido).
 
 ### T-27 — Documentar pool, plazos y errores 503
 

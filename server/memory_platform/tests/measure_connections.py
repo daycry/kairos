@@ -11,7 +11,9 @@ What is counted, per search and after a warm-up of `WARMUP` searches (the measur
 * `connections_per_search`: calls of `psycopg.Connection.connect` (a pool opens its connections through the same call, in its own threads);
 * `transactions_per_search`: calls of `Store.transaction()`;
 * `queries_per_search`: calls of `psycopg.Cursor.execute` (every statement a transaction sends, BEGIN/COMMIT excluded);
-* `latency_ms`: median, p95 and maximum of the whole `Retrieval.search`.
+* `latency_ms`: median, p95 and maximum of the whole `Retrieval.search`;
+* `tiny_transaction_ms`: median and p95 of a transaction of `SELECT 1` alone (the cost of the connection or of the pool checkout, without any search around it).
+With MEASURE_POOL=1 the pool is the one of the API (`MEASURE_POOL_MIN` / `MEASURE_POOL_MAX`, default 1 / 10), warmed with `wait()` and then used for the warm-up searches.
 """
 import asyncio
 import json
@@ -36,6 +38,7 @@ from memory_platform.tests.retrieval_eval.run import check_dsn, connect_dsn
 ROWS = int(os.environ.get('MEASURE_ROWS', '300'))  # per table: ROWS documents and ROWS items, every one embedded
 WARMUP = int(os.environ.get('MEASURE_WARMUP', '10'))
 REPEATS = int(os.environ.get('MEASURE_REPEATS', '40'))
+TINY = int(os.environ.get('MEASURE_TINY', '300'))  # transactions of `SELECT 1` timed on their own
 PROJECTS = int(os.environ.get('MEASURE_PROJECTS', '3'))  # the search is over this many projects (B-02: the permission reads grow with them)
 MODEL = 'nomic-embed-text'
 DIMENSIONS = 768
@@ -114,7 +117,17 @@ class Measure(unittest.TestCase):
                 c.execute('ANALYZE')
             if pooled:
                 from memory_platform.store_pool import attach_pool
-                attach_pool(store, Settings(dsn), 'api')
+                pool_min, pool_max = int(os.environ.get('MEASURE_POOL_MIN', '1')), int(os.environ.get('MEASURE_POOL_MAX', '10'))
+                attach_pool(store, Settings(dsn, pool_min=pool_min, pool_max=pool_max), 'api')
+                report['pool_min'], report['pool_max'] = pool_min, pool_max
+                store.pool.wait()  # starts with `pool_min` connections open, as a service that has been up for a while
+            tiny = []
+            for _ in range(TINY):  # what a transaction costs by itself, with no search around it: connection (or pool checkout), statement, commit
+                started = time.perf_counter()
+                with store.transaction() as c:
+                    c.execute('SELECT 1')
+                tiny.append((time.perf_counter() - started) * 1000)
+            report['tiny_transaction_ms'] = {'median': round(statistics.median(tiny), 3), 'p95': round(percentile(tiny, 0.95), 3)}
             embeddings = Mock(embed=AsyncMock(return_value={'embedding': [0.5] * DIMENSIONS, 'model': MODEL, 'verified': True}))
             retrieval = Retrieval(store, Settings(dsn, request_timeout=30), embeddings)
             request = m.Search(project_ids=projects, q='contenido ejemplo', layers=['episodic', 'documental'], semantic=True, limit=10)
