@@ -1370,11 +1370,11 @@ test-plan: n/a (sin UI)
 ### T-44 — `admin backup-cycle` con destinos `dir:` y `rclone:`
 
 - **Descripción**: Subcomando que encadena `pg_dump` → cifrado → manifiesto → `verify-backup` → subida al destino (`dir:<ruta>` o `rclone:<remoto>:<ruta>`) → verificación del sha256 en destino → retención local y remota. `rclone` fijado por versión en `operator`. Ejecución opcional de `prune-tables` al final del ciclo. Fuente: CA-06; O-01; P-02.
-- **Changelog**: Nuevo comando `backup-cycle`: copia cifrada y verificada que se envía a un directorio o a un remoto `rclone`, se lee de vuelta para comprobar el sha256 y aplica la retención; `prune-tables` opcional.
+- **Changelog**: `backup-cycle` solo envía copias cifradas (a un directorio o a un remoto `rclone`), las lee de vuelta, repara manifiestos cortados y no borra copias más nuevas; sin destinatarios se niega a arrancar.
 - **Cerrada**: 2026-11-16
 - **Estado**: completado
 - **Tiempo humano**: est. 5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.67h (estimado) · real 0.46h (medido)
+- **Tiempo IA (ejec.)**: est. 0.67h (estimado) · real 0.70h (medido)
 - **Supervisión**: est. 0.17h (≈25 % IA) · real —
 - **Previsión IA**: 184 k in / 16 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
@@ -1395,7 +1395,7 @@ test-plan: n/a (sin UI)
 - [x] Fijar `rclone` por versión en `operator`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Módulo `offsite.py` (destinos `dir:`/`rclone:`, ciclo, retención, bucle) y gauges de `observability.py` añadidos a Archivos. `rclone` 1.60.1 de Debian fijado por versión (trixie `-4` en operator, bookworm `-2+b5` en test); sin binario externo. Se sube la copia, se lee de vuelta el sha256 y solo entonces su manifiesto; las copias locales recientes que el destino no tiene se reenvían (reintento de T-45, mismo flujo). Mutantes M1,M2,M6,M7,M9,M10,M11 en rojo. Horas: ventana común T-44..T-46 = 1.01h IA (medido), repartida por estimado.
+**Notas**: Módulo `offsite.py` (destinos `dir:`/`rclone:`, ciclo, retención, bucle) y gauges de `observability.py` añadidos a Archivos. `rclone` 1.60.1 de Debian fijado por versión (trixie `-4` en operator, bookworm `-2+b5` en test); sin binario externo. Se sube la copia, se lee de vuelta el sha256 y solo entonces su manifiesto; las copias locales recientes que el destino no tiene se reenvían (reintento de T-45, mismo flujo). Mutantes M1,M2,M6,M7,M9,M10,M11 en rojo. Horas: ventana común T-44..T-46 = 1.01h IA (medido), repartida por estimado. Fix1 (revisión F7 int. 1, n.º 1/8/9): solo suben copias con manifiesto `encrypted` y cabecera `age` (el resto: `offsite.skipped_plain` y aviso `backup_offsite_plain_skipped`); `backup-cycle` sin destinatarios → `backup_encryption_required` con cualquier `REQUIRE_ENCRYPTION`; la retención remota conserva lo más nuevo que la protegida; se valida el manifiesto remoto antes de omitir. Mutantes en rojo: sin cifrado (M1), sin cabecera (M2), copia propia en claro (M3), admin sin la puerta (M4), manifiesto remoto sin validar (M7), retención antigua (M8). Horas fix1: 0.24h (medido).
 
 
 RED: `server/memory_platform/tests/test_backup_cycle.py::CommandTests` falló con usage: ... argument command: invalid choice: 'backup-cycle' (los 4 tests de la linea de comandos fallaron antes de cablear admin.py) · 2026-11-16.
@@ -1403,11 +1403,11 @@ RED: `server/memory_platform/tests/test_backup_cycle.py::CommandTests` falló co
 ### T-45 — Fallos del destino externo: `backup_offsite_failed`, métrica y reintento
 
 - **Descripción**: Con el destino inaccesible, registrar `backup_offsite_failed` (tipo de destino, sin credenciales), poner la métrica a 0, reintentar en el ciclo siguiente y no borrar copias locales; una copia con sha256 distinto no sube ni borra nada. Fuente: CA-06; sha256 no coincide (manejo de errores).
-- **Changelog**: Si falla el destino de la copia externa se registra `backup_offsite_failed` (sin credenciales), la métrica pasa a 0, no se borra ninguna copia local y el ciclo siguiente reenvía lo que falte.
+- **Changelog**: Todo fallo del ciclo de copia externa (base, `pg_dump`, cifrado, verificación o destino) pone la métrica a 0 y registra `backup_cycle_failed` en el bucle; se conservan las copias locales y reintenta.
 - **Cerrada**: 2026-11-16
 - **Estado**: completado
 - **Tiempo humano**: est. 3h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.27h (medido)
+- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.50h (medido)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 110 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: T-44
@@ -1428,7 +1428,7 @@ RED: `server/memory_platform/tests/test_backup_cycle.py::CommandTests` falló co
 - [x] Comprobar la redacción de credenciales
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: El manejo está en `run_cycle` (commit de T-44: es el mismo flujo); este commit añade las pruebas de fallo. Las series viven en `OFFSITE_REGISTRY`, aparte (memory-api no las expone: un 0 fijo alertaría en falso) y en `kairos-offsite.prom` junto a las copias. Con un fallo no se poda lo local. Rutas y salida de rclone nunca se guardan (stderr a DEVNULL). Mutantes M3,M4,M5,M8,M12 en rojo (y M1,M11 por sha256). Horas: ventana común de T-44.
+**Notas**: El manejo está en `run_cycle` (commit de T-44: es el mismo flujo); este commit añade las pruebas de fallo. Las series viven en `OFFSITE_REGISTRY`, aparte (memory-api no las expone: un 0 fijo alertaría en falso) y en `kairos-offsite.prom` junto a las copias. Con un fallo no se poda lo local. Rutas y salida de rclone nunca se guardan (stderr a DEVNULL). Mutantes M3,M4,M5,M8,M12 en rojo (y M1,M11 por sha256). Horas: ventana común de T-44. Fix1 (n.º 2/3): todo fallo del ciclo (base, pg_dump, cifrado, verificación local, copia en claro y lo previo a `run_cycle` en admin) escribe `kairos_backup_offsite_success 0`, actualiza `last_run` y reescribe el `.prom`; `run_loop` registra `backup_cycle_failed` (`exc_type`, `code`; nunca el mensaje). Prueba: ciclo correcto y luego 5 etapas fallidas. Mutantes en rojo: sin métrica (M5, 10 pruebas), bucle sin evento (M6), admin sin registro previo (M10). Horas fix1: 0.23h (medido).
 
 
 RED: `server/memory_platform/tests/test_backup_cycle.py::OffsiteFailureTests (mutantes M3,M4,M5,M1,M11,M12)` falló con cada mutante deja la prueba en rojo: poda local con fallo, metrica 1 con fallo, sin log, sin comparar sha256, manifiesto antes de la lectura, salida de rclone en el mensaje · 2026-11-16.
@@ -1436,11 +1436,11 @@ RED: `server/memory_platform/tests/test_backup_cycle.py::OffsiteFailureTests (mu
 ### T-46 — Servicio Compose `memory-backup` (perfil `backup`) sin clave privada
 
 - **Descripción**: Añadir al `docker-compose.yml` el servicio opcional `memory-backup` (perfil `backup`, imagen `operator`, sin puertos publicados) que ejecuta `admin backup-cycle` cada `MEMORY_BACKUP_INTERVAL`. Ningún servicio monta la clave privada. Aviso: la instalación desplegada lo recoge solo en su próximo `up`. Fuente: CA-06, CA-08; P-02.
-- **Changelog**: Servicio opcional `memory-backup` (perfil `backup`): copia externa cada 24 h, sin puertos ni clave privada. Además, `backup --prune` ya no falla si otra poda borra una copia mientras la verifica.
+- **Changelog**: Servicio opcional `memory-backup` (perfil `backup`): copia externa cada 24 h, sin puertos ni clave privada; se documentan los permisos de `rclone.conf`. `backup --prune` tolera una poda concurrente.
 - **Cerrada**: 2026-11-16
 - **Estado**: completado
 - **Tiempo humano**: est. 3h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.28h (medido)
+- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.51h (medido)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 110 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: T-45
@@ -1461,7 +1461,7 @@ RED: `server/memory_platform/tests/test_backup_cycle.py::OffsiteFailureTests (mu
 - [x] Documentar en `docs/configuration.md`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Deuda de la Fase 6 saldada: `FileNotFoundError` de `verify_backup` en `prune_backups` = copia desaparecida (no cuenta, se verifica la siguiente), con prueba de la carrera. El servicio usa `egress` además de `memory-data` (el remoto lo necesita) y monta solo `/backups`, `/config` (público, ro) y `/offsite`. `isolation_override` incluye el servicio. Mutantes Ma-Mi (perfil, cifrado, clave, intervalo, solo lectura, puerto, secreto, rclone sin fijar, carrera) en rojo. Horas: ventana común de T-44. Runbook y comandos: T-47.
+**Notas**: Deuda de la Fase 6 saldada: `FileNotFoundError` de `verify_backup` en `prune_backups` = copia desaparecida (no cuenta, se verifica la siguiente), con prueba de la carrera. El servicio usa `egress` además de `memory-data` (el remoto lo necesita) y monta solo `/backups`, `/config` (público, ro) y `/offsite`. `isolation_override` incluye el servicio. Mutantes Ma-Mi (perfil, cifrado, clave, intervalo, solo lectura, puerto, secreto, rclone sin fijar, carrera) en rojo. Horas: ventana común de T-44. Runbook y comandos: T-47. Fix1 (n.º 6/12): `configuration.md` documenta propietario y permisos de `rclone.conf` (uid 10001, 0400/0600, nunca 644) y la limitación OAuth con `:ro`. `prune_backups`: `backup_not_found` de una copia que ya no existe cuenta como desaparecida, no `skipped` (la prueba borra el fichero de verdad; control positivo: un directorio sigue en `skipped`). Mutante M9 en rojo. Horas fix1: 0.23h (medido).
 
 
 RED: `test_backup_service.py y test_backup_prune.py::test_a_copy_that_another_prune_deletes (mutantes Ma-Mi)` falló con FileNotFoundError sin tratar en prune_backups y 9 mutantes del Compose y del Dockerfile (perfil, puerto, clave privada, secreto extra, cifrado, solo lectura, intervalo, rclone sin fijar) en rojo · 2026-11-16.
@@ -1469,11 +1469,11 @@ RED: `test_backup_service.py y test_backup_prune.py::test_a_copy_that_another_pr
 ### T-47 — Runbook de restauración desde la copia externa y ensayo automatizado
 
 - **Descripción**: Escribir en `docs/operations.md` un runbook ejecutable (descargar del destino → verificar sha256 → descifrar con la clave privada fuera del servidor → `restore-check` en base vacía `memory_restore*` → comparar manifiesto) y un script de ensayo aislado que lo sigue con un destino simulado y resultado `restored_and_content_verified`. Fuente: CA-07; criterio de cierre 1 del plan director.
-- **Changelog**: Runbook de restauración desde la copia externa y `scripts/rehearse-restore.py`: ensayo aislado que descarga, verifica, descifra y restaura una copia hasta `restored_and_content_verified`.
+- **Changelog**: Runbook de restauración y `scripts/rehearse-restore.py`: ensayo aislado que restaura en un PostgreSQL efímero nuevo, destruye la clave (también ante SIGTERM) y comprueba que no queda nada.
 - **Cerrada**: 2026-11-16
 - **Estado**: completado
 - **Tiempo humano**: est. 3.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.47h (estimado) · real 0.06h (medido)
+- **Tiempo IA (ejec.)**: est. 0.47h (estimado) · real 0.29h (medido)
 - **Supervisión**: est. 0.12h (≈25 % IA) · real —
 - **Previsión IA**: 129 k in / 11 k out tok · ⚠️ verificar €
 - **Dependencias**: T-46
@@ -1483,7 +1483,8 @@ RED: `test_backup_service.py y test_backup_prune.py::test_a_copy_that_another_pr
 - **Verificación**:
   - `python -m unittest discover -s scripts/tests -p test_rehearse_restore.py` → `OK`
   - `python scripts/rehearse-restore.py --project-name kairos-ops-b --embed-stub` → salida con `restored_and_content_verified`; el proyecto `kairos-ops-b` se elimina al terminar y `docker ps --filter name=knowledge-graphs` queda idéntico
-  - Salida (2026-11-16): `python -m unittest discover -s scripts/tests -p test_rehearse_restore.py` → `Ran 8 tests ... OK`. `python scripts/rehearse-restore.py --project-name kairos-ops-b --embed-stub` → exit 0 en 11 min 44 s: `{"cleanup": "complete", "cycle": {"bytes": 73391, "copy": "kairos-cycle-20261116T185231302178Z.dump.age", "destination": "dir"}, "project": "kairos-ops-b", "restore": {"database": "memory_restore_b66e420f3f0a", "status": "restored_and_content_verified", "tables": 26}, "status": "restored_and_content_verified", "steps": ["deploy", "keys", "cycle", "download", "verify", "decrypt", "restore"], "verify": {"sha256": "b912ffa98e6d6c4f98c3fe5dc8f43916f2ec1b8c6c440dc1c2257b66b35c9dad"}}`. `docker ps -a`, `volume ls` y `network ls` con filtro `knowledge-graphs` antes y después: idénticos (28 líneas con IDs, `cmp` sin diferencias); `--filter name=kairos-ops`: 0 contenedores, 0 volúmenes, 0 redes, 0 imágenes `rehearsal-kairos-ops-*`; `.private/rehearsal-kairos-ops-b` y el directorio temporal (clave incluida) eliminados.
+  - Salida original (2026-11-16, antes de fix1): 8 pruebas en `OK` y ensayo real en 11 min 44 s con `restored_and_content_verified` (26 tablas) y `knowledge-graphs-*` idéntico; superada por la salida de fix1.
+  - Salida fix1 (2026-11-16): `python -m unittest discover -s scripts/tests -p test_rehearse_restore.py` → `Ran 16 tests ... OK`. `python -u scripts/rehearse-restore.py --project-name kairos-ops-b --embed-stub` → exit 0 en 427 s: `{"cleanup": "complete", "cycle": {"bytes": 73490, "copy": "kairos-cycle-20261116T213555925413Z.dump.age", "destination": "dir"}, "project": "kairos-ops-b", "restore": {"database": "memory_restore_150557dfc3af", "server": "ephemeral", "status": "restored_and_content_verified", "tables": 26}, "status": "restored_and_content_verified", "steps": ["deploy", "keys", "cycle", "download", "verify", "decrypt", "restore"], "verify": {"sha256": "9ced5d82…"}}`. `docker ps -a`, `volume ls` y `network ls` con filtro `knowledge-graphs` antes y después: idénticos (31 líneas, `cmp` sin diferencias); `--filter name=kairos-ops`: 0 contenedores, 0 volúmenes, 0 redes, 0 imágenes `rehearsal-kairos-ops-*`; el directorio temporal (clave incluida) y el servidor efímero (`kairos-ops-b-restore-pg-*`, con su red y su volumen) eliminados.
 
 **Criterios de aceptación**
 - [x] El ensayo descarga del destino simulado (directorio), verifica el sha256, descifra con una clave de prueba generada en el ensayo, ejecuta `restore-check` en un proyecto aislado vacío y compara el manifiesto
@@ -1497,7 +1498,7 @@ RED: `test_backup_service.py y test_backup_prune.py::test_a_copy_that_another_pr
 - [x] Retirar el proyecto aislado y comprobar que nada de `knowledge-graphs-*` cambió
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Ensayo real 2026-11-16 (`kairos-ops-b`, 28792/25175, `--embed-stub --roundtrip`): `restored_and_content_verified`, 26 tablas, copia cifrada de 73 391 B, sha256 b912ffa9…; el servicio `memory-backup` real hizo el ciclo; clave `age` generada y destruida en contenedores sin red que no son servicios; `knowledge-graphs-*` idéntico. 10 mutantes del guion en rojo. Horas: 0.06h solo del ensayo; guion y runbook, en la ventana común de T-44.
+**Notas**: Ensayo real 2026-11-16 (`kairos-ops-b`, 28792/25175, `--embed-stub --roundtrip`): `restored_and_content_verified`, 26 tablas, copia cifrada de 73 391 B, sha256 b912ffa9…; el servicio `memory-backup` real hizo el ciclo; clave `age` generada y destruida en contenedores sin red que no son servicios; `knowledge-graphs-*` idéntico. 10 mutantes del guion en rojo. Horas: 0.06h solo del ensayo; guion y runbook, en la ventana común de T-44. Fix1 (n.º 5/7/11): restaura en un PostgreSQL efímero NUEVO (imagen del proyecto; contenedor, red interna y volumen propios); la clave nace en contenedor con umask 077 y se destruye con `shred` en contenedor (sin chmod del anfitrión; SIGTERM/SIGHUP; se comprueban clave y directorio); la limpieza sigue ante un fallo, conserva el original y filtra por `^nombre$` más igualdad. 11 mutantes en rojo (R5 por caída del proceso). Ensayo repetido: ver Verificación. Horas fix1: 0.23h (medido).
 
 
 RED: `scripts/tests/test_rehearse_restore.py::RunbookTests` falló con IndexError: la seccion '## Restaurar desde la copia externa' no existia en docs/operations.md; 10 mutantes del guion (clave montada, sha256 sin comparar, red en la herramienta, clave sin destruir, limpieza omitida) en rojo · 2026-11-16.
@@ -1505,11 +1506,11 @@ RED: `scripts/tests/test_rehearse_restore.py::RunbookTests` falló con IndexErro
 ### T-48 — Cierre de fase: suite completa y subida del mínimo
 
 - **Descripción**: Ejecuta la suite completa del servidor, anota el recuento `MEMORY_TEST_RESULT` y sube `KAIROS_MIN_TESTS` y `MIN_FLOOR` al número observado (la suite solo crece).  Fuente: Puerta de fase; CA-38 (suite con 0 fallos y 0 omitidos).
-- **Changelog**: Interno: la suite del servidor pasa a 1184 pruebas y la CI exige ese mínimo; la imagen de pruebas ya no define `RCLONE_VERSION`, que rclone leía como su opción `--version`.
+- **Changelog**: Interno: la suite del servidor pasa a 1195 pruebas y la CI exige ese mínimo; la imagen de pruebas ya no define `RCLONE_VERSION`, que rclone leía como su opción `--version`.
 - **Cerrada**: 2026-11-16
 - **Estado**: completado
 - **Tiempo humano**: est. 1.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real 0.34h (medido)
+- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real 0.57h (medido)
 - **Supervisión**: est. 0.05h (≈25 % IA) · real —
 - **Previsión IA**: 55 k in / 5 k out tok · ⚠️ verificar €
 - **Dependencias**: T-47
@@ -1520,6 +1521,7 @@ RED: `scripts/tests/test_rehearse_restore.py::RunbookTests` falló con IndexErro
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
   - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
   - Salida (2026-11-16, tercera ejecución, tras corregir el ARG): `docker build -f server/memory_platform/Dockerfile --target test --progress=plain -t kairos-test:i3p7 .` (exit 0): `MEMORY_TEST_RESULT {"database": "PostgreSQL", "environment": "isolated-container-build", "errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1184}`; `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `Ran 45 tests ... OK`. Imagen `operator` construida aparte con el ARG nuevo (`rclone` 1.60.1+dfsg-4, `age` 1.2.1) y retirada por nombre. (Cierre de fase: 1154 → 1184.)
+  - Salida fix1 (2026-11-16): `docker build -f server/memory_platform/Dockerfile --target test --progress=plain -t kairos-test:i3p7f1 .` (exit 0): `MEMORY_TEST_RESULT {"database": "PostgreSQL", "environment": "isolated-container-build", "errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1195}`; `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `Ran 45 tests ... OK`. (Corrección de la revisión de la Fase 7: 1184 → 1195.)
 
 **Criterios de aceptación**
 - [x] `MEMORY_TEST_RESULT` con 0 fallos, 0 errores, 0 omitidos y `tests` ≥ 764 (≥ el recuento del cierre anterior)
@@ -1531,7 +1533,7 @@ RED: `scripts/tests/test_rehearse_restore.py::RunbookTests` falló con IndexErro
 - [x] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: 1.ª y 2.ª ejecución: pruebas de rclone en rojo solo en la compilación: el `ARG RCLONE_VERSION` del Dockerfile es una variable de entorno de los RUN y rclone lee `RCLONE_*` como opciones (`--version`, exit 1). Renombrado a `DEBIAN_RCLONE_VERSION` con prueba que prohíbe `ARG/ENV RCLONE_*`; los controles positivos detectan un rclone roto (antes las pruebas de fallo pasaban en vacío). Recuento 1184 (+30: ciclo 23, servicio 6, carrera 1); `KAIROS_MIN_TESTS`, `MIN_FLOOR`, `operations.md` y `README.md` suben a 1184.
+**Notas**: 1.ª y 2.ª ejecución: pruebas de rclone en rojo solo en la compilación: el `ARG RCLONE_VERSION` del Dockerfile es una variable de entorno de los RUN y rclone lee `RCLONE_*` como opciones (`--version`, exit 1). Renombrado a `DEBIAN_RCLONE_VERSION` con prueba que prohíbe `ARG/ENV RCLONE_*`; los controles positivos detectan un rclone roto (antes las pruebas de fallo pasaban en vacío). Recuento 1184 (+30: ciclo 23, servicio 6, carrera 1); `KAIROS_MIN_TESTS`, `MIN_FLOOR`, `operations.md` y `README.md` suben a 1184. Fix1: 1184 → 1195 (+11: 9 del ciclo y del comando, 2 de la carrera de `prune`); `KAIROS_MIN_TESTS`, `MIN_FLOOR`, `operations.md` y `README.md` a 1195. Horas fix1: 0.23h (medido).
 
 ### T-49 — Revisión adversarial de la fase (dos lentes)
 
@@ -3089,16 +3091,16 @@ Lentes: A+B+C (C por `ci.yml`, `docker-compose.yml`, `Dockerfile`, credenciales 
 
 | # | Grado | Gap | Tarea | Corrección | Evidencia |
 |---|---|---|---|---|---|
-| 1 | Critical | `upload` sube al destino externo cualquier copia local con nombre válido aunque esté EN CLARO: la `kairos-before-*` que escribe cada despliegue (memory-admin sin destinatarios) o una copia manual sale en claro del servidor en el siguiente ciclo | T-44, T-46 | pendiente (fix1) | Lente C n.º 1 (CWE-311, reproducido), Lente B n.º 1 (reproducido); `offsite.py:199-216,227-237`, `deploy-memory.py:518` |
-| 2 | Important | `kairos_backup_offsite_success` sigue en 1 y el `.prom` no se reescribe cuando el ciclo falla antes de la etapa externa (base caída, `pg_dump`, cifrado, verificación local); sin evento estructurado en `run_loop` | T-45 | pendiente (fix1) | Lente B n.º 2 (reproducido), Lente A (fuera de lente); `offsite.py:303-319,345-346` |
-| 3 | Minor | Evento `backup_cycle_failed` no declarado en `operations.md` ni en Coordinación | T-44 | pendiente (fix1) | Lente A n.º 1; `offsite.py:348` |
-| 4 | Minor | Coordinación presenta `backup_config_invalid` como código nuevo de la Fase 7 (es de la Fase 6; lo nuevo es su uso con `MEMORY_BACKUP_INTERVAL`) | T-46 | pendiente (fix1) | Lente A n.º 2; `improvement-plan.md:246` |
-| 5 | Minor | El ensayo restaura en una base vacía del MISMO clúster de origen, no en un clúster nuevo como pide CA-07 «proyecto aislado vacío» | T-47 | pendiente (fix1: restaurar en un PostgreSQL efímero nuevo) | Lente A n.º 3; `rehearse-restore.py:172-177`, `spec.md:185` |
-| 6 | Minor | `rclone.conf` sin propietario/permisos documentados: la salida fácil (`chmod 644`) expone las credenciales del remoto; los backends OAuth no pueden renovar el token con `:ro` | T-46 | pendiente (fix1: documentar) | Lente C n.º 2 (CWE-732); `configuration.md:112` |
-| 7 | Minor | Limpieza de la clave del ensayo no garantizada (sin SIGTERM, `shred` y `rmtree` tragan errores, `identity.txt` 0644, `chmod` con EPERM en Linux sin root) ni comprobada en `cleanup()` | T-47 | pendiente (fix1) | Lente C n.º 4 (CWE-459) y fuera de lente; `rehearse-restore.py:130,185-193,217-223` |
-| 8 | Minor | La retención remota no distingue origen y puede borrar copias más nuevas que la protegida (dos ciclos concurrentes con `REMOTE_KEEP=1`; destino compartido) | T-44 | pendiente (fix1: no borrar más nuevas que la protegida y documentar destino exclusivo) | Lente B n.º 3; `offsite.py:255-276` |
-| 9 | Minor | Un manifiesto truncado en el destino (rclone 1.60 escribe sobre el nombre final) nunca se repara: el ciclo lo omite y la poda lo salta | T-44 | pendiente (fix1: validar el manifiesto remoto antes de omitir) | Lente B n.º 4; `offsite.py:228` |
+| 1 | Critical | `upload` sube al destino externo cualquier copia local con nombre válido aunque esté EN CLARO: la `kairos-before-*` que escribe cada despliegue (memory-admin sin destinatarios) o una copia manual sale en claro del servidor en el siguiente ciclo | T-44, T-46 | corregido (fix1, 58a03cc) | Lente C n.º 1 (CWE-311, reproducido), Lente B n.º 1 (reproducido); `offsite.py:199-216,227-237`, `deploy-memory.py:518` |
+| 2 | Important | `kairos_backup_offsite_success` sigue en 1 y el `.prom` no se reescribe cuando el ciclo falla antes de la etapa externa (base caída, `pg_dump`, cifrado, verificación local); sin evento estructurado en `run_loop` | T-45 | corregido (fix1, 58a03cc) | Lente B n.º 2 (reproducido), Lente A (fuera de lente); `offsite.py:303-319,345-346` |
+| 3 | Minor | Evento `backup_cycle_failed` no declarado en `operations.md` ni en Coordinación | T-44 | corregido (fix1, e6ba5e0) | Lente A n.º 1; `offsite.py:348` |
+| 4 | Minor | Coordinación presenta `backup_config_invalid` como código nuevo de la Fase 7 (es de la Fase 6; lo nuevo es su uso con `MEMORY_BACKUP_INTERVAL`) | T-46 | corregido (fix1, e6ba5e0) | Lente A n.º 2; `improvement-plan.md:246` |
+| 5 | Minor | El ensayo restaura en una base vacía del MISMO clúster de origen, no en un clúster nuevo como pide CA-07 «proyecto aislado vacío» | T-47 | corregido (fix1, 7944f49) | Lente A n.º 3; `rehearse-restore.py:172-177`, `spec.md:185` |
+| 6 | Minor | `rclone.conf` sin propietario/permisos documentados: la salida fácil (`chmod 644`) expone las credenciales del remoto; los backends OAuth no pueden renovar el token con `:ro` | T-46 | corregido (fix1, e6ba5e0) | Lente C n.º 2 (CWE-732); `configuration.md:112` |
+| 7 | Minor | Limpieza de la clave del ensayo no garantizada (sin SIGTERM, `shred` y `rmtree` tragan errores, `identity.txt` 0644, `chmod` con EPERM en Linux sin root) ni comprobada en `cleanup()` | T-47 | corregido (fix1, 7944f49) | Lente C n.º 4 (CWE-459) y fuera de lente; `rehearse-restore.py:130,185-193,217-223` |
+| 8 | Minor | La retención remota no distingue origen y puede borrar copias más nuevas que la protegida (dos ciclos concurrentes con `REMOTE_KEEP=1`; destino compartido) | T-44 | corregido (fix1, 58a03cc) | Lente B n.º 3; `offsite.py:255-276` |
+| 9 | Minor | Un manifiesto truncado en el destino (rclone 1.60 escribe sobre el nombre final) nunca se repara: el ciclo lo omite y la poda lo salta | T-44 | corregido (fix1, 58a03cc) | Lente B n.º 4; `offsite.py:228` |
 | 10 | Minor | La red `egress` está conectada también con destino `dir:` | T-46 | deuda → Fase 9 (redes y límites del Compose) | Lente C n.º 3 (CWE-250); `docker-compose.yml:235` |
-| 11 | Minor | Una excepción en `cleanup()` del ensayo aborta el resto de la limpieza y pierde el fallo original; el filtro `name=<proyecto>` casa por subcadena | T-47 | pendiente (fix1) | Lente B n.º 5; `rehearse-restore.py:66-67,205-218,243` |
-| 12 | Minor | En la carrera real de dos `--prune` la copia borrada sale como `backup_not_found` en `skipped` y no como desaparecida; la prueba inyecta un `FileNotFoundError` sintético | T-46 | pendiente (fix1) | Lente B n.º 6; `backup.py:450-451` |
+| 11 | Minor | Una excepción en `cleanup()` del ensayo aborta el resto de la limpieza y pierde el fallo original; el filtro `name=<proyecto>` casa por subcadena | T-47 | corregido (fix1, 7944f49) | Lente B n.º 5; `rehearse-restore.py:66-67,205-218,243` |
+| 12 | Minor | En la carrera real de dos `--prune` la copia borrada sale como `backup_not_found` en `skipped` y no como desaparecida; la prueba inyecta un `FileNotFoundError` sintético | T-46 | corregido (fix1, a9ce06a) | Lente B n.º 6; `backup.py:450-451` |
 | 13 | Minor | T-48.3 marcado sin el JSON de usage-meter en Notas | T-48 | deuda aceptada (mismo patrón aceptado en T-42; las horas medidas están) | Lente A n.º 4 |
