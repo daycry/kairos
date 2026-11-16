@@ -46,7 +46,7 @@ test-plan: n/a (sin UI)
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 9 | 9 | 100% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 5 | 5 | 100% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 9 | 9 | 100% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
-| Fase 7 — Copia externa programada y runbook de restauración (C-01) | 3 | 6 | 50.0% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
+| Fase 7 — Copia externa programada y runbook de restauración (C-01) | 4 | 6 | 66.7% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 0 | 4 | 0% | 0 / 7.2h | 0 / 1.0h | 0 / 0.2h | 0 / 240 k |
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 0 | 7 | 0% | 0 / 19.8h | 0 / 2.6h | 0 / 0.7h | 0 / 660 k |
 | Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 0 | 7 | 0% | 0 / 34.2h | 0 / 4.6h | 0 / 1.1h | 0 / 1140 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **46** | **98** | **46.9%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **47** | **98** | **48.0%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1472,33 +1472,38 @@ RED: `test_backup_service.py y test_backup_prune.py::test_a_copy_that_another_pr
 ### T-47 — Runbook de restauración desde la copia externa y ensayo automatizado
 
 - **Descripción**: Escribir en `docs/operations.md` un runbook ejecutable (descargar del destino → verificar sha256 → descifrar con la clave privada fuera del servidor → `restore-check` en base vacía `memory_restore*` → comparar manifiesto) y un script de ensayo aislado que lo sigue con un destino simulado y resultado `restored_and_content_verified`. Fuente: CA-07; criterio de cierre 1 del plan director.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Runbook de restauración desde la copia externa y `scripts/rehearse-restore.py`: ensayo aislado que descarga, verifica, descifra y restaura una copia hasta `restored_and_content_verified`.
+- **Cerrada**: 2026-11-16
+- **Estado**: completado
 - **Tiempo humano**: est. 3.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.47h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.47h (estimado) · real 0.06h (medido)
 - **Supervisión**: est. 0.12h (≈25 % IA) · real —
 - **Previsión IA**: 129 k in / 11 k out tok · ⚠️ verificar €
 - **Dependencias**: T-46
 - **Tipo**: devops
-- **Archivos**: `docs/operations.md`, `scripts/rehearse-restore.py`, `scripts/tests/test_rehearse_restore.py`
+- **Archivos**: `docs/operations.md`, `scripts/rehearse-restore.py`, `scripts/tests/test_rehearse_restore.py`, `docs/roadmap/2026-11-15-reliable-operations/improvement-plan.md` (frase «Fase 7»; añadido)
 - **Cubre (tests)**: —
 - **Verificación**:
   - `python -m unittest discover -s scripts/tests -p test_rehearse_restore.py` → `OK`
   - `python scripts/rehearse-restore.py --project-name kairos-ops-b --embed-stub` → salida con `restored_and_content_verified`; el proyecto `kairos-ops-b` se elimina al terminar y `docker ps --filter name=knowledge-graphs` queda idéntico
+  - Salida (2026-11-16): `python -m unittest discover -s scripts/tests -p test_rehearse_restore.py` → `Ran 8 tests ... OK`. `python scripts/rehearse-restore.py --project-name kairos-ops-b --embed-stub` → exit 0 en 11 min 44 s: `{"cleanup": "complete", "cycle": {"bytes": 73391, "copy": "kairos-cycle-20261116T185231302178Z.dump.age", "destination": "dir"}, "project": "kairos-ops-b", "restore": {"database": "memory_restore_b66e420f3f0a", "status": "restored_and_content_verified", "tables": 26}, "status": "restored_and_content_verified", "steps": ["deploy", "keys", "cycle", "download", "verify", "decrypt", "restore"], "verify": {"sha256": "b912ffa98e6d6c4f98c3fe5dc8f43916f2ec1b8c6c440dc1c2257b66b35c9dad"}}`. `docker ps -a`, `volume ls` y `network ls` con filtro `knowledge-graphs` antes y después: idénticos (28 líneas con IDs, `cmp` sin diferencias); `--filter name=kairos-ops`: 0 contenedores, 0 volúmenes, 0 redes, 0 imágenes `rehearsal-kairos-ops-*`; `.private/rehearsal-kairos-ops-b` y el directorio temporal (clave incluida) eliminados.
 
 **Criterios de aceptación**
-- [ ] El ensayo descarga del destino simulado (directorio), verifica el sha256, descifra con una clave de prueba generada en el ensayo, ejecuta `restore-check` en un proyecto aislado vacío y compara el manifiesto
-- [ ] Cada paso del runbook de `docs/operations.md` es un comando ejecutable que el ensayo ejecuta, y la clave privada de prueba nunca entra en un contenedor del servidor
-- [ ] El resultado es `restored_and_content_verified` y el ensayo deja la evidencia en `Notas`
+- [x] El ensayo descarga del destino simulado (directorio), verifica el sha256, descifra con una clave de prueba generada en el ensayo, ejecuta `restore-check` en un proyecto aislado vacío y compara el manifiesto
+- [x] Cada paso del runbook de `docs/operations.md` es un comando ejecutable que el ensayo ejecuta, y la clave privada de prueba nunca entra en un contenedor del servidor
+- [x] El resultado es `restored_and_content_verified` y el ensayo deja la evidencia en `Notas`
 
 **Subtareas**
-- [ ] Escribir el runbook primero y el test del script con dobles (rojo)
-- [ ] Implementar el script de ensayo
-- [ ] Ejecutar el ensayo real (primer plano, de uno en uno)
-- [ ] Retirar el proyecto aislado y comprobar que nada de `knowledge-graphs-*` cambió
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir el runbook primero y el test del script con dobles (rojo)
+- [x] Implementar el script de ensayo
+- [x] Ejecutar el ensayo real (primer plano, de uno en uno)
+- [x] Retirar el proyecto aislado y comprobar que nada de `knowledge-graphs-*` cambió
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `scripts/deploy-memory.py` (`--project-name`, `--embed-stub`), `admin.py:295-313` (`restore-check`) y `docs/operations.md:128-201`. Restricción dura: nada contra la base ni el Ollama del host.
+**Notas**: Ensayo real 2026-11-16 (`kairos-ops-b`, 28792/25175, `--embed-stub --roundtrip`): `restored_and_content_verified`, 26 tablas, copia cifrada de 73 391 B, sha256 b912ffa9…; el servicio `memory-backup` real hizo el ciclo; clave `age` generada y destruida en contenedores sin red que no son servicios; `knowledge-graphs-*` idéntico. 10 mutantes del guion en rojo. Horas: 0.06h solo del ensayo; guion y runbook, en la ventana común de T-44.
+
+
+RED: `scripts/tests/test_rehearse_restore.py::RunbookTests` falló con IndexError: la seccion '## Restaurar desde la copia externa' no existia en docs/operations.md; 10 mutantes del guion (clave montada, sha256 sin comparar, red en la herramienta, clave sin destruir, limpieza omitida) en rojo · 2026-11-16.
 
 ### T-48 — Cierre de fase: suite completa y subida del mínimo
 
