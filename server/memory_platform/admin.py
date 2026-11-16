@@ -10,9 +10,9 @@ import subprocess
 import tempfile
 import hashlib
 
-from .backup import BackupError, create_backup, encrypted_name, encryption_plan, manifest_path, table_fingerprints, verify_backup
+from .backup import BackupError, check_keep, create_backup, encrypted_name, encryption_plan, manifest_path, prune_backups, table_fingerprints, verify_backup
 from .chunking import chunk_text, embedding_text
-from .config import Settings, backup_recipients_file, backup_require_encryption, retention_windows
+from .config import Settings, backup_keep, backup_recipients_file, backup_require_encryption, retention_windows
 from .store import Store
 from .store_vectors import CURRENT_RESOURCE
 
@@ -338,6 +338,8 @@ def main(argv=None):
     commands.add_parser('content-manifest')
     backup = commands.add_parser('backup', help='pg_dump to a new file with its manifest <file>.json (sha256, bytes, schema version, time, counts)')
     backup.add_argument('--output', required=True)
+    backup.add_argument('--prune', action='store_true', help='After the copy, delete the older verified copies of this tool beyond the --keep newest (never anything else)')
+    backup.add_argument('--keep', default=None, help='With --prune: copies to keep, 1 or more (default MEMORY_BACKUP_KEEP, 7)')
     verify = commands.add_parser('verify-backup', help='Recompute the sha256 of a copy and compare it with its manifest (never decrypts)')
     verify.add_argument('--backup', required=True)
     restore = commands.add_parser('restore-check')
@@ -389,6 +391,19 @@ def main(argv=None):
     elif args.command == 'backup':
         output = Path(args.output).resolve()
         try:
+            keep = None
+            if args.keep is not None and not args.prune:
+                raise BackupError('backup_keep_invalid', '--keep only applies with --prune')
+            if args.prune:  # validated before anything is written or deleted
+                if args.keep is None:
+                    try:
+                        keep = backup_keep()
+                    except ValueError as error:
+                        raise BackupError('backup_keep_invalid', str(error)) from None
+                else:
+                    if not args.keep.strip().isascii() or not args.keep.strip().isdigit():
+                        raise BackupError('backup_keep_invalid', '--keep must be a whole number of 1 or more')
+                    keep = check_keep(int(args.keep))
             # Before any file exists: a copy that must be encrypted and cannot be fails here, in the clear it is never written.
             recipients_file = backup_recipients_file()
             recipients = encryption_plan(recipients_file, backup_require_encryption())
@@ -397,7 +412,14 @@ def main(argv=None):
             if any(os.path.lexists(name) or os.path.lexists(manifest_path(name)) for name in (plain, plain.with_name(plain.name + '.age'))):
                 parser.error('Backup destination already exists; choose a new filename')
             with pg_environment(settings.dsn) as environment:
-                print(json.dumps(create_backup(store, output, environment=environment, recipients=recipients), sort_keys=True))
+                report = create_backup(store, output, environment=environment, recipients=recipients)
+                if keep is not None:
+                    try:
+                        report['prune'] = prune_backups(output.parent, keep, protect=output)
+                    except BackupError as error:  # the copy exists and is valid: say so before failing
+                        print(json.dumps(dict(report, prune={'status': 'failed', 'code': error.code}), sort_keys=True))
+                        raise
+                print(json.dumps(report, sort_keys=True))
         except BackupError as error:
             raise SystemExit(f'{error.code}: {error}') from None
     elif args.command == 'restore-check':

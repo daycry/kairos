@@ -11,7 +11,7 @@ never looks valid: it has no manifest at its final name and `verify-backup` refu
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
@@ -30,6 +30,8 @@ AGE_MAGIC = b'age-encryption.org/v1'
 HASH_BLOCK = 1 << 20
 SHA256 = re.compile(r'[0-9a-f]{64}')
 AGE_PRIVATE_PREFIX = 'AGE-SECRET' + '-KEY-'  # split so that this source does not trip the repository scan for private keys
+COPY_NAME = re.compile(r'kairos-[a-z][a-z0-9]*-\d{8}T\d{6}(?:\d{6})?Z\.dump(?:\.age)?')  # the names this tool gives its copies; nothing else is ever pruned
+FUTURE_TOLERANCE_SECONDS = 86400  # a manifest dated further ahead than this is not believed (a decoy would otherwise rank as the newest)
 TIMESTAMP = re.compile(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z')
 
 
@@ -194,6 +196,61 @@ def create_backup(store, output, *, environment, recipients=None):
         shutil.rmtree(partial, ignore_errors=True)
     return {'status': 'backed_up', 'path': str(final), 'bytes': size, 'sha256': sha, 'encrypted': manifest['encrypted'], 'schema_version': version,
             'created_at': manifest['created_at']}
+
+
+def check_keep(keep):
+    """`--keep` / MEMORY_BACKUP_KEEP: a whole number of 1 or more (a copy is always kept, so 0 would mean "delete the last one")."""
+    if isinstance(keep, bool) or not isinstance(keep, int) or keep < 1:
+        raise BackupError('backup_keep_invalid', '--keep must be a whole number of 1 or more')
+    return keep
+
+
+def prune_backups(directory, keep, *, protect=None, now=None):
+    """Delete the copies of `directory` beyond the `keep` newest VERIFIED ones; returns {keep, kept, deleted, skipped, ignored}.
+
+    Only a regular file whose name is exactly one of this tool's (`COPY_NAME`) and that `verify_backup` accepts, with its manifest, is ever a candidate or counted: a decoy,
+    a link, a directory, a copy without manifest or with a manifest that does not match, a half-written copy and a manifest dated in the future are skipped and left alone.
+    `protect` (the copy just written) is always kept and counts as one of the `keep`, so a clock that ran ahead cannot make the run delete the copy it has just made.
+    Never leaves fewer than `keep` verified copies (only the ones beyond the `keep` newest are candidates) and never touches the newest one: it deletes oldest first, copy before manifest, and a deletion that fails is reported
+    (`backup_prune_failed`) after the others were tried. A second run finds nothing to delete.
+    """
+    keep = check_keep(keep)
+    directory = Path(directory)
+    now = now or datetime.now(timezone.utc)
+    limit = (now + timedelta(seconds=FUTURE_TOLERANCE_SECONDS)).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+    valid, skipped, ignored = [], [], 0
+    protect_name = Path(protect).name if protect else None
+    with os.scandir(directory) as scan:
+        entries = sorted(scan, key=lambda e: e.name)
+    for entry in entries:
+        if not COPY_NAME.fullmatch(entry.name):
+            ignored += 1
+            continue
+        try:
+            manifest = verify_backup(directory / entry.name)
+            if manifest['created_at'] > limit:
+                raise BackupError('backup_created_in_the_future', f'The manifest of {entry.name} is dated in the future')
+        except BackupError as error:
+            skipped.append({'name': entry.name, 'code': error.code})
+            continue
+        valid.append((manifest['created_at'], entry.name))
+    valid.sort(reverse=True)
+    protected = [item for item in valid if item[1] == protect_name]
+    rest = [item for item in valid if item[1] != protect_name]
+    kept = sorted(protected + rest[:max(keep - len(protected), 0)], reverse=True)
+    doomed = [item for item in valid if item not in kept]
+    deleted, failed = [], []
+    for created_at, name in reversed(doomed):  # oldest first
+        try:
+            os.unlink(directory / name)
+            os.unlink(manifest_path(directory / name))
+            deleted.append(name)
+        except OSError:
+            failed.append(name)
+    deleted.reverse()  # newest first, like `kept`
+    if failed:
+        raise BackupError('backup_prune_failed', f'{len(failed)} old cop{"y" if len(failed) == 1 else "ies"} could not be deleted ({", ".join(failed)}); {len(deleted)} deleted')
+    return {'keep': keep, 'kept': [{'name': name, 'created_at': created_at} for created_at, name in kept], 'deleted': deleted, 'skipped': skipped, 'ignored': ignored}
 
 
 def read_manifest(copy):

@@ -45,7 +45,7 @@ test-plan: n/a (sin UI)
 | Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 7 | 7 | 100% | 0 / 27.0h | 0.99 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 9 | 9 | 100% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 5 | 5 | 100% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
-| Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 2 | 9 | 22.2% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
+| Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 3 | 9 | 33.3% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 0 | 6 | 0% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 0 | 4 | 0% | 0 / 7.2h | 0 / 1.0h | 0 / 0.2h | 0 / 240 k |
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 0 | 7 | 0% | 0 / 19.8h | 0 / 2.6h | 0 / 0.7h | 0 / 660 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **36** | **98** | **36.7%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **37** | **98** | **37.8%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1188,30 +1188,32 @@ RED: sin captura del rojo previo (no se guardó). Evidencia real: mutantes M1, M
 ### T-37 — `backup --prune --keep N` con ficheros señuelo
 
 - **Descripción**: `backup --prune --keep N` conserva las N copias más recientes con manifiesto válido, nunca borra la última verificada ni ficheros sin el patrón propio, rechaza `N < 1` e informa de lo borrado. Default `MEMORY_BACKUP_KEEP=7`. Fuente: CA-03; O-01.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: `admin backup --prune --keep N` conserva las N copias más recientes verificadas y solo borra copias propias completas más antiguas; rechaza N < 1 y nunca toca otros ficheros.
+- **Cerrada**: 2026-11-16
+- **Estado**: completado
 - **Tiempo humano**: est. 3h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.11h (medido)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 110 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: T-36
 - **Tipo**: backend
 - **Archivos**: `server/memory_platform/admin.py`, `server/memory_platform/config.py`, `server/memory_platform/tests/test_backup_prune.py`
 - **Cubre (tests)**: —
-- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_backup_prune|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
+- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_backup_prune|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos Salida (2026-11-16): bucle rápido `Ran 60 tests ... OK` (test_backup_prune 13, test_backup_manifest, test_backup_encryption, test_admin); 0 fallos, errores y omitidos.
 
 **Criterios de aceptación**
-- [ ] Con ficheros señuelo (sin el patrón propio, con manifiesto inválido), solo se borran copias propias más antiguas que las N más recientes válidas
-- [ ] La última copia verificada nunca se borra y `N < 1` se rechaza con un error propio
-- [ ] El informe lista lo borrado y lo conservado
+- [x] Con ficheros señuelo (sin el patrón propio, con manifiesto inválido), solo se borran copias propias más antiguas que las N más recientes válidas
+- [x] La última copia verificada nunca se borra y `N < 1` se rechaza con un error propio
+- [x] El informe lista lo borrado y lo conservado
 
 **Subtareas**
-- [ ] Escribir primero la prueba con señuelos (rojo)
-- [ ] Implementar `--prune --keep`
-- [ ] Añadir `MEMORY_BACKUP_KEEP`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero la prueba con señuelos (rojo)
+- [x] Implementar `--prune --keep`
+- [x] Añadir `MEMORY_BACKUP_KEEP`
+- [x] `usage-meter start/close` de la tarea
 
 **Notas**: Patrón: `admin.py:240-321` (registro de argumentos y salida de los subcomandos).
+**Cierre**: patrón `kairos-<tipo>-<marca>.dump[.age]`; candidata = fichero regular con manifiesto que pasa `verify_backup` (señuelos, enlaces, parciales, sin manifiesto, manipuladas, fechadas a futuro: se saltan y no cuentan); la copia recién escrita queda protegida; borra la más antigua primero y la copia antes que el manifiesto. Mutantes en rojo P1 cualquier nombre, P2 sin sha, P3 keep 0, P4 enlace, P5 sin proteger, P6 fechas futuras, P7 off-by-one, P8 fallo tragado, P9 default 5, P10 --keep sin --prune, P11 orden, P13 manifiesto primero, P14 keep sin validar; P12 (guarda de mínimo) era equivalente: retirada. Medido `reliable-operations/T-37`.
 
 ### T-38 — `--backup-timeout` en el despliegue (O-03)
 
