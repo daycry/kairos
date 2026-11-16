@@ -201,6 +201,9 @@ class Worker:
                 if self.stopping.is_set():
                     abandon('stopping')
                 if lost.is_set():
+                    # The heartbeat saw the lease go while this write failed ambiguously (a COMMIT whose answer was lost): the write may have landed, so ask the database before giving it up.
+                    if await self._landed(job, stage, args):
+                        return True
                     abandon('lease_lost')
                 if self.clock() >= lease[0]:
                     lost.set()

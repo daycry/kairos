@@ -43,7 +43,7 @@ test-plan: n/a (sin UI)
 | Fase 1 — Arnés de fallos y tests de límites (C-07) | 6 | 6 | 100% | 0 / 32.4h | 0.83 / 4.3h | 0 / 1.1h | 0 / 1080 k |
 | Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 7 | 7 | 100% | 0 / 27.0h | 2.10 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 7 | 7 | 100% | 0 / 27.0h | 0.99 / 3.6h | 0 / 0.9h | 0 / 900 k |
-| Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 4 | 9 | 44.4% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
+| Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 5 | 9 | 55.6% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 0 | 5 | 0% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 0 | 9 | 0% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 0 | 6 | 0% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **24** | **98** | **24.5%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **25** | **98** | **25.5%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -808,30 +808,34 @@ RED: `tests/test_store_timeouts.py` falló con ImportError: cannot import name S
 ### T-25 — Pruebas de la clase entera con `FaultProxy`: plazo, pool y servidor mudo
 
 - **Descripción**: Ejercitar con el arnés todas las rutas de datos nuevas (API y worker) con base lenta, muda o cortada, para cubrir la clase y no un caso. Fuente: CA-16, CA-17, CA-19; CA-34.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: la API y el worker se prueban contra una base cortada, muda y lenta; si el worker pierde la concesión mientras reintenta escribir, comprueba antes si la escritura ya había entrado.
+- **Estado**: completado
+- **Cerrada**: 2026-11-16
 - **Tiempo humano**: est. 3h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.23h (medido)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 110 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: T-24
 - **Tipo**: test
-- **Archivos**: `server/memory_platform/tests/test_store_faults.py`
+- **Archivos**: `server/memory_platform/tests/test_store_faults.py`, `server/memory_platform/worker.py`
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_store_faults|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] La API y el worker sobreviven a base cortada, muda y lenta en las rutas de lectura, escritura y búsqueda, con la respuesta documentada en cada caso
-- [ ] La conexión que sufrió el corte no vuelve al pool rota (siguiente petición correcta)
-- [ ] Mutante comprobado: quitar `statement_timeout`, `connect_timeout` o el plazo del pool deja una prueba en rojo
+- [x] La API y el worker sobreviven a base cortada, muda y lenta en las rutas de lectura, escritura y búsqueda, con la respuesta documentada en cada caso
+- [x] La conexión que sufrió el corte no vuelve al pool rota (siguiente petición correcta)
+- [x] Mutante comprobado: quitar `statement_timeout`, `connect_timeout` o el plazo del pool deja una prueba en rojo
 
 **Subtareas**
-- [ ] Tabla de rutas × fallo
-- [ ] Escribir las pruebas
-- [ ] Aplicar los mutantes en memoria
-- [ ] `usage-meter start/close` de la tarea
+- [x] Tabla de rutas × fallo
+- [x] Escribir las pruebas
+- [x] Aplicar los mutantes en memoria
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Deuda Minor de la revisión de la Fase 2 (intento 3, n.º 3-5): (a) que `_persist` llame a la comprobación del COMMIT (`_landed`) también cuando el latido marca la concesión perdida; (b) una prueba que haga fallar `job_outcome` y pruebas de `_persist` con el latido activo; (c) validar el defecto de `MEMORY_WORKER_WRITE_RETRY_SECONDS` contra su rango cuando hereda `MEMORY_LEASE_SECONDS`. Patrón: `tests/fault_proxy.py` (Fase 1) y `tests/test_api.py` (cliente de prueba de la API). DEUDA HEREDADA de la revision intento 1 de la Fase 2 (gaps 3 y 4, T-08/T-09): esta tarea debe incluir pruebas EXPLICITAS con `FaultProxy.mute()` de (i) un reclamo del worker contra un servidor mudo que falla dentro del plazo y no se cuelga ~2 min ni exige SIGKILL al apagar (gap 4) y (ii) la lectura del vector guardado (`stored_item_vector`, fase `read`) contra un servidor mudo: debe acabar como caida de base y no como `provider_timeout` (gap 3). Los cierra el `connect_timeout`/`statement_timeout` de T-23; aqui se verifican.
+**Notas**: Deuda Minor de la revisión de la Fase 2 (intento 3, n.º 3-5): (a) que `_persist` llame a la comprobación del COMMIT (`_landed`) también cuando el latido marca la concesión perdida; (b) una prueba que haga fallar `job_outcome` y pruebas de `_persist` con el latido activo; (c) validar el defecto de `MEMORY_WORKER_WRITE_RETRY_SECONDS` contra su rango cuando hereda `MEMORY_LEASE_SECONDS`. Patrón: `tests/fault_proxy.py` (Fase 1) y `tests/test_api.py` (cliente de prueba de la API). DEUDA HEREDADA de la revision intento 1 de la Fase 2 (gaps 3 y 4, T-08/T-09): esta tarea debe incluir pruebas EXPLICITAS con `FaultProxy.mute()` de (i) un reclamo del worker contra un servidor mudo que falla dentro del plazo y no se cuelga ~2 min ni exige SIGKILL al apagar (gap 4) y (ii) la lectura del vector guardado (`stored_item_vector`, fase `read`) contra un servidor mudo: debe acabar como caida de base y no como `provider_timeout` (gap 3). Los cierra el `connect_timeout`/`statement_timeout` de T-23; aqui se verifican. (Archivos ampliados: `worker.py`, por el cambio de la deuda (a).) Tabla ruta × fallo documentada en la cabecera de `test_store_faults.py` y comprobada con PostgreSQL real tras `FaultProxy`, pool real y plazos reales: lectura/escritura/búsqueda/ready × cortada (503 service_unavailable; ready 503 not_ready), muda (503 store_busy dentro de la espera del pool; ready not_ready) y lenta (503 store_timeout en lectura y escritura; la búsqueda 200 con la capa lenta 'unavailable' y `partial`); tras cada fallo la API se recupera. La conexión que perdió el servidor a mitad de consulta no vuelve rota (pid distinto y reutilizable después) y la que murió inactiva se sustituye antes de llegar a una petición (el `check` del pool: una conexión muerta cuesta una espera de ~1 s de su bucle de comprobación, por eso la prueba usa los 5 s por defecto). DEUDA HEREDADA CERRADA y verificada: (gap 4, T-08) un reclamo contra servidor mudo falla dentro del plazo (`store_failures` >= 1 en ~1 s, la espera del pool), `Worker.run()` sigue y termina por sí solo al pedir el apagado (<= 5 s: sin SIGKILL) y cerrar el pool tarda < 5 s con la base muda; (gap 3, T-09) la lectura del vector guardado (fase `read`) contra servidor mudo acaba como caída de base (`store_unavailable` reason=read, ningún `job_failed`, ningún `provider_timeout`, el proveedor no se alcanza, el trabajo no se falla); (a) `_persist` llama a `_landed` también cuando el latido marcó la concesión perdida (cambio en `worker.py`; antes abandonaba sin preguntar y un COMMIT cuya respuesta se perdió se contaba como perdido); (b) pruebas de `job_outcome` que falla (DOWN y error genérico: no probado → se abandona, `job_outcome_unread` una vez) y de `_persist` con el latido activo (latido que marca perdida en plena espera, y latido que late todo el tiempo mientras la escritura se repite 3 veces sin gastar intento); (c) `MEMORY_WORKER_WRITE_RETRY_SECONDS`: defecto validado contra 1..86400 (cerrado en T-22; prueba aquí, también `Settings.from_env` con lease 0 y 86401). Mutantes (copia, rojo comprobado): sin la comprobación `_landed` del latido → 4 rojas; sin `statement_timeout` → rojo la lenta (la consulta de 10 s no se cancela); `getconn(timeout=40)` (espera del pool sin tope) → 10 rojas, también el reclamo mudo y la lectura muda; sin `connect_timeout` → rojo el connect contra servidor mudo de test_store_timeouts (T-23); sin `check` del pool → 5 rojas. Nota operativa: el pool de psycopg registra en su logger `psycopg.pool` cada fallo de conexión (WARNING, con el texto del driver: host y puerto, nunca contraseña) y pasa por el filtro/redacción de librerías de `observability`; los eventos propios solo llevan el tipo. Suite completa: 984 tests, 0 fallos/errores/omitidos (970 + 14). Usage-meter T-25: 0.23h (medido).
+
+
+RED: `tests/test_store_faults.py::PersistWithTheHeartbeatTests` falló con test_a_lease_the_heartbeat_lost_is_not_given_up_when_the_write_had_landed fallo con Abandoned lease_lost (contra el worker de HEAD, que no llama a _landed si el latido marco la concesion perdida) · 2026-11-16.
 
 ### T-26 — Medición posterior del pool y defaults de `MEMORY_POOL_*`
 
