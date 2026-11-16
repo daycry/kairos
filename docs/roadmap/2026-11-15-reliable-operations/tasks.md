@@ -1104,7 +1104,7 @@ test-plan: n/a (sin UI)
 - **Cerrada**: 2026-11-16
 - **Estado**: completado
 - **Tiempo humano**: est. 3.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.47h (estimado) · real 0.82h (medido)
+- **Tiempo IA (ejec.)**: est. 0.47h (estimado) · real 0.86h (medido)
 - **Supervisión**: est. 0.12h (≈25 % IA) · real —
 - **Previsión IA**: 129 k in / 11 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
@@ -1124,16 +1124,16 @@ test-plan: n/a (sin UI)
 - [x] Implementar `verify-backup`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `admin.py:286-294` (`pg_dump --format=custom`, `chmod 600`), `:23-47` (`store_fingerprints`, `pg_environment`) y `:295-313` (`restore-check`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `1f7fcb48b0f3`. fix1 (n.º 2, 8, 11): huellas por cursor de servidor y tramos (`FINGERPRINT_BUDGET`), igual resultado que el `fetchall` anterior (prueba con el código viejo de referencia y memoria con `tracemalloc`); `fsync` de la copia y del directorio; el manifiesto detecta corrupción, no manipulación (`operations.md`). Mutantes en rojo: `whole_table`, `trim_groups`, `no_fsync_file`, `no_fsync_dir`.
+**Notas**: Patrón: `admin.py:286-294` (`pg_dump --format=custom`, `chmod 600`), `:23-47` (`store_fingerprints`, `pg_environment`) y `:295-313` (`restore-check`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `1f7fcb48b0f3`. fix1 (n.º 2, 8, 11): huellas por cursor de servidor y tramos (`FINGERPRINT_BUDGET`), igual resultado que el `fetchall` anterior (prueba con el código viejo de referencia y memoria con `tracemalloc`); `fsync` de la copia y del directorio; el manifiesto detecta corrupción, no manipulación (`operations.md`). Mutantes en rojo: `whole_table`, `trim_groups`, `no_fsync_file`, `no_fsync_dir`. fix2 (n.º 1): huella lineal, una pasada por tabla (suma módulo 2^256 de los sha256 por fila + nº de filas, sin tramos); `MANIFEST_FORMAT` 2 y el formato 1 da `backup_manifest_format_unsupported`. Pruebas: permutaciones, duplicados, fila alterada/añadida/quitada, 1 `execute` por tabla, `tracemalloc`. Mutantes en rojo: `passes` (segunda lectura), `order` (suma según el orden). Medido fix2 (`T-43-fix2`): 0,22 h entre T-35, T-36, T-37, T-39, T-40 y T-42.
 
 ### T-36 — Cifrado `age` con destinatarios y `MEMORY_BACKUP_REQUIRE_ENCRYPTION`
 
 - **Descripción**: Cifrar la copia con `age` y clave pública (`MEMORY_BACKUP_RECIPIENTS_FILE`); con `MEMORY_BACKUP_REQUIRE_ENCRYPTION=1` y sin destinatarios falla sin dejar fichero. La imagen `operator` y la de pruebas incorporan `age` fijado por versión; la clave privada de prueba se genera en el test y nunca está en el contenedor del servidor. Fuente: CA-02, CA-08 (parte); S-06; P-01.
-- **Changelog**: El volcado cifrado ya no toca el disco, un SIGTERM limpia lo parcial, un volcado descifrado se verifica con --manifest y MEMORY_BACKUP_REQUIRE_ENCRYPTION inválido da un código estable.
+- **Changelog**: Las copias se cifran con age para los destinatarios de MEMORY_BACKUP_RECIPIENTS_FILE (el volcado en claro nunca toca el disco) y MEMORY_BACKUP_REQUIRE_ENCRYPTION=1 prohíbe copias en claro.
 - **Cerrada**: 2026-11-16
 - **Estado**: completado
 - **Tiempo humano**: est. 5.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.73h (estimado) · real 0.61h (medido)
+- **Tiempo IA (ejec.)**: est. 0.73h (estimado) · real 0.65h (medido)
 - **Supervisión**: est. 0.18h (≈25 % IA) · real —
 - **Previsión IA**: 202 k in / 18 k out tok · ⚠️ verificar €
 - **Dependencias**: T-35
@@ -1155,7 +1155,7 @@ test-plan: n/a (sin UI)
 - [x] Añadir `age` a los targets `operator` y `test` del `Dockerfile`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `Dockerfile:16` (`FROM api AS operator`) y `:34-66` (target `test`, que debe contar con `age` para los tests). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `1b8c72aedf53`. fix1 (n.º 1, 3, 7): `pg_dump`→proceso→`age` sin fichero en claro; `terminate_as_exit` cubre todo `create_backup` y `reap` mata a los hijos; `init: true`; `--manifest` y `restore-check --from-manifest <manifiesto>` contra `content_sha256`; `backup_config_invalid`. Mutantes en rojo: `plain_on_disk`, `reap_off`, `handler_only_dump`, `no_content_check`, `config_traceback`, `compose_init`. Medido fix1 (clave `T-43-fix1`): 1.20h repartidas por igual entre T-35, T-36, T-37 y T-39.
+**Notas**: Patrón: `Dockerfile:16` (`FROM api AS operator`) y `:34-66` (target `test`, que debe contar con `age` para los tests). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `1b8c72aedf53`. fix1 (n.º 1, 3, 7): `pg_dump`→proceso→`age` sin fichero en claro; `terminate_as_exit` cubre todo `create_backup` y `reap` mata a los hijos; `init: true`; `--manifest` y `restore-check --from-manifest <manifiesto>` contra `content_sha256`; `backup_config_invalid`. Mutantes en rojo: `plain_on_disk`, `reap_off`, `handler_only_dump`, `no_content_check`, `config_traceback`, `compose_init`. Medido fix1 (clave `T-43-fix1`): 1.20h repartidas por igual entre T-35, T-36, T-37 y T-39. fix2 (n.º 4, 9): Changelog reescrito con la funcionalidad completa; si `age` falla, `backup_encryption_failed` se comprueba antes que el fallo de `pg_dump` (EPIPE), con un `age` falso que sale sin leer. Mutante en rojo: `epipe`.
 
 ### T-37 — `backup --prune --keep N` con ficheros señuelo
 
@@ -1164,7 +1164,7 @@ test-plan: n/a (sin UI)
 - **Cerrada**: 2026-11-16
 - **Estado**: completado
 - **Tiempo humano**: est. 3h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.41h (medido)
+- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.45h (medido)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 110 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: T-36
@@ -1184,7 +1184,7 @@ test-plan: n/a (sin UI)
 - [x] Añadir `MEMORY_BACKUP_KEEP`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `admin.py:240-321` (registro de argumentos y salida de los subcomandos). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `6f0bba858ec4`. fix1 (n.º 1, 9, 14): `prune` verifica de la más reciente a la más antigua hasta N válidas y borra las anteriores sin rehashear (tamaño distinto = omitida); `FileNotFoundError` = ya borrada; barre `.kairos-partial-*` de más de 1 h (`swept_partials`); el señuelo `.kairos-partial-abc123` de `test_backup_prune.py` ahora es reciente. Mutantes en rojo: `prune_hashes_all`, `prune_race`, `sweep_off`.
+**Notas**: Patrón: `admin.py:240-321` (registro de argumentos y salida de los subcomandos). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `6f0bba858ec4`. fix1 (n.º 1, 9, 14): `prune` verifica de la más reciente a la más antigua hasta N válidas y borra las anteriores sin rehashear (tamaño distinto = omitida); `FileNotFoundError` = ya borrada; barre `.kairos-partial-*` de más de 1 h (`swept_partials`); el señuelo `.kairos-partial-abc123` de `test_backup_prune.py` ahora es reciente. Mutantes en rojo: `prune_hashes_all`, `prune_race`, `sweep_off`. fix2 (n.º 2, 8): el proceso que escribe una copia mantiene un `flock` exclusivo sobre `lock` dentro de su parcial (abierto con `O_NOFOLLOW`) durante todo `create_backup`; el barrido que no lo obtiene salta el parcial sea cual sea su mtime, y sin cerrojo legible exige además la antigüedad; `FileNotFoundError` en el `stat()` = ya borrada; `--prune` imprime siempre el informe de la copia (también con `OSError`). Mutantes en rojo: `lock`, `stat`, `prune`.
 
 ### T-38 — `--backup-timeout` en el despliegue (O-03)
 
@@ -1220,7 +1220,7 @@ test-plan: n/a (sin UI)
 - **Cerrada**: 2026-11-16
 - **Estado**: completado
 - **Tiempo humano**: est. 5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.67h (estimado) · real 0.78h (medido)
+- **Tiempo IA (ejec.)**: est. 0.67h (estimado) · real 0.82h (medido)
 - **Supervisión**: est. 0.17h (≈25 % IA) · real —
 - **Previsión IA**: 184 k in / 16 k out tok · ⚠️ verificar €
 - **Dependencias**: T-38, T-36
@@ -1240,7 +1240,7 @@ test-plan: n/a (sin UI)
 - [x] Reutilizar `restore-check` y sus salvaguardas
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `admin.py:295-313` (`restore-check` solo en bases `memory_restore*` vacías), `deploy-memory.py:296-410` (fases) y `tests/test_deploy_isolation.py:43-99` (override con nombres propios). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `eeddb2e408f1`. fix1 (n.º 5, 6, 10, 12, 13, 14): nombres `kairos-verify-<proyecto>-<marca>` y etiqueta del proyecto; solo se elimina lo creado (la red se registra al crearse; `not found` no es fallo); contraseña por ejecución por entorno, `--user postgres --cap-drop ALL` (arranca sin capacidades, comprobado con una imagen local), `maintenance_work_mem=256MB`, `--init`. El sha256 de `restore-check` se repite a propósito (otro contenedor, más tarde; una lectura). Mutantes: `deploy_*`, `compose_init`.
+**Notas**: Patrón: `admin.py:295-313` (`restore-check` solo en bases `memory_restore*` vacías), `deploy-memory.py:296-410` (fases) y `tests/test_deploy_isolation.py:43-99` (override con nombres propios). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `eeddb2e408f1`. fix1 (n.º 5, 6, 10, 12, 13, 14): nombres `kairos-verify-<proyecto>-<marca>` y etiqueta del proyecto; solo se elimina lo creado (la red se registra al crearse; `not found` no es fallo); contraseña por ejecución por entorno, `--user postgres --cap-drop ALL` (arranca sin capacidades, comprobado con una imagen local), `maintenance_work_mem=256MB`, `--init`. El sha256 de `restore-check` se repite a propósito (otro contenedor, más tarde; una lectura). Mutantes: `deploy_*`, `compose_init`. fix2 (n.º 11): `verify_name_part` recorta el proyecto a 24 caracteres con un hash corto de 8 (`kairos-verify-pg-<parte>-<marca>` ≤ 63, es un hostname); las etiquetas conservan el proyecto completo; prueba con 39 caracteres. Mutante en rojo: `name`.
 
 ### T-40 — Ensayo aislado de `--verify-backup`
 
@@ -1249,7 +1249,7 @@ test-plan: n/a (sin UI)
 - **Cerrada**: 2026-11-16
 - **Estado**: completado
 - **Tiempo humano**: est. 2h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real 0.13h (medido)
+- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real 0.16h (medido)
 - **Supervisión**: est. 0.07h (≈25 % IA) · real —
 - **Previsión IA**: 74 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-39
@@ -1259,6 +1259,7 @@ test-plan: n/a (sin UI)
 - **Verificación**:
   - `python scripts/deploy-memory.py --project-name kairos-ops-a --embed-stub --verify-backup` → termina en 0 y el informe registra `verify_backup` con resultado y duración; después `docker ps -a --filter name=kairos-ops-a` y `docker volume ls --filter name=kairos-ops-a` muestran solo recursos propios, que se eliminan al terminar
   - `docker ps --filter name=knowledge-graphs` y `docker volume ls --filter name=knowledge-graphs` → idénticos antes y después
+  - Salida fix2 (2026-11-16, tras fix1 y fix2; `kairos-ops-a`, puertos 28791/25174, `--embed-stub`, secretos sintéticos nuevos): (1) `--apply --fresh --roundtrip` → exit 0, `PASS roundtrip`, `chat_calls 0`; (2) `--apply --verify-backup` → exit 0, `PASS verify-backup: verified in 38.65 s`, fases `backup, verify_backup, migrate`, `verify_backup {status: verified, tables: 26, cleanup: complete}`; (3) copia con manifiesto alterado (`actors`) → `backup_restore_mismatch: ... actors`, `status: failed`, `cleanup: complete`, sin `migrate`; ningún `kairos-verify-*` (contenedor ni red) tras (2) ni (3). `docker ps -a`, `volume ls` y `network ls` con filtro `knowledge-graphs` antes y después: idénticos (15 contenedores, 7 volúmenes, 6 redes; `cmp` sin diferencias). Retirado por nombre exacto: 7 contenedores, 5 redes, 2 volúmenes, 6 imágenes `rehearsal-kairos-ops-a-*`, secretos y `.private/rehearsal-kairos-ops-a`; `--filter name=kairos-ops` → 0. No se tocó `knowledge-graphs-*`, el Ollama del host (11434) ni la base desplegada.
 
 **Criterios de aceptación**
 - [x] El ensayo usa el proyecto `kairos-ops-a`, nunca `knowledge-graphs`, ni el Ollama del host (`--embed-stub`)
@@ -1271,7 +1272,7 @@ test-plan: n/a (sin UI)
 - [x] Retirar el proyecto aislado y comparar
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Restricción dura: nada contra la base desplegada ni recursos `knowledge-graphs-*`. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `990826af5db0`.
+**Notas**: Restricción dura: nada contra la base desplegada ni recursos `knowledge-graphs-*`. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `990826af5db0`. fix2 (n.º 3): ensayo repetido tras el cambio de arranque del efímero (`--user postgres`, `--cap-drop ALL`, contraseña, DSN con `printf`); el aborto se ensaya con la fase `verify_backup_phase` sobre el volumen del ensayo, como en T-40.
 
 ### T-41 — Documentar copias, cifrado, retención y verificación
 
@@ -1304,18 +1305,18 @@ test-plan: n/a (sin UI)
 ### T-42 — Cierre de fase: suite completa y subida del mínimo
 
 - **Descripción**: Ejecuta la suite completa del servidor, anota el recuento `MEMORY_TEST_RESULT` y sube `KAIROS_MIN_TESTS` y `MIN_FLOOR` al número observado (la suite solo crece).  Fuente: Puerta de fase; CA-38 (suite con 0 fallos y 0 omitidos).
-- **Changelog**: Interno: la suite del servidor pasa a 1145 pruebas y la CI exige ese mínimo (subió con las pruebas de manifiesto, cifrado, retención y restauración verificada).
+- **Changelog**: Interno: la suite del servidor pasa a 1154 pruebas y la CI exige ese mínimo (subió con las pruebas de manifiesto, cifrado, retención, restauración verificada y sus correcciones).
 - **Cerrada**: 2026-11-16
 - **Estado**: completado
 - **Tiempo humano**: est. 1.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real 0.15h (medido)
+- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real 0.18h (medido)
 - **Supervisión**: est. 0.05h (≈25 % IA) · real —
 - **Previsión IA**: 55 k in / 5 k out tok · ⚠️ verificar €
 - **Dependencias**: T-41
 - **Tipo**: test
 - **Archivos**: `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `docs/operations.md`, `README.md` (recuento), `server/memory_platform/tests/test_auth_cache.py` (la lista revisada de transacciones incluye `create_backup`)
 - **Cubre (tests)**: —
-- **Verificación**: Salida (2026-11-16): `docker build ... --target test` (kairos-test:i3p6, exit 0): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1122}`; `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `Ran 45 tests ... OK`.
+- **Verificación**: Salida (2026-11-16, fix2): `docker build -f server/memory_platform/Dockerfile --target test -t kairos-test:i3p6f2 .` (exit 0): `MEMORY_TEST_RESULT {"database": "PostgreSQL", "environment": "isolated-container-build", "errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1154}`; `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `Ran 45 tests ... OK`. (Cierre de fase: 1122; fix1: 1145.)
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
   - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
 
@@ -1329,7 +1330,7 @@ test-plan: n/a (sin UI)
 - [x] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `7daa1c6d01e2`. fix1: 1145 pruebas (antes 1122); `KAIROS_MIN_TESTS`, `MIN_FLOOR`, `operations.md` y `README.md` suben al nuevo total.
+**Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `7daa1c6d01e2`. fix1: 1145 pruebas (antes 1122); `KAIROS_MIN_TESTS`, `MIN_FLOOR`, `operations.md` y `README.md` suben al nuevo total. fix2 (n.º 5, 7): 1154 (+9: huella, barrido con cerrojo, `age` que sale sin leer, carrera y informe de `--prune`, nombre largo); el comentario de `ci.yml` y la lista de `MIN_FLOOR` recogen el historial completo.
 
 ### T-43 — Revisión adversarial de la fase (dos lentes)
 
@@ -3041,14 +3042,14 @@ Lentes: A+B+C+D (re-evalúan lo corregido y lo que introduce el fix). Diff `155d
 
 | # | Grado | Gap | Tarea | Corrección | Evidencia |
 |---|---|---|---|---|---|
-| 1 | Important | Las huellas por tramos releen la tabla entera en cada tramo: O(S²/B) lecturas (4096 filas con presupuesto pequeño = 65 lecturas completas; 1 GB de embeddings ≈ 27 pasadas, horas) y agotan `--backup-timeout` en `backup` y en `restore-check`, con el snapshot retenido (invalida el supuesto de la deuda n.º 15 del intento 1) | T-35, T-39 | pendiente (fix2: huella lineal de una pasada) | Lente B n.º 1, Lente D n.º 1; `backup.py:127-147` |
-| 2 | Important | El barrido de parciales puede borrar el parcial de una copia VIVA: la actividad se mide por mtime y el parcial se crea antes de las huellas, que no escriben en él durante más de 1 h | T-37 | pendiente (fix2: cerrojo del proceso vivo) | Lente B n.º 2 (reproducido), Lente C (fuera de lente); `backup.py:231-254,340,346` |
-| 3 | Important | La única evidencia real de `--verify-backup` (T-40) es anterior a fix1, que cambia el arranque del efímero (`--user postgres`, `--cap-drop ALL`, contraseña, DSN con `printf`); solo hay dobles | T-39, T-40 | pendiente (fix2: repetir el ensayo T-40 aislado y pegar la salida) | Lente A N1; `deploy-memory.py:351-363` |
-| 4 | Minor | El Changelog de T-36 describe solo el delta de fix1 y dice que «el volcado cifrado ya no toca el disco» (es el claro el que no lo toca) | T-36 | pendiente (fix2) | Lente A N2 |
-| 5 | Minor | El total 1145 no tiene salida `MEMORY_TEST_RESULT` pegada; la Verificación de T-42 sigue en 1122 | T-42, T-43 | pendiente (fix2) | Lente A N3 |
+| 1 | Important | Las huellas por tramos releen la tabla entera en cada tramo: O(S²/B) lecturas (4096 filas con presupuesto pequeño = 65 lecturas completas; 1 GB de embeddings ≈ 27 pasadas, horas) y agotan `--backup-timeout` en `backup` y en `restore-check`, con el snapshot retenido (invalida el supuesto de la deuda n.º 15 del intento 1) | T-35, T-39 | corregido (fix2, 80a9a36) | Lente B n.º 1, Lente D n.º 1; `backup.py:127-147` |
+| 2 | Important | El barrido de parciales puede borrar el parcial de una copia VIVA: la actividad se mide por mtime y el parcial se crea antes de las huellas, que no escriben en él durante más de 1 h | T-37 | corregido (fix2, 80a9a36) | Lente B n.º 2 (reproducido), Lente C (fuera de lente); `backup.py:231-254,340,346` |
+| 3 | Important | La única evidencia real de `--verify-backup` (T-40) es anterior a fix1, que cambia el arranque del efímero (`--user postgres`, `--cap-drop ALL`, contraseña, DSN con `printf`); solo hay dobles | T-39, T-40 | corregido (fix2, 6a0a08b) | Lente A N1; `deploy-memory.py:351-363` |
+| 4 | Minor | El Changelog de T-36 describe solo el delta de fix1 y dice que «el volcado cifrado ya no toca el disco» (es el claro el que no lo toca) | T-36 | corregido (fix2, 80a9a36) | Lente A N2 |
+| 5 | Minor | El total 1145 no tiene salida `MEMORY_TEST_RESULT` pegada; la Verificación de T-42 sigue en 1122 | T-42, T-43 | corregido (fix2, ec6cd16) | Lente A N3 |
 | 6 | Minor | Estados de la tabla del intento 1 desajustados (n.º 4 «pendiente» ya hecho; n.º 14 «corregido» a medias) | T-43 | corregido por el orquestador en este registro | Lente A N4 |
-| 7 | Minor | El historial de 1145 rompe una frase del comentario de `ci.yml` y queda fuera de la lista en `MIN_FLOOR` | T-42 | pendiente (fix2) | Lente A N5; `ci.yml:16-17`, `test_ci_workflow.py:290` |
-| 8 | Minor | `stat()` de una candidata a borrar sin capturar `FileNotFoundError`: dos `--prune` concurrentes vuelven a salir con «Administration failed» y sin informe | T-37 | pendiente (fix2) | Lente B n.º 3 (reproducido); `backup.py:434` |
-| 9 | Minor | Un fallo de `age` a media copia se informa como fallo de `pg_dump` (EPIPE) y pierde `backup_encryption_failed`; la prueba no lo ve porque su `age` falso lee toda la entrada | T-36 | pendiente (fix2) | Lente B n.º 4 (reproducido); `backup.py:317-321`, `test_backup_encryption.py:186` |
+| 7 | Minor | El historial de 1145 rompe una frase del comentario de `ci.yml` y queda fuera de la lista en `MIN_FLOOR` | T-42 | corregido (fix2, ec6cd16) | Lente A N5; `ci.yml:16-17`, `test_ci_workflow.py:290` |
+| 8 | Minor | `stat()` de una candidata a borrar sin capturar `FileNotFoundError`: dos `--prune` concurrentes vuelven a salir con «Administration failed» y sin informe | T-37 | corregido (fix2, 80a9a36) | Lente B n.º 3 (reproducido); `backup.py:434` |
+| 9 | Minor | Un fallo de `age` a media copia se informa como fallo de `pg_dump` (EPIPE) y pierde `backup_encryption_failed`; la prueba no lo ve porque su `age` falso lee toda la entrada | T-36 | corregido (fix2, 80a9a36) | Lente B n.º 4 (reproducido); `backup.py:317-321`, `test_backup_encryption.py:186` |
 | 10 | Minor | `restore-check --from-manifest` vuelve a hashear la copia que `verify-backup` acaba de verificar | T-39 | descartado (rebatido): corre en otro contenedor y más tarde; justificado en `operations.md` y Notas de T-39 | Lente D n.º 2, Lente A n.º 14 |
-| 11 | Minor | El nombre del efímero (hostname) puede pasar de 63 caracteres con proyectos de más de 33 y romper la resolución | T-39 | pendiente (fix2) | Lente B n.º 5; `deploy-memory.py:332,363` |
+| 11 | Minor | El nombre del efímero (hostname) puede pasar de 63 caracteres con proyectos de más de 33 y romper la resolución | T-39 | corregido (fix2, 6a0a08b) | Lente B n.º 5; `deploy-memory.py:332,363` |
