@@ -10,11 +10,14 @@ It follows the runbook step by step with a SIMULATED destination (a directory):
   5. verify      the sha256 of the downloaded ciphertext against its manifest (`verify-backup`, no key needed)
   6. decrypt     with the private key, in a throw-away container with no network that is NOT a container of the project's services
   7. content     the decrypted dump against the `content_sha256` of the manifest (`verify-backup --manifest`)
-  8. restore     `restore-check --from-manifest` into an empty `memory_restore_*` database of the isolated project: the tables must equal the manifest
+  8. restore     `restore-check --from-manifest` into an empty `memory_restore_*` database of a NEW, ephemeral PostgreSQL (the `kairos-postgres` image of the isolated project, in a
+                 container, an internal network and a volume of the rehearsal's own, with exact names): the tables must equal the manifest. Never a database of the source cluster.
 
-and ends with `restored_and_content_verified`. The private key exists only in step 2 to 6 inside a temporary directory, is mounted only in the two throw-away containers
-that generate and use it (never in a container of the project: `compose run`/`exec` commands never name its directory) and is overwritten and deleted at the end, with
-the isolated project, its images, its secrets and its private files, whatever the result. Nothing touches `knowledge-graphs-*` or the Ollama of the host.
+and ends with `restored_and_content_verified`. The private key exists only in step 2 to 6 inside a temporary directory. It is created there by `age-keygen` with umask 077 in a
+throw-away container, is mounted only in the throw-away containers that generate, read and use it (never in a container of the project: `compose run`/`exec` commands never name
+its directory) and is shredded in such a container at the end, with the isolated project, the ephemeral server, its images, its secrets and its private files, whatever the result
+(a SIGTERM included). The cleanup goes on after a command that fails, keeps the original failure, checks by exact name that nothing is left (the key and the temporary directory
+included) and says `incomplete: ...` otherwise. Nothing touches `knowledge-graphs-*` or the Ollama of the host.
 """
 from __future__ import annotations
 
@@ -24,9 +27,11 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,6 +40,7 @@ DEFAULT_API_PORT, DEFAULT_WEB_PORT = 28792, 25175
 IMAGES = ('postgres', 'api', 'worker', 'web', 'operator', 'mcp')
 PRIVATE_FILES = ('memory-platform.env', 'compose.override.yml', 'deployment-status.json', 'deployment-status.tmp')
 DEPLOY_TIMEOUT, STEP_TIMEOUT = 3600, 1800
+READY_TRIES, READY_PAUSE = 60, 2
 COPY_NAME = re.compile(r'kairos-[a-z][a-z0-9]*-\d{8}T\d{6}(?:\d{6})?Z\.dump\.age')
 
 
@@ -52,7 +58,9 @@ class Rehearsal:
         self.run_command = run or self.subprocess_run
         self.work = None
         self.private = self.root / '.private' / ('rehearsal-' + self.project)
-        self.steps, self.report, self.names = [], {}, []
+        self.steps, self.report, self.names, self.networks, self.volumes = [], {}, [], [], []
+        self.sleep = time.sleep
+        self.last_code = 0
 
     # -- commands ---------------------------------------------------------------------------------------------------------------
 
@@ -65,6 +73,7 @@ class Rehearsal:
 
     def run(self, command, timeout=STEP_TIMEOUT, environment=None, check=True):
         code, out, err = self.run_command(command, timeout=timeout, environment=environment)
+        self.last_code = code
         if check and code:
             raise RehearsalError(f'Step {self.steps[-1] if self.steps else "-"} failed: {" ".join(str(c) for c in command[:3])} exited {code}: {(err or out).strip()[-600:]}')
         return out
@@ -96,12 +105,14 @@ class Rehearsal:
         clean = {k: v for k, v in os.environ.items() if not k.upper().startswith(('MEMORY_', 'COMPOSE_', 'KAIROS'))}
         return dict(clean, MEMORY_BACKUP_DESTINATION='dir:/offsite', MEMORY_BACKUP_CONFIG_DIR=str(self.work / 'config'), MEMORY_BACKUP_OFFSITE_DIR=str(self.work / 'offsite'))
 
-    def tool(self, label, mounts, entrypoint, *arguments):
-        """A throw-away container of the project's operator image, with no network: `age`, `age-keygen` or the offline `verify-backup`. It is not a service of the project."""
+    def tool(self, label, mounts, entrypoint, *arguments, network='none', environment=()):
+        """A throw-away container of the project's operator image, with no network (or the rehearsal's own): `age`, `age-keygen`, `shred` or the offline `verify-backup`. Not a service of the project."""
         name = self.container(label)
-        command = ['docker', 'run', '--rm', '--name', name, '--network', 'none', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true', '--entrypoint', entrypoint]
+        command = ['docker', 'run', '--rm', '--name', name, '--network', network, '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true', '--entrypoint', entrypoint]
         for source, target, mode in mounts:
             command += ['-v', f'{source}:{target}:{mode}']
+        for variable in environment:
+            command += ['-e', variable]
         return self.run(command + [self.image(), *arguments])
 
     # -- the rehearsal ----------------------------------------------------------------------------------------------------------
@@ -121,13 +132,13 @@ class Rehearsal:
         for folder in ('keys', 'config', 'offsite', 'download', 'restore'):
             (self.work / folder).mkdir(mode=0o777, exist_ok=True)
             os.chmod(self.work / folder, 0o777)  # the container's user (10001) writes here; the directory holds only what this rehearsal creates
-        self.tool('keygen', [(self.work / 'keys', '/keys', 'rw')], 'age-keygen', '-o', '/keys/identity.txt')
-        identity = (self.work / 'keys' / 'identity.txt').read_text(encoding='utf-8')
-        public = re.search(r'^# public key: (age1[0-9a-z]+)$', identity, re.M)
+        # The key is born inside the container, owned by its user and readable by it alone (umask 077): the host never reads it and never changes its mode (not possible on Linux
+        # without root for a file of another uid). Only the PUBLIC key comes out, through `age-keygen -y` in another throw-away container.
+        self.tool('keygen', [(self.work / 'keys', '/keys', 'rw')], 'sh', '-c', 'umask 077 && exec age-keygen -o /keys/identity.txt')
+        public = re.search(r'(age1[0-9a-z]+)', self.tool('pubkey', [(self.work / 'keys', '/keys', 'ro')], 'age-keygen', '-y', '/keys/identity.txt'))
         if not public:
-            raise RehearsalError('age-keygen did not write a public key')
+            raise RehearsalError('age-keygen did not give a public key')
         (self.work / 'config' / 'recipients.txt').write_text('# public recipient of the rehearsal\n' + public.group(1) + '\n', encoding='utf-8')
-        os.chmod(self.work / 'keys' / 'identity.txt', 0o644)
 
     def cycle(self):
         self.step('cycle')
@@ -167,62 +178,145 @@ class Rehearsal:
         if result.get('status') != 'verified' or result.get('verified') != 'content':
             raise RehearsalError('The decrypted dump does not match the content_sha256 of the manifest')
 
+    def start_restore_server(self):
+        """A NEW PostgreSQL for the restore: the `kairos-postgres` image of the isolated project in a container, an internal network and a volume of the rehearsal's own (exact names,
+        removed by name at the end). No published port and no password (trust, on a network nobody else is on). Returns (container, network)."""
+        suffix = uuid.uuid4().hex[:8]
+        server, network, volume = self.container('restore-pg'), f'{self.project}-restore-net-{suffix}', f'{self.project}-restore-data-{suffix}'
+        self.networks.append(network)
+        self.volumes.append(volume)
+        self.run(['docker', 'network', 'create', '--internal', network])
+        self.run(['docker', 'volume', 'create', volume])
+        self.run(['docker', 'run', '-d', '--name', server, '--network', network, '--security-opt', 'no-new-privileges:true', '-v', f'{volume}:/var/lib/postgresql/data',
+                  '-e', 'POSTGRES_DB=agent_memory', '-e', 'POSTGRES_USER=memory', '-e', 'POSTGRES_HOST_AUTH_METHOD=trust', self.image('postgres')])
+        for attempt in range(READY_TRIES):  # TCP, not the socket: the temporary server of the first start only listens on the socket
+            self.run(['docker', 'exec', server, 'pg_isready', '-h', '127.0.0.1', '-U', 'memory', '-d', 'agent_memory'], check=False)
+            if self.last_code == 0:
+                return server, network
+            self.sleep(READY_PAUSE)
+        raise RehearsalError('The ephemeral PostgreSQL of the restore did not become ready')
+
     def restore(self):
         self.step('restore')
         database = 'memory_restore_' + uuid.uuid4().hex[:12]
-        self.run(self.compose() + ['exec', '-T', 'memory-postgres', 'psql', '-U', 'memory', '-d', 'agent_memory', '-v', 'ON_ERROR_STOP=1', '-c', f'CREATE DATABASE {database}'])
-        dsn = (self.work / 'secrets' / 'dsn').read_text(encoding='utf-8').strip()
-        (self.work / 'restore' / 'target.dsn').write_text(dsn.rsplit('/', 1)[0] + '/' + database + '\n', encoding='utf-8')
+        server, network = self.start_restore_server()
+        self.run(['docker', 'exec', server, 'psql', '-U', 'memory', '-d', 'agent_memory', '-v', 'ON_ERROR_STOP=1', '-c', f'CREATE DATABASE {database}'])
+        (self.work / 'restore' / 'target.dsn').write_text(f'postgresql://memory@{server}:5432/{database}\n', encoding='utf-8')
         os.chmod(self.work / 'restore' / 'target.dsn', 0o644)
-        out = self.run(self.compose() + ['run', '--rm', '--no-deps', '-T', '--name', self.container('restore'), '-v', f'{self.work / "restore"}:/restore:ro', 'memory-admin',
-                                         'restore-check', '--backup', '/restore/plain.dump', '--target-dsn-file', '/restore/target.dsn', '--from-manifest', f'/restore/{self.copy}.json'],
-                       timeout=DEPLOY_TIMEOUT)
+        # `restore-check` wants a DSN of the "source" (it is never read with --from-manifest) that is not the target: a name that resolves nowhere.
+        out = self.tool('restore', [(self.work / 'restore', '/restore', 'ro')], 'python', '-m', 'memory_platform.admin', 'restore-check', '--backup', '/restore/plain.dump',
+                        '--target-dsn-file', '/restore/target.dsn', '--from-manifest', f'/restore/{self.copy}.json', network=network,
+                        environment=('MEMORY_DSN=postgresql://memory@source.invalid:5432/agent_memory',))
         result = self.json(out)
         if result.get('status') != 'restored_and_content_verified':
             raise RehearsalError('The copy did not restore to the content its manifest records')
-        self.report['restore'] = {'status': result['status'], 'tables': len(result.get('tables', {})), 'database': database}
+        self.report['restore'] = {'status': result['status'], 'tables': len(result.get('tables', {})), 'database': database, 'server': 'ephemeral'}
 
     def shred(self):
-        """The private key is overwritten before it is deleted."""
-        identity = self.work / 'keys' / 'identity.txt'
+        """The private key is shredded in a throw-away container (the file is that container's user's) and checked to be gone. Returns the problems found, a list."""
+        identity = self.work / 'keys' / 'identity.txt' if self.work else None
+        problems = []
+        if identity is None or not os.path.lexists(identity):
+            return problems
         try:
-            if identity.is_file():
-                identity.write_bytes(b'\0' * max(identity.stat().st_size, 1))
-                identity.unlink()
-        except OSError:
-            pass
+            self.tool('shred', [(self.work / 'keys', '/keys', 'rw')], 'shred', '--force', '--zero', '--remove', '/keys/identity.txt')
+        except RehearsalError:
+            problems.append('the private key could not be shredded in its container')
+        if os.path.lexists(identity):  # the container could not run: overwrite it from here if the file is ours, and say so when that is not possible either
+            try:
+                with open(identity, 'r+b') as handle:
+                    handle.write(b'\0' * max(os.fstat(handle.fileno()).st_size, 1))
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.unlink(identity)
+            except OSError as error:
+                problems.append(f'the private key file could not be overwritten ({type(error).__name__})')
+        if os.path.lexists(identity):
+            problems.append('the private key file is still there')
+        return problems
 
     def remove_by_label(self):
-        """Containers, then volumes and networks that carry THIS project's compose label, by the names docker lists for it."""
+        """Containers, then volumes and networks that carry THIS project's compose label (an exact match of the label), by the names docker lists for it."""
         label = 'label=com.docker.compose.project=' + self.project
         for kind, command, remover in (('containers', ['docker', 'ps', '-a', '--filter', label, '--format', '{{.Names}}'], ['docker', 'rm', '--force', '--volumes']),
                                        ('volumes', ['docker', 'volume', 'ls', '--filter', label, '--format', '{{.Name}}'], ['docker', 'volume', 'rm']),
                                        ('networks', ['docker', 'network', 'ls', '--filter', label, '--format', '{{.Name}}'], ['docker', 'network', 'rm'])):
             for name in self.run(command, check=False).split():
-                if name.startswith(self.project):
+                if name == self.project or name.startswith((self.project + '-', self.project + '_')):
                     self.run(remover + [name], check=False)
 
+    def remaining(self):
+        """What of this rehearsal is still in docker: the compose-labelled resources (an exact label) and each resource it created by name (filter `^name$`, then compared for equality)."""
+        label = 'label=com.docker.compose.project=' + self.project
+        found = []
+        for command in (['docker', 'ps', '-a'], ['docker', 'volume', 'ls'], ['docker', 'network', 'ls']):
+            found += self.run(command + ['--filter', label, '--format', '{{.Names}}' if command[1] == 'ps' else '{{.Name}}']).split()
+        for command, names in ((['docker', 'ps', '-a'], self.names), (['docker', 'volume', 'ls'], self.volumes), (['docker', 'network', 'ls'], self.networks)):
+            for name in names:
+                if name in self.run(command + ['--filter', f'name=^{name}$', '--format', '{{.Names}}' if command[1] == 'ps' else '{{.Name}}']).split():
+                    found.append(name)
+        return sorted(set(found))
+
     def cleanup(self):
-        """Everything this rehearsal created, by exact name, whatever happened; returns 'complete' or what is left."""
-        left = []
-        self.shred()
-        for name in self.names:
-            self.run(['docker', 'rm', '--force', '--volumes', name], check=False)
-        self.run(self.compose() + ['down', '--volumes', '--remove-orphans', '--timeout', '30'], timeout=STEP_TIMEOUT, environment=self.compose_environment(), check=False)
-        self.remove_by_label()  # what a deployment that stopped half way left and `down` could not name (its files may not exist yet)
+        """Everything this rehearsal created, by exact name, whatever happened: it goes on after a command that fails and returns 'complete' or what is left (and what could not be done)."""
+        problems = []
+
+        def attempt(what, action):
+            try:
+                result = action()
+            except BaseException as error:  # the rest of the cleanup still runs; the cause is named by its type, never its message (it may carry a path or a secret)
+                problems.append(f'{what} ({type(error).__name__})')
+                return
+            if isinstance(result, list):
+                problems.extend(result)
+        attempt('private key', self.shred)
+        for name in list(self.names):
+            attempt(f'container {name}', lambda name=name: self.run(['docker', 'rm', '--force', '--volumes', name], check=False))
+        attempt('compose down', lambda: self.run(self.compose() + ['down', '--volumes', '--remove-orphans', '--timeout', '30'], timeout=STEP_TIMEOUT, environment=self.compose_environment(), check=False))
+        attempt('compose resources', self.remove_by_label)  # what a deployment that stopped half way left and `down` could not name (its files may not exist yet)
+        for network in list(self.networks):
+            attempt(f'network {network}', lambda network=network: self.run(['docker', 'network', 'rm', network], check=False))
+        for volume in list(self.volumes):
+            attempt(f'volume {volume}', lambda volume=volume: self.run(['docker', 'volume', 'rm', volume], check=False))
         for image in IMAGES:
-            self.run(['docker', 'image', 'rm', self.image(image)], check=False)
+            attempt(f'image {image}', lambda image=image: self.run(['docker', 'image', 'rm', self.image(image)], check=False))
         if self.private.is_dir() and all(child.name in PRIVATE_FILES for child in self.private.iterdir()):
-            shutil.rmtree(self.private, ignore_errors=True)
-        if self.work and self.work.is_dir():
-            shutil.rmtree(self.work, ignore_errors=True)
-        remaining = [line for line in self.run(['docker', 'ps', '-a', '--filter', 'name=' + self.project, '--format', '{{.Names}}'], check=False).split() if line]
-        remaining += [line for line in self.run(['docker', 'volume', 'ls', '--filter', 'name=' + self.project, '--format', '{{.Name}}'], check=False).split() if line]
-        remaining += [line for line in self.run(['docker', 'network', 'ls', '--filter', 'name=' + self.project, '--format', '{{.Name}}'], check=False).split() if line]
-        left += remaining
-        return 'complete' if not left else 'incomplete: ' + ', '.join(left)
+            attempt('private files', lambda: shutil.rmtree(self.private))
+        if self.work:
+            if self.work.exists():
+                attempt('temporary directory', lambda: shutil.rmtree(self.work))
+            if self.work.exists():
+                problems.append(f'the temporary directory {self.work} is still there')
+        attempt('final check', lambda: [f'left in docker: {name}' for name in self.remaining()])
+        return 'complete' if not problems else 'incomplete: ' + ', '.join(problems)
+
+    def install_signal_handlers(self):
+        """SIGTERM (and SIGHUP) end the rehearsal like an exception, so that its cleanup still runs; returns the function that puts the old handlers back."""
+        def stop(signum, frame):
+            raise SystemExit(128 + signum)
+        previous = {}
+        for name in ('SIGTERM', 'SIGHUP'):
+            number = getattr(signal, name, None)
+            if number is None:
+                continue
+            try:
+                previous[number] = signal.signal(number, stop)
+            except (ValueError, OSError):  # not the main thread: the caller owns the signals
+                pass
+
+        def put_back():
+            for number, handler in previous.items():
+                signal.signal(number, handler)
+        return put_back
 
     def apply(self):
+        put_back = self.install_signal_handlers()
+        try:
+            return self.rehearse()
+        finally:
+            put_back()
+
+    def rehearse(self):
         failure = None
         self.work = Path(tempfile.mkdtemp(prefix='kairos-rehearse-'))
         try:
@@ -240,8 +334,13 @@ class Rehearsal:
             self.restore()
         except BaseException as error:
             failure = error
-        cleanup = self.cleanup()
+        try:
+            cleanup = self.cleanup()
+        except BaseException as error:  # the cleanup never hides the failure that came first
+            cleanup = f'incomplete: the cleanup stopped ({type(error).__name__})'
         if failure is not None:
+            if cleanup != 'complete':
+                print(f'rehearsal cleanup: {cleanup}', file=sys.stderr, flush=True)
             raise failure
         if cleanup != 'complete':
             raise RehearsalError('The rehearsal succeeded but its cleanup is ' + cleanup)
