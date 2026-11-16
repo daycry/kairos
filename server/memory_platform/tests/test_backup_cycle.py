@@ -293,3 +293,124 @@ class CommandTests(unittest.TestCase):
             self.assertEqual(len([line for line in out.splitlines() if line.startswith('{')]), 2)
             self.assertEqual(len([p for p in remote.iterdir() if p.name.endswith('.dump')]), 2)
 
+
+class CorruptingDestination(offsite.DirDestination):
+    """A destination that stores the copy with one byte changed (a bad disk, a bad network): the copy and its size look right, its sha256 does not."""
+
+    def put(self, source, name):
+        super().put(source, name)
+        if not name.endswith('.json'):
+            data = bytearray((self.root / name).read_bytes())
+            data[300] ^= 0x01
+            (self.root / name).write_bytes(bytes(data))
+
+
+class OffsiteFailureTests(unittest.TestCase):
+    def seeded(self, root, local_days=(5, 6, 7), remote_days=(1, 2, 3)):
+        local, remote = root / 'local', root / 'remote'
+        local.mkdir()
+        remote.mkdir()
+        for day in local_days:
+            seeded_copy(local, day)
+        for day in remote_days:
+            seeded_copy(remote, day)
+        return local, remote
+
+    def test_an_unreachable_destination_is_logged_zeroes_the_metric_keeps_every_local_copy_and_the_next_cycle_sends_again(self):
+        with workspace() as root:
+            local, remote = self.seeded(root, remote_days=())
+            before = names(local)
+            absent = offsite.DirDestination(root / 'absent')
+            with self.assertLogs('kairos', level='ERROR') as logged:
+                with self.assertRaises(offsite.CycleError) as raised:
+                    cycle(local, absent, keep=1)
+            self.assertEqual(raised.exception.code, 'backup_offsite_failed')
+            record = logged.records[0]
+            self.assertEqual((record.kairos_event, record.kairos_fields), ('backup_offsite_failed', {'destination': 'dir', 'code': 'backup_offsite_failed'}))
+            self.assertEqual(observability.OFFSITE_REGISTRY.get_sample_value('kairos_backup_offsite_success'), 0)
+            self.assertIn('kairos_backup_offsite_success 0.0', (local / offsite.METRICS_NAME).read_text(encoding='utf-8'))
+            failed_copy = Path(raised.exception.report['path']).name
+            self.assertEqual(raised.exception.report['offsite'], {'destination': 'dir', 'status': 'failed', 'code': 'backup_offsite_failed'})
+            self.assertNotIn('prune', raised.exception.report, 'nothing local is pruned when the copy did not leave')
+            self.assertEqual(sorted(n for n in names(local) if n.endswith(('.dump', '.json'))), sorted(before + [failed_copy, failed_copy + '.json']), 'every local copy is intact, with keep=1')
+            later = datetime(2026, 11, 21, tzinfo=timezone.utc)
+            report = cycle(local, offsite.DirDestination(remote), now=later, make_copy=make_copy_factory())
+            self.assertIn(failed_copy, report['offsite']['uploaded'], 'the copy of the failed cycle is sent by the next one')
+            self.assertIn(Path(report['path']).name, report['offsite']['uploaded'])
+            self.assertEqual(observability.OFFSITE_REGISTRY.get_sample_value('kairos_backup_offsite_success'), 1)
+            self.assertIn('kairos_backup_offsite_success 1.0', (local / offsite.METRICS_NAME).read_text(encoding='utf-8'))
+
+    def test_a_copy_that_differs_at_the_destination_is_not_completed_and_nothing_is_deleted_anywhere(self):
+        with workspace() as root:
+            local, remote = self.seeded(root)
+            local_before, remote_before = names(local), remote_names(remote)
+            with self.assertLogs('kairos', level='ERROR') as logged:
+                with self.assertRaises(offsite.CycleError) as raised:
+                    cycle(local, CorruptingDestination(remote), keep=1, remote_keep=1)
+            self.assertEqual(raised.exception.code, 'backup_checksum_mismatch')
+            self.assertEqual(logged.records[0].kairos_fields['code'], 'backup_checksum_mismatch')
+            new = Path(raised.exception.report['path']).name
+            self.assertFalse((remote / (new + '.json')).exists(), 'a copy that does not match never gets its manifest at the destination')
+            self.assertTrue(set(remote_before) <= set(remote_names(remote)), 'nothing was deleted at the destination, with remote_keep=1')
+            self.assertTrue(set(local_before) <= set(names(local)), 'nothing was deleted locally, with keep=1')
+            self.assertEqual(observability.OFFSITE_REGISTRY.get_sample_value('kairos_backup_offsite_success'), 0)
+
+    def test_a_local_copy_that_no_longer_matches_its_manifest_is_never_sent_and_nothing_is_deleted(self):
+        with workspace() as root:
+            local, remote = self.seeded(root)
+            local_before, remote_before = names(local), remote_names(remote)
+            honest = make_copy_factory()
+
+            def damaged(output):
+                report = honest(output)
+                data = bytearray(output.read_bytes())
+                data[300] ^= 0x01
+                output.write_bytes(bytes(data))
+                return report
+            with self.assertRaises(backup.BackupError) as raised:
+                cycle(local, offsite.DirDestination(remote), keep=1, remote_keep=1, make_copy=damaged)
+            self.assertEqual(raised.exception.code, 'backup_checksum_mismatch')
+            self.assertEqual(remote_names(remote), remote_before, 'nothing was sent and nothing was deleted at the destination')
+            self.assertTrue(set(local_before) <= set(names(local)))
+
+    def test_an_older_local_copy_that_no_longer_verifies_is_skipped_and_never_sent(self):
+        with workspace() as root:
+            local, remote = self.seeded(root, remote_days=())
+            damaged = next(p for p in local.iterdir() if p.name.endswith(stamp(7) + '.dump'))
+            damaged.write_bytes(damaged.read_bytes()[:-1])
+            report = cycle(local, offsite.DirDestination(remote))
+            self.assertIn({'name': damaged.name, 'code': 'backup_checksum_mismatch'}, report['offsite']['skipped'])
+            self.assertFalse((remote / damaged.name).exists())
+
+    def test_what_the_destination_or_rclone_prints_never_reaches_the_report_the_log_or_the_error(self):
+        secret = 'hunter2-s3cr3t'
+        with workspace() as root:
+            local = root / 'local'
+            local.mkdir()
+            destination = offsite.parse_destination(f'rclone:vault:{secret}-bucket/path')
+            failures = [subprocess.CompletedProcess([], 3, stdout=(secret + '\n').encode(), stderr=secret.encode()), subprocess.TimeoutExpired(['rclone', secret], 10), OSError(secret)]
+            for failure in failures:
+                side_effect = [failure] if isinstance(failure, Exception) else [failure]
+                with patch.dict(os.environ, {'RCLONE_CONFIG_VAULT_PASS': secret}), patch.object(offsite.subprocess, 'run', side_effect=side_effect):
+                    with self.assertLogs('kairos', level='ERROR') as logged:
+                        with self.assertRaises(offsite.CycleError) as raised:
+                            cycle(local, destination, make_copy=make_copy_factory())
+                everything = ' '.join([str(raised.exception), json.dumps(raised.exception.report), *(observability.JsonFormatter().format(r) for r in logged.records)])
+                self.assertNotIn(secret, everything)
+                self.assertNotIn('bucket', everything, 'not even the path of the remote')
+                self.assertEqual(raised.exception.code, 'backup_offsite_failed')
+                for leftover in local.iterdir():
+                    leftover.unlink()
+
+    def test_rclone_is_started_without_a_shell_and_the_names_come_from_the_tool(self):
+        calls = []
+        destination = offsite.parse_destination('rclone:vault:folder')
+        run = lambda command, **kw: calls.append(command) or subprocess.CompletedProcess(command, 0, stdout=b'a.dump\n\nb.json\n', stderr=b'')
+        with patch.object(offsite.subprocess, 'run', side_effect=run):
+            self.assertEqual(destination.names(), {'a.dump', 'b.json'})
+            destination.put(Path('/x/kairos-cycle-20261120T000000000000Z.dump'), 'kairos-cycle-20261120T000000000000Z.dump')
+            destination.delete('kairos-cycle-20261120T000000000000Z.dump')
+        self.assertEqual([c[0] for c in calls], ['rclone'] * 3)
+        self.assertEqual([c[len(offsite.RCLONE_FLAGS) + 1] for c in calls], ['lsf', 'copyto', 'deletefile'])
+        self.assertEqual(calls[1][-1], 'vault:folder/kairos-cycle-20261120T000000000000Z.dump')
+        self.assertEqual(offsite.RcloneDestination('vault:').target('x'), 'vault:x')

@@ -46,7 +46,7 @@ test-plan: n/a (sin UI)
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 9 | 9 | 100% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 5 | 5 | 100% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 9 | 9 | 100% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
-| Fase 7 — Copia externa programada y runbook de restauración (C-01) | 1 | 6 | 16.7% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
+| Fase 7 — Copia externa programada y runbook de restauración (C-01) | 2 | 6 | 33.3% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 0 | 4 | 0% | 0 / 7.2h | 0 / 1.0h | 0 / 0.2h | 0 / 240 k |
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 0 | 7 | 0% | 0 / 19.8h | 0 / 2.6h | 0 / 0.7h | 0 / 660 k |
 | Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 0 | 7 | 0% | 0 / 34.2h | 0 / 4.6h | 0 / 1.1h | 0 / 1140 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **44** | **98** | **44.9%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **45** | **98** | **45.9%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1406,30 +1406,35 @@ RED: `server/memory_platform/tests/test_backup_cycle.py::CommandTests` falló co
 ### T-45 — Fallos del destino externo: `backup_offsite_failed`, métrica y reintento
 
 - **Descripción**: Con el destino inaccesible, registrar `backup_offsite_failed` (tipo de destino, sin credenciales), poner la métrica a 0, reintentar en el ciclo siguiente y no borrar copias locales; una copia con sha256 distinto no sube ni borra nada. Fuente: CA-06; sha256 no coincide (manejo de errores).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Si falla el destino de la copia externa se registra `backup_offsite_failed` (sin credenciales), la métrica pasa a 0, no se borra ninguna copia local y el ciclo siguiente reenvía lo que falte.
+- **Cerrada**: 2026-11-16
+- **Estado**: completado
 - **Tiempo humano**: est. 3h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.27h (medido)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 110 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: T-44
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/admin.py`, `server/memory_platform/observability.py`, `server/memory_platform/tests/test_backup_cycle.py`
+- **Archivos**: `server/memory_platform/admin.py`, `server/memory_platform/observability.py`, `server/memory_platform/tests/test_backup_cycle.py`, `server/memory_platform/offsite.py` (el manejo vive en `run_cycle`; añadido)
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_backup_cycle|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
+  - Salida (2026-11-16, misma imagen y montaje que T-44): `test_backup_cycle` → `Ran 23 tests ... OK`; `OffsiteFailureTests` (6 pruebas: destino ausente con reintento, sha256 distinto en destino, copia local alterada, copia antigua alterada, credenciales, argumentos de `rclone`) en `ok`. La suite completa se pega en T-48.
 
 **Criterios de aceptación**
-- [ ] Con el destino inaccesible: `backup_offsite_failed`, métrica a 0, reintento en el ciclo siguiente y copias locales intactas (prueba)
-- [ ] Con `backup_checksum_mismatch` en destino no se sube ni se borra nada
-- [ ] Los registros no incluyen credenciales del destino
+- [x] Con el destino inaccesible: `backup_offsite_failed`, métrica a 0, reintento en el ciclo siguiente y copias locales intactas (prueba)
+- [x] Con `backup_checksum_mismatch` en destino no se sube ni se borra nada
+- [x] Los registros no incluyen credenciales del destino
 
 **Subtareas**
-- [ ] Escribir primero las pruebas de fallo (rojo)
-- [ ] Implementar el manejo y la métrica
-- [ ] Comprobar la redacción de credenciales
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero las pruebas de fallo (rojo)
+- [x] Implementar el manejo y la métrica
+- [x] Comprobar la redacción de credenciales
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `observability.py:189-213` (métricas) y `:205-208` (gauges de cola).
+**Notas**: El manejo está en `run_cycle` (commit de T-44: es el mismo flujo); este commit añade las pruebas de fallo. Las series viven en `OFFSITE_REGISTRY`, aparte (memory-api no las expone: un 0 fijo alertaría en falso) y en `kairos-offsite.prom` junto a las copias. Con un fallo no se poda lo local. Rutas y salida de rclone nunca se guardan (stderr a DEVNULL). Mutantes M3,M4,M5,M8,M12 en rojo (y M1,M11 por sha256). Horas: ventana común de T-44.
+
+
+RED: `server/memory_platform/tests/test_backup_cycle.py::OffsiteFailureTests (mutantes M3,M4,M5,M1,M11,M12)` falló con cada mutante deja la prueba en rojo: poda local con fallo, metrica 1 con fallo, sin log, sin comparar sha256, manifiesto antes de la lectura, salida de rclone en el mensaje · 2026-11-16.
 
 ### T-46 — Servicio Compose `memory-backup` (perfil `backup`) sin clave privada
 
