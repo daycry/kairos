@@ -370,3 +370,119 @@ SHA-256: `1514d093a5c49882109a597881a1a710ea5970264edd92be78e28302e84def80`.
 **Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Cierra la fase: no se abre la revisión adversarial con la suite en rojo.
 
 **Cierre**: Build `kairos-test:i3p5` (primer plano, un solo Docker a la vez): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1038}` (1006 + 24 de `test_auth_cache` + 8 de `test_store_phase4_debt`). `KAIROS_MIN_TESTS` = `'1038'`, `MIN_FLOOR = 1038`, la tabla de `docs/operations.md` y `README.md` repiten 1038; `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `Ran 45 tests ... OK`. usage-meter: `{"fuente":"medido","horas_ia":0.03,"duracion_reloj":"15m","tokens_reales":{"entrada":16,"salida":3568,"cache_creacion":6749,"cache_lectura":2456472,"respuestas":8}}` (el reloj incluye la espera de la suite y de las pruebas del flujo de CI). **fix1**: build `kairos-test:i3p5` en primer plano, 2.º intento (el 1.º falló 4 subpruebas de `test_store_faults` por la regla nueva, corregidas): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1048}` (1038 + 8 de `test_auth_race` + 1 de la clasificación + 1 de `test_auth_cache`). `KAIROS_MIN_TESTS`, `MIN_FLOOR`, `docs/operations.md` y `README.md` en 1048; `test_ci_workflow.py` OK (45). usage-meter fix1: 0,20h (medido; el reloj incluye dos suites).
+
+## Compactación 2026-11-16 — revisiones de las fases 1 a 5
+
+Secciones «Revisión de dos lentes» de las fases 1 a 5, movidas tal cual desde `tasks.md`; el resumen de cada fase está en `review.md`.
+
+SHA-256: `2f0929b65a4428fe9402703fe02a8930f2aa1f66f6844afcac5ce703bbf1b652`.
+
+### Revisión de dos lentes — intento 2: Fase 1 (T-01..T-04) tras fix1 (T-01, T-02, T-03, T-04)
+
+Lentes: A+B (re-evalúan solo lo corregido; C y D no tenían gaps abiertos). Diff `cc698e3..62888f0`. Veredicto: los gaps 1-7 del intento 1 quedan cerrados, cada uno con su mutante en rojo en las Notas de T-02/T-03. Sin Critical ni Important: **fase cerrada en el intento 2 de 3**. Suite 806, 0 fallos (Notas de T-05).
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Minor | El Changelog de T-05 decía «sube a 801»; el mínimo vigente es 806 | T-05 | corregido en el cierre de la fase | Lente A n.º 1 |
+| 2 | Minor | El docstring de `asgi()` prometía un par con `None`; devuelve `(consumed, sent, seen)` | T-02 | corregido en el cierre de la fase | Lente A n.º 2; `test_api_limits.py:45-46` |
+| 3 | Minor | Medir solo la sección de `schema.sql` deja sin cubrir la guarda en Python de los índices HNSW (`store_vectors.py:23-24`): sin ella, cada `migrate()` repetido toma ShareLock sobre `embeddings`/`embedding_chunks` | T-03 | deuda aceptada → T-14 (migración 12 de la Fase 3, que toca esos tests) | Lente B n.º 1 |
+| 4 | Minor | La prueba genérica de secciones nombra a mano sus etiquetas; una sección nueva sin guarda no entraría | T-03 | deuda aceptada → T-14 (la v12 añade una sección: que las etiquetas salgan de `schema.sql`) | Lente B n.º 2; `test_migrations_additive.py:233` |
+
+SHA-256: `21b53661c1f2cffafe8992943e4bc5e980e17af398e58c2750e41a7c5fe05bc2`.
+
+### Revisión de dos lentes — intento 1: Fase 2 (T-07..T-12): 1 Important, 8 Minor (T-07, T-08, T-09, T-10, T-11, T-12)
+
+Lentes: A+B+C+D (C por `.github/workflows/ci.yml`; D por `worker.py`). Diff `920c1f0..94a3eeb`. `scope-check.py --base 920c1f0` exit 0. Veredicto A: T-07, T-08, T-10, T-11 y T-12 ✓; T-09 ✗ por el n.º 1. C: sin hallazgos. D: un Minor (n.º 9).
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | Una caída de base al completar sí gasta el intento: el trabajo queda `running` con el intento contado y, en el último permitido, el siguiente reclamo lo marca `attempts_exhausted` y se pierde el resultado bueno del proveedor (contradice CA-09, el criterio de cierre 2 y `operations.md:216`) | T-09, T-10 | T-09: el resultado se conserva en memoria y `complete_job`/`fail_job` se repiten con la espera del reclamo, renovando la concesion al volver la base, hasta que entran o se pierde la concesion (`job_write_abandoned`); pruebas a/b/c/d con FaultProxy y mutantes R1-R6 en rojo; residual declarado (muerte del proceso). Commit `T-09: fix1` | Lente A n.º 1, Lente B n.º 1; `worker.py:201-204`, `store_jobs.py:101-106`; `test_worker_db_down.py:412` no llega al tope |
+| 2 | Minor | `is_store_unavailable` toma por caída de base cualquier `OperationalError` (también `QueryCanceled`, `LockNotAvailable`, `ProgramLimitExceeded`): el trabajo se repite y se pierde la causa | T-07, T-09 | T-07: solo InterfaceError, OperationalError sin SQLSTATE, clase 08 y 57P01/02/03 son caida; el resto sigue su camino (worker: `store_error`); pruebas por SQLSTATE y con PostgreSQL efimero; mutante Q1 en rojo. Commit `T-07: fix1` | Lente B n.º 2, Lente C (fuera de lente); `errors.py:58` |
+| 3 | Minor | Una base que no contesta en la fase `read` acaba como `provider_timeout` | T-09 | diferido → T-23/T-25 (deuda heredada anotada en sus Notas; los cierran el plazo de conexion/sentencia de T-23 y las pruebas de servidor mudo de T-25) | Lente B n.º 3; `worker.py:178-185`, `:213-217` |
+| 4 | Minor | Ninguna llamada a la base tiene plazo (`connect_timeout`): un reclamo se cuelga ~2 min y el apagado acaba en SIGKILL | T-08 | diferido → T-23/T-25 (deuda heredada anotada en sus Notas) | Lente B n.º 4; `store.py:31` |
+| 5 | Minor | `attempts_exhausted` no figura en la lista de coordinación con la Iniciativa 7 del plan | T-10 | improvement-plan.md: `attempts_exhausted` (y `store_error`) en la coordinacion con la Iniciativa 7. Commit `T-10: fix1` | Lente A n.º 2 |
+| 6 | Minor | `configuration.md` dice que `MEMORY_WORKER_DB_BACKOFF_MAX` solo la lee el worker, pero `Settings.from_env()` la valida también en la API y en admin | T-11 | configuration.md: la valida `Settings.from_env()` en todos los procesos. Commit `T-11: fix1` | Lente A n.º 3; `configuration.md:66`, `config.py:311` |
+| 7 | Minor | La Verificación literal de T-07 a T-10 se sustituyó por un ejecutor de módulos | T-07–T-10 | Salida de la Verificacion (misma orden, suite completa, 870 pruebas, nombres por modulo) pegada en Notas de T-07, T-09, T-10; T-11 por lectura contra el codigo; T-08 sin cambios (su Verificacion no se toco). Commits `T-07/T-09/T-10/T-11: fix1` | Lente A n.º 4 |
+| 8 | Minor | `MEMORY_MAX_ATTEMPTS=0` (o negativo) se acepta sin validar y `store_jobs.py:92` lo convierte en 3 en silencio; si `_fail` no llega a la base en el último intento, el código final es `attempts_exhausted` y se pierde el `provider_*`; `complete_job` que devuelve `False` (concesión perdida) se cuenta como completado | T-09, T-10 | T-09/T-10: `max_attempts()` en config.py (entero >= 1), `claim_job` ya no convierte 0 en 3, `complete_job` False no es completado, codigo del proveedor conservado en el ultimo intento (comprobado). Commits `T-09/T-10: fix1` | Lente A y B (fuera de lente), Lente C; `store_jobs.py:92`, `worker.py:198` |
+| 9 | Minor | El vaciado de trabajos agotados dentro de un mismo reclamo crece de forma cuadrática con k agotados por delante (solo alcanzable con filas `running` metidas en bloque) | T-10 | T-10: una sola sentencia por conjunto con SKIP LOCKED antes del SELECT (la rama por fila queda como red de seguridad); pruebas de conteo y de bloqueo; mutantes S1/S2 en rojo. Commit `T-10: fix1` | Lente D n.º 1; `store_jobs.py:93-106` |
+
+**Intento 1 corregido** (T-07, T-09, T-10, T-11, T-12; los gaps 3 y 4 se difieren a T-23/T-25 por decision del orquestador). Suite: MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 870}. Mutantes: Q1 (T-07), R1-R6 (T-09), S1-S5 (T-10), todos en rojo (ver Notas). Horas medidas de la correccion (usage-meter `reliable-operations/T-XX-fix1`): T-07 0.06, T-09 0.28, T-10 0.12, T-11 0.04, T-12 0.06 (0.56 h IA en total, sumadas al real de cada tarea). Pendiente: segundo intento de la revision (T-13).
+
+SHA-256: `cc1c2408e2b48e4d88b51a435294c1fce31940141f7530135846ce61f516d4d4`.
+
+### Revisión de dos lentes — intento 3: Fase 2 tras fix2 (T-07, T-09, T-10, T-11, T-12)
+
+Lentes: A+B (re-evalúan solo lo corregido en el intento 2). Diff `9530702..f0a4e0f`. Veredicto: n.º 1-6 del intento 2 cerrados; la decisión de declarar el límite no se reabre. Sin Critical ni Important: **fase cerrada en el intento 3 de 3**. Suite 884, 0 fallos (Notas de T-12 en `execution-history.md`).
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Minor | El umbral del límite declarado no era exacto: la concesión que queda al empezar la caída está entre 2L/3 y L (el latido renueva cada L/3), y CA-09 no citaba el presupuesto menor que la concesión | T-11 | corregido en el cierre (spec fila y CA-09, `operations.md`, `configuration.md`) | Lente A n.º 1 |
+| 2 | Minor | `job_outcome_unread` faltaba en la coordinación con la Iniciativa 7 | T-10 | corregido en el cierre (`improvement-plan.md`) | Lente A n.º 2 |
+| 3 | Minor | Si el latido recibe el «no» antes que la renovación de `_persist`, un COMMIT que sí entró se registra como `lease_lost`/`job_write_abandoned` (los datos quedan bien; solo la observabilidad) | T-09 | deuda aceptada → T-25 | Lente B n.º 1; `worker.py:202-203`, `:250-253` |
+| 4 | Minor | Ninguna prueba hace fallar `job_outcome` (rama `job_outcome_unread`) y en las pruebas de `_persist` el latido nunca late | T-09 | deuda aceptada → T-25 | Lente B n.º 2 |
+| 5 | Minor | Sin fijar `MEMORY_WORKER_WRITE_RETRY_SECONDS`, su defecto (la concesión) no pasa por el rango 1-86400 | T-09 | deuda aceptada → T-25 | Lente A (fuera de lente); `config.py:139-141` |
+
+SHA-256: `73cb90c2080308866c0c8bce2a6592c60bb2877dd7e6a5207beb9095bccda903`.
+
+### Revisión de dos lentes — intento 1: Fase 3 (T-14..T-19) (T-14, T-15, T-16, T-17, T-18, T-19)
+
+Lentes: A+B+C+D (C por el SQL con f-string de `admin.py` y `ci.yml`; D por `schema.sql` y `store_jobs.py`). Diff `d23f4a7..029465f`. `scope-check.py --base d23f4a7` exit 0. Veredicto A: T-14, T-15 y T-19 ✓; T-16, T-17 y T-18 ✗ por el n.º 1. Decisión del orquestador para el n.º 1: la poda conserva el contrato de las herramientas MCP; no borra un trabajo citado por el recibo de un evento conservado ni el último trabajo de su destino.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | Con las ventanas por defecto, podar trabajos `failed` cambia lo que ven los clientes de herramientas MCP existentes: `event_status` pasa a 404 (el recibo del evento conservado cita el trabajo podado), el reenvío idempotente de `ingest_event` devuelve ids inexistentes, `document_status` pierde el trabajo (con `jobs=[]` parece indexado) y `backfill-chunks` deja recursos sin fragmentos o los reencola solo | T-16, T-17, T-18 | corregido (T-16 fix1: la poda excluye trabajos citados por recibos de eventos conservados y de la versión actual de su documento o nota, además de los de `projection_receipts`; `ClientContractTests`: respuestas iguales antes y después, mutantes en rojo; docs y coordinación en T-18) | Lente A n.º 1, Lente B n.º 3; `admin.py:252`, `mcp.py:114`, `store_documents.py:267-269`, `admin.py:101-121` |
+| 2 | Minor | La lista de coordinación con la Iniciativa 7 no detalla los cambios visibles de la Fase 3 | T-18 | corregido (siete cambios visibles de la Fase 3 uno a uno en `improvement-plan.md`) | Lente A n.º 2; `improvement-plan.md:246` |
+| 3 | Minor | El manual promete que repetir la migración no bloquea `memory.jobs` y que `lock_timeout` la acota, pero `schema.sql:19` (índice sin guarda, antes de cualquier `lock_timeout`) toma SHARE sobre `jobs` en cada `migrate` | T-14, T-18 | corregido (guarda `jobqueue` en `schema.sql`: la promesa del manual es verdad y la prueba mide el `schema.sql` entero; mutante en rojo) | Lente B n.º 2 |
+| 4 | Minor | La poda de `audit_events` no deja rastro duradero de sí misma | T-16 | corregido (fila `retention_prune` en `audit_events` tras podarla, también si la ejecución falla a medias; prueba y mutante) | Lente C n.º 1 (CWE-778) |
+| 5 | Minor | Cada lote de la poda vuelve a recorrer desde el principio (sin cursor): coste N²/B en la primera poda de una tabla grande | T-16 | corregido (cursor por clave ascendente: `id > after` con `max(id)` del lote; prueba y mutante) | Lente D n.º 1; `admin.py:290-297` |
+| 6 | Minor | El manual no avisa del bloat ni del WAL de una poda grande (VACUUM) | T-18 | corregido (nota de `VACUUM (ANALYZE)`, bloat y WAL en `operations.md`) | Lente D n.º 2 |
+| 7 | Minor | Con dos sondeos, el trabajo que pierde la comparación queda bloqueado hasta el COMMIT y otro reclamo concurrente lo salta durante un ciclo | T-15 | deuda aceptada (sin pérdida ni hambre permanente); efecto documentado en `operations.md` (un reclamo concurrente puede esperar un ciclo por el trabajo que perdió la comparación) | Lente B n.º 1; `store_jobs.py:82-83` |
+
+SHA-256: `7360fd472a904db926e9a19af31e66dec0cfc3018bbf88f993cdc76c3daedeb2`.
+
+### Revisión de dos lentes — intento 2: Fase 3 tras fix1 (T-14, T-16, T-18, T-19)
+
+Lentes: A+B (re-evalúan solo lo corregido). Diff `029465f..6de2f21`. Veredicto: n.º 1-7 del intento 1 cerrados (n.º 2 parcial por documentación, corregido en el cierre). Sin Critical ni Important: **fase cerrada en el intento 2 de 3**. Suite 925, 0 fallos (Notas de T-19).
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Minor | `configuration.md` no recogía las exclusiones (b) y (c) ni que podar `events` libera trabajos en la misma ejecución | T-18 | corregido en el cierre | Lente A n.º 1 |
+| 2 | Minor | Faltaba en la coordinación y en el manual que `counts.jobs` de `projects` y `GET /v1/projects`, y la lista de trabajos, bajan con la poda | T-18 | corregido en el cierre (`improvement-plan.md`, `operations.md`) | Lente A n.º 2; `store_auth.py:101,108` |
+| 3 | Minor | La prueba de invariancia no incluye el reenvío de `publish_document`/`revoke_document` ni `list_projects`/portal | T-16 | deuda aceptada: los dos primeros los protege la exclusión (c) por la versión vigente y su FK; la bajada de los últimos es la declarada | Lente A n.º 3 |
+| 4 | Minor | La precisión de P-03 (exclusiones nuevas) no constaba en la spec | T-16 | corregido en el cierre (`spec.md`, fila P-03) | Lente A n.º 4 |
+| 5 | Minor | `--dry-run` cuenta de menos en `jobs` con la ventana de `events` activada | T-16, T-18 | documentado en el cierre (`operations.md`) | Lente B n.º 1 |
+| 6 | Minor | Con `--table` el orden lo fija el operador y `events` puede ir después de `jobs` | T-16, T-18 | documentado en el cierre (`operations.md`) | Lente B n.º 2 |
+| 7 | Minor | El NOT EXISTS sobre `events.receipt` se evalúa por candidato sin índice, en cada lote de `jobs` | T-16 | deuda aceptada (ya documentado: «no se ha medido con tablas de millones de filas»); a medir en el ensayo de la Iniciativa 5 | Lente B (fuera de lente) |
+
+SHA-256: `1e7b92c1cf52395f5ab55085efc5b859a780b4c1e114ef6e76d20d8ee734a514`.
+
+### Revisión de dos lentes — intento 2: Fase 4 tras fix1 (T-21, T-23, T-24, T-25, T-26, T-27, T-28)
+
+Lentes: A+B (re-evalúan solo lo corregido). Diff `078b465..5d8a75c`. Veredicto: n.º 1-11 del intento 1 cerrados. Sin Critical ni Important: **fase cerrada en el intento 2 de 3**. Suite 1006, 0 fallos (Notas de T-28 en `execution-history.md`).
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Minor | El Changelog de T-26 seguía diciendo «casi la mitad de latencia» | T-26 | corregido en el cierre | Lente A n.º 1 |
+| 2 | Minor | Changelog de T-22, T-24, T-27 y T-28 desactualizados frente a fix1 | T-22, T-24, T-27, T-28 | corregido en el cierre | Lente A n.º 2 |
+| 3 | Minor | Sin mutante anotado para el control estático de sesión ni «rojo» en el de `_landed`; el manual decía que no se usa `PREPARE`, pero psycopg prepara por su cuenta | T-23, T-25, T-27 | manual precisado en el cierre; la evidencia de mutantes queda como deuda → T-30 | Lente A n.º 3 y fuera de lente |
+| 4 | Minor | El plazo del cliente es total por `wait` y `executemany` en pipeline mete todos los INSERT en uno: un `embed` con cientos de fragmentos puede superar el plazo con la base sana, tratarse como caída y repetirse en cada reclamo | T-23 | deuda → T-30 | Lente B n.º 1; `store_jobs.py:219`, `store_pool.py:203` |
+| 5 | Minor | Carrera en `saturated()`: entre devolver y entregar la conexión, `/health/ready` puede dar 503 con el pool saturado | T-24 | deuda → T-30 | Lente B n.º 2; `store_pool.py:169-178` |
+| 6 | Minor | La regla de 1 s no deja la clasificación determinista con hosts de varias direcciones (`connect_timeout` por dirección) ni con todas las conexiones cerradas por el plazo a mitad de sentencia | T-24 | deuda → T-30 | Lente B n.º 3; `config.py:61-67` |
+| 7 | Minor | Un `StoreUnavailable` dentro de una capa de búsqueda sigue dando 200 `partial` con todas las capas `unavailable` | T-24 | deuda → T-30 | Lente B n.º 4; `retrieval.py:126-130` |
+
+SHA-256: `7dd735256f21050a1199773136d7c9ad38a37114ea08fed11b576879d83dc543`.
+
+### Revisión de dos lentes — intento 2: Fase 5 tras fix1 (T-30, T-31, T-32, T-33)
+
+Lentes: A+B+C (C re-evalúa su hallazgo de seguridad). Diff `425f2bb..afdc228`. Veredicto: n.º 1-7 del intento 1 cerrados; C sin hallazgos (el TOCTOU queda cerrado). Sin Critical ni Important: **fase cerrada en el intento 2 de 3**. Suite 1048, 0 fallos. Decisión del orquestador: los Minor n.º 1-3 y 6-8 se corrigen en el cierre (commit de T-34, con la suite completa); n.º 4 y 5 quedan como deuda.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Minor | `ingest_event` vacía la caché tras sus esperas pero no vuelve a exigir `write`; los manuales y la coordinación prometen 401/403 también en la ingesta | T-30, T-32 | corregido en el cierre: `ingest_event` exige `write` tras las esperas; 2 pruebas de carrera y mutante M1 en rojo; límite residual de `agent_store`/corpus en `architecture.md` | Lente B n.º 1, Lente C (fuera de lente); `store_ingest.py:151,160-162`, `architecture.md:63` |
+| 2 | Minor | `/health/ready` da 200 con un pool que nunca entregó una conexión (base muda al arrancar): el contenedor pasa a healthy | T-30 | corregido en el cierre: sin entrega previa es `not_ready`; log solo con conexiones en uso; mutantes M2 y M2b en rojo | Lente B n.º 2; `store_pool.py:162,234-235` |
+| 3 | Minor | `_faults_at_ok` se escribe fuera de `_lock` y no es monótono; una sola conexión ociosa cortada cuenta como caída | T-30 | corregido en el cierre: `_faults_at_ok` bajo `_lock` y máximo; un fallo de comprobación deja de ser caída cuando conecta otra conexión; mutantes M3 y M3b en rojo | Lente B n.º 3; `store_pool.py:168` |
+| 4 | Minor | Falsos negativos del recorrido estático (concatenación, SQL en variable local, constantes en f-strings, `LOCK` sin `TABLE`, vaciado condicional, helpers a un nivel) | T-31 | deuda aceptada → Iniciativa 9 (hoy ningún caso real; las pruebas de comportamiento de `test_auth_race.py` son la red) | Lente B n.º 4 |
+| 5 | Minor | `test_auth_race.py` deja un hilo suelto si el predicado no coincide | T-30 | deuda aceptada → Iniciativa 9 | Lente B n.º 5; `test_auth_race.py:51` |
+| 6 | Minor | La tabla «Respuesta de la API por ruta y fallo» de `operations.md` no sigue a fix1 | T-30, T-32 | corregido en el cierre: tabla de `operations.md` igual al comportamiento final y a las pruebas | Lente A n.º 1; `operations.md:248-250` |
+| 7 | Minor | La coordinación de la Fase 5 (1) describe mal el cambio frente a la Fase 4 y no declara el de `/health/ready` | T-30 | corregido en el cierre: punto (1) de la Fase 5 y (11) de la Fase 4 en `improvement-plan.md` | Lente A n.º 2 |
+| 8 | Minor | Changelog de T-30 y T-33 desactualizados; comentario de `app.py:178` desfasado | T-30, T-33 | corregido en el cierre: Changelog de T-30 y T-33 (1054) y comentario de `app.py` | Lente A n.º 3, Lente B (fuera de lente) |
