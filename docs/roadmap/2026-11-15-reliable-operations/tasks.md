@@ -45,7 +45,7 @@ test-plan: n/a (sin UI)
 | Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 7 | 7 | 100% | 0 / 27.0h | 0.99 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 9 | 9 | 100% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 5 | 5 | 100% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
-| Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 0 | 9 | 0% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
+| Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 1 | 9 | 11.1% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 0 | 6 | 0% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 0 | 4 | 0% | 0 / 7.2h | 0 / 1.0h | 0 / 0.2h | 0 / 240 k |
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 0 | 7 | 0% | 0 / 19.8h | 0 / 2.6h | 0 / 0.7h | 0 / 660 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **34** | **98** | **34.7%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **35** | **98** | **35.7%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1126,30 +1126,32 @@ RED: sin captura del rojo previo (no se guardó). Evidencia real: mutantes M1, M
 ### T-35 — Manifiesto `<copia>.json` y `admin verify-backup`
 
 - **Descripción**: `admin backup` escribe, junto a cada copia, un manifiesto con sha256 del fichero tal como queda en disco, bytes, versión de esquema, hora, `encrypted` y recuentos de `store_fingerprints`; `admin verify-backup` recalcula el sha256 y falla con `backup_checksum_mismatch`. Fuente: CA-01; O-01.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Cada copia lleva un manifiesto <copia>.json (sha256, tamaño, esquema, hora, recuentos) y `admin verify-backup` detecta un byte alterado, un truncado o un manifiesto ausente o manipulado.
+- **Cerrada**: 2026-11-16
+- **Estado**: completado
 - **Tiempo humano**: est. 3.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.47h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.47h (estimado) · real 0.52h (medido)
 - **Supervisión**: est. 0.12h (≈25 % IA) · real —
 - **Previsión IA**: 129 k in / 11 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/admin.py`, `server/memory_platform/tests/test_admin.py`, `server/memory_platform/tests/test_backup_manifest.py`
+- **Archivos**: `server/memory_platform/admin.py`, `server/memory_platform/tests/test_admin.py`, `server/memory_platform/tests/test_backup_manifest.py`, `server/memory_platform/backup.py` (nuevo: manifiesto, escritura atómica y verificación; `admin.py` queda fino)
 - **Cubre (tests)**: —
-- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_backup_manifest|test_admin|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
+- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_backup_manifest|test_admin|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos Salida (2026-11-16): bucle rápido (imagen de pruebas + árbol de trabajo; la suite completa va en T-42) `Ran 57 tests ... OK`: test_admin, test_backup_manifest (12), test_store_timeouts; `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 57}`.
 
 **Criterios de aceptación**
-- [ ] `backup` escribe `<copia>` y `<copia>.json` con los campos del manifiesto y `chmod 600`
-- [ ] `verify-backup` recalcula el sha256 y falla con `backup_checksum_mismatch` si se altera un byte (prueba)
-- [ ] Una copia sin manifiesto o con manifiesto ilegible falla con un error propio, sin traza con rutas sensibles
+- [x] `backup` escribe `<copia>` y `<copia>.json` con los campos del manifiesto y `chmod 600`
+- [x] `verify-backup` recalcula el sha256 y falla con `backup_checksum_mismatch` si se altera un byte (prueba)
+- [x] Una copia sin manifiesto o con manifiesto ilegible falla con un error propio, sin traza con rutas sensibles
 
 **Subtareas**
-- [ ] Escribir primero la prueba del byte alterado (rojo)
-- [ ] Añadir el manifiesto a `backup`
-- [ ] Implementar `verify-backup`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero la prueba del byte alterado (rojo)
+- [x] Añadir el manifiesto a `backup`
+- [x] Implementar `verify-backup`
+- [x] `usage-meter start/close` de la tarea
 
 **Notas**: Patrón: `admin.py:286-294` (`pg_dump --format=custom`, `chmod 600`), `:23-47` (`store_fingerprints`, `pg_environment`) y `:295-313` (`restore-check`). Fixtures en `tests/test_admin.py`.
+**Cierre**: `pg_dump --snapshot` y recuentos (`fingerprints`) de UN snapshot exportado; copia y manifiesto en directorio parcial 0700, la copia se renombra primero y el manifiesto el último (una copia sin manifiesto no es válida); SIGTERM limpia lo parcial. Mutantes en rojo (`test_backup_manifest`): sin comparar sha, sin tamaño, parcial no borrado, `encrypted` sin comprobar, `file` sin comprobar, sin manejador SIGTERM, sin chmod, manifiesto antes que la copia, enlace simbólico seguido, sin `--snapshot`. Medido: `reliable-operations/T-35` 0,52h. EOL: ficheros CRLF conservados (`config.py` es mixto: edición por bytes).
 
 ### T-36 — Cifrado `age` con destinatarios y `MEMORY_BACKUP_REQUIRE_ENCRYPTION`
 

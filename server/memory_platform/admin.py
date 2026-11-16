@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import hashlib
 
+from .backup import BackupError, create_backup, manifest_path, table_fingerprints, verify_backup
 from .chunking import chunk_text, embedding_text
 from .config import Settings, retention_windows
 from .store import Store
@@ -22,15 +23,8 @@ from .store_vectors import CURRENT_RESOURCE
 
 def store_fingerprints(store):
     """Include provenance, grants, jobs, versions and tombstones in restore QA."""
-    from psycopg import sql
-    result = {}
     with store.transaction() as connection:
-        tables = connection.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='memory' ORDER BY table_name").fetchall()
-        for row in tables:
-            values = connection.execute(sql.SQL('SELECT to_jsonb(t) AS value FROM memory.{} t').format(sql.Identifier(row['table_name']))).fetchall()
-            encoded = sorted(json.dumps(v['value'], sort_keys=True, ensure_ascii=False, default=str) for v in values)
-            result[row['table_name']] = {'rows': len(encoded), 'sha256': hashlib.sha256('\n'.join(encoded).encode('utf-8')).hexdigest()}
-    return result
+        return table_fingerprints(connection)
 
 
 @contextmanager
@@ -342,8 +336,10 @@ def main(argv=None):
     prune.add_argument('--table', action='append', choices=sorted(RETENTION_TABLES), help='Only this table (repeatable); default: every table that has a window')
     commands.add_parser('inspect')
     commands.add_parser('content-manifest')
-    backup = commands.add_parser('backup')
+    backup = commands.add_parser('backup', help='pg_dump to a new file with its manifest <file>.json (sha256, bytes, schema version, time, counts)')
     backup.add_argument('--output', required=True)
+    verify = commands.add_parser('verify-backup', help='Recompute the sha256 of a copy and compare it with its manifest (never decrypts)')
+    verify.add_argument('--backup', required=True)
     restore = commands.add_parser('restore-check')
     restore.add_argument('--backup', required=True)
     restore.add_argument('--target-dsn-file', required=True)
@@ -355,6 +351,14 @@ def main(argv=None):
             windows = retention_windows()
         except ValueError as error:
             parser.error(str(error))  # a clear message and nothing touched
+    if args.command == 'verify-backup':  # needs no database: it reads the copy and its manifest
+        try:
+            manifest = verify_backup(Path(args.backup))
+        except BackupError as error:
+            raise SystemExit(f'{error.code}: {error}') from None
+        print(json.dumps({'status': 'verified', 'path': str(Path(args.backup).resolve()), 'bytes': manifest['bytes'], 'sha256': manifest['sha256'],
+                          'encrypted': manifest['encrypted'], 'schema_version': manifest['schema_version'], 'created_at': manifest['created_at']}, sort_keys=True))
+        return
     settings = Settings.from_env()
     store = Store(settings.dsn, project_maps=settings.project_maps, embedding_enabled=True)
     if args.command == 'migrate':
@@ -384,13 +388,13 @@ def main(argv=None):
         print(json.dumps(content_manifest(store), sort_keys=True, default=str))
     elif args.command == 'backup':
         output = Path(args.output).resolve()
-        if output.exists():
+        if os.path.lexists(output) or os.path.lexists(manifest_path(output)):
             parser.error('Backup destination already exists; choose a new filename')
-        output.parent.mkdir(parents=True, exist_ok=True)
-        with pg_environment(settings.dsn) as environment:
-            subprocess.run(['pg_dump', '--dbname=service=memory', '--format=custom', '--no-owner', '--file', str(output)], env=environment, check=True, capture_output=True)
-        output.chmod(0o600)
-        print(json.dumps({'status': 'backed_up', 'path': str(output), 'bytes': output.stat().st_size}))
+        try:
+            with pg_environment(settings.dsn) as environment:
+                print(json.dumps(create_backup(store, output, environment=environment), sort_keys=True))
+        except BackupError as error:
+            raise SystemExit(f'{error.code}: {error}') from None
     elif args.command == 'restore-check':
         target = Path(args.target_dsn_file).read_text(encoding='utf-8').strip()
         if target == settings.dsn:
