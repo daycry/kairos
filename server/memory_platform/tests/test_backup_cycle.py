@@ -167,13 +167,30 @@ class LoopTests(unittest.TestCase):
 @unittest.skipUnless(shutil.which('rclone'), 'rclone is required (the test image installs it)')
 class RcloneDestinationTests(unittest.TestCase):
     def setUp(self):
-        self.enterContext(patch.dict(os.environ, {'RCLONE_CONFIG': ''}))
+        self.enterContext(patch.dict(os.environ, {'RCLONE_CONFIG': '', 'RCLONE_LOG_FILE': '', 'RCLONE_LOG_LEVEL': ''}))
 
     def configure(self, root):
         """A remote of type `local` written here, in a configuration file of the test: no cloud service and no credential."""
         configuration = root / 'rclone.conf'
         configuration.write_text('[vault]\ntype = local\n', encoding='utf-8')
         os.environ['RCLONE_CONFIG'] = str(configuration)
+        self.log = root / 'rclone.log'  # what rclone says stays in the test's own directory, never in the product
+        os.environ.update(RCLONE_LOG_FILE=str(self.log), RCLONE_LOG_LEVEL='ERROR')
+
+    def tail(self):
+        return self.log.read_text(encoding='utf-8', errors='replace')[-800:] if self.log.exists() else ''
+
+    def works_for(self, directory):
+        """Positive control: this rclone lists an existing directory of the configured remote, so a failure below is the destination's and not a broken rclone."""
+        try:
+            listing = offsite.parse_destination(f'rclone:vault:{Path(directory).as_posix()}').names()
+        except offsite.OffsiteError:
+            probe = subprocess.run(['rclone', 'lsf', '--files-only', f'vault:{Path(directory).as_posix()}'], capture_output=True, text=True)
+            umask = os.umask(0)
+            os.umask(umask)
+            self.fail(f'rclone cannot list {directory} here: exit {probe.returncode}, stderr {probe.stderr[-500:]!r}, config {os.environ.get("RCLONE_CONFIG")} exists={Path(os.environ["RCLONE_CONFIG"]).exists()} '
+                      f'cwd={os.getcwd()} which={shutil.which("rclone")} umask={oct(umask)} environment keys={sorted(k for k in os.environ if k.startswith(("RCLONE", "HOME", "TMP", "XDG")))}')
+        self.assertIsInstance(listing, set, self.tail())
 
     def test_a_local_remote_receives_the_copy_verifies_it_and_applies_the_retention(self):
         with workspace() as root:
@@ -184,7 +201,10 @@ class RcloneDestinationTests(unittest.TestCase):
             for day in (1, 2, 3):
                 seeded_copy(remote, day)
             destination = offsite.parse_destination(f'rclone:vault:{remote.as_posix()}')
-            report = cycle(local, destination, remote_keep=2)
+            try:
+                report = cycle(local, destination, remote_keep=2)
+            except offsite.CycleError as error:
+                self.fail(f'{error}; rclone said: {self.tail()}')
             copy = Path(report['path'])
             kept = [n for n in remote_names(remote) if not n.endswith('.json')]
             self.assertEqual(len(kept), 2)
@@ -201,6 +221,7 @@ class RcloneDestinationTests(unittest.TestCase):
             local = root / 'local'
             local.mkdir()
             seeded_copy(local, 5)
+            self.works_for(root)
             destination = offsite.parse_destination(f'rclone:vault:{(root / "absent").as_posix()}')
             with self.assertRaises(offsite.CycleError) as raised:
                 cycle(local, destination)
@@ -213,6 +234,7 @@ class RcloneDestinationTests(unittest.TestCase):
             self.configure(root)
             local = root / 'local'
             local.mkdir()
+            self.works_for(root)
             with self.assertRaises(offsite.CycleError) as raised:
                 cycle(local, offsite.parse_destination('rclone:nosuchremote-s3cr3t:bucket'))
             self.assertEqual(raised.exception.code, 'backup_offsite_failed')

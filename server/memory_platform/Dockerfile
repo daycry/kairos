@@ -19,8 +19,8 @@ USER root
 # Pinned to the version of the Debian release the python base image is built on (trixie: 1.2.1); the `test` target pins bookworm's own build.
 # `rclone` (C-01, P-02): the external destination `rclone:<remote>:<path>` of `backup-cycle`; trixie's package, pinned by version (its remotes are the operator's, mounted at run time).
 ARG AGE_VERSION=1.2.1-1+b5
-ARG RCLONE_VERSION=1.60.1+dfsg-4
-RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client age=${AGE_VERSION} rclone=${RCLONE_VERSION} \
+ARG DEBIAN_RCLONE_VERSION=1.60.1+dfsg-4
+RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client age=${AGE_VERSION} rclone=${DEBIAN_RCLONE_VERSION} \
     && rm -rf /var/lib/apt/lists/*
 USER 10001:10001
 ENTRYPOINT ["python", "-m", "memory_platform.admin"]
@@ -41,8 +41,8 @@ USER root
 # `age` and `age-keygen` for the encrypted-copy tests (the test generates its own key pair in a temporary directory); bookworm's build, pinned.
 ARG AGE_VERSION=1.1.1-1+b3
 # `rclone` for the `rclone:` destination tests (a remote of type `local` written by the test); bookworm's build, pinned. The suite requires it present (0 skipped).
-ARG RCLONE_VERSION=1.60.1+dfsg-2+b5
-RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv age=${AGE_VERSION} rclone=${RCLONE_VERSION} \
+ARG DEBIAN_RCLONE_VERSION=1.60.1+dfsg-2+b5
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv age=${AGE_VERSION} rclone=${DEBIAN_RCLONE_VERSION} \
     && rm -rf /var/lib/apt/lists/*
 RUN python3 -m venv /opt/memory-venv
 ENV PATH=/opt/memory-venv/bin:$PATH PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1

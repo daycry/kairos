@@ -375,7 +375,7 @@ El workflow `.github/workflows/ci.yml` se ejecuta en cada pull request, en cada 
 
 | Trabajo | Qué comprueba | Comando local equivalente | Tiempo en CI | Tiempo local |
 |---|---|---|---|---|
-| `server` | Suite completa del backend (1154 pruebas) contra PostgreSQL aislado | `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:ci .` | 2 min 7 s | 8 min 41 s (primera construcción) |
+| `server` | Suite completa del backend (1184 pruebas) contra PostgreSQL aislado | `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:ci .` | 2 min 7 s | 8 min 41 s (primera construcción) |
 | `retrieval-eval` | Puerta de calidad con embeddings simulados: recall@5 ≥ 0,80 y MRR ≥ 0,60 | `docker build --target retrieval-eval -f server/memory_platform/Dockerfile -t kairos-eval:ci .` | 2 min 42 s | 1 min 58 s |
 | `client` | Pruebas y comprobación de publicación del instalador (sin publicar) | en `client`: `npm test` y `npm run release:check` | 30 s | 2 min 12 s (solo `npm test`) |
 | `web` | `typecheck`, pruebas y build del portal, y la etapa `test` de la imagen web | en `web`: `npm ci`, `npm run typecheck`, `npm test`, `npm run build`; y `docker build --target test -f web/Dockerfile -t kairos-web-test:ci .` | 43 s | no medido |

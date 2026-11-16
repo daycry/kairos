@@ -98,6 +98,7 @@ class BackupServiceTests(unittest.TestCase):
         operator = text.split('FROM api AS operator', 1)[1].split('FROM api AS worker', 1)[0]
         test = text.split('FROM postgres-pgvector AS test', 1)[1].split('FROM test AS live-probe', 1)[0]
         for stage in (operator, test):
-            self.assertRegex(stage, r'ARG RCLONE_VERSION=\d[\w.+~:-]*')
-            self.assertIn('rclone=${RCLONE_VERSION}', stage)
+            self.assertRegex(stage, r'ARG DEBIAN_RCLONE_VERSION=\d[\w.+~:-]*')
+            self.assertIn('rclone=${DEBIAN_RCLONE_VERSION}', stage)
+            self.assertNotRegex(stage, r'(?m)^(ARG|ENV) RCLONE_', 'rclone reads every RCLONE_* variable of its environment as a flag (RCLONE_VERSION=1.60.1 made `rclone lsf` exit 1: it is --version): a build ARG is an environment variable of the RUN steps, the tests included')
         self.assertNotRegex(operator, r'(?i)age-keygen|identity|COPY .*\.key', 'the image of the service carries `age` to encrypt and no way to decrypt')
