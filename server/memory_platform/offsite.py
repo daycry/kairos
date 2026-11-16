@@ -4,6 +4,10 @@ Destinations: `dir:<absolute path>` (a mounted directory) and `rclone:<remote>:<
 operations (`names`, `put`, `fetch`, `digest`, `delete`) and fail with `OffsiteError`, whose text never carries what the destination or `rclone` printed: it could hold
 a URL, a token or a path.
 
+Nothing leaves the server in the clear: only copies whose manifest says `encrypted` AND whose file starts with the `age` header are ever sent; a plain copy that matches the
+name of this tool (the `kairos-before-*` of a deployment, one made by hand) is left where it is and reported as `skipped_plain`. The destination should belong to ONE installation:
+the retention deletes by the manifests it finds there.
+
 The order is the safety. A copy goes up first and its manifest last (a remote copy without manifest is not complete and is sent again); the sha256 of what the destination
 now holds is read back and compared with the manifest BEFORE the manifest goes up and before anything is deleted anywhere. A copy whose bytes differ at the destination is
 never completed with its manifest and nothing is deleted, locally or remotely. When the destination cannot be reached nothing local is deleted either (a copy that never
@@ -23,7 +27,7 @@ import sys
 import tempfile
 import time
 
-from .backup import (BackupError, COPY_NAME, FUTURE_TOLERANCE_SECONDS, HASH_BLOCK, manifest_path, prune_backups, read_manifest, sha256_file, terminate_as_exit, verify_backup,
+from .backup import (AGE_MAGIC, BackupError, COPY_NAME, FUTURE_TOLERANCE_SECONDS, HASH_BLOCK, manifest_path, prune_backups, read_manifest, sha256_file, terminate_as_exit, verify_backup,
                      write_atomic)
 from . import observability
 
@@ -42,7 +46,11 @@ class OffsiteError(Exception):
 
 
 class CycleError(BackupError):
-    """A `backup-cycle` that stopped after the local copy existed: `report` says what was done (and is printed by the command)."""
+    """A `backup-cycle` that stopped after the local copy existed: `report` says what was done (and is printed by the command).
+
+    Its metric is already written (0 when the copy did not reach the destination, 1 when only the local retention failed): `offsite_recorded` tells the caller not to write it again.
+    """
+    offsite_recorded = True
 
     def __init__(self, code, message, report):
         super().__init__(code, message)
@@ -196,10 +204,18 @@ def cycle_name(now=None):
     return f'kairos-{CYCLE_KIND}-{(now or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%S%fZ")}.dump'
 
 
+def has_age_header(path):
+    with open(path, 'rb') as handle:
+        return handle.read(len(AGE_MAGIC)).startswith(AGE_MAGIC)
+
+
 def local_copies(directory, remote_keep, now):
-    """The complete, readable copies of this tool in `directory` (newest first, at most `remote_keep`), as (created_at, name, manifest)."""
+    """The complete, readable ENCRYPTED copies of this tool in `directory` (newest first, at most `remote_keep`), as (created_at, name, manifest), and the names of the plain ones.
+
+    A copy is encrypted only when its manifest says `encrypted` and the file starts with the `age` header; anything else with a valid manifest is plain and is never a candidate.
+    """
     limit = (now + timedelta(seconds=FUTURE_TOLERANCE_SECONDS)).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
-    found = []
+    found, plain = [], []
     with os.scandir(directory) as scan:
         names = sorted(entry.name for entry in scan if COPY_NAME.fullmatch(entry.name))
     for name in names:
@@ -208,45 +224,66 @@ def local_copies(directory, remote_keep, now):
             if path.is_symlink() or not path.is_file():
                 continue
             manifest = read_manifest(path)
-        except BackupError:
+            encrypted = manifest['encrypted'] is True and has_age_header(path)
+        except (BackupError, OSError):
             continue
         if manifest['created_at'] <= limit:
-            found.append((manifest['created_at'], name, manifest))
+            if encrypted:
+                found.append((manifest['created_at'], name, manifest))
+            else:
+                plain.append(name)
     found.sort(key=lambda item: item[:2], reverse=True)
-    return found[:remote_keep]
+    return found[:remote_keep], sorted(plain)
+
+
+def remote_is_complete(destination, name, manifest, scratch):
+    """The destination holds a manifest of `name` that parses, is this tool's and records the sha256 and size of the local copy (a manifest cut short by a failed transfer does not)."""
+    target = Path(scratch) / (name + '.json')
+    target.unlink(missing_ok=True)
+    try:
+        destination.fetch(name + '.json', scratch)
+        remote = read_manifest(Path(scratch) / name)
+    except (OffsiteError, BackupError, OSError):
+        return False
+    return remote['sha256'] == manifest['sha256'] and remote['bytes'] == manifest['bytes']
 
 
 def upload(destination, directory, current, remote_keep, recipients_file, now):
-    """Send `current` and every other recent local copy the destination lacks (newest first); each one is read back and compared with its manifest before its manifest goes up.
+    """Send `current` and every other recent ENCRYPTED local copy the destination lacks (newest first); each one is read back and compared with its manifest before its manifest goes up.
 
-    Returns {uploaded, skipped}. `current` was verified by the caller. An older copy that no longer verifies locally is skipped (and said so), never sent. A copy that differs at the
-    destination raises `backup_checksum_mismatch` with its manifest NOT sent and nothing deleted.
+    Returns {uploaded, skipped, skipped_plain}. `current` was verified by the caller. An older copy that no longer verifies locally is skipped (and said so), never sent; a plain copy is
+    never sent (`skipped_plain`). A copy already at the destination is left alone only when its remote manifest parses and records the sha256 and size of the local copy; otherwise copy and
+    manifest are sent again. A copy that differs at the destination raises `backup_checksum_mismatch` with its manifest NOT sent and nothing deleted.
     """
     remote = destination.names()
     uploaded, skipped = [], []
-    for created_at, name, manifest in local_copies(directory, remote_keep, now):
-        if name in remote and name + '.json' in remote:
-            continue
-        path = Path(directory) / name
-        if name != current:
-            try:
-                verify_backup(path, recipients_file)
-            except BackupError as error:
-                skipped.append({'name': name, 'code': error.code})
+    copies, plain = local_copies(directory, remote_keep, now)
+    with tempfile.TemporaryDirectory(prefix='kairos-offsite-') as scratch:
+        for created_at, name, manifest in copies:
+            if name in remote and name + '.json' in remote and remote_is_complete(destination, name, manifest, scratch):
                 continue
-        destination.put(path, name)
-        sha, size = destination.digest(name)
-        if sha != manifest['sha256'] or size != manifest['bytes']:
-            raise BackupError('backup_checksum_mismatch', f'The copy {name} differs at the {destination.kind} destination from its manifest; its manifest was not sent and nothing was deleted')
-        destination.put(manifest_path(path), name + '.json')
-        uploaded.append(name)
-    return {'uploaded': uploaded, 'skipped': skipped}
+            path = Path(directory) / name
+            if name != current:
+                try:
+                    verify_backup(path, recipients_file)
+                except BackupError as error:
+                    skipped.append({'name': name, 'code': error.code})
+                    continue
+            destination.put(path, name)
+            sha, size = destination.digest(name)
+            if sha != manifest['sha256'] or size != manifest['bytes']:
+                raise BackupError('backup_checksum_mismatch', f'The copy {name} differs at the {destination.kind} destination from its manifest; its manifest was not sent and nothing was deleted')
+            destination.put(manifest_path(path), name + '.json')
+            uploaded.append(name)
+    return {'uploaded': uploaded, 'skipped': skipped, 'skipped_plain': plain}
 
 
 def prune_remote(destination, keep, protect, now):
     """Delete from the destination the copies beyond the `keep` newest (by the `created_at` of their manifests); `protect` (verified at the destination a moment ago) is always kept.
 
-    Only names of this tool with a manifest that reads are candidates; anything else is left alone. Oldest first, the copy before its manifest. Returns {kept, deleted, skipped}.
+    Only names of this tool with a manifest that reads are candidates; anything else is left alone. A copy NEWER than `protect` is never deleted (another installation or a concurrent
+    cycle sent it: the destination is meant to be exclusive, but a newer copy is not ours to judge) and counts among the kept. Oldest first, the copy before its manifest.
+    Returns {kept, deleted, skipped}.
     """
     limit = (now + timedelta(seconds=FUTURE_TOLERANCE_SECONDS)).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
     names = destination.names()
@@ -265,10 +302,11 @@ def prune_remote(destination, keep, protect, now):
     candidates.sort(reverse=True)
     if protect not in {name for created_at, name in candidates}:
         raise BackupError('backup_offsite_failed', f'The copy just sent is not complete at the {destination.kind} destination; nothing was deleted there')
-    kept = [item for item in candidates if item[1] == protect]
+    protected = next(item for item in candidates if item[1] == protect)
+    kept = [item for item in candidates if item >= protected]  # the protected copy and everything newer than it
     doomed = []
     for item in candidates:
-        if item in kept:
+        if item >= protected:
             continue
         if len(kept) < keep:
             kept.append(item)
@@ -285,9 +323,18 @@ def prune_remote(destination, keep, protect, now):
 def write_metrics(directory):
     """The two offsite series as a file next to the copies; a failure to write it is not a failure of the cycle."""
     try:
+        Path(directory).mkdir(parents=True, exist_ok=True)
         write_atomic(Path(directory) / METRICS_NAME, observability.render_offsite_metrics(), 0o644)
     except OSError:
         pass
+
+
+def record_failure(directory, error=None):
+    """A cycle that failed at any stage: `kairos_backup_offsite_success` 0, the time of the attempt, the `.prom` file rewritten. `error` is marked so that nobody records it twice."""
+    observability.record_offsite(False)
+    write_metrics(directory)
+    if error is not None:
+        error.offsite_recorded = True
 
 
 def run_cycle(make_copy, directory, destination, *, keep, remote_keep, recipients_file=None, now=None):
@@ -298,12 +345,17 @@ def run_cycle(make_copy, directory, destination, *, keep, remote_keep, recipient
     """
     directory = Path(directory)
     now = now or datetime.now(timezone.utc)
-    if isinstance(destination, DirDestination) and destination.root.resolve() == directory.resolve():
-        raise BackupError('backup_destination_invalid', 'MEMORY_BACKUP_DESTINATION is the directory of the local copies; the external copy must be somewhere else')
     with terminate_as_exit():
-        report = make_copy(directory / cycle_name(now))
-        copy = Path(report['path'])
-        verify_backup(copy, recipients_file)
+        try:
+            if isinstance(destination, DirDestination) and destination.root.resolve() == directory.resolve():
+                raise BackupError('backup_destination_invalid', 'MEMORY_BACKUP_DESTINATION is the directory of the local copies; the external copy must be somewhere else')
+            report = make_copy(directory / cycle_name(now))
+            copy = Path(report['path'])
+            if verify_backup(copy, recipients_file)['encrypted'] is not True:
+                raise BackupError('backup_encryption_required', f'The copy {copy.name} is not encrypted; the external destination only receives encrypted copies and nothing was sent')
+        except Exception as error:  # the cycle failed before the offsite stage (the database, pg_dump, the encryption, the local check): the metric says so too
+            record_failure(directory, error)
+            raise
         if isinstance(destination, DirDestination):
             destination.sweep()
         try:
@@ -312,11 +364,15 @@ def run_cycle(make_copy, directory, destination, *, keep, remote_keep, recipient
             offsite.update(destination=destination.kind, kept=remote['kept'], deleted=remote['deleted'], remote_skipped=remote['skipped'])
         except (OffsiteError, BackupError) as error:
             code = error.code if isinstance(error, BackupError) else 'backup_offsite_failed'
-            observability.record_offsite(False)
             observability.log_event('backup_offsite_failed', 'error', destination=destination.kind, code=code)
-            write_metrics(directory)
+            record_failure(directory)
             report['offsite'] = {'destination': destination.kind, 'status': 'failed', 'code': code}
             raise CycleError(code, str(error) if isinstance(error, BackupError) else f'the {destination.kind} destination failed ({error}); the copy is kept locally and the next cycle sends it again', report) from None
+        except Exception as error:  # anything else of the offsite stage (the local listing): the copy did not leave, the metric says so
+            record_failure(directory, error)
+            raise
+        if offsite['skipped_plain']:
+            observability.log_event('backup_offsite_plain_skipped', 'warning', destination=destination.kind, count=len(offsite['skipped_plain']))
         observability.record_offsite(True)
         write_metrics(directory)
         report['offsite'] = dict(offsite, status='verified')
@@ -343,6 +399,7 @@ def run_loop(cycle, interval, *, sleep=None, cycles=None, out=print):
             out(json.dumps(error.report, sort_keys=True))
             print(f'{error.code}: {error}', file=sys.stderr, flush=True)
         except BackupError as error:
+            observability.log_event('backup_cycle_failed', 'error', exc_type=type(error).__name__, code=error.code)
             print(f'{error.code}: {error}', file=sys.stderr, flush=True)
         except Exception as error:
             observability.log_failure('backup_cycle_failed', error)

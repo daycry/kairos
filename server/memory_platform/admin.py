@@ -14,7 +14,7 @@ from . import observability
 from .backup import BackupError, check_keep, create_backup, encrypted_name, encryption_plan, manifest_path, prune_backups, table_fingerprints, terminate_as_exit, verify_backup
 from .chunking import chunk_text, embedding_text
 from .config import (Settings, backup_destination, backup_interval_seconds, backup_keep, backup_recipients_file, backup_remote_keep, backup_require_encryption, retention_windows)
-from .offsite import CycleError, parse_destination, run_cycle, run_loop
+from .offsite import CycleError, parse_destination, record_failure, run_cycle, run_loop
 from .store import Store
 from .store_vectors import CURRENT_RESOURCE
 
@@ -376,7 +376,8 @@ def main(argv=None):
             interval = setting(backup_interval_seconds, 'backup_config_invalid')
             require_encryption = setting(backup_require_encryption, 'backup_config_invalid')
             recipients_file = backup_recipients_file()
-            encryption_plan(recipients_file, require_encryption)  # a copy that must be encrypted and cannot be fails here, in the clear it is never written
+            if encryption_plan(recipients_file, require_encryption) is None:  # whatever MEMORY_BACKUP_REQUIRE_ENCRYPTION says: an external copy is never sent in the clear
+                raise BackupError('backup_encryption_required', 'backup-cycle sends the copies to an external destination and only sends encrypted ones: set MEMORY_BACKUP_RECIPIENTS_FILE (public recipients); nothing was written or sent')
         except BackupError as error:
             raise SystemExit(f'{error.code}: {error}') from None
         if args.prune_tables:
@@ -465,7 +466,17 @@ def main(argv=None):
         output_dir = Path(args.output_dir).resolve()
 
         def one_cycle():
+            try:
+                return cycle_body()
+            except Exception as error:  # a failure before `run_cycle` took over (the recipients, the service file): the metric of the cycle says so too
+                if not getattr(error, 'offsite_recorded', False):
+                    record_failure(output_dir)
+                raise
+
+        def cycle_body():
             recipients = encryption_plan(recipients_file, require_encryption)  # each cycle: a rotated recipients file is picked up
+            if recipients is None:
+                raise BackupError('backup_encryption_required', 'backup-cycle only sends encrypted copies and MEMORY_BACKUP_RECIPIENTS_FILE lists no recipients')
             tables = {}
 
             def end_with_tables():

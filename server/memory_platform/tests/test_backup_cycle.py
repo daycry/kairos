@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
+import time
 import unittest
 from unittest.mock import Mock, patch
 
@@ -14,24 +16,41 @@ from memory_platform import admin, backup, config, observability, offsite
 from memory_platform.admin import main
 from memory_platform.tests.test_admin import workspace
 from memory_platform.tests.test_backup_manifest import PAYLOAD
-from memory_platform.tests.test_backup_prune import copy as seeded_copy, names, stamp
+from memory_platform.tests.test_backup_prune import copy as plain_copy, names, stamp
 from datetime import datetime, timezone
 
 NOW = datetime(2026, 11, 20, tzinfo=timezone.utc)
+AGE_PAYLOAD = b'age-encryption.org/v1\n' + bytes(range(256)) * 2  # what an encrypted copy starts with: the cycle sends nothing else
 
 
-def make_copy_factory(payload=PAYLOAD, day=19):
-    """A `make_copy` that writes a complete copy at the name the cycle chose, the way `create_backup` leaves one."""
+def seeded_copy(root, day, **options):
+    """A valid ENCRYPTED copy of day `day` (what the cycle may send); `plain_copy` is the one it must never send."""
+    options.setdefault('encrypted', True)
+    return plain_copy(root, day, **options)
+
+
+def write_copy_at(output, payload, encrypted, recipients=('a' * 64,), created=NOW):
+    """The copy and its manifest at `output` (a `.age` name when encrypted), the way `create_backup` leaves them. Returns the report."""
     import hashlib
+    output = output.with_name(output.name + '.age') if encrypted and not output.name.endswith('.age') else output
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(payload)
+    manifest = {'format': 2, 'file': output.name, 'sha256': hashlib.sha256(payload).hexdigest(), 'bytes': len(payload), 'content_sha256': hashlib.sha256(payload).hexdigest(),
+                'content_bytes': len(payload), 'schema_version': 12, 'created_at': created.strftime('%Y-%m-%dT%H:%M:%S.%fZ'), 'encrypted': encrypted, 'fingerprints': {}}
+    if encrypted:
+        manifest['recipients'] = list(recipients)
+    Path(str(output) + '.json').write_text(json.dumps(manifest), encoding='utf-8')
+    return {'status': 'backed_up', 'path': str(output), 'bytes': len(payload), 'sha256': manifest['sha256'], 'encrypted': encrypted}
+
+
+def make_copy_factory(payload=None, encrypted=True):
+    """A `make_copy` that writes a complete copy at the name the cycle chose, the way `create_backup` leaves one (encrypted, as the cycle requires, unless asked)."""
     calls = []
+    body = payload or (AGE_PAYLOAD if encrypted else PAYLOAD)
 
     def make_copy(output):
         calls.append(output)
-        output.write_bytes(payload)
-        manifest = {'format': 2, 'file': output.name, 'sha256': hashlib.sha256(payload).hexdigest(), 'bytes': len(payload), 'content_sha256': hashlib.sha256(payload).hexdigest(),
-                    'content_bytes': len(payload), 'schema_version': 12, 'created_at': NOW.strftime('%Y-%m-%dT%H:%M:%S.%fZ'), 'encrypted': False, 'fingerprints': {}}
-        Path(str(output) + '.json').write_text(json.dumps(manifest), encoding='utf-8')
-        return {'status': 'backed_up', 'path': str(output), 'bytes': len(payload), 'sha256': manifest['sha256'], 'encrypted': False}
+        return write_copy_at(output, body, encrypted)
     make_copy.calls = calls
     return make_copy
 
@@ -79,7 +98,7 @@ class DirDestinationTests(unittest.TestCase):
             self.assertIn(Path(report['path']).name, kept_remote)
             self.assertEqual(report['offsite']['kept'], 3)
             self.assertEqual(sorted(p.name for p in remote.iterdir() if p.name.endswith('.json')), sorted(n + '.json' for n in kept_remote), 'no manifest outlives its copy')
-            self.assertEqual(len([n for n in names(local) if n.endswith('.dump')]), 2, 'the local retention keeps the newest 2')
+            self.assertEqual(len([n for n in names(local) if n.endswith('.dump.age')]), 2, 'the local retention keeps the newest 2')
             self.assertEqual(report['prune']['keep'], 2)
 
     def test_the_retention_default_of_the_destination_is_thirty_and_it_is_validated(self):
@@ -126,6 +145,90 @@ class DirDestinationTests(unittest.TestCase):
             offsite.DirDestination(root).sweep()
             self.assertEqual(sorted(p.name for p in root.iterdir()), sorted([fresh.name, other.name]))
 
+    def test_a_plain_copy_of_the_directory_never_reaches_the_destination_and_is_reported(self):
+        """CWE-311: the `kairos-before-*` that every deployment writes without recipients (or a copy made by hand) must not leave the server in the clear."""
+        with workspace() as root:
+            local, remote = root / 'local', root / 'remote'
+            local.mkdir()
+            remote.mkdir()
+            plain = plain_copy(local, 6, encrypted=False)
+            sealed = seeded_copy(local, 5)
+            with self.assertLogs('kairos', level='WARNING') as logged:
+                report = cycle(local, offsite.DirDestination(remote))
+            sent = remote_names(remote)
+            self.assertNotIn(plain.name, sent, 'the plain copy stays where it is')
+            self.assertNotIn(plain.name + '.json', sent)
+            self.assertEqual([n for n in sent if not n.endswith('.json')], sorted([sealed.name, Path(report['path']).name]), 'the encrypted copies do go')
+            for name in sent:
+                if not name.endswith('.json'):
+                    self.assertTrue((remote / name).read_bytes().startswith(backup.AGE_MAGIC), name)
+            self.assertEqual(report['offsite']['skipped_plain'], [plain.name])
+            self.assertTrue(plain.exists(), 'and it is not deleted locally either')
+            self.assertEqual((logged.records[0].kairos_event, logged.records[0].kairos_fields), ('backup_offsite_plain_skipped', {'destination': 'dir', 'count': 1}))
+            self.assertEqual(observability.OFFSITE_REGISTRY.get_sample_value('kairos_backup_offsite_success'), 1, 'a plain copy that stays home is not a failure of the cycle')
+
+    def test_a_manifest_that_says_encrypted_over_a_file_that_is_not_age_is_not_sent(self):
+        import hashlib
+        with workspace() as root:
+            local, remote = root / 'local', root / 'remote'
+            local.mkdir()
+            remote.mkdir()
+            liar = seeded_copy(local, 6)
+            liar.write_bytes(PAYLOAD)  # the manifest still claims `encrypted`, the bytes are a plain dump
+            manifest = json.loads(Path(str(liar) + '.json').read_text(encoding='utf-8'))
+            manifest.update(sha256=hashlib.sha256(PAYLOAD).hexdigest(), bytes=len(PAYLOAD))
+            Path(str(liar) + '.json').write_text(json.dumps(manifest), encoding='utf-8')
+            report = cycle(local, offsite.DirDestination(remote))
+            self.assertNotIn(liar.name, remote_names(remote))
+            self.assertEqual(report['offsite']['skipped_plain'], [liar.name])
+
+    def test_a_plain_copy_made_by_the_cycle_itself_is_refused_before_anything_is_sent(self):
+        with workspace() as root:
+            local, remote = root / 'local', root / 'remote'
+            local.mkdir()
+            remote.mkdir()
+            with self.assertRaises(backup.BackupError) as raised:
+                cycle(local, offsite.DirDestination(remote), make_copy=make_copy_factory(encrypted=False))
+            self.assertEqual(raised.exception.code, 'backup_encryption_required')
+            self.assertEqual(remote_names(remote), [])
+            self.assertEqual(observability.OFFSITE_REGISTRY.get_sample_value('kairos_backup_offsite_success'), 0)
+
+    def test_a_manifest_cut_short_at_the_destination_is_sent_again_with_its_copy(self):
+        """rclone 1.60 writes over the final name: a transfer that stopped leaves a truncated manifest that a cycle used to take for a complete copy."""
+        with workspace() as root:
+            local, remote = root / 'local', root / 'remote'
+            local.mkdir()
+            remote.mkdir()
+            first = cycle(local, offsite.DirDestination(remote))
+            name = Path(first['path']).name
+            good = (remote / (name + '.json')).read_bytes()
+            damages = {'truncated': good[:40], 'empty': b'', 'wrong sha256': good.replace(first['sha256'].encode(), b'0' * 64), 'another file': good.replace(name.encode(), b'kairos-cycle-19990101T000000Z.dump.age')}
+            later = NOW
+            for what, damaged in damages.items():
+                self.assertNotEqual(damaged, good, what)
+                (remote / (name + '.json')).write_bytes(damaged)
+                (remote / name).write_bytes(b'stale bytes ' + what.encode())  # the copy is there too, but not as it should be
+                later = later.replace(day=later.day + 1)
+                second = cycle(local, offsite.DirDestination(remote), now=later)
+                self.assertIn(name, second['offsite']['uploaded'], what)
+                self.assertEqual((remote / (name + '.json')).read_bytes(), good, what)
+                self.assertEqual((remote / name).read_bytes(), (local / name).read_bytes(), what)
+            self.assertNotIn(name, cycle(local, offsite.DirDestination(remote), now=later.replace(day=later.day + 1))['offsite']['uploaded'], 'a complete copy is left alone')
+
+    def test_the_retention_of_the_destination_never_deletes_a_copy_newer_than_the_protected_one(self):
+        """Two cycles at once, or a destination shared with another installation, with REMOTE_KEEP=1: the newer copy of the other is not ours to delete."""
+        with workspace() as root:
+            remote = root / 'remote'
+            remote.mkdir()
+            for day in (1, 2, 3, 4):
+                seeded_copy(remote, day)
+            protected = f'kairos-before-{stamp(2)}.dump.age'
+            result = offsite.prune_remote(offsite.DirDestination(remote), 1, protected, NOW)
+            self.assertEqual(result['deleted'], [f'kairos-before-{stamp(1)}.dump.age'])
+            self.assertEqual(sorted(p.name for p in remote.iterdir() if p.name.endswith('.age')), [f'kairos-before-{stamp(d)}.dump.age' for d in (2, 3, 4)])
+            self.assertEqual(result['kept'], 3, 'the protected copy and the two newer ones')
+            self.assertEqual(len([p for p in remote.iterdir() if p.name.endswith('.json')]), 3, 'no manifest outlives its copy and none is lost')
+
     def test_a_second_cycle_sends_only_the_new_copy(self):
         with workspace() as root:
             local, remote = root / 'local', root / 'remote'
@@ -149,13 +252,22 @@ class LoopTests(unittest.TestCase):
                 raise result
             return result
         stderr = io.StringIO()
-        with contextlib.redirect_stderr(stderr):
+        with contextlib.redirect_stderr(stderr), self.assertLogs('kairos', level='ERROR') as logged:
             offsite.run_loop(one, 90, sleep=sleeps.append, cycles=3, out=outputs.append)
+        self.assertEqual([(r.kairos_event, r.kairos_fields) for r in logged.records], [('backup_cycle_failed', {'exc_type': 'RuntimeError'})], 'the structured event carries the type, never the message')
+        self.assertNotIn('secret-dsn', ' '.join(observability.JsonFormatter().format(r) for r in logged.records))
         self.assertEqual(sleeps, [90, 90], 'a sleep between cycles, none after the last')
         self.assertEqual(len(outputs), 2)
         self.assertIn('backup_offsite_failed: down', stderr.getvalue())
         self.assertIn('RuntimeError', stderr.getvalue())
         self.assertNotIn('secret-dsn', stderr.getvalue(), 'the message of an unexpected error is never printed')
+
+    def test_a_backup_error_of_a_cycle_is_logged_with_its_code(self):
+        def one():
+            raise backup.BackupError('backup_dump_unavailable', 'the pg_dump program could not be run')
+        with contextlib.redirect_stderr(io.StringIO()), self.assertLogs('kairos', level='ERROR') as logged:
+            offsite.run_loop(one, 1, sleep=lambda s: None, cycles=1, out=lambda s: None)
+        self.assertEqual([(r.kairos_event, r.kairos_fields) for r in logged.records], [('backup_cycle_failed', {'exc_type': 'BackupError', 'code': 'backup_dump_unavailable'})])
 
     def test_stop_signals_end_the_loop(self):
         def stop():
@@ -242,23 +354,29 @@ class RcloneDestinationTests(unittest.TestCase):
 
 
 class CommandTests(unittest.TestCase):
-    """The real command line over a real database (the dump is a double: the cycle's own steps are what is under test)."""
+    """The real command line over a real database (the dump and `age` are doubles: the cycle's own steps are what is under test; the real pair is the rehearsal's and test_backup_encryption's)."""
 
     def setUp(self):
         from memory_platform.tests.test_store import create_core
         self.store, self.actor, self.project = create_core()
-        self.environ = {'MEMORY_DSN': self.store.dsn, 'MEMORY_DSN_FILE': '', 'MEMORY_BACKUP_RECIPIENTS_FILE': '', 'MEMORY_BACKUP_REQUIRE_ENCRYPTION': '0', 'MEMORY_BACKUP_KEEP': '',
+        folder = Path(tempfile.mkdtemp(prefix='kairos-cycle-recipients-'))
+        self.addCleanup(shutil.rmtree, folder, True)
+        self.recipients = folder / 'recipients.txt'
+        self.recipients.write_text('# public recipient\nage1' + 'q' * 58 + '\n', encoding='utf-8')
+        self.environ = {'MEMORY_DSN': self.store.dsn, 'MEMORY_DSN_FILE': '', 'MEMORY_BACKUP_RECIPIENTS_FILE': str(self.recipients), 'MEMORY_BACKUP_REQUIRE_ENCRYPTION': '0', 'MEMORY_BACKUP_KEEP': '',
                         'MEMORY_BACKUP_DESTINATION': '', 'MEMORY_BACKUP_REMOTE_KEEP': '', 'MEMORY_BACKUP_INTERVAL': ''}
+        self.created = []
 
-        def fake_dump(command, **kwargs):
-            Path(command[command.index('--file') + 1]).write_bytes(PAYLOAD)
-            return Mock(returncode=0)
-        self.fake_dump = fake_dump
+        def fake_create(store, output, *, environment, recipients=None):
+            self.created.append((output, recipients))
+            return write_copy_at(output, AGE_PAYLOAD if recipients else PAYLOAD, bool(recipients), backup.recipient_digests(recipients or []), datetime.now(timezone.utc))
+        self.fake_create = fake_create
 
     def run_command(self, *argv, **environ):
         output, errors = io.StringIO(), io.StringIO()
         failure = None
-        with patch.dict(os.environ, dict(self.environ, **environ)), patch.object(admin.subprocess, 'run', self.fake_dump), contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+        with (patch.dict(os.environ, dict(self.environ, **environ)), patch.object(admin, 'create_backup', self.fake_create), patch.object(backup.shutil, 'which', lambda name, *a, **k: '/usr/bin/' + name),
+              contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors)):
             try:
                 main(['backup-cycle', *argv])
             except SystemExit as exit_:
@@ -275,7 +393,9 @@ class CommandTests(unittest.TestCase):
             self.assertEqual((report['status'], report['offsite']['status'], report['offsite']['destination']), ('backed_up', 'verified', 'dir'))
             copy = Path(report['path'])
             self.assertEqual(copy.parent, local.resolve())
-            self.assertEqual((remote / copy.name).read_bytes(), PAYLOAD)
+            self.assertTrue(copy.name.endswith('.dump.age'), 'the cycle encrypts for the recipients')
+            self.assertEqual(self.created[0][1], ['age1' + 'q' * 58])
+            self.assertEqual((remote / copy.name).read_bytes(), AGE_PAYLOAD)
             self.assertTrue((remote / (copy.name + '.json')).is_file())
             self.assertEqual(report['prune']['keep'], 7, 'the local retention is MEMORY_BACKUP_KEEP')
 
@@ -289,6 +409,23 @@ class CommandTests(unittest.TestCase):
                 self.assertTrue((failure or '').startswith(code + ': '), (environ, failure))
                 self.assertEqual(out, '')
             self.assertFalse(local.exists())
+            self.assertEqual(self.created, [])
+
+    def test_a_destination_without_recipients_is_refused_whatever_the_encryption_requirement_says_and_nothing_is_written_or_sent(self):
+        """The external copy in the clear is not an option: MEMORY_BACKUP_REQUIRE_ENCRYPTION=0 (or unset) does not open it."""
+        with workspace() as root:
+            local, remote = root / 'local', root / 'remote'
+            remote.mkdir()
+            for require in ('0', '1', '', 'off'):
+                for loop in ((), ('--loop',)):
+                    with patch.object(admin, 'LOOP_CYCLES', 1), patch.object(offsite.time, 'sleep', lambda seconds: None):  # a refusal that did not happen must not loop for ever
+                        failure, out, err = self.run_command('--output-dir', str(local), *loop, MEMORY_BACKUP_DESTINATION='dir:' + str(remote), MEMORY_BACKUP_RECIPIENTS_FILE='',
+                                                             MEMORY_BACKUP_REQUIRE_ENCRYPTION=require)
+                    self.assertTrue((failure or '').startswith('backup_encryption_required: '), (require, loop, failure))
+                    self.assertEqual(out, '')
+            self.assertFalse(local.exists(), 'no copy was made')
+            self.assertEqual(self.created, [])
+            self.assertEqual(remote_names(remote), [], 'and nothing was sent')
 
     def test_the_cycle_can_end_with_the_retention_of_the_tables(self):
         with workspace() as root:
@@ -313,7 +450,27 @@ class CommandTests(unittest.TestCase):
             self.assertIsNone(failure, err)
             self.assertEqual(sleeps, [90])
             self.assertEqual(len([line for line in out.splitlines() if line.startswith('{')]), 2)
-            self.assertEqual(len([p for p in remote.iterdir() if p.name.endswith('.dump')]), 2)
+            self.assertEqual(len([p for p in remote.iterdir() if p.name.endswith('.dump.age')]), 2)
+
+    def test_a_cycle_that_fails_before_the_copy_is_made_still_zeroes_the_metric(self):
+        """The recipients file that stops being usable between two cycles: the failure is of the encryption stage, before `run_cycle`; the metric and the `.prom` file say 0."""
+        with workspace() as root:
+            local, remote = root / 'local', root / 'remote'
+            remote.mkdir()
+            real = admin.encryption_plan
+            calls = []
+
+            def breaks_on_the_third_call(*args):
+                calls.append(1)
+                if len(calls) >= 3:
+                    raise backup.BackupError('backup_recipients_invalid', 'MEMORY_BACKUP_RECIPIENTS_FILE cannot be read')
+                return real(*args)
+            with patch.object(offsite.time, 'sleep', lambda s: None), patch.object(admin, 'LOOP_CYCLES', 2), patch.object(admin, 'encryption_plan', breaks_on_the_third_call):
+                failure, out, err = self.run_command('--output-dir', str(local), '--loop', MEMORY_BACKUP_DESTINATION='dir:' + str(remote))
+            self.assertIsNone(failure, err)
+            self.assertIn('backup_recipients_invalid', err)
+            self.assertEqual(observability.OFFSITE_REGISTRY.get_sample_value('kairos_backup_offsite_success'), 0)
+            self.assertIn('kairos_backup_offsite_success 0.0', (local / offsite.METRICS_NAME).read_text(encoding='utf-8'))
 
 
 class CorruptingDestination(offsite.DirDestination):
@@ -354,13 +511,41 @@ class OffsiteFailureTests(unittest.TestCase):
             failed_copy = Path(raised.exception.report['path']).name
             self.assertEqual(raised.exception.report['offsite'], {'destination': 'dir', 'status': 'failed', 'code': 'backup_offsite_failed'})
             self.assertNotIn('prune', raised.exception.report, 'nothing local is pruned when the copy did not leave')
-            self.assertEqual(sorted(n for n in names(local) if n.endswith(('.dump', '.json'))), sorted(before + [failed_copy, failed_copy + '.json']), 'every local copy is intact, with keep=1')
+            self.assertEqual(sorted(n for n in names(local) if n.endswith(('.age', '.json'))), sorted(before + [failed_copy, failed_copy + '.json']), 'every local copy is intact, with keep=1')
             later = datetime(2026, 11, 21, tzinfo=timezone.utc)
             report = cycle(local, offsite.DirDestination(remote), now=later, make_copy=make_copy_factory())
             self.assertIn(failed_copy, report['offsite']['uploaded'], 'the copy of the failed cycle is sent by the next one')
             self.assertIn(Path(report['path']).name, report['offsite']['uploaded'])
             self.assertEqual(observability.OFFSITE_REGISTRY.get_sample_value('kairos_backup_offsite_success'), 1)
             self.assertIn('kairos_backup_offsite_success 1.0', (local / offsite.METRICS_NAME).read_text(encoding='utf-8'))
+
+    def test_a_cycle_that_fails_at_any_stage_zeroes_the_metric_stamps_the_time_and_rewrites_the_file(self):
+        """After a good cycle (metric 1) a failure of the database, pg_dump, the encryption, the local check or the destination must not leave the 1 standing (alerts read it)."""
+        honest = make_copy_factory()
+
+        def damaged(output):
+            report = honest(output)
+            data = bytearray(Path(report['path']).read_bytes())
+            data[300] ^= 0x01
+            Path(report['path']).write_bytes(bytes(data))
+            return report
+        stages = {'database down': Mock(side_effect=RuntimeError('connection refused')), 'pg_dump': Mock(side_effect=subprocess.CalledProcessError(1, 'pg_dump')),
+                  'encryption': Mock(side_effect=backup.BackupError('backup_encryption_failed', 'age failed')), 'local verification': damaged, 'plain copy': make_copy_factory(encrypted=False)}
+        for stage, failing in stages.items():
+            with self.subTest(stage), workspace() as root:
+                local, remote = root / 'local', root / 'remote'
+                local.mkdir()
+                remote.mkdir()
+                cycle(local, offsite.DirDestination(remote))
+                self.assertEqual(observability.OFFSITE_REGISTRY.get_sample_value('kairos_backup_offsite_success'), 1)
+                self.assertIn('kairos_backup_offsite_success 1.0', (local / offsite.METRICS_NAME).read_text(encoding='utf-8'))
+                before = time.time()
+                with self.assertRaises(Exception) as raised:
+                    cycle(local, offsite.DirDestination(remote), now=datetime(2026, 11, 21, tzinfo=timezone.utc), make_copy=failing)
+                self.assertIs(raised.exception.offsite_recorded, True)
+                self.assertEqual(observability.OFFSITE_REGISTRY.get_sample_value('kairos_backup_offsite_success'), 0, stage)
+                self.assertGreaterEqual(observability.OFFSITE_REGISTRY.get_sample_value('kairos_backup_offsite_last_run_timestamp_seconds'), before, stage)
+                self.assertIn('kairos_backup_offsite_success 0.0', (local / offsite.METRICS_NAME).read_text(encoding='utf-8'), stage)
 
     def test_a_copy_that_differs_at_the_destination_is_not_completed_and_nothing_is_deleted_anywhere(self):
         with workspace() as root:
@@ -385,9 +570,9 @@ class OffsiteFailureTests(unittest.TestCase):
 
             def damaged(output):
                 report = honest(output)
-                data = bytearray(output.read_bytes())
+                data = bytearray(Path(report['path']).read_bytes())
                 data[300] ^= 0x01
-                output.write_bytes(bytes(data))
+                Path(report['path']).write_bytes(bytes(data))
                 return report
             with self.assertRaises(backup.BackupError) as raised:
                 cycle(local, offsite.DirDestination(remote), keep=1, remote_keep=1, make_copy=damaged)
@@ -398,7 +583,7 @@ class OffsiteFailureTests(unittest.TestCase):
     def test_an_older_local_copy_that_no_longer_verifies_is_skipped_and_never_sent(self):
         with workspace() as root:
             local, remote = self.seeded(root, remote_days=())
-            damaged = next(p for p in local.iterdir() if p.name.endswith(stamp(7) + '.dump'))
+            damaged = next(p for p in local.iterdir() if p.name.endswith(stamp(7) + '.dump.age'))
             damaged.write_bytes(damaged.read_bytes()[:-1])
             report = cycle(local, offsite.DirDestination(remote))
             self.assertIn({'name': damaged.name, 'code': 'backup_checksum_mismatch'}, report['offsite']['skipped'])
