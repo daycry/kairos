@@ -5,6 +5,8 @@
 .cache/
 secrets/
 backups/
+backup-config/
+offsite/
 **/__pycache__/
 **/*.pyc
 **/node_modules/

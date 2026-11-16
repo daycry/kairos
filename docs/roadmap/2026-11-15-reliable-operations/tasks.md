@@ -46,7 +46,7 @@ test-plan: n/a (sin UI)
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 9 | 9 | 100% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 5 | 5 | 100% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 9 | 9 | 100% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
-| Fase 7 — Copia externa programada y runbook de restauración (C-01) | 2 | 6 | 33.3% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
+| Fase 7 — Copia externa programada y runbook de restauración (C-01) | 3 | 6 | 50.0% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 0 | 4 | 0% | 0 / 7.2h | 0 / 1.0h | 0 / 0.2h | 0 / 240 k |
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 0 | 7 | 0% | 0 / 19.8h | 0 / 2.6h | 0 / 0.7h | 0 / 660 k |
 | Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 0 | 7 | 0% | 0 / 34.2h | 0 / 4.6h | 0 / 1.1h | 0 / 1140 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **45** | **98** | **45.9%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **46** | **98** | **46.9%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1439,30 +1439,35 @@ RED: `server/memory_platform/tests/test_backup_cycle.py::OffsiteFailureTests (mu
 ### T-46 — Servicio Compose `memory-backup` (perfil `backup`) sin clave privada
 
 - **Descripción**: Añadir al `docker-compose.yml` el servicio opcional `memory-backup` (perfil `backup`, imagen `operator`, sin puertos publicados) que ejecuta `admin backup-cycle` cada `MEMORY_BACKUP_INTERVAL`. Ningún servicio monta la clave privada. Aviso: la instalación desplegada lo recoge solo en su próximo `up`. Fuente: CA-06, CA-08; P-02.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Servicio opcional `memory-backup` (perfil `backup`): copia externa cada 24 h, sin puertos ni clave privada. Además, `backup --prune` ya no falla si otra poda borra una copia mientras la verifica.
+- **Cerrada**: 2026-11-16
+- **Estado**: completado
 - **Tiempo humano**: est. 3h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.28h (medido)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 110 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: T-45
 - **Tipo**: devops
-- **Archivos**: `docker-compose.yml`, `server/memory_platform/tests/test_backup_service.py`, `docs/configuration.md`
+- **Archivos**: `docker-compose.yml`, `server/memory_platform/tests/test_backup_service.py`, `docs/configuration.md`, `scripts/deploy-memory.py` (override del servicio nuevo; añadido), `.gitignore` (`backup-config/`, `offsite/`; añadido), `server/memory_platform/backup.py` y `server/memory_platform/tests/test_backup_prune.py` (deuda de la carrera de dos `--prune`; añadidos), `docs/roadmap/2026-11-15-reliable-operations/improvement-plan.md` (frase «Fase 7» en Coordinación; añadido)
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_backup_service|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
+  - Salida (2026-11-16, misma imagen y montaje): `test_backup_service` + `test_backup_prune` → `Ran 20 tests ... OK`; `docker compose -p kairos-ops-cfg -f docker-compose.yml --profile backup config --format json` → exit 0 (sin crear recursos), `memory-backup`: perfil `backup`, sin `ports`, secretos solo `memory_dsn`, `/config` de solo lectura; `docker ps -a --filter name=kairos-ops` → 0; `git diff --stat -- ollama-proxy` vacío. La suite completa se pega en T-48.
 
 **Criterios de aceptación**
-- [ ] `docker-compose.yml` define `memory-backup` con perfil `backup`, `MEMORY_BACKUP_INTERVAL` (24 h por defecto), `MEMORY_BACKUP_DESTINATION`, `MEMORY_BACKUP_REQUIRE_ENCRYPTION=1` por defecto y sin puertos publicados
-- [ ] Una prueba sobre el YAML (y `docker compose -p kairos-ops-cfg config` en local, que no crea recursos) demuestra que ningún servicio monta una clave privada
-- [ ] `ollama-proxy/default.conf.template` y los demás ficheros que monta la instalación desplegada no cambian
+- [x] `docker-compose.yml` define `memory-backup` con perfil `backup`, `MEMORY_BACKUP_INTERVAL` (24 h por defecto), `MEMORY_BACKUP_DESTINATION`, `MEMORY_BACKUP_REQUIRE_ENCRYPTION=1` por defecto y sin puertos publicados
+- [x] Una prueba sobre el YAML (y `docker compose -p kairos-ops-cfg config` en local, que no crea recursos) demuestra que ningún servicio monta una clave privada
+- [x] `ollama-proxy/default.conf.template` y los demás ficheros que monta la instalación desplegada no cambian
 
 **Subtareas**
-- [ ] Escribir primero la prueba sobre el YAML (rojo)
-- [ ] Añadir el servicio con perfil y variables
-- [ ] Documentar en `docs/configuration.md`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero la prueba sobre el YAML (rojo)
+- [x] Añadir el servicio con perfil y variables
+- [x] Documentar en `docs/configuration.md`
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Deuda Minor de la revisión de la Fase 6 (intento 3, n.º 2): en `prune_backups`, una copia que otro `--prune` borra mientras esta ejecución la verifica para conservarla no debe dar `backup_prune_failed` (tratar `FileNotFoundError` de `verify_backup` como copia desaparecida), con prueba de la carrera. Patrón: `docker-compose.yml:31-85` (`x-process`, rotación de logs) y `:154` (`memory-mcp`); `tests/test_deploy_isolation.py:43-48` (lectura del compose con `yaml.safe_load`). R-08: no se despliega nada.
+**Notas**: Deuda de la Fase 6 saldada: `FileNotFoundError` de `verify_backup` en `prune_backups` = copia desaparecida (no cuenta, se verifica la siguiente), con prueba de la carrera. El servicio usa `egress` además de `memory-data` (el remoto lo necesita) y monta solo `/backups`, `/config` (público, ro) y `/offsite`. `isolation_override` incluye el servicio. Mutantes Ma-Mi (perfil, cifrado, clave, intervalo, solo lectura, puerto, secreto, rclone sin fijar, carrera) en rojo. Horas: ventana común de T-44. Runbook y comandos: T-47.
+
+
+RED: `test_backup_service.py y test_backup_prune.py::test_a_copy_that_another_prune_deletes (mutantes Ma-Mi)` falló con FileNotFoundError sin tratar en prune_backups y 9 mutantes del Compose y del Dockerfile (perfil, puerto, clave privada, secreto extra, cifrado, solo lectura, intervalo, rclone sin fijar) en rojo · 2026-11-16.
 
 ### T-47 — Runbook de restauración desde la copia externa y ensayo automatizado
 

@@ -146,6 +146,26 @@ class PruneTests(unittest.TestCase):
                     path.unlink()
                 outside.rmdir()
 
+    def test_a_copy_that_another_prune_deletes_while_this_one_verifies_it_is_gone_and_not_a_failure(self):
+        """Two `--prune` at the same time (the scheduled cycle and a manual run): the copy that vanishes under the verification is neither counted nor an error."""
+        with workspace() as root:
+            for day in (1, 2, 3, 4):
+                copy(root, day)
+            real = backup.verify_backup
+
+            def vanishing(path, *args, **kwargs):
+                if path.name.endswith(stamp(3) + '.dump'):  # the other run deletes it between our `is_file` and our read
+                    path.unlink()
+                    backup.manifest_path(path).unlink()
+                    raise FileNotFoundError(str(path))
+                return real(path, *args, **kwargs)
+            with patch.object(backup, 'verify_backup', vanishing):
+                report = run_prune(root, 2)
+            self.assertEqual([c['name'] for c in report['kept']], [f'kairos-before-{stamp(4)}.dump', f'kairos-before-{stamp(2)}.dump'], 'the vanished copy does not count: the next older one is verified instead')
+            self.assertEqual(report['deleted'], [f'kairos-before-{stamp(1)}.dump'])
+            self.assertEqual(report['skipped'], [])
+            self.assertEqual(names(root), sorted(f'kairos-before-{stamp(d)}.dump' + ext for d in (2, 4) for ext in ('', '.json')))
+
     def test_keep_must_be_a_whole_number_of_one_or_more(self):
         with workspace() as root:
             copy(root, 1)

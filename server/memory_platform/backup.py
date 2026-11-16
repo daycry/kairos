@@ -447,6 +447,8 @@ def prune_backups(directory, keep, *, protect=None, now=None):
         if len(kept) < keep:
             try:
                 verify_backup(directory / name)
+            except FileNotFoundError:  # another `--prune` deleted it while this one verified it: it is gone and does not count; the next older copy is verified instead
+                continue
             except BackupError as error:
                 skipped.append({'name': name, 'code': error.code})
                 continue

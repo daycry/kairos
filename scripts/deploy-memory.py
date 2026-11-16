@@ -148,6 +148,7 @@ services:
     image: {image('web')}
     ports: !override ['127.0.0.1:{web_port}:8080']
   memory-admin: {{image: {image('operator')}}}
+  memory-backup: {{image: {image('operator')}}}
 {stub}networks:
   inference: {{name: {project}_inference}}
   webui: {{name: {project}_webui}}
