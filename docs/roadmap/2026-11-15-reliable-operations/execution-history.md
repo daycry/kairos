@@ -237,3 +237,136 @@ Lentes: A+B+C+D (C por `auth.py`, `auth_scope.py`, `store_auth.py` y `ci.yml`; D
 | 7 | Minor | Sin línea `RED:` en T-30/T-31 y evidencia de Verificación resumida en T-30/T-32 | T-30, T-31, T-32 | corregido (fix1): líneas `RED:` de T-30 y T-31 (con la evidencia real, dicha tal cual) y la Verificación literal de T-30 y T-32; commits `T-30: fix1`, `T-31: fix1`, `T-32: fix1` | Lente A n.º 3 y 4 |
 | 8 | Minor | Con un `StoreUnavailable`, `gather` devuelve el 503 sin cancelar las capas hermanas, que retienen conexiones hasta su plazo | T-30 | deuda aceptada (ya ocurría con `StoreBusy`; acotado por el plazo de sentencia) | Lente B (fuera de lente); `retrieval.py:175` |
 
+
+## Archivado 2026-11-16 — T-35 · Notas (bytes sin cambios)
+
+SHA-256 del bloque: `1f7fcb48b0f3b324895869604aabb05075996a3f28b7b29b52892c3788c0bfc4`.
+
+**Notas**: Patrón: `admin.py:286-294` (`pg_dump --format=custom`, `chmod 600`), `:23-47` (`store_fingerprints`, `pg_environment`) y `:295-313` (`restore-check`). Fixtures en `tests/test_admin.py`.
+**Cierre**: `pg_dump --snapshot` y recuentos (`fingerprints`) de UN snapshot exportado; copia y manifiesto en directorio parcial 0700, la copia se renombra primero y el manifiesto el último (una copia sin manifiesto no es válida); SIGTERM limpia lo parcial. Mutantes en rojo (`test_backup_manifest`): sin comparar sha, sin tamaño, parcial no borrado, `encrypted` sin comprobar, `file` sin comprobar, sin manejador SIGTERM, sin chmod, manifiesto antes que la copia, enlace simbólico seguido, sin `--snapshot`. Medido: `reliable-operations/T-35` 0,52h. EOL: ficheros CRLF conservados (`config.py` es mixto: edición por bytes).
+
+## Archivado 2026-11-16 — T-36 · Notas (bytes sin cambios)
+
+SHA-256 del bloque: `1b8c72aedf53ebf64d3f93d0ed63db7cbb802077a7db67118035c5ac1175cccf`.
+
+**Notas**: Patrón: `Dockerfile:16` (`FROM api AS operator`) y `:34-66` (target `test`, que debe contar con `age` para los tests). Hipótesis de la spec: `age` en bookworm; si no, binario oficial con sha256 verificado. R-03: la clave privada nunca está en el host.
+**Cierre**: age fijado por `ARG AGE_VERSION` (operator trixie 1.2.1-1+b5; test bookworm 1.1.1-1+b3; sin binario con sha256). Un fichero de destinatarios con clave privada se rechaza (R-03); el manifiesto guarda sha256 de cada destinatario, `verify-backup` con el fichero configurado detecta otra clave. Mutantes en rojo: E1 sin cifrar, E2 dump en claro vivo hasta publicar, E3 sin exigir, E4 clave privada aceptada, E5 fichero omitido sin exigencia, E6 `encrypted` falso, E7 sha del claro, E8 destinatarios sin comprobar, E10 sin `.age`, E11 sin binario, E12 errata abre la exigencia, E13 stderr de age filtrado, E15 sin fijar. Medido `reliable-operations/T-36` 0,31h.
+
+## Archivado 2026-11-16 — T-37 · Notas (bytes sin cambios)
+
+SHA-256 del bloque: `6f0bba858ec45167b8f4fd19141950574a20f648de4e53a71c3fac8adff4c3ab`.
+
+**Notas**: Patrón: `admin.py:240-321` (registro de argumentos y salida de los subcomandos).
+**Cierre**: patrón `kairos-<tipo>-<marca>.dump[.age]`; candidata = fichero regular con manifiesto que pasa `verify_backup` (señuelos, enlaces, parciales, sin manifiesto, manipuladas, fechadas a futuro: se saltan y no cuentan); la copia recién escrita queda protegida; borra la más antigua primero y la copia antes que el manifiesto. Mutantes en rojo P1 cualquier nombre, P2 sin sha, P3 keep 0, P4 enlace, P5 sin proteger, P6 fechas futuras, P7 off-by-one, P8 fallo tragado, P9 default 5, P10 --keep sin --prune, P11 orden, P13 manifiesto primero, P14 keep sin validar; P12 (guarda de mínimo) era equivalente: retirada. Medido `reliable-operations/T-37`.
+
+## Archivado 2026-11-16 — T-38 · Notas (bytes sin cambios)
+
+SHA-256 del bloque: `9c7c6ae7de06d01ed795b45fe85751f835962c3ad91dae608af99be9195cc2f3`.
+
+**Notas**: Patrón: `deploy-memory.py:27` (`MIGRATE_TIMEOUT_SECONDS`), `:257-258` (`operator()` con `timeout=120`), `:376` y `:380` (llamadas), `tests/test_deploy.py` (dobles de `subprocess`). El script no se ejecuta contra la instalación real.
+**Cierre**: `long_operator` = `operator(timeout=backup_timeout, name=kairos-deploy-<orden>-<hex>)`; si falla o agota el plazo, `reap` hace `docker stop --time 20` (SIGTERM: el volcado limpia lo parcial) y `docker rm -f`, sin tapar el error. Mutantes en rojo D1-D13 (plazo por defecto en backup y en los tres content-manifest, plazo no propagado, sin reap, sin `--name`, 0/bool/sin tope aceptados, inspect con plazo largo, sin stop, reap que tapa el error, informe sin el plazo). Medido `reliable-operations/T-38`.
+
+## Archivado 2026-11-16 — T-39 · Notas (bytes sin cambios)
+
+SHA-256 del bloque: `eeddb2e408f1b10cf55a70ccaa74c6b6b40f9a3a238a5ba215fb345de6b64316`.
+
+**Notas**: Patrón: `admin.py:295-313` (`restore-check` solo en bases `memory_restore*` vacías), `deploy-memory.py:296-410` (fases) y `tests/test_deploy_isolation.py:43-99` (override con nombres propios).
+**Cierre**: fase `verify_backup` tras `backup` (por defecto en ensayos, opt-in en la instalación; `--no-verify-backup`): `verify-backup` + red `--internal` + contenedor PG efímero (`kairos-verify-*`, sin puertos) + `restore-check --from-manifest` (no lee la base viva; MEMORY_DSN ficticio) + limpieza siempre. Copia cifrada: `integrity_only`. Mutantes en rojo V1-V20 (fase, diferencia ignorada, sin limpieza, red no interna, puerto, volumen rw, defecto, plazos, cifrada, nombres, DSN real…) y A1-A5 (admin: contra la viva, sin verificar, cifrada, sin tablas, error opaco). Medido `reliable-operations/T-39`.
+
+## Archivado 2026-11-16 — T-40 · Notas (bytes sin cambios)
+
+SHA-256 del bloque: `990826af5db0cc73457e333df9d6828c7a237084d3a4c8d5eb969479b8292c42`.
+
+**Notas**: Restricción dura: nada contra la base desplegada ni recursos `knowledge-graphs-*`. Patrón: ensayos de la Iniciativa 2 (`scripts/deploy-memory.py --project-name`).
+**Cierre**: proyecto `kairos-ops-a` (puertos 28791/25174, secretos sintéticos fuera del repo), `--embed-stub`, sin Ollama del host. (1) `--fresh --roundtrip` OK; (2) segundo despliegue con `--verify-backup` salió 0: `verify_backup` `verified`, 26 tablas, 39,91 s, `cleanup: complete`, fases `backup, verify_backup, migrate`; (3) aborto real: copia con manifiesto alterado (tabla `actors`) → `backup_restore_mismatch`, `status: failed`, limpieza completa, sin `migrate`; tras ambos no queda ningún `kairos-verify-*` (contenedor ni red). Retirado por nombre exacto (7 contenedores, 2 volúmenes, 5 redes, 6 imágenes `rehearsal-kairos-ops-a-*`, secretos y `.private/rehearsal-kairos-ops-a`). `knowledge-graphs-*` (15 contenedores, 7 volúmenes, 6 redes): antes y después IDÉNTICOS (ids y estados). Medido `reliable-operations/T-40`.
+
+## Archivado 2026-11-16 — T-42 · Notas (bytes sin cambios)
+
+SHA-256 del bloque: `7daa1c6d01e26396b7cc1a91e3433577a596fba152bca79c1efdfb7bade478c7`.
+
+**Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Cierra la fase: no se abre la revisión adversarial con la suite en rojo.
+**Cierre**: 1054 → 1122 (+68). La primera pasada dio 1 fallo (`test_auth_cache`: `backup.create_backup` abre una transacción y no estaba en la lista revisada de operador); corregido y repetida la suite completa en verde. `KAIROS_MIN_TESTS`, `MIN_FLOOR`, tabla de `operations.md` y `README.md` = 1122. Cambios visibles para la Iniciativa 7 (no se puede escribir su plan aquí): `admin backup` ahora escribe `<copia>.json` y publica `<nombre>.age` si hay destinatarios; subcomandos/opciones nuevos `verify-backup`, `backup --prune --keep`, `restore-check --from-manifest`; `deploy-memory.py --backup-timeout` y `--verify-backup` (por defecto en ensayos); variables `MEMORY_BACKUP_RECIPIENTS_FILE|REQUIRE_ENCRYPTION|KEEP`. Contrato MCP intacto. Medido `reliable-operations/T-42`.
+
+## Compactación 2026-11-16 — notas de las fases 1 a 5
+
+Notas y cierres completos de las tareas cerradas T-01 a T-34, movidos tal cual desde `tasks.md` para mantener el ledger por debajo del límite de lectura de los writers. Criterios, campos y estados siguen en `tasks.md`.
+
+### T-13
+
+SHA-256: `ae2dd540fa99414180ffb992914f67947fd004761afbe50b1d22050ca09efc90`.
+
+**Notas**: Cerrada en el intento 3 de 3 (intento 1: A+B+C+D; intentos 2 y 3: A+B; tablas al final del ledger y en `execution-history.md`; resumen en `review.md`). `scope-check.py --base 920c1f0` exit 0; suite 884 en verde. Los revisores no tienen medición propia (telemetría de los subagentes). Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+
+---
+
+### T-22
+
+SHA-256: `be0fc4209e9550ad0b09ed78701fdf6695adce264491230405a08d4200eb3b2e`.
+
+**Notas**: (Archivos ampliados: `store_pool.py` es el módulo nuevo del pool y `errors.py` recibe `StoreBusy`.) Patrón: `store.py:24-30` (único `psycopg.connect`), `requirements.txt:5` (`psycopg 3.3.7`), `tests/test_store_surface.py` + `store_surface.json` (congelado). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `93a57ad4dafc`.
+
+
+RED: `tests/test_store_pool.py` falló con ImportError: cannot import name DEFAULT_POOL_MAX from memory_platform.config (la prueba contra el codigo de HEAD, sin pool) · 2026-11-16.
+
+### T-23
+
+SHA-256: `9bab56b523a3d03263e3b79b904f9645f52fdaf9508547f6c845f0e3ffcbf968`.
+
+**Notas**: Patrón: `store_documents.py:21-35` y `store_vectors.py:351-356` (`statement_timeout` locales), `config.py:232` (`request_timeout`: el plazo de consulta queda por debajo). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `d0231c72c512`.
+
+
+RED: `tests/test_store_timeouts.py` falló con ImportError: cannot import name DEFAULT_CONNECT_TIMEOUT from memory_platform.config (la prueba contra el codigo de HEAD, sin plazos) · 2026-11-16.
+
+### T-24
+
+SHA-256: `25afd7d47ad6c256f008be8fa860a34449897e92cc26ba59c7ae3a4ac5a2906b`.
+
+**Notas**: Patrón: `app.py` (manejador de errores y `request_id`), `errors.py` y `retrieval.py:113-115`, `:146-148` (`asyncio.timeout` sobre `to_thread`, que no cancela la consulta). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `347a866f1020`.
+
+
+RED: `tests/test_store_timeouts.py` falló con ImportError: cannot import name STORE_BUSY_MESSAGE from memory_platform.errors (la prueba contra el codigo de HEAD, sin los 503) · 2026-11-16.
+
+### T-25
+
+SHA-256: `e2f686118717789fac97d72f539e4f54470986d36c1a8f263336211d2fe3195b`.
+
+**Notas**: Deuda Minor de la revisión de la Fase 2 (intento 3, n.º 3-5): (a) que `_persist` llame a la comprobación del COMMIT (`_landed`) también cuando el latido marca la concesión perdida; (b) una prueba que haga fallar `job_outcome` y pruebas de `_persist` con el latido activo; (c) validar el defecto de `MEMORY_WORKER_WRITE_RETRY_SECONDS` contra su rango cuando hereda `MEMORY_LEASE_SECONDS`. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `715d59d298fd`.
+
+
+RED: `tests/test_store_faults.py::PersistWithTheHeartbeatTests` falló con test_a_lease_the_heartbeat_lost_is_not_given_up_when_the_write_had_landed fallo con Abandoned lease_lost (contra el worker de HEAD, que no llama a _landed si el latido marco la concesion perdida) · 2026-11-16.
+
+### T-30
+
+SHA-256: `a350556e05fc84028848d67a7d9d98c1da2809f85df78bfdf6b08ddd4d1572e0`.
+
+**Notas**: Deuda Minor heredada de la revisión de la Fase 4 (intento 2, n.º 3-7; ver la tabla al final del ledger): (a) plazo del cliente por sentencia y no total en `executemany` (o lotes acotados), con prueba de un `embed` de muchos fragmentos con la base sana; (b) carrera de `saturated()` en `/health/ready`; (c) clasificación con hosts de varias direcciones y con conexiones cerradas por el plazo; (d)… Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `403a3b66ffbf`.
+
+RED: sin captura del rojo previo a la implementación (no se guardó). Evidencia real: con la caché sin vaciar tras `FOR SHARE` falló `test_revocation_between_authorization_and_lock_is_rechecked` (1 de 1037, ver Cierre); mutantes M1/M2 (ver T-31). fix1, mutantes sobre el código ya corregido (todos en rojo): M1 sin vaciar tras el `FOR SHARE` de la ingesta: 2 pruebas de `test_auth_race` en rojo; M2 sin vaciar en `_protect_validated`: 1; M3 publicar sin releer: 2; M4 borrar documento sin releer: 1; M5 `retry_job` sin releer: 1; M6 regla antigua de `store_pool` (`_in_use >= max`): 3 errores; M6b siempre `StoreBusy`: 3 fallos y 1 error · 2026-11-16. fix2 (cierre de la Fase 5, mutantes en rojo): M1 ingesta sin `_require('write')` tras la espera: 2 pruebas de `test_auth_race`; M2 `/health/ready` de un pool que nunca entregó = `saturated`: 1; M2b `saturated` sin conexión en uso: 1; M3 fallo de comprobación que no se limpia al conectar otra conexión: 1; M3b `_faults_at_ok` asignado y no máximo: 1. Un fallo de comprobación solo es caída mientras ninguna conexión nueva haya conectado (`configure`) ni se haya entregado una; `/health/ready` de un pool que nunca entregó = `not_ready`. Medido: `reliable-operations/T-30-fix2`.
+
+**Cierre**: Diseño: `auth_scope.py` pone un dict en la conexión al empezar `Store.transaction()` y lo quita antes del COMMIT/ROLLBACK (no está en el módulo, el `Store` ni el pool); `_active` (clave: actor+credencial) y `_require` (concesiones: actor+proyecto; existencia del proyecto para el administrador) lo usan; `invalidate_auth` lo vacía en cada escritor de permisos (bootstrap, usuario, clave, proyecto, política, revocar, login/logout/csrf) y `savepoint(c)` lo vacía si el savepoint falla. **Hallazgo propio (R-05):** `ExtendedStore._require` y `CorpusAnswers._authorized` toman `FOR SHARE` y repiten la comprobación para que una revocación intermedia falle; con la caché la segunda lectura repetía la primera y `test_revocation_between_authorization_and_lock_is_rechecked` quedó en rojo (1 fallo de 1037); corregido vaciando la caché tras los bloqueos y con una prueba estática de que todo bloqueo de filas de autoridad la vacía. Deuda de la Fase 4 cerrada, cada una con prueba y mutante en rojo (`test_store_phase4_debt.py`): (a) `CHUNK_INSERT_BATCH=50` fragmentos por `executemany` (un plazo del cliente por lote; 200 fragmentos = 4 lotes, misma transacción); (b) `_in_use` baja DESPUÉS de `putconn`, y `ready_probe` da `saturated` por el `StoreBusy` mismo, sin repreguntar; (c) `StoreBusy` solo si todas las conexiones estaban en uso al vencer la espera, si no `StoreUnavailable` (determinista, sin depender de temporizadores; hosts de varias direcciones y conexiones cerradas por el plazo simulados con `PoolTimeout`); (d) `StoreUnavailable` dentro de una capa de búsqueda es el 503 de la petición; (e) mutantes del control estático de sesión y de `_landed` ejecutados. **Cambio visible:** con huecos libres, una base muda da 503 `service_unavailable` y no `store_busy`; `test_store_faults` actualizado (antes fijaba la carrera). Mutantes (todos en rojo; se aplicaron en copia y se descartaron): M1 caché a nivel de módulo (rojo: 4 pruebas de aislamiento/revocación + tabla), M2 caché de conexión que no muere (28 fallos), M3 sin `invalidate_auth` en `revoke_key` (prueba estática), M4 savepoint sin vaciar, M5 clave solo por actor, M6 concesiones sin proyecto en la clave, M7 sin caché (recuentos); D1 lote de 100000, D2 `_in_use` antes de `putconn`, D3 clasificación antigua, D4 `StoreBusy` en vez de `StoreUnavailable` en la capa; control de sesión: `SET ROLE`, `PREPARE`, `LISTEN`, `CREATE TEMP TABLE`, `pg_advisory_lock`, `SET SESSION` añadidos al código → `SessionStateTests` en rojo; `_landed`: L1 siempre falso, L2 siempre verdadero, L3 `complete` sin comprobar el estado, L4 `fail` sin comparar `error_code`, L5 y L6 sin llamarlo en cada punto de `_persist` → `test_store_faults`/`test_worker_db_down` en rojo. Verificación (build `kairos-test:i3p5`, suite completa): `MEMORY_TEST_RESULT {... "errors": 0, "failures": 0, "skipped": 0, "tests": 1038}`; `test_auth_cache` (CountingTests 5, RevocationTests 7, IsolationTests 4) y `test_store_phase4_debt` (8) en `ok`. Medición de la tarea: usage-meter `{"fuente":"medido","horas_ia":0.29,"duracion_reloj":"37m","tokens_reales":{"entrada":90,"salida":27190,"cache_creacion":60605,"cache_lectura":10567171,"respuestas":45}}` (arrancó tras el diseño y el primer borrador del código: subestima el tiempo de la tarea). **fix1 (revisión intento 1, n.º 1, 5, 6 y 7)**: (1) comprobar-esperar-comprobar cerrado en toda la clase: tras cada espera de bloqueo (aviso asesor, `FOR UPDATE`, `FOR SHARE`, `FOR NO KEY UPDATE`, `FOR KEY SHARE`) la caché se vacía antes de la comprobación siguiente en `ingest_event` (tras sus tres esperas), `_protect_validated`, `delete_document`, `retry_job` y `publish_document` (que además repite `publish` y `validate` tras el bloqueo); recorridos sin ninguna comprobación posterior, sin cambio: `work_write`, `build_corpus`, `rebuild_corpus`, `prime_corpus`, `team_write`, `_finish`, `capture_policy`, `login`, `bootstrap_user`, `migrate`, el worker y `admin`; `_authorized` y `ExtendedStore._require` ya vaciaban. Límite: una escritura sin `validate` cuya clave se revoca tras la comprobación inicial y sin comprobación posterior no lo detecta (la ventana de toda petición). `tests/test_auth_race.py`: 8 pruebas con dos conexiones (el hilo A y la conexión B que retiene el bloqueo, revoca y confirma). (5) docstring de `auth_scope.py`: READ COMMITTED, primera lectura, relectura tras un bloqueo. (6) `StoreBusy` si el `PoolTimeout` no deja fallo de conexión ni de comprobación registrado, `StoreUnavailable` solo con fallo registrado, sin mirar `_in_use`; `ready_probe` igual; 4 pruebas en `test_store_phase4_debt.py` y `test_store_faults.py` recupera su expectativa original de la Fase 4 (base muda antes de la primera conexión: `store_busy`, y `/health/ready` 200 hasta que falla el primer intento). usage-meter fix1: 0,33h (medido).
+
+### T-31
+
+SHA-256: `04aac5213fa27e56899ce471ea52cdc1f0f54e5ecd8459672364cae0de9febba`.
+
+**Notas**: Patrón: `tests/test_auth.py` y `tests/test_privacy.py`; 86 usos de `transaction()` (spec §Contexto 7).
+
+RED: sin captura del rojo previo (no se guardó). Evidencia real: mutantes M1, M2, T1-T4 (ver Cierre) y, fix1, los de la prueba estática y de la tabla de rutas: estática: orden incorrecto (vaciar antes de los `FOR SHARE` de `_authorized`) rojo; `FOR UPDATE` de `retry_job` sin vaciar rojo; `FOR NO KEY UPDATE` de `delete_document` sin vaciar rojo; `with cx.transaction()` rojo; escritura de `api_keys` en f-string y de `web_sessions` con `sql.SQL` rojo (2 pruebas cada una); `savepoint()` sin vaciar rojo (`test_a_savepoint_that_fails_takes_what_was_read_after_its_writes_with_it`); tabla de rutas con `/v1/auth/` excluido de nuevo rojo · 2026-11-16.
+
+**Cierre**: `test_auth_cache.py` (las clases de T-30 más estas): `WritersEmptyTheCacheTests` (recorrido estático: toda función que escribe `actors`/`api_keys`/`web_sessions`/`project_grants`/`projects` llama a `invalidate_auth`; todo `FOR SHARE` de filas de autoridad la vacía antes de releer; ningún `c.transaction()` crudo), `EveryTransactionTests` (89 sitios `.transaction()`, los 86 de la spec más el proveedor y `savepoint`: cada función resuelve permisos por los ayudantes o está en la lista revisada de 21 caminos que no son de petición, con motivo; una entrada obsoleta también falla), `RevocationTableTests` (los 39 métodos públicos de `Store` con actor, cobertura comprobada por introspección; clave revocada entre dos llamadas en un pool de UNA conexión → `Unauthorized`) y `RouteTableTests` (las 46 rutas `/v1` salvo `/v1/auth/*`: la segunda petición tras revocar da 401, pool de una conexión). `test_auth.py` y `test_privacy.py` sin cambios, en verde en la suite de 1038. Mutantes en rojo: M1 caché de módulo y M2 caché que no muere (la tabla de métodos y las pruebas de revocación, ver T-30), T1 transacción nueva sin comprobar permisos (`EveryTransactionTests`), T2 sin vaciar tras el `FOR SHARE` de `extended_store` (la prueba estática y `test_revocation_between_authorization_and_lock_is_rechecked`), T3 igual en `corpus_answers` (solo la estática: sin prueba de comportamiento propia), T4 `logout` sin vaciar (`WritersEmptyTheCacheTests`). usage-meter: `{"fuente":"medido","horas_ia":0.03,"duracion_reloj":"7m","tokens_reales":{"entrada":14,"salida":3023,"cache_creacion":5860,"cache_lectura":1909120,"respuestas":7}}`. Verificación (build `kairos-test:i3p5`): `test_auth_cache` 24 pruebas en `ok` (RevocationTableTests 2, RouteTableTests 1, EveryTransactionTests 2, WritersEmptyTheCacheTests 3 más las de T-30), `MEMORY_TEST_RESULT` 1038, 0 fallos, 0 errores, 0 omitidos. **fix1 (n.º 2, 3, 4 y 7)**: la prueba estática recorre ahora toda llamada con SQL (constantes, f-strings, `sql.SQL`, constantes del módulo) y detecta aviso asesor, `FOR UPDATE/SHARE/NO KEY UPDATE/KEY SHARE` y `LOCK TABLE`, también por una función auxiliar que recibe la conexión (`_lock`, `_corpus`, `_verify_entries`), y exige que el vaciado vaya DESPUÉS del bloqueo y ANTES de la comprobación siguiente (hay una prueba del detector con 9 formas de bloqueo × 3 órdenes); escritor de tablas de permisos: el vaciado debe seguir a la última escritura y toda escritura con tabla no escrita (placeholder, f-string, `sql.SQL`) falla salvo la lista revisada (`prune_tables` de `admin`); savepoints: cualquier receptor distinto del `Store` y de tres sitios revisados falla, también un alias de `.transaction` o `SAVEPOINT`/`ROLLBACK TO` en SQL. n.º 3: la prueba de `:195` no revertía nada y era redundante con la de `:175` (revierte un savepoint de verdad y falla sin el vaciado de `savepoint()`): eliminada. n.º 4: `GET /v1/auth/me` y `POST /v1/auth/logout` con bearer revocado entran en la tabla (con una aserción explícita; `/v1/auth/login` sigue fuera). La suite pasa de 24 a 25 pruebas en `test_auth_cache.py`. usage-meter fix1: 0,24h (medido).
+
+### T-32
+
+SHA-256: `4e6dd1274f35379f9c6f4984006f103f21fe2d4d969b757cee480d8143b527d5`.
+
+**Notas**: Línea base: la tarea de medición previa de la Fase 4.
+
+**Cierre**: Medición (mismo conjunto sintético: 3 proyectos × 300 documentos + 300 notas, híbrida, 10 calentamientos + 30 medidas, imagen `kairos-test:i3p5`, sin red; «antes» = la misma versión con la caché desactivada en copia, para medir ambos en la misma sesión): **con pool, 7 transacciones y 0 conexiones por búsqueda; consultas 63 → 49** (el pool añade **14**, 2 por transacción: la comprobación al entregar y el `RESET ALL`, que el medidor ahora cuenta aparte; sin ellas, **49 → 35**); lecturas de actor, clave y concesiones **36 → 22**. Sin pool: 49 → 35 consultas y 7 conexiones. El 63 coincide con la línea base de T-26 y el 49 con la de T-21. Latencia (p50, dos pasadas alternadas, con pool): después 116,5 / 174,5 ms, antes 91,2 / 246,0 ms: ruido mayor que el efecto, no se afirma mejora (lo fiable es el recuento). Queda por hacer: las 3 comprobaciones previas de `_scope` son transacciones aparte (una por proyecto); fusionarlas pediría un método nuevo en `Store` (superficie congelada). `measure_connections.py` pasa a informar `pool_queries_per_search`, `queries_without_pool_per_search` y `auth_queries_per_search`. Docs: `architecture.md` («Permisos por transacción»: la caché muere con el `COMMIT`), `configuration.md`, `operations.md` (clasificación busy/caída sin temporizadores, tabla de rutas, medición). Cambios visibles → lista de coordinación de `improvement-plan.md`. usage-meter: `{"fuente":"medido","horas_ia":0.1,"duracion_reloj":"11m","tokens_reales":{"entrada":28,"salida":10916,"cache_creacion":18447,"cache_lectura":4046301,"respuestas":14}}`. **fix1 (n.º 5, 6 y 7)**: `architecture.md`, `configuration.md`, `operations.md` (regla de clasificación, `/health/ready` y tabla de situaciones) y la lista de la Iniciativa 7 del plan dicen READ COMMITTED, primera lectura, relectura tras un bloqueo, y que `store_busy` sale sin fallo de conexión registrado (también con huecos libres) y `service_unavailable` solo con fallo registrado; consecuencia declarada: con `MEMORY_CONNECT_TIMEOUT` > `MEMORY_POOL_TIMEOUT` una base muda sale `store_busy` y `/health/ready` 200 hasta el primer fallo. Medición repetida en la imagen final (49 y 35 sin cambio: nada de esto toca la búsqueda). usage-meter fix1: 0,08h (medido).
+
+### T-33
+
+SHA-256: `1514d093a5c49882109a597881a1a710ea5970264edd92be78e28302e84def80`.
+
+**Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Cierra la fase: no se abre la revisión adversarial con la suite en rojo.
+
+**Cierre**: Build `kairos-test:i3p5` (primer plano, un solo Docker a la vez): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1038}` (1006 + 24 de `test_auth_cache` + 8 de `test_store_phase4_debt`). `KAIROS_MIN_TESTS` = `'1038'`, `MIN_FLOOR = 1038`, la tabla de `docs/operations.md` y `README.md` repiten 1038; `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `Ran 45 tests ... OK`. usage-meter: `{"fuente":"medido","horas_ia":0.03,"duracion_reloj":"15m","tokens_reales":{"entrada":16,"salida":3568,"cache_creacion":6749,"cache_lectura":2456472,"respuestas":8}}` (el reloj incluye la espera de la suite y de las pruebas del flujo de CI). **fix1**: build `kairos-test:i3p5` en primer plano, 2.º intento (el 1.º falló 4 subpruebas de `test_store_faults` por la regla nueva, corregidas): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1048}` (1038 + 8 de `test_auth_race` + 1 de la clasificación + 1 de `test_auth_cache`). `KAIROS_MIN_TESTS`, `MIN_FLOOR`, `docs/operations.md` y `README.md` en 1048; `test_ci_workflow.py` OK (45). usage-meter fix1: 0,20h (medido; el reloj incluye dos suites).
