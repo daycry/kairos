@@ -43,7 +43,7 @@ test-plan: n/a (sin UI)
 | Fase 1 — Arnés de fallos y tests de límites (C-07) | 6 | 6 | 100% | 0 / 32.4h | 0.83 / 4.3h | 0 / 1.1h | 0 / 1080 k |
 | Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 7 | 7 | 100% | 0 / 27.0h | 2.10 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 7 | 7 | 100% | 0 / 27.0h | 0.99 / 3.6h | 0 / 0.9h | 0 / 900 k |
-| Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 2 | 9 | 22.2% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
+| Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 3 | 9 | 33.3% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 0 | 5 | 0% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 0 | 9 | 0% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 0 | 6 | 0% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **22** | **98** | **22.4%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **23** | **98** | **23.5%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -743,31 +743,35 @@ RED: `tests/test_store_pool.py` falló con ImportError: cannot import name DEFAU
 ### T-23 — `connect_timeout` y `statement_timeout` como opciones de conexión de servicio
 
 - **Descripción**: Fijar `connect_timeout` (5 s) y `statement_timeout` (15.000 ms en la API, 30.000 ms en el worker) como opciones de las conexiones de servicio; `migrate`, `backfill-chunks`, `backup` y `content-manifest` no heredan el plazo. Fuente: CA-16, CA-17; B-07; R-02.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Las conexiones de la API y del worker llevan un plazo de conexión (MEMORY_CONNECT_TIMEOUT, 5 s) y un plazo de sentencia (MEMORY_STATEMENT_TIMEOUT_MS, 15.000 ms en la API y 30.000 en el worker): una consulta atascada la cancela el servidor.
+- **Estado**: completado
+- **Cerrada**: 2026-11-16
 - **Tiempo humano**: est. 5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.67h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.67h (estimado) · real 0.26h (medido)
 - **Supervisión**: est. 0.17h (≈25 % IA) · real —
 - **Previsión IA**: 184 k in / 16 k out tok · ⚠️ verificar €
 - **Dependencias**: T-22
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/store.py`, `server/memory_platform/config.py`, `server/memory_platform/admin.py`, `server/memory_platform/tests/test_store_timeouts.py`
+- **Archivos**: `server/memory_platform/store.py`, `server/memory_platform/config.py`, `server/memory_platform/admin.py`, `server/memory_platform/tests/test_store_timeouts.py`, `server/memory_platform/store_pool.py`
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_store_timeouts|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Una consulta de servicio con `pg_sleep` más larga que el plazo se cancela en el servidor y la conexión vuelve al pool utilizable
-- [ ] Con un DSN hacia un puerto que acepta y no responde (`FaultProxy.mute()`), el fallo llega en ≤ `MEMORY_CONNECT_TIMEOUT` + 1 s
-- [ ] `migrate`, `backfill-chunks` y `backup` se ejecutan con el plazo de la API activo en el entorno y no lo heredan (prueba)
-- [ ] Los `set_config` locales existentes siguen restaurando su valor previo (`store_documents.py:27-35`)
+- [x] Una consulta de servicio con `pg_sleep` más larga que el plazo se cancela en el servidor y la conexión vuelve al pool utilizable
+- [x] Con un DSN hacia un puerto que acepta y no responde (`FaultProxy.mute()`), el fallo llega en ≤ `MEMORY_CONNECT_TIMEOUT` + 1 s
+- [x] `migrate`, `backfill-chunks` y `backup` se ejecutan con el plazo de la API activo en el entorno y no lo heredan (prueba)
+- [x] Los `set_config` locales existentes siguen restaurando su valor previo (`store_documents.py:27-35`)
 
 **Subtareas**
-- [ ] Escribir primero las pruebas de `pg_sleep` y servidor mudo (rojo)
-- [ ] Añadir las opciones a las conexiones de servicio y excluir `admin`
-- [ ] Comprobar `migrate` y `backfill-chunks` con el plazo activo en la API
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero las pruebas de `pg_sleep` y servidor mudo (rojo)
+- [x] Añadir las opciones a las conexiones de servicio y excluir `admin`
+- [x] Comprobar `migrate` y `backfill-chunks` con el plazo activo en la API
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `store_documents.py:21-35` y `store_vectors.py:351-356` (`statement_timeout` locales), `config.py:232` (`request_timeout`: el plazo de consulta queda por debajo). Aprendizaje 2: el servidor mudo es `FaultProxy.mute()`, sin esperas arbitrarias. DEUDA HEREDADA de la revision intento 1 de la Fase 2 (gap 4, T-08): hoy ninguna llamada a la base tiene plazo (`store.py` conecta sin `connect_timeout`): contra un servidor que acepta y no contesta, un reclamo se cuelga ~2 min y el apagado acaba en SIGKILL. Cierra este gap el `connect_timeout`/`statement_timeout` de esta tarea: verificalo EXPLICITAMENTE (un reclamo contra servidor mudo falla en <= el plazo configurado como StoreUnavailable/StoreTimeout y `Worker.run()` sigue y se detiene con SIGTERM sin SIGKILL). Y gap 3 (T-09): una base muda en la fase `read` de un trabajo `embed` hoy acaba como `provider_timeout` (el `asyncio.timeout` del trabajo corta antes de que `_store` clasifique); con plazo de sentencia/conexion la lectura debe fallar como caida de base (StoreUnavailable) y no como `provider_timeout`. REVISION (intento 2 de la Fase 2, gap 3): con `connect_timeout`/`statement_timeout` un 57014 (QueryCanceled) que sale de una consulta del WORKER no es caida de base: el worker lo trata como error contestado TRANSITORIO (`errors.is_store_transient`): lo repite dentro del presupuesto de escritura de `_persist` y, agotado, `fail_job('store_error')` con reintento; en el latido no marca `lost`. Los tests de esta tarea deben comprobar ese camino (no StoreUnavailable).
+**Notas**: Patrón: `store_documents.py:21-35` y `store_vectors.py:351-356` (`statement_timeout` locales), `config.py:232` (`request_timeout`: el plazo de consulta queda por debajo). Aprendizaje 2: el servidor mudo es `FaultProxy.mute()`, sin esperas arbitrarias. DEUDA HEREDADA de la revision intento 1 de la Fase 2 (gap 4, T-08): hoy ninguna llamada a la base tiene plazo (`store.py` conecta sin `connect_timeout`): contra un servidor que acepta y no contesta, un reclamo se cuelga ~2 min y el apagado acaba en SIGKILL. Cierra este gap el `connect_timeout`/`statement_timeout` de esta tarea: verificalo EXPLICITAMENTE (un reclamo contra servidor mudo falla en <= el plazo configurado como StoreUnavailable/StoreTimeout y `Worker.run()` sigue y se detiene con SIGTERM sin SIGKILL). Y gap 3 (T-09): una base muda en la fase `read` de un trabajo `embed` hoy acaba como `provider_timeout` (el `asyncio.timeout` del trabajo corta antes de que `_store` clasifique); con plazo de sentencia/conexion la lectura debe fallar como caida de base (StoreUnavailable) y no como `provider_timeout`. REVISION (intento 2 de la Fase 2, gap 3): con `connect_timeout`/`statement_timeout` un 57014 (QueryCanceled) que sale de una consulta del WORKER no es caida de base: el worker lo trata como error contestado TRANSITORIO (`errors.is_store_transient`): lo repite dentro del presupuesto de escritura de `_persist` y, agotado, `fail_job('store_error')` con reintento; en el latido no marca `lost`. Los tests de esta tarea deben comprobar ese camino (no StoreUnavailable). (Archivos ampliados: `store_pool.py` lleva las opciones de conexión; `admin.py` NO cambia: no hereda nada porque su `Store` no tiene pool.) Opciones de la conexión: `connect_timeout` y `options=-c statement_timeout=N` (opción de arranque: es el valor por defecto de cada sesión del pool y el que restaura `RESET ALL`), fusionadas con las `options` propias del DSN (las nuestras al final). Valores: conexión 2..120 s (libpq trata 1 como 2), sentencia 100..3.600.000 ms, sin 0 ni ilimitado; sin `MEMORY_STATEMENT_TIMEOUT_MS` rige 15.000 (API) o 30.000 (worker), con valor explícito el mismo en ambos. Primera suite completa: 6 errores porque el pool analizaba el DSN al construirse y `create_app(Settings('unused'))` (exportador de contratos, cientos de pruebas) lo rompió: ahora el pool se construye y abre en el primer uso (prueba nueva `test_an_app_over_an_unused_dsn…`). Exenciones EXPLÍCITAS y probadas: `bounded_fallback` (1.000 ms locales; restaura el plazo del servicio, también tras cancelarse), búsqueda vectorial (con deadline semántico rige lo que queda del presupuesto, p. ej. 20 s frente a 200 ms del servicio; sin deadline rige el del servicio; el recurso exacto `MEMORY_VECTOR_EXACT_FALLBACK_MS` sigue fijando el suyo) y `observability` (su `SET LOCAL` propio); `migrate`, `backfill-chunks`, `inspect`, `content-manifest`, `prune-tables` y `backup` con MEMORY_STATEMENT_TIMEOUT_MS=100 en el entorno ejecutan con `statement_timeout` = 0 (almacén grabador con control positivo: el mismo grabador lee 100ms en un servicio) y `backup` entrega a pg_dump un fichero de servicio sin plazos. Decisión de la Fase 2 respetada: la 57014 de una consulta del worker NO es StoreUnavailable (`is_store_transient` sí; `is_store_unavailable` no): prueba con worker real y `pg_sleep`: 5 escrituras canceladas por el servidor, 4 esperas, `store_failures`=0 y el trabajo queda `pending` con `store_error` e intento 1. Deuda heredada: base muda → el connect falla en <= connect_timeout + 1 s (CA-17; prueba con `FaultProxy.mute()` en un hilo siempre liberado) y una transacción por pool contra servidor mudo falla como `StoreUnavailable` dentro de la espera del pool; la verificación explícita del reclamo/lectura/apagado del worker queda en T-25. Mutantes (copia, rojo comprobado): sin la opción de sentencia → 10 rojas; sin connect_timeout → rojo el del servidor mudo; `admin` con los plazos → 5 rojas; sin restaurar tras `bounded_fallback` → rojo; sin el `set_config` del deadline vectorial → rojo. Suite completa: 959 tests, 0 fallos/errores/omitidos (942 + 17). Usage-meter T-23: 0.26h (medido).
+
+
+RED: `tests/test_store_timeouts.py` falló con ImportError: cannot import name DEFAULT_CONNECT_TIMEOUT from memory_platform.config (la prueba contra el codigo de HEAD, sin plazos) · 2026-11-16.
 
 ### T-24 — Errores 503 `store_timeout` y `store_busy` y su clasificación
 

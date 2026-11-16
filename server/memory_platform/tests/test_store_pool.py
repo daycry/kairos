@@ -263,6 +263,12 @@ class PoolTests(unittest.TestCase):
             self.assertEqual(client.get('/health/ready').status_code, 200)
         self.assertIsNone(given.pool)
 
+    def test_an_app_over_an_unused_dsn_builds_without_parsing_it_or_opening_the_pool(self):
+        from memory_platform.app import create_app
+        app = create_app(Settings('unused', mount_mcp=False))  # what the contract exporter and most tests do: nothing is connected, so nothing is read from the DSN
+        self.assertIsNotNone(app.state.store.pool)
+        self.assertFalse(app.state.store.pool._opened)
+
     def test_the_app_with_the_mounted_mcp_closes_the_pool_too(self):
         from fastapi.testclient import TestClient
         from memory_platform.app import create_app

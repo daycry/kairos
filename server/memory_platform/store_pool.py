@@ -18,6 +18,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 import threading
 
+from .config import service_statement_timeout
 from .errors import StoreBusy, StoreUnavailable
 from .observability import log_failure
 
@@ -48,11 +49,10 @@ def reset_session(connection):
 
 class StorePool:
     def __init__(self, dsn, *, min_size, max_size, timeout, connect_timeout=None, statement_timeout_ms=None, name='kairos'):
-        from psycopg.rows import dict_row
-        from psycopg_pool import ConnectionPool
+        # Nothing is parsed or connected here: the DSN is read when the pool is first used (a `Settings('unused')` app, the contract exporter and most tests never serve).
         self.timeout, self.name = timeout, name
-        self._pool = ConnectionPool(service_conninfo(dsn, connect_timeout, statement_timeout_ms), min_size=min_size, max_size=max_size, timeout=timeout, open=False,
-                                    kwargs={'row_factory': dict_row}, check=ConnectionPool.check_connection, name=name)
+        self._parameters = dict(dsn=dsn, min_size=min_size, max_size=max_size, timeout=timeout, connect_timeout=connect_timeout, statement_timeout_ms=statement_timeout_ms)
+        self._pool = None
         self._lock = threading.Lock()
         self._opened = self.closed = False
         self._errors_at_ok = 0  # `connections_errors` of the pool when it last gave a connection: more at a timeout means the database did not let it connect
@@ -63,8 +63,13 @@ class StorePool:
                 if self.closed:
                     raise StoreUnavailable('PoolClosed')
                 if not self._opened:
-                    self._pool.open(wait=False)  # no connection is awaited: a database that is down must not stop the service from starting
-                    self._opened = True
+                    from psycopg.rows import dict_row
+                    from psycopg_pool import ConnectionPool
+                    values = self._parameters
+                    pool = ConnectionPool(service_conninfo(values['dsn'], values['connect_timeout'], values['statement_timeout_ms']), min_size=values['min_size'], max_size=values['max_size'],
+                                          timeout=values['timeout'], open=False, kwargs={'row_factory': dict_row}, check=ConnectionPool.check_connection, name=self.name)
+                    pool.open(wait=False)  # no connection is awaited: a database that is down must not stop the service from starting
+                    self._pool, self._opened = pool, True
         return self._pool
 
     @contextmanager
@@ -96,19 +101,21 @@ class StorePool:
         self._open().wait(timeout)
 
     def stats(self):
-        return self._pool.get_stats()
+        return self._open().get_stats()
 
     def close(self):
         """Close the pool and its connections (idempotent); a transaction that starts afterwards finds `StoreUnavailable`."""
         with self._lock:
             already, self.closed = self.closed, True
         if not already and self._opened:
-            self._pool.close(timeout=5.0)
+            self._pool.close(timeout=2.0)  # a thread stuck in a connect (libpq cannot be interrupted) is a daemon: the process still exits
 
 
 def attach_pool(store, settings, role):
-    """Give `store` a pool built from `settings` (`pool_min`, `pool_max`, `pool_timeout`); `role` names it in the logs of the pool (`api` or `worker`)."""
-    store.pool = StorePool(store.dsn, min_size=settings.pool_min, max_size=settings.pool_max, timeout=settings.pool_timeout, name='kairos-' + role)
+    """Give `store` a pool built from `settings` (`pool_min`, `pool_max`, `pool_timeout`, `connect_timeout`, `statement_timeout_ms`); `role` (`api` or `worker`) names the pool and picks the
+    default `statement_timeout`. Every connection of the pool is made with those plazos as options of the connection, so they are the default of each of its sessions."""
+    store.pool = StorePool(store.dsn, min_size=settings.pool_min, max_size=settings.pool_max, timeout=settings.pool_timeout, connect_timeout=settings.connect_timeout,
+                           statement_timeout_ms=service_statement_timeout(settings, role), name='kairos-' + role)
     return store.pool
 
 

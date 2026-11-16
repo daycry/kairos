@@ -164,6 +164,43 @@ def check_pool(minimum, maximum, timeout):
         raise ValueError('MEMORY_POOL_TIMEOUT must be a number of seconds between 0.1 and 300')
 
 
+DEFAULT_CONNECT_TIMEOUT = 5
+CONNECT_TIMEOUT_RANGE = (2, 120)  # libpq never waits less than 2 seconds for a connection: 1 would be read as 2
+DEFAULT_STATEMENT_TIMEOUT_MS = {'api': 15000, 'worker': 30000}  # per role; below `request_timeout` (30 s) for the API
+STATEMENT_TIMEOUT_RANGE_MS = (100, 3600000)
+
+
+def check_timeouts(connect, statement):
+    """`connect` (MEMORY_CONNECT_TIMEOUT, whole seconds, 2 to 120) and `statement` (MEMORY_STATEMENT_TIMEOUT_MS, whole milliseconds, 100 to 3,600,000, or None for the default of
+    the role). Neither can be 0 or unbounded: that is the hang this setting exists to remove."""
+    if isinstance(connect, bool) or not isinstance(connect, int) or not CONNECT_TIMEOUT_RANGE[0] <= connect <= CONNECT_TIMEOUT_RANGE[1]:
+        raise ValueError('MEMORY_CONNECT_TIMEOUT must be a whole number of seconds between %d and %d' % CONNECT_TIMEOUT_RANGE)
+    if statement is not None and (isinstance(statement, bool) or not isinstance(statement, int) or not STATEMENT_TIMEOUT_RANGE_MS[0] <= statement <= STATEMENT_TIMEOUT_RANGE_MS[1]):
+        raise ValueError('MEMORY_STATEMENT_TIMEOUT_MS must be a whole number of milliseconds between %d and %d' % STATEMENT_TIMEOUT_RANGE_MS)
+
+
+def connection_timeouts(environ=None) -> tuple:
+    """(connect timeout in seconds, statement timeout in milliseconds or None) of the service connections, from MEMORY_CONNECT_TIMEOUT (default 5) and
+    MEMORY_STATEMENT_TIMEOUT_MS (unset: 15,000 in the API and 30,000 in the worker; set: that value in both). `admin` never applies them."""
+    environ = os.environ if environ is None else environ
+
+    def whole(name, raw):
+        raw = raw.strip()
+        if not raw.isascii() or not raw.isdigit():
+            raise ValueError(f'{name} must be a whole number')
+        return int(raw)
+    connect = whole('MEMORY_CONNECT_TIMEOUT', environ.get('MEMORY_CONNECT_TIMEOUT', str(DEFAULT_CONNECT_TIMEOUT)))
+    raw = environ.get('MEMORY_STATEMENT_TIMEOUT_MS', '').strip()
+    statement = whole('MEMORY_STATEMENT_TIMEOUT_MS', raw) if raw else None
+    check_timeouts(connect, statement)
+    return connect, statement
+
+
+def service_statement_timeout(settings, role) -> int:
+    """Milliseconds of `statement_timeout` for the connections of `role` (`api` or `worker`)."""
+    return settings.statement_timeout_ms if settings.statement_timeout_ms is not None else DEFAULT_STATEMENT_TIMEOUT_MS[role]
+
+
 def pool_settings(environ=None) -> tuple:
     """(minimum, maximum, wait in seconds) of the connection pool of the API and of the worker, from MEMORY_POOL_MIN / MEMORY_POOL_MAX / MEMORY_POOL_TIMEOUT."""
     environ = os.environ if environ is None else environ
@@ -351,6 +388,8 @@ class Settings:
     pool_min: int = DEFAULT_POOL_MIN  # MEMORY_POOL_MIN: connections the pool of the API / of the worker keeps open
     pool_max: int = DEFAULT_POOL_MAX  # MEMORY_POOL_MAX
     pool_timeout: float = DEFAULT_POOL_TIMEOUT  # MEMORY_POOL_TIMEOUT: seconds a transaction waits for a connection before 503 `store_busy`
+    connect_timeout: int = DEFAULT_CONNECT_TIMEOUT  # MEMORY_CONNECT_TIMEOUT: seconds a service connection may take to be made
+    statement_timeout_ms: int | None = None  # MEMORY_STATEMENT_TIMEOUT_MS; None = the default of the role (API 15,000, worker 30,000); `admin` ignores it
     metrics_mode: str = 'internal'
     mount_mcp: bool = True  # MEMORY_MOUNT_MCP: the internal MCP at `/mcp`, deprecated since 0.4.0 and removed in 0.5.0 (P-07)
 
@@ -359,6 +398,7 @@ class Settings:
             raise ValueError('metrics_mode must be one of: ' + ', '.join(METRICS_MODES))
         check_fusion(self.fusion_k, self.fusion_validated_bonus, self.fusion_weights)
         check_pool(self.pool_min, self.pool_max, self.pool_timeout)
+        check_timeouts(self.connect_timeout, self.statement_timeout_ms)
 
     @classmethod
     def from_env(cls):
@@ -380,6 +420,7 @@ class Settings:
         chunk_chars, chunk_overlap, chunk_max = chunk_settings()
         batch_size = embed_batch_size()
         pool_min, pool_max, pool_timeout = pool_settings()
+        connect_timeout, statement_timeout = connection_timeouts()
         batch_timeout, job_timeout_max = embed_timeouts()
         fusion_k, fusion_bonus, fusion_weights = fusion_from_env()
         metrics_mode = metrics_mode_from_env()
@@ -409,6 +450,6 @@ class Settings:
             chunk_chars=chunk_chars, chunk_overlap=chunk_overlap, chunk_max=chunk_max, embedding_batch_size=batch_size,
             embedding_batch_timeout=batch_timeout, embedding_job_timeout_max=job_timeout_max,
             fusion_k=fusion_k, fusion_validated_bonus=fusion_bonus, fusion_weights=fusion_weights,
-            pool_min=pool_min, pool_max=pool_max, pool_timeout=pool_timeout,
+            pool_min=pool_min, pool_max=pool_max, pool_timeout=pool_timeout, connect_timeout=connect_timeout, statement_timeout_ms=statement_timeout,
             metrics_mode=metrics_mode, mount_mcp=mount_mcp,
         )
