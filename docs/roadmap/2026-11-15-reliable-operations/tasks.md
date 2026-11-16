@@ -44,7 +44,7 @@ test-plan: n/a (sin UI)
 | Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 7 | 7 | 100% | 0 / 27.0h | 2.10 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 7 | 7 | 100% | 0 / 27.0h | 0.99 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 9 | 9 | 100% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
-| Fase 5 — Permisos por transacción (C-03, B-02) | 2 | 5 | 40.0% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
+| Fase 5 — Permisos por transacción (C-03, B-02) | 3 | 5 | 60.0% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 0 | 9 | 0% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 0 | 6 | 0% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 0 | 4 | 0% | 0 / 7.2h | 0 / 1.0h | 0 / 0.2h | 0 / 240 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **31** | **98** | **31.6%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **32** | **98** | **32.7%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1021,29 +1021,31 @@ RED: `tests/test_store_faults.py::PersistWithTheHeartbeatTests` falló con test_
 ### T-32 — Medición final de consultas por búsqueda y documentación
 
 - **Descripción**: Medir de nuevo las consultas por búsqueda tras la caché y documentar el comportamiento de permisos por transacción. Fuente: CA-18 (medición y documentación).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Una búsqueda híbrida hace 14 consultas menos a la base (de 63 a 49 con el pool) y la documentación explica que los permisos se resuelven una vez por transacción y mueren con el `COMMIT`.
+- **Cerrada**: 2026-11-16
+- **Estado**: completado
 - **Tiempo humano**: est. 1h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real 0.10h (medido)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 37 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: T-31
 - **Tipo**: docs
-- **Archivos**: `server/memory_platform/tests/measure_connections.py`, `docs/architecture.md`, `docs/configuration.md`
+- **Archivos**: `server/memory_platform/tests/measure_connections.py`, `docs/architecture.md`, `docs/configuration.md`, `docs/operations.md` (la regla de clasificación y la medición), `docs/roadmap/2026-11-15-reliable-operations/improvement-plan.md` (lista de coordinación con la Iniciativa 7)
 - **Cubre (tests)**: —
-- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "MEASURE_CONNECTIONS|MEMORY_TEST_RESULT"` → menos consultas por búsqueda que la línea base de la Fase 4 y `MEMORY_TEST_RESULT` sin fallos
+- **Verificación**: `docker run --rm --network=none -e MEASURE_CONNECTIONS=1 -e MEASURE_POOL=1 -e MEASURE_REPEATS=30 kairos-test:i3p5 python -m memory_platform.tests.measure_connections` → una línea `MEASURE_CONNECTIONS {json}` con menos consultas por búsqueda que la línea base de la Fase 4 (63 con el pool; el medidor no corre en el build: mismo ajuste que T-21/T-26) y, en el build `--target test`, `MEMORY_TEST_RESULT` sin fallos
 
 **Criterios de aceptación**
-- [ ] Cifras anotadas en `Notas`
-- [ ] `docs/architecture.md` explica que la caché muere con el `COMMIT`
+- [x] Cifras anotadas en `Notas`
+- [x] `docs/architecture.md` explica que la caché muere con el `COMMIT`
 
 **Subtareas**
-- [ ] Medir
-- [ ] Actualizar `docs/architecture.md`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Medir
+- [x] Actualizar `docs/architecture.md`
+- [x] `usage-meter start/close` de la tarea
 
 **Notas**: Línea base: la tarea de medición previa de la Fase 4.
 
+**Cierre**: Medición (mismo conjunto sintético: 3 proyectos × 300 documentos + 300 notas, híbrida, 10 calentamientos + 30 medidas, imagen `kairos-test:i3p5`, sin red; «antes» = la misma versión con la caché desactivada en copia, para medir ambos en la misma sesión): **con pool, 7 transacciones y 0 conexiones por búsqueda; consultas 63 → 49** (el pool añade **14**, 2 por transacción: la comprobación al entregar y el `RESET ALL`, que el medidor ahora cuenta aparte; sin ellas, **49 → 35**); lecturas de actor, clave y concesiones **36 → 22**. Sin pool: 49 → 35 consultas y 7 conexiones. El 63 coincide con la línea base de T-26 y el 49 con la de T-21. Latencia (p50, dos pasadas alternadas, con pool): después 116,5 / 174,5 ms, antes 91,2 / 246,0 ms: ruido mayor que el efecto, no se afirma mejora (lo fiable es el recuento). Queda por hacer: las 3 comprobaciones previas de `_scope` son transacciones aparte (una por proyecto); fusionarlas pediría un método nuevo en `Store` (superficie congelada). `measure_connections.py` pasa a informar `pool_queries_per_search`, `queries_without_pool_per_search` y `auth_queries_per_search`. Docs: `architecture.md` («Permisos por transacción»: la caché muere con el `COMMIT`), `configuration.md`, `operations.md` (clasificación busy/caída sin temporizadores, tabla de rutas, medición). Cambios visibles → lista de coordinación de `improvement-plan.md`. usage-meter: `{"fuente":"medido","horas_ia":0.1,"duracion_reloj":"11m","tokens_reales":{"entrada":28,"salida":10916,"cache_creacion":18447,"cache_lectura":4046301,"respuestas":14}}`.
 ### T-33 — Cierre de fase: suite completa y subida del mínimo
 
 - **Descripción**: Ejecuta la suite completa del servidor, anota el recuento `MEMORY_TEST_RESULT` y sube `KAIROS_MIN_TESTS` y `MIN_FLOOR` al número observado (la suite solo crece).  Fuente: Puerta de fase; CA-38 (suite con 0 fallos y 0 omitidos).

@@ -1,4 +1,4 @@
-"""B-02 / CA-15 / CA-18: connections and queries one hybrid search costs, and its latency; BEFORE the pool (T-21) and AFTER it (T-26).
+"""B-02 / CA-15 / CA-18: connections and queries one hybrid search costs, and its latency; BEFORE the pool (T-21), AFTER it (T-26) and AFTER the permission cache (T-32).
 
 Runs only inside the harness container (the DSN guard of the retrieval evaluation applies first: loopback, port 55432, database memory_test) in a database of
 its own that it creates and drops. The vectors are random and the query embedding is a fixed vector: no network, no Ollama. Not part of the regression suite
@@ -10,7 +10,10 @@ its own that it creates and drops. The vectors are random and the query embeddin
 What is counted, per search and after a warm-up of `WARMUP` searches (the measured ones are the next `REPEATS`):
 * `connections_per_search`: calls of `psycopg.Connection.connect` (a pool opens its connections through the same call, in its own threads);
 * `transactions_per_search`: calls of `Store.transaction()`;
-* `queries_per_search`: calls of `psycopg.Cursor.execute` (every statement a transaction sends, BEGIN/COMMIT excluded);
+* `queries_per_search`: calls of `psycopg.Cursor.execute` (every statement a transaction sends, BEGIN/COMMIT excluded), the pool's own included (the figure comparable with the 49 / 63 of T-21 / T-26);
+* `pool_queries_per_search`: the part of the above that is the pool's overhead, not the search's: the check at hand-out and the `RESET ALL` of each transaction (2 per transaction, measured by
+  counting the statements sent inside `ConnectionPool.check_connection` and `reset_session`; the pool's own bound check is not patchable once it is open); `queries_without_pool_per_search` = the difference, the number the permission cache is judged on;
+* `auth_queries_per_search`: statements that read the actor, the credential or the grants (`memory.actors` / `api_keys` / `project_grants` by id), the ones the cache removes;
 * `latency_ms`: median, p95 and maximum of the whole `Retrieval.search`;
 * `tiny_transaction_ms`: median and p95 of a transaction of `SELECT 1` alone (the cost of the connection or of the pool checkout, without any search around it).
 With MEASURE_POOL=1 the pool is the one of the API (`MEASURE_POOL_MIN` / `MEASURE_POOL_MAX`, default 1 / 10), warmed with `wait()` and then used for the warm-up searches.
@@ -27,8 +30,10 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import psycopg
 from psycopg.conninfo import make_conninfo
+from psycopg_pool import ConnectionPool
 
 from memory_platform import models as m
+from memory_platform import store_pool
 from memory_platform.auth import hash_password
 from memory_platform.config import Settings
 from memory_platform.retrieval import Retrieval
@@ -48,6 +53,7 @@ class Counters:
     def __init__(self):
         self.connections = self.queries = self.transactions = 0
         self.pids = set()
+        self.pool_queries = self.auth_queries = 0
         self._lock = threading.Lock()
 
     def add(self, name, amount=1):
@@ -57,6 +63,7 @@ class Counters:
 
 def instrumented(counters):
     """Patches that count without changing behaviour; the caller enters all of them."""
+    inside = threading.local()
     real_connect, real_function, real_execute, real_transaction = psycopg.connect, psycopg.Connection.connect.__func__, psycopg.Cursor.execute, Store.transaction
 
     def direct(*args, **kwargs):  # `psycopg.connect` is bound to the class method at import time: patching the class does not see the direct callers
@@ -68,13 +75,28 @@ def instrumented(counters):
         return real_function(cls, *args, **kwargs)
 
     def execute(self, query, *args, **kwargs):
+        if getattr(inside, 'pool', False):
+            counters.add('pool_queries')  # the pool's own check and reset: counted in `queries` too, and apart
+        text = query if isinstance(query, str) else str(query)
+        if any(marker in text for marker in ('FROM memory.actors WHERE id=', 'FROM memory.api_keys WHERE id=', 'FROM memory.project_grants WHERE actor_id=', 'SELECT 1 FROM memory.projects WHERE id=%s')):
+            counters.add('auth_queries')
         counters.add('queries')
         return real_execute(self, query, *args, **kwargs)
+
+    def pool_side(function):  # what the pool sends on its own: the check when a connection is handed out and the reset when it comes back
+        def wrapped(*args, **kwargs):
+            previous, inside.pool = getattr(inside, 'pool', False), True
+            try:
+                return function(*args, **kwargs)
+            finally:
+                inside.pool = previous
+        return wrapped
 
     def transaction(self):
         counters.add('transactions')
         return real_transaction(self)
-    return [patch.object(psycopg, 'connect', direct), patch.object(psycopg.Connection, 'connect', classmethod(connect)), patch.object(psycopg.Cursor, 'execute', execute), patch.object(Store, 'transaction', transaction)]
+    return [patch.object(psycopg, 'connect', direct), patch.object(psycopg.Connection, 'connect', classmethod(connect)), patch.object(psycopg.Cursor, 'execute', execute), patch.object(Store, 'transaction', transaction),
+            patch.object(store_pool, 'reset_session', pool_side(store_pool.reset_session)), patch.object(ConnectionPool, 'check_connection', staticmethod(pool_side(ConnectionPool.check_connection)))]
 
 
 def percentile(values, share):
@@ -143,12 +165,12 @@ class Measure(unittest.TestCase):
             async def run():
                 for _ in range(WARMUP):
                     await one()
-                samples, before = [], (counters.connections, counters.transactions, counters.queries)
+                samples, before = [], (counters.connections, counters.transactions, counters.queries, counters.pool_queries, counters.auth_queries)
                 for _ in range(REPEATS):
                     elapsed, answer = await one()
                     samples.append(elapsed)
                     self.assertFalse(answer['partial'], answer['backends'])
-                after = (counters.connections, counters.transactions, counters.queries)
+                after = (counters.connections, counters.transactions, counters.queries, counters.pool_queries, counters.auth_queries)
                 lexical_samples = [(await one(lexical))[0] for _ in range(REPEATS)]
                 return samples, before, after, lexical_samples
 
@@ -163,6 +185,9 @@ class Measure(unittest.TestCase):
             report['connections_per_search'] = round((after[0] - before[0]) / REPEATS, 2)
             report['transactions_per_search'] = round((after[1] - before[1]) / REPEATS, 2)
             report['queries_per_search'] = round((after[2] - before[2]) / REPEATS, 2)
+            report['pool_queries_per_search'] = round((after[3] - before[3]) / REPEATS, 2)
+            report['queries_without_pool_per_search'] = round((after[2] - before[2] - after[3] + before[3]) / REPEATS, 2)
+            report['auth_queries_per_search'] = round((after[4] - before[4]) / REPEATS, 2)
             report['connections_total_including_warmup'] = counters.connections
             report['latency_lexical_only_ms'] = {'median': round(statistics.median(lexical_samples), 2), 'p95': round(percentile(lexical_samples, 0.95), 2)}
             report['latency_lexical_only_ms'] = {'median': round(statistics.median(lexical_samples), 2), 'p95': round(percentile(lexical_samples, 0.95), 2)}
