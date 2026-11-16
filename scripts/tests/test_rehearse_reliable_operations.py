@@ -74,7 +74,9 @@ class FakeDocker:
             self.calls['states'] += 1
             if self.faults.get('empty_before_stop') and self.calls['states'] >= 2:
                 return 0, 'succeeded|4' + chr(10), ''
-            if not self.faults.get('nothing_queued') and self.calls['states'] <= 2:
+            if self.faults.get('drained_just_before_stop') and self.calls['states'] >= 3:
+                return 0, 'succeeded|4' + chr(10), ''
+            if not self.faults.get('nothing_queued') and self.calls['states'] <= 3:  # the queue_jobs look, the first look before the stop and the last one
                 return 0, 'pending|3\nsucceeded|1\n', ''
             if self.faults.get('never_drains'):
                 return 0, 'pending|2\n', ''
@@ -161,6 +163,14 @@ class OperationsTests(unittest.TestCase):
             self.run_steps(rehearsal)
         self.assertIn('queue was empty before the database stopped', str(raised.exception))
         self.assertFalse([c for c in docker.commands if c[:2] == ['docker', 'stop'] and c[-1] == 'memory-postgres-container'], 'the database was not stopped for nothing')
+
+    def test_a_queue_that_drained_between_the_first_look_and_the_stop_proves_nothing(self):
+        """The count that counts is the last one before `docker stop`: an earlier one (taken before the worker had drained everything) is not evidence of jobs left while the database was down."""
+        rehearsal, docker = self.rehearsal(drained_just_before_stop=True)
+        with self.assertRaises(ops.RehearsalError) as raised:
+            self.run_steps(rehearsal)
+        self.assertIn('queue was empty before the database stopped', str(raised.exception))
+        self.assertFalse([c for c in docker.commands if c[:2] == ['docker', 'stop'] and c[-1] == 'memory-postgres-container'])
 
     def test_the_key_of_the_events_is_revoked_and_the_session_closed_even_when_an_event_fails(self):
         rehearsal, docker = self.rehearsal()

@@ -188,9 +188,14 @@ class OperationsRehearsal(restore_module.Rehearsal):
         self.start('memory-worker')
         self.wait_for('the worker running', lambda: self.worker()[2], READY_SECONDS)
         before = self.worker()
-        pending = self.job_states().get('pending', 0) + self.job_states().get('running', 0)
-        if not pending:
+        def unfinished():
+            states = self.job_states()
+            return states.get('pending', 0) + states.get('running', 0) + states.get('unknown', 0)
+        if not unfinished():
             raise RehearsalError('The queue was empty before the database stopped; raise --queue-jobs')
+        pending = unfinished()  # the count that proves anything is this one, the last before `docker stop`: the worker drains while the first look is being read and the container started
+        if not pending:
+            raise RehearsalError('The queue was empty before the database stopped (the worker drained it first); raise --queue-jobs')
         self.stop('memory-postgres')
         self.sleep(DB_DOWN_SECONDS)
         during = self.worker()
