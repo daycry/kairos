@@ -160,6 +160,7 @@ class IngestMixin:
             c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', ('item:'+pid+':'+iid,))
             project = c.execute('SELECT * FROM memory.projects WHERE id=%s FOR SHARE', (pid,)).fetchone()
             invalidate_auth(c)  # the two advisory locks and this one may have waited for a revocation: every check below reads the database again, not the answer of the first one (CWE-367)
+            self._require(c, actor, pid, 'write')  # the permission of the start may have been revoked during the waits above
             if project['policy']['capture_mode'] == 'off' and event['event_type'] != 'delete':
                 raise Forbidden('Capture is disabled for this project')
             if auto_mode == 'full' and project['policy']['capture_mode'] != 'full' and event['event_type'] != 'delete':

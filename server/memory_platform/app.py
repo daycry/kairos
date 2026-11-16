@@ -175,7 +175,7 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
 
     @app.get('/health/ready', operation_id='memory_readiness')
     def ready():
-        # Short plazos of its own (`ready_probe`): the healthcheck client gives up at 3 s. A pool whose every connection is in use is a busy service, not a dead database: ready.
+        # Short plazos of its own (`ready_probe`): the healthcheck client gives up at 3 s. A pool whose every connection is in use (after it handed out one before) is a busy service, not a dead database: ready; one that never did is not ready.
         try:
             if ready_probe(store) == 'saturated':
                 observability.log_event('readiness_pool_saturated', 'warning')

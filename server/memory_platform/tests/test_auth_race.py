@@ -93,6 +93,22 @@ class IngestRaceTests(RaceFixture):
         self.assertIsInstance(outcome.get('error'), Forbidden, outcome)
         self.assertEqual(self.count('SELECT count(*) AS n FROM memory.memory_items WHERE project_id=%s AND id=%s', self.pid, item), 0)
 
+    def test_ingest_that_waits_for_the_item_lock_sees_write_revoked_meanwhile(self):
+        created, actor = self.key(scopes=('read', 'write'))  # a plain event: no `validate` check follows, only the `write` of the start
+        item = str(uuid.uuid4())
+        outcome = self.race(lambda: self.store.ingest_event(actor, event(self.pid, item_id=item)), item_wait,
+                            self.lock_advisory('item:%s:%s' % (self.pid, item)), self.revoke_key(created['id']))
+        self.assertIsInstance(outcome.get('error'), Unauthorized, outcome)
+        self.assertEqual(self.count('SELECT count(*) AS n FROM memory.memory_items WHERE project_id=%s AND id=%s', self.pid, item), 0)
+
+    def test_ingest_that_waits_for_the_item_lock_sees_the_write_grant_withdrawn_meanwhile(self):
+        user = self.user([self.pid], ('read', 'write'))
+        item = str(uuid.uuid4())
+        outcome = self.race(lambda: self.store.ingest_event(user, event(self.pid, item_id=item)), item_wait,
+                            self.lock_advisory('item:%s:%s' % (self.pid, item)), self.drop_grant(user, 'write'))
+        self.assertIsInstance(outcome.get('error'), Forbidden, outcome)
+        self.assertEqual(self.count('SELECT count(*) AS n FROM memory.memory_items WHERE project_id=%s AND id=%s', self.pid, item), 0)
+
     def seed(self):
         item = str(uuid.uuid4())
         self.store.ingest_event(self.admin, validated(self.pid, item_id=item))

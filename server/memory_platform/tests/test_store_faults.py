@@ -9,9 +9,9 @@ What each route answers (API; every 503 carries `request_id`, a fixed message an
 | read   GET /v1/projects   | 503 service_unavailable            | 503 store_busy                | 503 store_timeout                               |
 | write  POST /v1/projects  | 503 service_unavailable            | 503 store_busy                | 503 store_timeout                               |
 | search POST /v1/search    | 503 service_unavailable (scope)    | 503 store_busy (scope)        | 200, the slow layer `unavailable`, `partial`    |
-| ready  GET /health/ready  | 503 not_ready                      | 200 (`saturated`, no fault)   | (a one-row read: not slow-able)                 |
+| ready  GET /health/ready  | 503 not_ready                      | 503 not_ready (never connected)| (a one-row read: not slow-able)                 |
 
-Mute with a cold pool is `store_busy` and not `service_unavailable` because a connection attempt that has not failed yet is not an error: the pool simply had nothing to give within MEMORY_POOL_TIMEOUT (the connect plazo is longer than the wait in these tests; with the defaults it is shorter, see `ConnectAndWaitTests`), and `/health/ready` follows the same rule (T-30 fix1: no fault on record = busy, ready; the attempt that fails a few seconds later is the fault that turns it into 503). A connection that was already in the pool and dies is an outage (`service_unavailable`).
+Mute with a cold pool is `store_busy` and not `service_unavailable` because a connection attempt that has not failed yet is not an error: the pool simply had nothing to give within MEMORY_POOL_TIMEOUT (the connect plazo is longer than the wait in these tests; with the defaults it is shorter, see `ConnectAndWaitTests`), and `/health/ready` is the exception (T-30 fix2): a pool that has NEVER handed out a connection cannot tell a busy service from a database that never answered, so it is 503 `not_ready`; `saturated` (200) needs a connection handed out before and one in use. A connection that was already in the pool and dies is an outage (`service_unavailable`).
 The worker treats `store_busy` as an outage (it waits and tries again without spending the attempt) and a cancelled statement (57014) as a transient error of the database."""
 import asyncio
 import io
@@ -117,9 +117,9 @@ class ApiFaultTests(unittest.TestCase):
 
     def test_a_mute_database_before_the_first_connection_is_busy_within_the_pool_wait_and_the_api_recovers(self):
         """A database that is mute BEFORE the pool made a connection: its first attempt has neither worked nor failed within the wait (connect plazo 2 s > wait 0.5 s), so no connection fault is on
-        record: `store_busy` on every route and `/health/ready` ready (T-30 fix1: only a recorded fault is `service_unavailable`, the free slots and `_in_use` decide nothing).
+        record: `store_busy` on the routes and `/health/ready` 503 `not_ready` (T-30 fix2: nothing ever answered; T-30 fix1: only a recorded fault is `service_unavailable` on the routes, the free slots and `_in_use` decide nothing).
         One fresh pool per route (a pool that already holds a connection that dies is the next test)."""
-        expected = {'read': (503, 'store_busy'), 'write': (503, 'store_busy'), 'search': (503, 'store_busy'), 'ready': (200, None)}
+        expected = {'read': (503, 'store_busy'), 'write': (503, 'store_busy'), 'search': (503, 'store_busy'), 'ready': (503, 'not_ready')}
         for route in expected:
             with self.subTest(route=route):
                 self.proxy.mute()

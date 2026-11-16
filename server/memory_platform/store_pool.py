@@ -107,8 +107,11 @@ class StorePool:
         self._lock = threading.Lock()
         self._opened = self.closed = False
         self._in_use = 0  # connections handed out and not yet given back (the pool's own `pool_size` also counts the attempts that are still connecting, so it cannot tell a full pool)
-        self._failed_checks = 0  # checks at hand-out that failed (a dead or half-open connection): counted with the connect errors below
-        self._faults_at_ok = 0  # connect errors + failed checks when the pool last gave a connection: more at a timeout means the database does not answer
+        self._made = 0  # connections the pool has established OK (counted by `configure`, which runs on each new one; `connections_num` of the pool also counts the attempts still in flight)
+        self._check_failed_at = None  # `_made` when a check at hand-out failed (a dead or half-open connection), until a connection is handed out or a new one connects: evidence
+        # of an outage only while nothing has connected since. An idle connection cut by a restart is repaired by its replacement (the database is fine), a database that went mute is not
+        self._given = 0  # connections handed out since the pool exists: with none, `/health/ready` cannot tell a busy pool from one that never reached the database
+        self._faults_at_ok = 0  # connect errors when the pool last gave a connection: more at a timeout means the database does not answer
 
     def _open(self):
         if not self._opened:
@@ -121,6 +124,8 @@ class StorePool:
                     values = self._parameters
                     def configure(connection):
                         connection.guard_seconds = self.guard_seconds
+                        with self._lock:
+                            self._made += 1
                     pool = ConnectionPool(service_conninfo(values['dsn'], values['connect_timeout'], values['statement_timeout_ms'], values['tcp']), min_size=values['min_size'], max_size=values['max_size'],
                                           timeout=values['timeout'], open=False, kwargs={'row_factory': dict_row}, connection_class=guarded_connection_class(), configure=configure,
                                           check=self._check, reconnect_timeout=RECONNECT_TIMEOUT, name=self.name)
@@ -129,20 +134,44 @@ class StorePool:
         return self._pool
 
     def _check(self, connection):
-        """The check at hand-out, under its own short client-side plazo; a failure is counted (it is evidence of an outage at the timeout) and the pool discards the connection."""
+        """The check at hand-out, under its own short client-side plazo; a failure is noted (it is evidence of an outage at the timeout, until a new connection works) and the pool discards the connection."""
         from psycopg_pool import ConnectionPool
         previous, connection.guard_seconds = connection.guard_seconds, self.check_seconds
         try:
             ConnectionPool.check_connection(connection)
         except Exception:
-            with self._lock:
-                self._failed_checks += 1
+            self._note_failed_check()
             raise
         finally:
             connection.guard_seconds = previous
 
-    def _faults(self, pool):
-        return pool.get_stats().get('connections_errors', 0) + self._failed_checks
+    def _note_failed_check(self):
+        if self._pool is not None:
+            with self._lock:
+                self._check_failed_at = self._made
+
+    def _outage(self, pool):
+        """A timeout is an outage when a connect error is on record since the last connection handed out, or a check failed and no new connection has worked since."""
+        stats = pool.get_stats()
+        with self._lock:
+            return stats.get('connections_errors', 0) > self._faults_at_ok or (self._check_failed_at is not None and self._made <= self._check_failed_at)
+
+    def delivered(self):
+        """True once the pool has handed out at least one connection (the database answered it, at least once)."""
+        with self._lock:
+            return self._given > 0
+
+    def in_use(self):
+        with self._lock:
+            return self._in_use
+
+    def _delivered_with(self, errors):
+        """A connection was handed out when `errors` connect errors were on record: later timeouts count only the ones after it. Under the lock and monotonic, so a thread with an older count never lowers it."""
+        with self._lock:
+            self._in_use += 1
+            self._given += 1
+            self._faults_at_ok = max(self._faults_at_ok, errors)
+            self._check_failed_at = None
 
     def saturated(self):
         """True when every connection the pool may have is handed out and in use (the database is not the problem: the service is busy)."""
@@ -159,13 +188,11 @@ class StorePool:
             connection = pool.getconn(timeout=wait)
         except PoolTimeout:
             # no timer and no look at `_in_use` (a race with a connection coming back or being handed over): only a fault on record says the database does not answer
-            raise (StoreUnavailable('PoolTimeout') if self._faults(pool) > self._faults_at_ok else StoreBusy()) from None
+            raise (StoreUnavailable('PoolTimeout') if self._outage(pool) else StoreBusy()) from None
         except PoolClosed:
             raise StoreUnavailable('PoolClosed') from None
-        with self._lock:
-            self._in_use += 1
+        self._delivered_with(pool.get_stats().get('connections_errors', 0))
         try:
-            self._faults_at_ok = self._faults(pool)
             connection.guard_seconds = guard if guard is not None else self.guard_seconds
             with connection:
                 yield connection
@@ -221,7 +248,8 @@ def attach_pool(store, settings, role):
 
 def ready_probe(store):
     """What `/health/ready` runs: a one-row read on its own short plazos, `'ready'` when it worked and `'saturated'` when the pool had no free connection within `READY_WAIT` and
-    no connection fault is on record (the same rule as `StorePool.connection`: a busy service is not a dead database, the healthcheck must not take it out). Anything else (a database that does not answer, a pool that cannot connect,
+    no connection fault is on record (the same rule as `StorePool.connection`: a busy service is not a dead database, the healthcheck must not take it out) AND the pool has handed out a connection
+    before (a pool that never did cannot tell a busy service from a database that never answered: that is a failure, `/health/ready` is 503) and some connection is in use (else `'ready'`: nothing to report). Anything else (a database that does not answer, a pool that cannot connect,
     a connection that stopped answering) raises. A store without a pool (or a test double) just reads."""
     pool = getattr(store, 'pool', None)
     if not isinstance(pool, StorePool):
@@ -232,6 +260,10 @@ def ready_probe(store):
         with pool.connection(wait=READY_WAIT, guard=READY_GUARD) as c:
             c.execute('SELECT version FROM memory.schema_versions LIMIT 1')
     except StoreBusy:
+        if not pool.delivered():
+            raise StoreUnavailable('NeverConnected') from None  # a mute database before the first connection: the container must not become healthy
+        if pool.in_use() == 0:
+            return 'ready'
         return 'saturated'  # `StoreBusy` is decided at the timeout itself, from the faults on record: asking again afterwards would race with a connection coming back
     return 'ready'
 

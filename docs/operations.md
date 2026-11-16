@@ -245,9 +245,9 @@ Ante `store_busy` o `store_timeout` el cliente puede reintentar. Si persisten, m
 
 | Ruta | Base cortada | Base muda | Consulta lenta |
 |---|---|---|---|
-| Lectura y escritura | 503 `service_unavailable` | 503 `service_unavailable` (el pool aún no consiguió conexión, o la del pool murió) | 503 `store_timeout` |
-| Búsqueda | 503 `service_unavailable` | 503 `service_unavailable`, como arriba | 200 con la capa lenta `unavailable` y `partial` |
-| `/health/ready` | 503 `not_ready` | 503 `not_ready` (200 si el pool solo está saturado) | — |
+| Lectura y escritura | 503 `service_unavailable` | 503 `store_busy` si el pool aún no hizo ninguna conexión (el intento no ha fallado: no hay rastro de fallo); 503 `service_unavailable` si una conexión del pool enmudeció (la comprobación al entregarla agotó su plazo) | 503 `store_timeout` |
+| Búsqueda | 503 `service_unavailable` | Igual que lectura y escritura: 503 `store_busy` antes de la primera conexión, 503 `service_unavailable` con una conexión que enmudeció | 200 con la capa lenta `unavailable` y `partial` |
+| `/health/ready` | 503 `not_ready` | 503 `not_ready`, también antes de la primera conexión (un pool que nunca entregó una conexión no es 200); 200 solo si el pool ya entregó alguna y está saturado (evento `readiness_pool_saturated`, con alguna conexión en uso) | — |
 
 ## Poda de tablas (`prune-tables`)
 
@@ -320,7 +320,7 @@ El workflow `.github/workflows/ci.yml` se ejecuta en cada pull request, en cada 
 
 | Trabajo | Qué comprueba | Comando local equivalente | Tiempo en CI | Tiempo local |
 |---|---|---|---|---|
-| `server` | Suite completa del backend (1048 pruebas) contra PostgreSQL aislado | `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:ci .` | 2 min 7 s | 8 min 41 s (primera construcción) |
+| `server` | Suite completa del backend (1054 pruebas) contra PostgreSQL aislado | `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:ci .` | 2 min 7 s | 8 min 41 s (primera construcción) |
 | `retrieval-eval` | Puerta de calidad con embeddings simulados: recall@5 ≥ 0,80 y MRR ≥ 0,60 | `docker build --target retrieval-eval -f server/memory_platform/Dockerfile -t kairos-eval:ci .` | 2 min 42 s | 1 min 58 s |
 | `client` | Pruebas y comprobación de publicación del instalador (sin publicar) | en `client`: `npm test` y `npm run release:check` | 30 s | 2 min 12 s (solo `npm test`) |
 | `web` | `typecheck`, pruebas y build del portal, y la etapa `test` de la imagen web | en `web`: `npm ci`, `npm run typecheck`, `npm test`, `npm run build`; y `docker build --target test -f web/Dockerfile -t kairos-web-test:ci .` | 43 s | no medido |

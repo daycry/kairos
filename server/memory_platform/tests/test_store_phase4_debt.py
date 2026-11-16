@@ -24,7 +24,7 @@ from memory_platform.config import Settings
 from memory_platform.errors import StoreBusy, StoreUnavailable
 from memory_platform.retrieval import Retrieval
 from memory_platform.store import Store
-from memory_platform.store_pool import close_pool, ready_probe
+from memory_platform.store_pool import close_pool, guarded_connection_class, ready_probe
 from memory_platform.tests import test_chunk_jobs  # the module, not its test class: importing the class here would run its tests a second time
 from memory_platform.tests.test_chunk_jobs import long_content
 from memory_platform.tests.test_store_pool import pool_store
@@ -129,7 +129,7 @@ class PoolClassificationTests(unittest.TestCase):
                 store = self.opened(maximum)
                 if held:
                     self.hold(store)
-                store.pool._failed_checks += 1  # a connect error or a failed check since the last connection it gave
+                store.pool._note_failed_check()  # a connect error or a failed check since the last connection it gave
                 with patch.object(store.pool._pool, 'getconn', side_effect=PoolTimeout('down')):
                     with self.assertRaises(StoreUnavailable) as raised:
                         with store.transaction():
@@ -138,11 +138,57 @@ class PoolClassificationTests(unittest.TestCase):
 
     def test_ready_probe_follows_the_same_rule(self):
         store = self.opened(4)
+        with store.transaction():  # the pool has handed out a connection: the database answered at least once
+            pass
         with patch.object(store.pool._pool, 'getconn', side_effect=PoolTimeout('growing')):
-            self.assertEqual(ready_probe(store), 'saturated')  # free slots, healthy database: busy, not a dead database
-            store.pool._failed_checks += 1
+            self.assertEqual(ready_probe(store), 'ready')  # free slots, healthy database, nothing in use: neither saturated nor an outage
+            store.pool._note_failed_check()
             with self.assertRaises(StoreUnavailable):
                 ready_probe(store)
+
+    def test_ready_probe_is_saturated_only_with_a_connection_in_use(self):
+        store = self.opened(1)
+        self.hold(store)  # delivered once and in use
+        with patch.object(store.pool._pool, 'getconn', side_effect=PoolTimeout('full')):
+            self.assertEqual(ready_probe(store), 'saturated')
+
+    def test_ready_probe_of_a_pool_that_never_handed_out_a_connection_is_not_ready(self):
+        store = self.opened(4)  # connections exist, none was ever given to a request
+        self.assertFalse(store.pool.delivered())
+        with patch.object(store.pool._pool, 'getconn', side_effect=PoolTimeout('mute')):
+            with self.assertRaises(StoreUnavailable):  # no fault on record yet, but nothing ever answered: not `saturated`, not 200
+                ready_probe(store)
+
+    def test_a_failed_check_of_a_connection_that_was_simply_closed_is_not_an_outage_once_a_new_one_connects(self):
+        # an idle connection cut by a restart: the check fails, the pool replaces it; the next timeout with the database healthy is busy, not an outage
+        store = self.opened(4)
+        with store.transaction():
+            pass
+        dead = guarded_connection_class().connect(store.dsn)
+        dead.close()
+        with self.assertRaises(psycopg.OperationalError):
+            store.pool._check(dead)
+        with patch.object(store.pool._pool, 'getconn', side_effect=PoolTimeout('nothing connected since')):
+            with self.assertRaises(StoreUnavailable) as raised:  # a database that went mute looks the same until a connection works or fails
+                with store.transaction():
+                    pass
+            self.assertIsNot(type(raised.exception), StoreBusy)
+        store.pool._made += 1  # a replacement connected (the pool's `configure` ran on it), nothing was handed out
+        with patch.object(store.pool._pool, 'getconn', side_effect=PoolTimeout('busy')):
+            with self.assertRaises(StoreBusy):
+                with store.transaction():
+                    pass
+        store.pool._note_failed_check()
+        with store.transaction():  # a connection handed out clears the evidence too
+            pass
+        self.assertIsNone(store.pool._check_failed_at)
+
+    def test_the_fault_mark_of_the_last_delivery_never_goes_down(self):
+        store = self.opened(4)
+        pool = store.pool
+        pool._delivered_with(5)
+        pool._delivered_with(3)  # a thread that counted the faults earlier arrives later
+        self.assertEqual(pool._faults_at_ok, 5)
 
     def test_ready_probe_says_saturated_while_a_connection_is_being_given_back(self):
         store = self.opened(1)
