@@ -278,6 +278,182 @@ class IsolationTests(Fixture):
         self.assertFalse([name for name, value in vars(auth_scope).items() if isinstance(value, (dict, set, list)) and not name.startswith('__')], 'no module-level state in auth_scope')
 
 
+class WritersEmptyTheCacheTests(unittest.TestCase):
+    """Every statement that writes who may do what sits in a function that empties the cache (a static walk over the package, so a new writer fails here until it does)."""
+    TABLES = re.compile(r'(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+memory\.(actors|api_keys|web_sessions|project_grants|projects)\b', re.I)
+
+    def functions(self):
+        for path in sorted(PACKAGE.glob('*.py')):
+            tree = ast.parse(path.read_text(encoding='utf-8'))
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    yield path.name, node
+
+    def test_every_function_that_writes_a_permission_table_empties_the_cache(self):
+        # admin.py (the operator's retention, which only deletes expired sessions and runs on a direct connection) and the migration are not request paths
+        exempt = {('admin.py', name) for name in ('prune_tables', 'main')} | {('store_auth.py', 'migrate')}
+        writers = set()
+        for name, node in self.functions():
+            source = ast.get_source_segment((PACKAGE / name).read_text(encoding='utf-8'), node)
+            literal_writes = any(isinstance(n, ast.Constant) and isinstance(n.value, str) and self.TABLES.search(n.value) for n in ast.walk(node))
+            if literal_writes and (name, node.name) not in exempt:
+                writers.add((name, node.name))
+                self.assertIn('invalidate_auth(c)', source, '%s:%s writes a permission table and does not empty the cache' % (name, node.name))
+        self.assertTrue({('store_auth.py', 'revoke_key'), ('store_auth.py', 'create_key'), ('store_auth.py', 'create_user'), ('store_auth.py', 'create_project'),
+                         ('store_auth.py', 'bootstrap_user'), ('auth.py', 'logout'), ('auth.py', 'login'), ('auth.py', 'refresh_csrf')} <= writers, sorted(writers))
+
+    def test_a_function_that_locks_authority_rows_empties_the_cache_before_it_checks_again(self):
+        # `FOR SHARE` on the actor, key, session or grant rows is taken to fence a revocation; the check that follows must read the rows the lock protects (R-05)
+        lockers = set()
+        for name, node in self.functions():
+            source = ast.get_source_segment((PACKAGE / name).read_text(encoding='utf-8'), node)
+            if re.search(r"FROM memory\.(actors|api_keys|web_sessions|project_grants)[^'\"]*FOR SHARE", source):
+                lockers.add((name, node.name))
+                self.assertIn('invalidate_auth(c)', source, '%s:%s locks authority rows and rechecks with the cache of the transaction' % (name, node.name))
+        self.assertEqual(lockers, {('extended_store.py', '_require'), ('corpus_answers.py', '_authorized')})
+
+    def test_no_function_opens_a_savepoint_without_the_helper(self):
+        for path in sorted(PACKAGE.glob('*.py')):
+            if path.name in ('store.py', 'auth_scope.py'):
+                continue
+            self.assertNotRegex(path.read_text(encoding='utf-8'), r'\bc\.transaction\(\)', '%s opens a raw savepoint: use `auth_scope.savepoint(c)`' % path.name)
+
+
+class EveryTransactionTests(unittest.TestCase):
+    """The walk over the transactions of the package: each function that opens one (`.transaction()`) resolves permissions through the cached helpers, or is one of the reviewed few that
+    do not and why. A new transaction that skips the permission check, or that resolves it with its own query, fails here."""
+    RESOLVERS = {'_require', '_active', '_global_admin', '_delegate', 'require_permission', '_authorized', '_generation'}
+    NOT_REQUEST_PATHS = {
+        ('admin.py', 'store_fingerprints'): 'operator command on a direct connection', ('admin.py', 'inspect_store'): 'operator command', ('admin.py', 'content_manifest'): 'operator command',
+        ('admin.py', 'mark_stale_unchunked'): 'operator command', ('admin.py', 'backfill_chunks'): 'operator command', ('admin.py', 'prune_tables'): 'operator command', ('admin.py', 'main'): 'operator command',
+        ('auth.py', 'authenticate_bearer'): 'it IS the credential check (reads the key itself, every request, no cache)', ('auth.py', 'authenticate_session'): 'it IS the credential check',
+        ('auth.py', 'login'): 'proves a password; opens the session', ('auth.py', 'logout'): 'revokes the session of the cookie it holds', ('auth.py', 'require_csrf'): 'reads the live session row itself',
+        ('observability.py', '_read'): 'metrics read, no actor', ('store.py', 'transaction'): 'the provider of the transaction', ('auth_scope.py', 'savepoint'): 'a savepoint, not a transaction',
+        ('store_auth.py', 'migrate'): 'schema', ('store_auth.py', 'bootstrap_user'): 'creates the first actor', ('store_jobs.py', 'stored_item_vector'): 'worker, no actor',
+        ('store_jobs.py', 'job_outcome'): 'worker, keyed by fence', ('store_jobs.py', 'claim_job'): 'worker', ('store_jobs.py', 'renew_lease'): 'worker', ('store_jobs.py', 'complete_job'): 'worker, keyed by fence',
+        ('store_jobs.py', 'fail_job'): 'worker, keyed by fence', ('store_pool.py', 'ready_probe'): 'health probe, no actor',
+    }
+
+    def test_every_transaction_resolves_permissions_or_is_on_the_reviewed_list(self):
+        sites, without = 0, {}
+        for path in sorted(PACKAGE.glob('*.py')):
+            for node in ast.walk(ast.parse(path.read_text(encoding='utf-8'))):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                opens = [n for n in ast.walk(node) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == 'transaction' and not n.args]
+                if not opens:
+                    continue
+                sites += len(opens)
+                called = {n.func.attr for n in ast.walk(node) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)} | {n.func.id for n in ast.walk(node) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+                if not called & self.RESOLVERS:
+                    without[(path.name, node.name)] = len(opens)
+        self.assertGreaterEqual(sites, 86)
+        unreviewed = sorted(set(without) - set(self.NOT_REQUEST_PATHS))
+        self.assertEqual(unreviewed, [], 'a transaction that does not resolve permissions through the cached helpers: add the check or review it here')
+        stale = sorted(set(self.NOT_REQUEST_PATHS) - set(without))
+        self.assertEqual(stale, [], 'on the reviewed list but it now resolves permissions (or no longer exists): remove it from the list')
+
+    def test_no_function_reads_the_permission_tables_for_a_decision_outside_the_helpers(self):
+        # the cached helpers are the only readers that DECIDE access; the others take FOR SHARE locks (a lock must hit the database) or build the actor dict of a credential just proven
+        readers = re.compile(r'FROM\s+memory\.(project_grants|api_keys)\b', re.I)
+        allowed = {('store_auth.py', '_load_active'), ('store_auth.py', '_require'), ('store_auth.py', 'list_users'), ('store_auth.py', 'list_keys'), ('store_auth.py', 'revoke_key'),
+                   ('store_auth.py', 'list_projects'), ('auth.py', '_actor'), ('auth.py', 'authenticate_bearer')}
+        found = set()
+        for path in sorted(PACKAGE.glob('*.py')):
+            for node in ast.walk(ast.parse(path.read_text(encoding='utf-8'))):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and any(isinstance(n, ast.Constant) and isinstance(n.value, str) and readers.search(n.value) and 'FOR SHARE' not in n.value for n in ast.walk(node)):
+                    found.add((path.name, node.name))
+        self.assertEqual(sorted(found - allowed), [])
+
+
+def store_calls(store, actor, pid, other, key_id):
+    """Every `Store` method that takes an actor, with arguments that are valid, so the refusal that follows a revocation can only be the credential's."""
+    document = {'document_id': str(uuid.uuid4()), 'version': 1, 'title': 'T', 'content': 'C', 'source': {'uri': 'fixture://d', 'sha256': hashlib.sha256(b'C').hexdigest()},
+                'validation': {'status': 'validated', 'evidence': ['e'], 'validated_by': 't'}}
+    return {
+        'capture_policy': lambda: store.capture_policy(actor, pid), 'create_key': lambda: store.create_key(actor, {'name': 'n', 'project_ids': [pid], 'scopes': ['read']}),
+        'create_project': lambda: store.create_project(actor, {'id': project_name(), 'title': 't'}),
+        'create_user': lambda: store.create_user(actor, {'username': 'u-' + uuid.uuid4().hex[:10], 'password': 'synthetic-password-123', 'project_ids': [pid], 'scopes': ['read']}),
+        'delete_document': lambda: store.delete_document(actor, pid, 'nope', 1), 'document_manifest': lambda: store.document_manifest(actor, pid),
+        'document_status': lambda: store.document_status(actor, pid, 'nope'), 'get_current_items': lambda: store.get_current_items(actor, pid),
+        'get_document': lambda: store.get_document(actor, pid, 'nope'), 'get_event_receipt': lambda: store.get_event_receipt(actor, 'nope'), 'get_item': lambda: store.get_item(actor, pid, 'nope'),
+        'get_job': lambda: store.get_job(actor, 'nope'), 'get_native_fact': lambda: store.get_native_fact(actor, pid, 'nope', 1, 0), 'get_policy': lambda: store.get_policy(actor, pid),
+        'graph_data': lambda: store.graph_data(actor, {'project_ids': [pid], 'q': '', 'layers': ['episodic']}), 'has_vectors': lambda: store.has_vectors(actor, [pid], 'm'),
+        'history': lambda: store.history(actor, pid), 'ingest_event': lambda: store.ingest_event(actor, event(pid)), 'list_activity': lambda: store.list_activity(actor, pid),
+        'list_documents': lambda: store.list_documents(actor, pid), 'list_jobs': lambda: store.list_jobs(actor, pid), 'list_keys': lambda: store.list_keys(actor),
+        'list_notes': lambda: store.list_notes(actor, pid), 'list_projects': lambda: store.list_projects(actor), 'list_sessions': lambda: store.list_sessions(actor, pid),
+        'list_users': lambda: store.list_users(actor), 'native_history': lambda: store.native_history(actor, pid), 'publish_document': lambda: store.publish_document(actor, pid, document),
+        'reconcile_capture': lambda: store.reconcile_capture(actor, pid, 'nope'), 'require_permission': lambda: store.require_permission(actor, pid, 'read'),
+        'retry_job': lambda: store.retry_job(actor, 'nope'), 'revoke_key': lambda: store.revoke_key(actor, key_id), 'search_documents': lambda: store.search_documents(actor, [pid], 'x'),
+        'search_items': lambda: store.search_items(actor, [pid], 'x'), 'search_native_facts': lambda: store.search_native_facts(actor, [pid], 'x'),
+        'search_vectors': lambda: store.search_vectors(actor, [pid], [0.1, 0.2], 'm'),
+        'set_policy': lambda: store.set_policy(actor, pid, {'capture_mode': 'summary', 'temporal_projection': True}), 'stats': lambda: store.stats(actor, pid),
+        'timeline': lambda: store.timeline(actor, {'project_ids': [pid]}),
+    }
+
+
+class RevocationTableTests(Fixture):
+    def setUp(self):
+        super().setUp()
+        self.pooled_store = self.pooled(1)
+
+    def test_the_table_covers_every_store_method_that_takes_an_actor(self):
+        taking = {name for name in dir(Store) if not name.startswith('_') and callable(getattr(Store, name)) and list(inspect.signature(getattr(Store, name)).parameters)[1:2] == ['actor']}
+        self.assertEqual(sorted(taking - set(store_calls(self.store, {}, 'p', 'q', 'k'))), [], 'a new method that takes an actor needs its row in `store_calls`')
+
+    def test_every_store_method_refuses_the_credential_right_after_it_is_revoked(self):
+        calls = store_calls(self.pooled_store, {}, 'p', 'q', 'k')
+        for name in sorted(calls):
+            with self.subTest(method=name):
+                created = self.store.create_key(self.admin, {'name': name, 'project_ids': self.projects, 'scopes': ['read', 'write', 'publish', 'validate', 'admin']})
+                actor = self.auth.authenticate_bearer(created['token'])
+                call = store_calls(self.pooled_store, actor, self.pid, self.projects[1], created['id'])[name]
+                try:
+                    call()  # with the live key: whatever it answers (some arguments are placeholders), it is not the credential that is refused
+                except Unauthorized:
+                    self.fail('%s refused a live key' % name)
+                except Exception:
+                    pass
+                self.store.revoke_key(self.admin, created['id'])
+                call = store_calls(self.pooled_store, actor, self.pid, self.projects[1], created['id'])[name]
+                with self.assertRaises(Unauthorized):
+                    call()
+
+
+class RouteTableTests(Fixture):
+    def setUp(self):
+        super().setUp()
+        self.pooled_store = self.pooled(1)
+        self.client = TestClient(create_app(Settings(self.store.dsn), store=self.pooled_store, activity_duration=0.025, activity_poll_interval=0.005))
+        self.client.__enter__()
+        self.addCleanup(self.client.__exit__, None, None, None)
+
+    def routes(self):
+        found = []
+        for route in self.client.app.routes:
+            path = getattr(route, 'path', '')
+            if not path.startswith('/v1') or path.startswith('/v1/auth/'):
+                continue  # `/v1/auth/*` are the cookie routes: login proves a password, the others take the session, tested in test_api
+            for method in sorted(getattr(route, 'methods', set()) - {'HEAD', 'OPTIONS'}):
+                found.append((method, path))
+        return found
+
+    def url(self, path):
+        return re.sub(r'\{(\w+)(?::path)?\}', lambda match: self.pid if match.group(1) == 'project_id' else 'x', path)
+
+    def test_every_v1_route_answers_401_right_after_the_key_is_revoked_on_a_pool_of_one_connection(self):
+        routes = self.routes()
+        self.assertGreaterEqual(len(routes), 40)
+        for method, path in routes:
+            with self.subTest(route='%s %s' % (method, path)):
+                created = self.store.create_key(self.admin, {'name': 'route', 'project_ids': self.projects, 'scopes': ['read', 'write', 'publish', 'validate', 'admin']})
+                headers = {'Authorization': 'Bearer ' + created['token']}
+                kwargs = {'headers': headers, **({} if method in ('GET', 'DELETE') else {'json': {}})}
+                first = self.client.request(method, self.url(path), **kwargs)
+                self.assertNotEqual(first.status_code, 401, first.text[:200])
+                self.pooled_store.revoke_key(self.admin, created['id'])
+                second = self.client.request(method, self.url(path), **kwargs)
+                self.assertEqual(second.status_code, 401, second.text[:200])
 
 
 if __name__ == '__main__':

@@ -44,7 +44,7 @@ test-plan: n/a (sin UI)
 | Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 7 | 7 | 100% | 0 / 27.0h | 2.10 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 7 | 7 | 100% | 0 / 27.0h | 0.99 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 9 | 9 | 100% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
-| Fase 5 — Permisos por transacción (C-03, B-02) | 1 | 5 | 20.0% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
+| Fase 5 — Permisos por transacción (C-03, B-02) | 2 | 5 | 40.0% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 0 | 9 | 0% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 0 | 6 | 0% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 0 | 4 | 0% | 0 / 7.2h | 0 / 1.0h | 0 / 0.2h | 0 / 240 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **30** | **98** | **30.6%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **31** | **98** | **31.6%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -991,10 +991,11 @@ RED: `tests/test_store_faults.py::PersistWithTheHeartbeatTests` falló con test_
 ### T-31 — Pruebas de revocación, aislamiento entre peticiones y recorrido de las 86 transacciones
 
 - **Descripción**: Cubrir la clase entera: revocación entre transacciones, dos actores en la misma conexión, y que ninguna de las rutas que usan `transaction()` salta la comprobación de permisos. Fuente: CA-18; R-05.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: pruebas que recorren todas las rutas `/v1`, todos los métodos del almacén con actor y todas las transacciones del paquete para garantizar que una revocación vale en la petición siguiente.
+- **Cerrada**: 2026-11-16
+- **Estado**: completado
 - **Tiempo humano**: est. 3h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.03h (medido)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 110 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: T-30
@@ -1004,18 +1005,19 @@ RED: `tests/test_store_faults.py::PersistWithTheHeartbeatTests` falló con test_
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_auth_cache|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Revocar una clave entre dos peticiones sobre la misma conexión devuelve 401/403 en la segunda (todas las rutas de lectura y escritura de `/v1` probadas con una tabla)
-- [ ] Mutante comprobado: dejar la caché viva tras `COMMIT` deja la prueba de revocación en rojo
-- [ ] La suite de permisos existente (`test_auth.py`, `test_privacy.py`) pasa sin cambios
+- [x] Revocar una clave entre dos peticiones sobre la misma conexión devuelve 401/403 en la segunda (todas las rutas de lectura y escritura de `/v1` probadas con una tabla)
+- [x] Mutante comprobado: dejar la caché viva tras `COMMIT` deja la prueba de revocación en rojo
+- [x] La suite de permisos existente (`test_auth.py`, `test_privacy.py`) pasa sin cambios
 
 **Subtareas**
-- [ ] Tabla de rutas × revocación
-- [ ] Escribir las pruebas
-- [ ] Aplicar el mutante
-- [ ] `usage-meter start/close` de la tarea
+- [x] Tabla de rutas × revocación
+- [x] Escribir las pruebas
+- [x] Aplicar el mutante
+- [x] `usage-meter start/close` de la tarea
 
 **Notas**: Patrón: `tests/test_auth.py` y `tests/test_privacy.py`; 86 usos de `transaction()` (spec §Contexto 7).
 
+**Cierre**: `test_auth_cache.py` (las clases de T-30 más estas): `WritersEmptyTheCacheTests` (recorrido estático: toda función que escribe `actors`/`api_keys`/`web_sessions`/`project_grants`/`projects` llama a `invalidate_auth`; todo `FOR SHARE` de filas de autoridad la vacía antes de releer; ningún `c.transaction()` crudo), `EveryTransactionTests` (89 sitios `.transaction()`, los 86 de la spec más el proveedor y `savepoint`: cada función resuelve permisos por los ayudantes o está en la lista revisada de 21 caminos que no son de petición, con motivo; una entrada obsoleta también falla), `RevocationTableTests` (los 39 métodos públicos de `Store` con actor, cobertura comprobada por introspección; clave revocada entre dos llamadas en un pool de UNA conexión → `Unauthorized`) y `RouteTableTests` (las 46 rutas `/v1` salvo `/v1/auth/*`: la segunda petición tras revocar da 401, pool de una conexión). `test_auth.py` y `test_privacy.py` sin cambios, en verde en la suite de 1038. Mutantes en rojo: M1 caché de módulo y M2 caché que no muere (la tabla de métodos y las pruebas de revocación, ver T-30), T1 transacción nueva sin comprobar permisos (`EveryTransactionTests`), T2 sin vaciar tras el `FOR SHARE` de `extended_store` (la prueba estática y `test_revocation_between_authorization_and_lock_is_rechecked`), T3 igual en `corpus_answers` (solo la estática: sin prueba de comportamiento propia), T4 `logout` sin vaciar (`WritersEmptyTheCacheTests`). usage-meter: `{"fuente":"medido","horas_ia":0.03,"duracion_reloj":"7m","tokens_reales":{"entrada":14,"salida":3023,"cache_creacion":5860,"cache_lectura":1909120,"respuestas":7}}`. Verificación (build `kairos-test:i3p5`): `test_auth_cache` 24 pruebas en `ok` (RevocationTableTests 2, RouteTableTests 1, EveryTransactionTests 2, WritersEmptyTheCacheTests 3 más las de T-30), `MEMORY_TEST_RESULT` 1038, 0 fallos, 0 errores, 0 omitidos.
 ### T-32 — Medición final de consultas por búsqueda y documentación
 
 - **Descripción**: Medir de nuevo las consultas por búsqueda tras la caché y documentar el comportamiento de permisos por transacción. Fuente: CA-18 (medición y documentación).
