@@ -3111,4 +3111,24 @@ Lentes: A+B+C (C re-evalúa su hallazgo de seguridad). Diff `425f2bb..afdc228`. 
 
 ## Revisión de dos lentes — intento 1: Fase 6 (T-35..T-42) (T-35, T-36, T-37, T-38, T-39, T-40, T-41, T-42)
 
-Pendiente de revisión; sin veredicto.
+Lentes: A+B+C+D (C por `ci.yml`, `Dockerfile`, `test_auth_cache.py`, copias cifradas y `deploy-memory.py`; D por `backup.py`/`admin.py`). Diff `99079d8..3264049`. `scope-check.py --base 99079d8` exit 0. Veredicto A: todos los criterios de T-35 a T-42 ✓. 3 Important (B+C, D, B) y 14 Minor. Decisión del orquestador: fix1 corrige los 3 Important y los Minor n.º 4-14 de la tabla; n.º 15-17 quedan como deuda.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | Un SIGTERM o un SIGKILL durante el hash o el cifrado deja `.kairos-partial-*/dump`, el volcado COMPLETO en claro, para siempre en `memory-backups`: el manejador solo cubre `pg_dump`, python es PID 1 sin `init` y nada lo barre (`prune` lo fija como `ignored`) | T-36, T-37, T-38 | pendiente (fix1) | Lente B n.º 1, Lente C n.º 1 (CWE-459/312); `backup.py:170-196`, `test_backup_prune.py:72-79`, `docker-compose.yml:196-204` |
+| 2 | Important | Las huellas por tabla cargan cada tabla entera en RAM (`fetchall`, JSON y `join`) y ahora corren en cada `backup` y en cada despliegue: con 10-50 mil filas de embeddings son 2-9 GB en un VPS de 2-4 GB sin `mem_limit` | T-35, T-39 | pendiente (fix1) | Lente D n.º 1 y 5; `backup.py:85-87,176`, `admin.py:451` |
+| 3 | Important | `content_sha256` se registra y nunca se compara: una copia cifrada, una vez descifrada, no se puede verificar contra su manifiesto (`X.dump` busca `X.dump.json`; el runbook falla) | T-36, T-39 | pendiente (fix1) | Lente B n.º 2; `backup.py:4-5,274,295`, `admin.py:441-446`, `operations.md:174` |
+| 4 | Minor | Ningún cambio visible de la Fase 6 está en la coordinación con la Iniciativa 7 | T-42 | pendiente (lo escribe el orquestador) | Lente A n.º 1; `improvement-plan.md:246` |
+| 5 | Minor | El efímero se llama `kairos-verify-<marca>` sin el proyecto, contra el criterio de T-39 y CA-05 | T-39 | pendiente (fix1) | Lente A n.º 2; `deploy-memory.py:323` |
+| 6 | Minor | El Changelog de T-39 promete restauración en todo despliegue (es opcional en la instalación y `integrity_only` con copia cifrada) | T-39 | pendiente (fix1) | Lente A n.º 3 |
+| 7 | Minor | `MEMORY_BACKUP_REQUIRE_ENCRYPTION` inválido da traza y no un código estable | T-36 | pendiente (fix1) | Lente B n.º 3, Lente A (fuera de lente); `admin.py:411`, `config.py:304` |
+| 8 | Minor | Ni la copia ni el directorio se sincronizan con `fsync` antes del rename | T-35 | pendiente (fix1) | Lente B n.º 4; `backup.py:178-194` |
+| 9 | Minor | Dos `--prune` concurrentes: `FileNotFoundError` cuenta como fallo y sale 1 | T-37 | pendiente (fix1) | Lente B n.º 5; `backup.py:243-252` |
+| 10 | Minor | La limpieza del efímero puede declararse `incomplete` en falso si la red nunca se creó | T-39 | pendiente (fix1) | Lente B n.º 6; `deploy-memory.py:304,359` |
+| 11 | Minor | El manifiesto no tiene MAC ni firma: detecta corrupción, no manipulación; no está declarado | T-35 | pendiente (fix1: declararlo) | Lente C n.º 2 (CWE-345) |
+| 12 | Minor | El PostgreSQL efímero usa `trust` mientras contiene la restauración en claro; falta comprobar `--cap-drop`/`no-new-privileges` | T-39 | pendiente (fix1) | Lente C n.º 3 (CWE-1188), Lente B (fuera de lente); `deploy-memory.py:343` |
+| 13 | Minor | El efímero restaura con `maintenance_work_mem` 64 MB (HNSW lento, riesgo de agotar el plazo) y la copia ocupa 2× en `partial` | T-39 | pendiente (fix1) | Lente D n.º 3; `deploy-memory.py:335-347` |
+| 14 | Minor | `prune` recalcula el sha256 de todas las candidatas, también las que va a borrar; `restore-check --from-manifest` repite el hash de `verify-backup` | T-37, T-39 | pendiente (fix1) | Lente D n.º 4 y 5; `backup.py:230,297` |
+| 15 | Minor | El snapshot y el xmin se retienen durante huellas más volcado (bloat de `jobs`) | T-35 | deuda aceptada (acotado por la copia; se mide en el ensayo del hito A) | Lente D n.º 2 |
+| 16 | Minor | `age=1.2.1-1+b5` fijado por apt sobre trixie rompe la build cuando el espejo retire el paquete | T-36 | deuda → Iniciativa 9 (fijar por checksum del binario) | Lente A (fuera de lente) |
+| 17 | Minor | `content_manifest` carga todos los `body` de `documents` en RAM | — | deuda heredada → Iniciativa 9 | Lente D (heredado) |
