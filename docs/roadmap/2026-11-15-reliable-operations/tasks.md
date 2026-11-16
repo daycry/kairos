@@ -3132,3 +3132,7 @@ Lentes: A+B+C+D (C por `ci.yml`, `Dockerfile`, `test_auth_cache.py`, copias cifr
 | 15 | Minor | El snapshot y el xmin se retienen durante huellas más volcado (bloat de `jobs`) | T-35 | deuda aceptada (acotado por la copia; se mide en el ensayo del hito A) | Lente D n.º 2 |
 | 16 | Minor | `age=1.2.1-1+b5` fijado por apt sobre trixie rompe la build cuando el espejo retire el paquete | T-36 | deuda → Iniciativa 9 (fijar por checksum del binario) | Lente A (fuera de lente) |
 | 17 | Minor | `content_manifest` carga todos los `body` de `documents` en RAM | — | deuda heredada → Iniciativa 9 | Lente D (heredado) |
+
+## Revisión de dos lentes — intento 2: Fase 6 tras fix1 (T-35, T-36, T-37, T-39)
+
+Pendiente de revisión; sin veredicto.
