@@ -184,6 +184,24 @@ class PruneTests(unittest.TestCase):
             self.assertEqual([c['name'] for c in report['kept']], [f'kairos-before-{stamp(4)}.dump', f'kairos-before-{stamp(2)}.dump'])
             self.assertEqual(report['deleted'], [f'kairos-before-{stamp(1)}.dump'])
 
+    def test_a_copy_that_is_gone_is_gone_whatever_code_the_verification_gave(self):
+        """The other order of the race: the other `--prune` deleted the copy and then its manifest before this one read the manifest, so the verification says `backup_manifest_missing`; with the copy gone that is a vanished copy too."""
+        with workspace() as root:
+            for day in (1, 2, 3, 4):
+                copy(root, day)
+            real = backup.verify_backup
+
+            def deleted_then_manifest_missing(path, *args, **kwargs):
+                if path.name.endswith(stamp(3) + '.dump'):
+                    path.unlink()
+                    backup.manifest_path(path).unlink()
+                    raise backup.BackupError('backup_manifest_missing', 'the other prune was first')
+                return real(path, *args, **kwargs)
+            with patch.object(backup, 'verify_backup', deleted_then_manifest_missing):
+                report = run_prune(root, 2)
+            self.assertEqual(report['skipped'], [], 'a copy that no longer exists is not reported as skipped')
+            self.assertEqual([c['name'] for c in report['kept']], [f'kairos-before-{stamp(4)}.dump', f'kairos-before-{stamp(2)}.dump'])
+
     def test_a_copy_that_is_a_link_or_a_directory_at_verification_time_is_still_skipped(self):
         """Positive control of the check above: `backup_not_found` for something that STILL exists is a skip, only a path that is gone counts as vanished."""
         with workspace() as root:

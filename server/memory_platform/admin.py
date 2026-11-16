@@ -379,6 +379,7 @@ def main(argv=None):
             if encryption_plan(recipients_file, require_encryption) is None:  # whatever MEMORY_BACKUP_REQUIRE_ENCRYPTION says: an external copy is never sent in the clear
                 raise BackupError('backup_encryption_required', 'backup-cycle sends the copies to an external destination and only sends encrypted ones: set MEMORY_BACKUP_RECIPIENTS_FILE (public recipients); nothing was written or sent')
         except BackupError as error:
+            record_failure(Path(args.output_dir).resolve())  # a restarting service must not leave the metric of its last good cycle at 1
             raise SystemExit(f'{error.code}: {error}') from None
         if args.prune_tables:
             try:

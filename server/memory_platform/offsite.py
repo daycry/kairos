@@ -22,6 +22,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -82,11 +83,12 @@ class DirDestination:
             pass
 
     def put(self, source, name):
+        """Store what the open file `source` holds (read from where it is) under `name`: the caller checked THAT descriptor, a path is never reopened here."""
         try:
             descriptor, temporary = tempfile.mkstemp(prefix=UPLOAD_PREFIX, dir=self.root)
             try:
-                with os.fdopen(descriptor, 'wb') as out, open(source, 'rb') as origin:
-                    shutil.copyfileobj(origin, out, HASH_BLOCK)
+                with os.fdopen(descriptor, 'wb') as out:
+                    shutil.copyfileobj(source, out, HASH_BLOCK)
                     out.flush()
                     os.fsync(out.fileno())
                 os.chmod(temporary, 0o600)
@@ -130,10 +132,10 @@ class RcloneDestination:
     def target(self, name):
         return self.remote + name if self.remote.endswith((':', '/')) else self.remote + '/' + name
 
-    def run(self, *args, timeout=RCLONE_SHORT_TIMEOUT_SECONDS, capture=False):
+    def run(self, *args, timeout=RCLONE_SHORT_TIMEOUT_SECONDS, capture=False, stdin=subprocess.DEVNULL):
         """One `rclone` command: its output is returned only when `capture` (a listing) and its diagnostics are never kept."""
         try:
-            result = subprocess.run(['rclone', *RCLONE_FLAGS, *args], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
+            result = subprocess.run(['rclone', *RCLONE_FLAGS, *args], stdin=stdin, stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
                                     stderr=subprocess.DEVNULL, timeout=timeout)
         except FileNotFoundError:
             raise OffsiteError('the rclone program is not installed here') from None
@@ -147,7 +149,8 @@ class RcloneDestination:
         return {line for line in self.run('lsf', '--files-only', self.remote, capture=True).splitlines() if line}
 
     def put(self, source, name):
-        self.run('copyto', str(source), self.target(name), timeout=RCLONE_TIMEOUT_SECONDS)
+        """`rclone rcat` of the open file `source` through its descriptor (its stdin): rclone never opens a path the copy could have been swapped at."""
+        self.run('rcat', self.target(name), timeout=RCLONE_TIMEOUT_SECONDS, stdin=source)
 
     def fetch(self, name, directory):
         target = Path(directory) / name
@@ -207,6 +210,63 @@ def cycle_name(now=None):
 def has_age_header(path):
     with open(path, 'rb') as handle:
         return handle.read(len(AGE_MAGIC)).startswith(AGE_MAGIC)
+
+
+def open_regular(path):
+    """Open `path` for reading ONCE, never through a link: the descriptor that is checked is the one that is uploaded (CWE-367). `BackupError` `backup_not_found` when it is a link or not a regular file."""
+    path = Path(path)
+    try:
+        if not hasattr(os, 'O_NOFOLLOW') and path.is_symlink():  # a platform without O_NOFOLLOW (the service runs on Linux)
+            raise OSError
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0))
+    except OSError:
+        raise BackupError('backup_not_found', f'The copy {path.name} is not a regular file') from None
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise BackupError('backup_not_found', f'The copy {path.name} is not a regular file')
+        return os.fdopen(descriptor, 'rb')
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def open_encrypted_copy(path, manifest):
+    """The copy as an open file at its start, after checking ON THAT DESCRIPTOR that it begins with the `age` header and that its sha256 and size are the manifest's.
+
+    Nothing in the clear can be sent through it: a link, a replaced file or a changed one fails here (`backup_not_found`, `backup_encryption_required`, `backup_checksum_mismatch`).
+    """
+    handle = open_regular(path)
+    try:
+        if not handle.read(len(AGE_MAGIC)).startswith(AGE_MAGIC):
+            raise BackupError('backup_encryption_required', f'The copy {Path(path).name} does not begin with the age header; it was not sent')
+        handle.seek(0)
+        digest, size = hashlib.sha256(), 0
+        for block in iter(lambda: handle.read(HASH_BLOCK), b''):
+            digest.update(block)
+            size += len(block)
+        if digest.hexdigest() != manifest['sha256'] or size != manifest['bytes']:
+            raise BackupError('backup_checksum_mismatch', f'The copy {Path(path).name} changed after it was verified; it was not sent')
+        handle.seek(0)
+        return handle
+    except BaseException:
+        handle.close()
+        raise
+
+
+def open_manifest(path, name, manifest):
+    """The manifest of `name` as an open file at its start, read once from a descriptor opened without following links; it must say what the verified manifest says (`backup_manifest_invalid` otherwise)."""
+    handle = open_regular(path)
+    try:
+        sent = json.loads(handle.read(16 * HASH_BLOCK + 1).decode('utf-8'))
+        if not isinstance(sent, dict) or any(sent.get(key) != manifest[key] for key in ('file', 'sha256', 'bytes', 'created_at')) or sent['file'] != name:
+            raise BackupError('backup_manifest_invalid', f'The manifest of {name} changed after it was verified; it was not sent')
+        handle.seek(0)
+        return handle
+    except BaseException as error:
+        handle.close()
+        if isinstance(error, (ValueError, UnicodeDecodeError)):
+            raise BackupError('backup_manifest_invalid', f'The manifest of {name} cannot be read as JSON; it was not sent') from None
+        raise
 
 
 def local_copies(directory, remote_keep, now):
@@ -269,11 +329,23 @@ def upload(destination, directory, current, remote_keep, recipients_file, now):
                 except BackupError as error:
                     skipped.append({'name': name, 'code': error.code})
                     continue
-            destination.put(path, name)
+            try:
+                handle = open_encrypted_copy(path, manifest)  # the header and the sha256 are checked on the descriptor that is uploaded
+            except BackupError as error:
+                skipped.append({'name': name, 'code': error.code})
+                continue
+            with handle:
+                destination.put(handle, name)
             sha, size = destination.digest(name)
             if sha != manifest['sha256'] or size != manifest['bytes']:
                 raise BackupError('backup_checksum_mismatch', f'The copy {name} differs at the {destination.kind} destination from its manifest; its manifest was not sent and nothing was deleted')
-            destination.put(manifest_path(path), name + '.json')
+            try:
+                handle = open_manifest(manifest_path(path), name, manifest)
+            except BackupError as error:  # the copy is up without its manifest: it is not complete there and the next cycle sends it again
+                skipped.append({'name': name, 'code': error.code})
+                continue
+            with handle:
+                destination.put(handle, name + '.json')
             uploaded.append(name)
     return {'uploaded': uploaded, 'skipped': skipped, 'skipped_plain': plain}
 
@@ -380,6 +452,7 @@ def run_cycle(make_copy, directory, destination, *, keep, remote_keep, recipient
             report['prune'] = prune_backups(directory, keep, protect=copy, now=now)
         except (BackupError, OSError) as error:  # the copy exists and is at the destination: its report is printed whatever stopped the local retention
             code = error.code if isinstance(error, BackupError) else 'backup_prune_failed'
+            observability.log_event('backup_cycle_failed', 'error', exc_type=type(error).__name__, code=code)  # the report is printed, but the cycle failed: the event of every other failed cycle
             report['prune'] = {'status': 'failed', 'code': code}
             raise CycleError(code, str(error) if isinstance(error, BackupError) else f'the local retention failed ({type(error).__name__})', report) from None
     return report
