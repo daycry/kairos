@@ -43,7 +43,7 @@ test-plan: n/a (sin UI)
 | Fase 1 — Arnés de fallos y tests de límites (C-07) | 6 | 6 | 100% | 0 / 32.4h | 0.83 / 4.3h | 0 / 1.1h | 0 / 1080 k |
 | Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 7 | 7 | 100% | 0 / 27.0h | 2.10 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 7 | 7 | 100% | 0 / 27.0h | 0.99 / 3.6h | 0 / 0.9h | 0 / 900 k |
-| Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 7 | 9 | 77.8% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
+| Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 8 | 9 | 88.9% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 0 | 5 | 0% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 0 | 9 | 0% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 0 | 6 | 0% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **27** | **98** | **27.6%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **28** | **98** | **28.6%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -893,31 +893,32 @@ RED: `tests/test_store_faults.py::PersistWithTheHeartbeatTests` falló con test_
 ### T-28 — Cierre de fase: suite completa y subida del mínimo
 
 - **Descripción**: Ejecuta la suite completa del servidor, anota el recuento `MEMORY_TEST_RESULT` y sube `KAIROS_MIN_TESTS` y `MIN_FLOOR` al número observado (la suite solo crece).  Fuente: Puerta de fase; CA-38 (suite con 0 fallos y 0 omitidos).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: el mínimo de pruebas que exige la integración continua sube a 984; no cambia el comportamiento del producto.
+- **Estado**: completado
+- **Cerrada**: 2026-11-16
 - **Tiempo humano**: est. 0.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.07h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.07h (estimado) · real 0.03h (medido)
 - **Supervisión**: est. 0.02h (≈25 % IA) · real —
 - **Previsión IA**: 18 k in / 2 k out tok · ⚠️ verificar €
 - **Dependencias**: T-27
 - **Tipo**: test
-- **Archivos**: `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `docs/operations.md`
+- **Archivos**: `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `docs/operations.md`, `README.md`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
   - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
 
 **Criterios de aceptación**
-- [ ] `MEMORY_TEST_RESULT` con 0 fallos, 0 errores, 0 omitidos y `tests` ≥ 764 (≥ el recuento del cierre anterior)
-- [ ] `KAIROS_MIN_TESTS` en `.github/workflows/ci.yml` y `MIN_FLOOR` en `scripts/tests/test_ci_workflow.py` igualan el recuento observado, y la tabla de `docs/operations.md` lo repite
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas`
+- [x] `MEMORY_TEST_RESULT` con 0 fallos, 0 errores, 0 omitidos y `tests` ≥ 764 (≥ el recuento del cierre anterior)
+- [x] `KAIROS_MIN_TESTS` en `.github/workflows/ci.yml` y `MIN_FLOOR` en `scripts/tests/test_ci_workflow.py` igualan el recuento observado, y la tabla de `docs/operations.md` lo repite
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas`
 
 **Subtareas**
-- [ ] Ejecutar la suite completa (primer plano, un solo Docker a la vez) y anotar el recuento
-- [ ] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Ejecutar la suite completa (primer plano, un solo Docker a la vez) y anotar el recuento
+- [x] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Cierra la fase: no se abre la revisión adversarial con la suite en rojo.
+**Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Cierra la fase: no se abre la revisión adversarial con la suite en rojo. (Archivos ampliados: `README.md`, que repite el recuento.) Suite completa (primer plano, un solo Docker): `MEMORY_TEST_RESULT` 984 tests, 0 fallos, 0 errores, 0 omitidos (925 del cierre de la Fase 3 + 59 de la Fase 4: 20 de `test_store_pool`, 25 de `test_store_timeouts` y 14 de `test_store_faults`). `KAIROS_MIN_TESTS`=984 en `ci.yml`, `MIN_FLOOR`=984 en `test_ci_workflow.py`, y la tabla de `docs/operations.md` y el `README.md` repiten 984; `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → 45 tests OK. Suite de kairos-mcp (T-24): 141 OK. Imagen `kairos-test:i3p4` (con `psycopg-pool 3.3.3`). EOL conservado (`git diff --stat` igual con y sin `--ignore-cr-at-eol`). Usage-meter T-28: 0.03h (medido).
 
 ### T-29 — Revisión adversarial de la fase (dos lentes)
 

@@ -249,7 +249,7 @@ Copias, restauración aislada, claves e incidencias: [operación y recuperación
 
 | Ámbito | Cómo se verifica |
 |---|---|
-| Backend | Suite completa contra PostgreSQL aislado (925 pruebas) |
+| Backend | Suite completa contra PostgreSQL aislado (984 pruebas) |
 | Calidad de recuperación | Puerta `retrieval-eval` (recall@5, MRR y no regresión por subconjunto sobre un conjunto sintético congelado), con embeddings simulados en la suite y con un Ollama desechable en la medida con el modelo real |
 | Web | Pruebas unitarias (65), TypeScript y build de producción con Vite |
 | Interfaz | Navegación real en Chromium con Playwright (20 escenarios), escritorio y móvil |
