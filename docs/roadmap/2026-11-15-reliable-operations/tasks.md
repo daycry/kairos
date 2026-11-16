@@ -3055,6 +3055,7 @@ Lentes: A+B+C+D (C por `.github/workflows/ci.yml`; D por `worker.py`). Diff `920
 - 2026-11-15 · «Revisión de dos lentes — intento 1: Fase 1 (T-01..T-05): 3 Important, 4 Minor (T-01, T-02, T-03, T-04, T-05)» → [execution-history.md](execution-history.md) · SHA-256 `b4eb7fffcb4d331e41818669864cdc3828c91bdf163f8913b0b1489c1e4ca774`
 - 2026-11-16 · «Revisión de dos lentes — intento 2: Fase 2 tras fix1 (T-07, T-09, T-10, T-11, T-12)» → [execution-history.md](execution-history.md) · SHA-256 `f855addba463e74bed860503006620e87e4a6e30ebe4ab0e709ff975a232d115`
 - 2026-11-16 · «Revisión de dos lentes — intento 1: Fase 4 (T-21..T-28) (T-21, T-22, T-23, T-24, T-25, T-26, T-27, T-28)» → [execution-history.md](execution-history.md) · SHA-256 `7f213e9959ade269b413081593ec5f19474f05f2ecabcc48ad5e4b2111380d2e`
+- 2026-11-16 · «Revisión de dos lentes — intento 1: Fase 5 (T-30..T-33) (T-30, T-31, T-32, T-33)» → [execution-history.md](execution-history.md) · SHA-256 `71140bcb0171ab5a63e75d39bd2a425b2099715951736841104ad8d7ca9fa6c7`
 
 ## Revisión de dos lentes — intento 3: Fase 2 tras fix2 (T-07, T-09, T-10, T-11, T-12)
 
@@ -3109,21 +3110,6 @@ Lentes: A+B (re-evalúan solo lo corregido). Diff `078b465..5d8a75c`. Veredicto:
 | 5 | Minor | Carrera en `saturated()`: entre devolver y entregar la conexión, `/health/ready` puede dar 503 con el pool saturado | T-24 | deuda → T-30 | Lente B n.º 2; `store_pool.py:169-178` |
 | 6 | Minor | La regla de 1 s no deja la clasificación determinista con hosts de varias direcciones (`connect_timeout` por dirección) ni con todas las conexiones cerradas por el plazo a mitad de sentencia | T-24 | deuda → T-30 | Lente B n.º 3; `config.py:61-67` |
 | 7 | Minor | Un `StoreUnavailable` dentro de una capa de búsqueda sigue dando 200 `partial` con todas las capas `unavailable` | T-24 | deuda → T-30 | Lente B n.º 4; `retrieval.py:126-130` |
-
-## Revisión de dos lentes — intento 1: Fase 5 (T-30..T-33) (T-30, T-31, T-32, T-33)
-
-Lentes: A+B+C+D (C por `auth.py`, `auth_scope.py`, `store_auth.py` y `ci.yml`; D por `test_auth_cache.py`). Diff `04822a0..425f2bb`. `scope-check.py --base 04822a0` exit 0. Veredicto: T-30 a T-33 ✓; sin Critical ni Important (D: sin hallazgos). Decisión del orquestador: corregir los Minor de seguridad y de pruebas antes de cerrar (n.º 1-6) y relanzar A+B sobre ese diff.
-
-| # | Grado | Gap | Tarea | Corrección | Evidencia |
-|---|---|---|---|---|---|
-| 1 | Minor | Comprobar-esperar-comprobar fuera de `FOR SHARE` responde ahora desde la caché: tras esperar un lock asesor o un `FOR UPDATE`, la segunda comprobación (`validate` en la ingesta, `_protect_validated`, documentos) no ve una revocación confirmada durante la espera | T-30 | corregido (fix1): releer tras cada espera de bloqueo (ingesta, `_protect_validated`, publicar, borrar, reintentar); `test_auth_race.py` 8 pruebas con dos conexiones y mutantes M1-M5 en rojo; commit `T-30: fix1` | Lente C n.º 1 (CWE-367/863), Lente B n.º 2; `store_ingest.py:149,165,29`, `store_documents.py:121-126` |
-| 2 | Minor | La prueba estática «todo bloqueo vacía la caché» solo detecta `FOR SHARE`, no comprueba el orden y la de savepoints solo busca el nombre `c`; el recorrido de escritores solo ve SQL literal | T-31 | corregido (fix1): recorrido por llamadas con todas las formas de bloqueo, orden bloqueo-vaciado-comprobación, receptores de savepoint cualesquiera y escrituras no reconocidas; mutantes en rojo; commit `T-31: fix1` | Lente B n.º 3, Lente A (fuera de lente); `test_auth_cache.py:283,298,310-319` |
-| 3 | Minor | Una prueba de savepoints no revierte ningún savepoint y no falla al quitar el control | T-31 | corregido (fix1): la prueba de `:195` eliminada por redundante con la de `:175` (revierte un savepoint de verdad; rojo sin el vaciado); commit `T-31: fix1` | Lente B n.º 4; `test_auth_cache.py:195-200` |
-| 4 | Minor | La tabla de rutas excluye `/v1/auth/me` y `/v1/auth/logout`, que aceptan bearer | T-31 | corregido (fix1): `/v1/auth/me` y `/v1/auth/logout` en la tabla; commit `T-31: fix1` | Lente A n.º 2; `test_auth_cache.py:435-436` |
-| 5 | Minor | La documentación dice «la misma instantánea» (falso en READ COMMITTED) y «la respuesta de su comienzo» (es la de la primera lectura) | T-30, T-32 | corregido (fix1): `auth_scope.py` en T-30 y los textos de documentación en T-32: READ COMMITTED, primera lectura, relectura tras bloqueo; commits `T-30: fix1` y `T-32: fix1` | Lente A n.º 1, Lente B n.º 2; `architecture.md:63`, `auth_scope.py:4-5,48` |
-| 6 | Minor | Del lado de quien recibe la conexión sigue la carrera de `saturated()`; con el pool creciendo y la base sana, un `PoolTimeout` con `_in_use < max` sale como `service_unavailable` | T-30 | corregido (fix1): `store_busy` sin fallo registrado, `service_unavailable` solo con fallo registrado, `/health/ready` igual; mutantes M6 y M6b en rojo; documentado en `operations.md`; commit `T-30: fix1` | Lente B n.º 1, Lente A (fuera de lente); `store_pool.py:158-166,405-407` |
-| 7 | Minor | Sin línea `RED:` en T-30/T-31 y evidencia de Verificación resumida en T-30/T-32 | T-30, T-31, T-32 | corregido (fix1): líneas `RED:` de T-30 y T-31 (con la evidencia real, dicha tal cual) y la Verificación literal de T-30 y T-32; commits `T-30: fix1`, `T-31: fix1`, `T-32: fix1` | Lente A n.º 3 y 4 |
-| 8 | Minor | Con un `StoreUnavailable`, `gather` devuelve el 503 sin cancelar las capas hermanas, que retienen conexiones hasta su plazo | T-30 | deuda aceptada (ya ocurría con `StoreBusy`; acotado por el plazo de sentencia) | Lente B (fuera de lente); `retrieval.py:175` |
 
 ## Revisión de dos lentes — intento 2: Fase 5 tras fix1 (T-30, T-31, T-32, T-33)
 
