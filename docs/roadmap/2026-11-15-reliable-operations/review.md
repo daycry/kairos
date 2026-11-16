@@ -66,3 +66,18 @@ Cada fase cierra con su revisión adversarial. El detalle de cada intento está 
 | 1 | Minor | Métrica con `_landed`; carrera busy/caída; búsqueda saturada `partial`; readiness; texto de sesión; S-08; casilla de T-24; mediciones; validación del lease; `graph_data` | Corregidos |
 | 2 | Minor | Changelog desactualizados y frase de `PREPARE` | Corregidos en el cierre |
 | 2 | Minor | Plazo total en `executemany`; carrera de `saturated()`; clasificación con varias direcciones; `StoreUnavailable` en una capa; mutantes sin anotar | Deuda → T-30 (Fase 5) |
+
+## Fase 5 — Permisos por transacción (T-30 a T-34)
+
+- **Fecha**: 2026-11-16
+- **Lentes**: intento 1, A, B, C y D (C por `auth.py`, `auth_scope.py`, `store_auth.py` y `ci.yml`); intento 2, A, B y C.
+- **Veredicto**: cerrada en el intento 2 de 3, sin hallazgos Critical ni Important. El intento 1 no tuvo ninguno; se corrigieron sus Minor (uno de seguridad) y se relanzó la revisión.
+- **Evidencia**: suite del servidor 1054 tests, 0 fallos, errores y omitidos; `KAIROS_MIN_TESTS` y `MIN_FLOOR` 1054; `scope-check.py --base 04822a0` exit 0; contrato MCP sin cambios; consultas por búsqueda 63 → 49 con pool (14 son del propio pool); pruebas de carrera con dos conexiones (`test_auth_race.py`); mutantes en rojo en las Notas.
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Minor (seguridad, CWE-367) | Comprobar-esperar-comprobar respondía desde la caché tras esperar un bloqueo | Corregido: la caché se vacía tras cada espera y se relee el permiso; 8 pruebas de carrera |
+| 1 | Minor | Pruebas estáticas poco estrictas; prueba de savepoints vacua; rutas con bearer; texto «misma instantánea»; clasificación del pool; evidencia | Corregidos |
+| 1 | Minor | `gather` no cancela las capas hermanas tras un 503 | Deuda aceptada |
+| 2 | Minor | Ingesta sin re-exigir `write`; readiness sin conexión previa; `_faults_at_ok` sin lock; tabla de respuestas, coordinación y Changelog | Corregidos en el cierre (886388a) |
+| 2 | Minor | Falsos negativos del recorrido estático; hilo suelto en `test_auth_race` al fallar | Deuda aceptada → Iniciativa 9 |
