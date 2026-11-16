@@ -30,6 +30,7 @@ BACKUP_TIMEOUT_SECONDS = 3600  # O-03: `content-manifest`, `backup` and `verify-
 VERIFY_WAIT_SECONDS = 90  # the ephemeral PostgreSQL of `--verify-backup` must accept connections within this
 VERIFY_LABEL = 'com.kairos.verify-backup'
 VERIFY_PROJECT_LABEL = 'com.kairos.project'
+VERIFY_NAME_PROJECT = 24  # the longest project text in a verify container name: `kairos-verify-pg-<project>-<mark>` is a hostname and must stay within 63 characters
 VERIFY_MAINTENANCE_WORK_MEM = '256MB'  # the restore rebuilds the vector indexes: the 64 MB default makes a big one slow enough to exhaust the plazo
 BACKUP_TIMEOUT_MAX_SECONDS = 86400  # a timeout is a bound: 0 or "no limit" would let a stuck copy hang the deployment
 ISOLATED_PRIVATE_FILES = ('memory-platform.env', 'compose.override.yml', 'deployment-status.json', 'deployment-status.tmp')
@@ -74,6 +75,13 @@ def check_backup_timeout(value):
     if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= BACKUP_TIMEOUT_MAX_SECONDS:
         raise DeploymentError(f'--backup-timeout must be a whole number of seconds between 1 and {BACKUP_TIMEOUT_MAX_SECONDS}')
     return value
+
+
+def verify_name_part(project):
+    """The project as it appears in the names of the ephemeral verification objects: whole if short, else its start plus a short hash of the whole (names stay unique per project)."""
+    if len(project) <= VERIFY_NAME_PROJECT:
+        return project
+    return project[:VERIFY_NAME_PROJECT - 9] + '-' + hashlib.sha256(project.encode('utf-8')).hexdigest()[:8]
 
 
 def isolated_image(project, name):
@@ -329,7 +337,7 @@ class Deployment:
         started = time.monotonic()
         mark = uuid.uuid4().hex[:12]
         result = self.report['verify_backup'] = {'status': 'running', 'backup': copy.get('path')}
-        tag = f'{self.project}-{mark}'
+        tag = f'{verify_name_part(self.project)}-{mark}'  # the labels carry the whole project; only the names (a hostname among them) are shortened
         net, database_container, restore_container = f'kairos-verify-{tag}', f'kairos-verify-pg-{tag}', f'kairos-verify-op-{tag}'
         database = 'memory_restore_' + mark
         labels = ['--label', f'{VERIFY_LABEL}={mark}', '--label', f'{VERIFY_PROJECT_LABEL}={self.project}']

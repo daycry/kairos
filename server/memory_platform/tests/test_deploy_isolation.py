@@ -172,14 +172,14 @@ class IsolatedDeploymentTests(unittest.TestCase):
             self.assertIn('needs its own', str(raised.exception))
             self.assertFalse(any('config' in command for command in commands))
 
-    def migrate_run(self, backfill_answer=None, fail_stop=False, fail_when=None, verify_answer=None, restore_answer=None, expect_failure=False, **changes):
+    def migrate_run(self, backfill_answer=None, fail_stop=False, fail_when=None, verify_answer=None, restore_answer=None, expect_failure=False, project='kairos-rehearsal', **changes):
         """Run the isolated apply() with a fake runner; returns (instance, ordered compose/operator commands)."""
         with workspace() as root:
             secrets = self.secrets(root)
-            own = root / '.private' / 'rehearsal-kairos-rehearsal'
+            own = root / '.private' / ('rehearsal-' + project)
             own.mkdir(parents=True)
             (own / 'memory-platform.env').write_text('MEMORY_SECRETS_DIR=' + secrets.as_posix() + '\n', encoding='utf-8')
-            instance = deploy.Deployment(arguments(secret_dir=str(secrets), project_name='kairos-rehearsal', api_port=18790, web_port=15173, **changes), root)
+            instance = deploy.Deployment(arguments(secret_dir=str(secrets), project_name=project, api_port=18790, web_port=15173, **changes), root)
             commands = []
             self.timeouts = []  # the timeout of each call of `commands`, in step
             self.extra_envs = []  # the extra environment of each call (where a secret may travel), in step
@@ -364,6 +364,23 @@ class VerifyBackupPhaseTests(unittest.TestCase):
             self.assertRegex(name, r'^kairos-verify-(pg-|op-)?kairos-rehearsal-[0-9a-f]{12}$')  # the project is in the name (CA-05)
         for command in (network, start, restore):
             self.assertIn('com.kairos.project=kairos-rehearsal', command)
+
+    def test_a_long_project_name_keeps_every_ephemeral_name_within_a_hostname_and_the_labels_keep_the_whole_project(self):
+        project = 'kairos-rehearsal-of-a-long-project-name'  # 39 characters: `kairos-verify-pg-<project>-<mark>` would be 69
+        self.assertGreaterEqual(len(project), 39)
+        instance, commands = IsolatedDeploymentTests('migrate_run').migrate_run(project=project)
+        labels = [label(command) for command in commands]
+        network, start, restore = (commands[labels.index(name)] for name in ('network-create', 'database-start', 'restore'))
+        names = [network[-1], start[start.index('--name') + 1], restore[restore.index('--name') + 1]]
+        for name in names:
+            self.assertLessEqual(len(name), 63, name)
+            self.assertRegex(name, r'^kairos-verify-(pg-|op-)?kairos-rehearsa-[0-9a-f]{8}-[0-9a-f]{12}$')
+        self.assertIn(f"TARGET_HOST={names[1]}", restore)
+        for command in (network, start, restore):
+            self.assertIn('com.kairos.project=' + project, command)
+        self.assertEqual(deploy.verify_name_part('short'), 'short')
+        self.assertNotEqual(deploy.verify_name_part('x' * 40 + 'a'), deploy.verify_name_part('x' * 40 + 'b'), 'two projects that share a start do not share a name')
+        self.assertEqual(instance.report['verify_backup']['cleanup'], 'complete')
 
     def test_the_ephemeral_postgres_has_a_password_of_this_run_that_never_travels_in_an_argument_or_the_report(self):
         helper = IsolatedDeploymentTests('migrate_run')
