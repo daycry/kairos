@@ -285,6 +285,8 @@ class LoopTests(unittest.TestCase):
                     offsite.run_loop(lambda: cycle(local, offsite.DirDestination(remote)), 1, sleep=lambda s: None, cycles=1, out=lambda s: None)
                 self.assertEqual([(r.kairos_event, r.kairos_fields) for r in logged.records],
                                  [('backup_cycle_failed', {'exc_type': type(error).__name__, 'code': getattr(error, 'code', 'backup_prune_failed')})])
+                self.assertEqual(observability.OFFSITE_REGISTRY.get_sample_value('kairos_backup_offsite_success'), 0, 'a failed cycle never leaves the metric at 1, whichever stage failed')
+                self.assertIn('kairos_backup_offsite_success 0.0', (local / offsite.METRICS_NAME).read_text(encoding='utf-8'))
                 self.assertNotIn('secret path', ' '.join(observability.JsonFormatter().format(r) for r in logged.records))
 
     def test_stop_signals_end_the_loop(self):
@@ -385,20 +387,32 @@ class CommandTests(unittest.TestCase):
                         'MEMORY_BACKUP_DESTINATION': '', 'MEMORY_BACKUP_REMOTE_KEEP': '', 'MEMORY_BACKUP_INTERVAL': ''}
         self.created = []
 
+        self.service_files = []
+        self.stores = []
+        real_store = admin.Store
+
+        def recording_store(dsn, **options):
+            self.stores.append(dsn)
+            return real_store(dsn, **options)
+        self.recording_store = recording_store
+
         def fake_create(store, output, *, environment, recipients=None):
             self.created.append((output, recipients))
+            self.service_files.append(Path(environment['PGSERVICEFILE']).read_text(encoding='utf-8'))
             return write_copy_at(output, AGE_PAYLOAD if recipients else PAYLOAD, bool(recipients), backup.recipient_digests(recipients or []), datetime.now(timezone.utc))
         self.fake_create = fake_create
 
     def run_command(self, *argv, **environ):
         output, errors = io.StringIO(), io.StringIO()
         failure = None
-        with (patch.dict(os.environ, dict(self.environ, **environ)), patch.object(admin, 'create_backup', self.fake_create), patch.object(backup.shutil, 'which', lambda name, *a, **k: '/usr/bin/' + name),
+        with (patch.dict(os.environ, dict(self.environ, **environ)), patch.object(admin, 'create_backup', self.fake_create), patch.object(admin, 'Store', self.recording_store), patch.object(backup.shutil, 'which', lambda name, *a, **k: '/usr/bin/' + name),
               contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors)):
             try:
                 main(['backup-cycle', *argv])
             except SystemExit as exit_:
                 failure = str(exit_.code)
+            except Exception as error:  # `__main__` prints this one without its message
+                failure = type(error).__name__
         return failure, output.getvalue(), errors.getvalue()
 
     def test_one_cycle_sends_the_copy_to_the_directory_and_reports_it(self):
@@ -443,6 +457,37 @@ class CommandTests(unittest.TestCase):
                 self.assertEqual(observability.OFFSITE_REGISTRY.get_sample_value('kairos_backup_offsite_success'), 0, environ)
                 self.assertIn('kairos_backup_offsite_success 0.0', (local / offsite.METRICS_NAME).read_text(encoding='utf-8'), environ)
             self.assertEqual(no_copies(local), [])
+
+    def test_every_startup_validation_of_the_cycle_zeroes_the_metric_not_only_the_backup_settings(self):
+        """`Settings.from_env()` (MEMORY_MAX_ATTEMPTS=0) and the windows of `--prune-tables` are checked before a cycle too: a restarting service must not keep the metric of its last good cycle."""
+        with workspace() as root:
+            local, remote = root / 'local', root / 'remote'
+            remote.mkdir()
+            local.mkdir()
+            for argv, environ in (((), {'MEMORY_MAX_ATTEMPTS': '0'}), (('--prune-tables',), {config.RETENTION_VARIABLES['jobs']: 'soon'})):
+                observability.record_offsite(True)
+                (local / offsite.METRICS_NAME).write_text('kairos_backup_offsite_success 1.0\n', encoding='utf-8')
+                failure, out, err = self.run_command('--output-dir', str(local), *argv, **dict({'MEMORY_BACKUP_DESTINATION': 'dir:' + str(remote)}, **environ))
+                self.assertTrue(failure, environ)
+                self.assertEqual(observability.OFFSITE_REGISTRY.get_sample_value('kairos_backup_offsite_success'), 0, environ)
+                self.assertIn('kairos_backup_offsite_success 0.0', (local / offsite.METRICS_NAME).read_text(encoding='utf-8'), environ)
+            self.assertEqual(no_copies(local), [])
+
+    def test_the_connections_of_the_cycle_carry_a_connect_timeout_and_keepalives_but_no_statement_timeout(self):
+        """A long-lived service on a direct connection: a half-open one must fail, and a long query must not be cut (`pg_dump` reads the service file of the same DSN)."""
+        from psycopg.conninfo import conninfo_to_dict
+        with workspace() as root:
+            remote = root / 'remote'
+            remote.mkdir()
+            failure, out, err = self.run_command('--output-dir', str(root / 'local'), MEMORY_BACKUP_DESTINATION='dir:' + str(remote))
+            self.assertIsNone(failure, err)
+            for values in (conninfo_to_dict(self.stores[-1]), dict(line.split('=', 1) for line in self.service_files[-1].splitlines()[1:])):
+                for key in ('connect_timeout', 'keepalives', 'keepalives_idle', 'keepalives_interval', 'keepalives_count', 'tcp_user_timeout'):
+                    self.assertIn(key, values, key)
+                self.assertEqual(str(values['keepalives']), '1')
+                self.assertNotIn('statement_timeout', ' '.join(map(str, values.values())) + ' '.join(values))
+        explicit = conninfo_to_dict(admin.guarded_dsn('host=h dbname=d connect_timeout=3 keepalives_idle=5'))
+        self.assertEqual((explicit['connect_timeout'], explicit['keepalives_idle']), ('3', '5'), 'what the operator put in the DSN wins')
 
     def test_a_destination_without_recipients_is_refused_whatever_the_encryption_requirement_says_and_nothing_is_written_or_sent(self):
         """The external copy in the clear is not an option: MEMORY_BACKUP_REQUIRE_ENCRYPTION=0 (or unset) does not open it."""
@@ -592,6 +637,7 @@ class OffsiteFailureTests(unittest.TestCase):
             new = Path(raised.exception.report['path']).name
             self.assertFalse((remote / (new + '.json')).exists(), 'a copy that does not match never gets its manifest at the destination')
             self.assertTrue(set(remote_before) <= set(remote_names(remote)), 'nothing was deleted at the destination, with remote_keep=1')
+            self.assertFalse((remote / new).exists(), 'the bad copy that was just sent is deleted from the destination: it must not wait there for the next cycle')
             self.assertTrue(set(local_before) <= set(names(local)), 'nothing was deleted locally, with keep=1')
             self.assertEqual(observability.OFFSITE_REGISTRY.get_sample_value('kairos_backup_offsite_success'), 0)
 
@@ -701,21 +747,25 @@ class OffsiteFailureTests(unittest.TestCase):
                     leftover.unlink()
 
     def test_rclone_is_started_without_a_shell_and_the_names_come_from_the_tool(self):
-        calls, stdins = [], []
+        calls, stdins, passed = [], [], []
         destination = offsite.parse_destination('rclone:vault:folder')
 
         def run(command, **kw):
             calls.append(command)
             stdins.append(kw['stdin'])
+            passed.append(kw.get('pass_fds', ()))
             return subprocess.CompletedProcess(command, 0, stdout=b'a.dump\n\nb.json\n', stderr=b'')
-        source = io.BytesIO(b'age-encryption.org/v1\n')
+        source = tempfile.TemporaryFile()
+        self.addCleanup(source.close)
         with patch.object(offsite.subprocess, 'run', side_effect=run):
             self.assertEqual(destination.names(), {'a.dump', 'b.json'})
             destination.put(source, 'kairos-cycle-20261120T000000000000Z.dump')
             destination.delete('kairos-cycle-20261120T000000000000Z.dump')
         self.assertEqual([c[0] for c in calls], ['rclone'] * 3)
-        self.assertEqual([c[len(offsite.RCLONE_FLAGS) + 1] for c in calls], ['lsf', 'rcat', 'deletefile'])
-        self.assertIs(stdins[1], source, 'the upload reads the descriptor that was checked, rclone never opens a path')
-        self.assertEqual(stdins[0], subprocess.DEVNULL)
-        self.assertEqual(calls[1][-1], 'vault:folder/kairos-cycle-20261120T000000000000Z.dump')
+        self.assertEqual([c[len(offsite.RCLONE_FLAGS) + 1] for c in calls], ['lsf', 'copyto', 'deletefile'])
+        self.assertEqual(stdins[1], subprocess.DEVNULL)
+        self.assertEqual(passed[1], (source.fileno(),), 'the descriptor that was checked is the one the child inherits; rclone never opens the path of the copy')
+        self.assertEqual(calls[1][-2:], [f'/proc/self/fd/{source.fileno()}', 'vault:folder/kairos-cycle-20261120T000000000000Z.dump'])
+        self.assertIn('--retries', calls[1], 'copyto reopens the descriptor, so the retries of rclone are back (rcat on stdin could not rewind)')
+        self.assertEqual(passed[0], ())
         self.assertEqual(offsite.RcloneDestination('vault:').target('x'), 'vault:x')

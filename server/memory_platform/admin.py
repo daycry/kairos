@@ -19,6 +19,14 @@ from .store import Store
 from .store_vectors import CURRENT_RESOURCE
 
 LOOP_CYCLES = None  # `backup-cycle --loop` runs for ever; a test sets a number
+# The direct connections of `admin` (and the service file `pg_dump`/`pg_restore` read) of a service that lives for ever (`backup-cycle --loop`): a half-open connection must fail instead of
+# hanging the cycle. NO statement_timeout: a dump or a prune is a long query on purpose. Whatever the operator put in the DSN wins. 10 s to connect; a dead peer is noticed after 30 + 3 * 10 s idle.
+CONNECTION_GUARDS = {'connect_timeout': '10', 'keepalives': '1', 'keepalives_idle': '30', 'keepalives_interval': '10', 'keepalives_count': '3', 'tcp_user_timeout': '60000'}
+
+
+def guarded_dsn(dsn):
+    from psycopg.conninfo import conninfo_to_dict, make_conninfo
+    return make_conninfo(**dict(CONNECTION_GUARDS, **conninfo_to_dict(dsn)))
 
 
 
@@ -385,6 +393,7 @@ def main(argv=None):
             try:
                 windows = retention_windows()
             except ValueError as error:
+                record_failure(Path(args.output_dir).resolve())  # the same refusal at start as the settings above: the metric of the last good cycle is not left at 1
                 parser.error(str(error))
     if args.command == 'verify-backup':  # needs no database: it reads the copy and its manifest
         try:
@@ -396,8 +405,14 @@ def main(argv=None):
                           'bytes': manifest['content_bytes' if content else 'bytes'], 'sha256': manifest['content_sha256' if content else 'sha256'],
                           'encrypted': manifest['encrypted'], 'schema_version': manifest['schema_version'], 'created_at': manifest['created_at']}, sort_keys=True))
         return
-    settings = Settings.from_env()
-    store = Store(settings.dsn, project_maps=settings.project_maps, embedding_enabled=True)
+    try:
+        settings = Settings.from_env()
+        dsn = guarded_dsn(settings.dsn)
+        store = Store(dsn, project_maps=settings.project_maps, embedding_enabled=True)
+    except Exception:
+        if args.command == 'backup-cycle':  # a setting of the environment that is invalid (MEMORY_MAX_ATTEMPTS=0): nothing ran, and the metric of the last good cycle must not stay at 1
+            record_failure(Path(args.output_dir).resolve())
+        raise
     if args.command == 'migrate':
         store.migrate()
         print(json.dumps({'status': 'migrated'}))
@@ -450,7 +465,7 @@ def main(argv=None):
             plain = output.with_name(output.name[:-4]) if output.name.endswith('.age') else output  # the name is taken in either form
             if any(os.path.lexists(name) or os.path.lexists(manifest_path(name)) for name in (plain, plain.with_name(plain.name + '.age'))):
                 parser.error('Backup destination already exists; choose a new filename')
-            with pg_environment(settings.dsn) as environment:
+            with pg_environment(dsn) as environment:
                 report = create_backup(store, output, environment=environment, recipients=recipients)
                 if keep is not None:
                     try:
@@ -486,7 +501,7 @@ def main(argv=None):
                         tables['prune_tables'] = {'status': prune_tables(store, windows)['status']}
                     except Exception as error:  # the copy is made: what stopped the retention of the tables is a field of its report
                         tables['prune_tables'] = {'status': 'failed', 'error': type(error).__name__}
-            with pg_environment(settings.dsn) as environment:
+            with pg_environment(dsn) as environment:
                 try:
                     report = run_cycle(lambda output: create_backup(store, encrypted_name(output, recipients), environment=environment, recipients=recipients),
                                        output_dir, destination, keep=keep, remote_keep=remote_keep, recipients_file=recipients_file)
@@ -515,7 +530,7 @@ def main(argv=None):
         source_info, target_info = conninfo_to_dict(settings.dsn), conninfo_to_dict(target)
         if target == settings.dsn or not target_info.get('dbname', '').startswith('memory_restore') or (target_info.get('dbname') == source_info.get('dbname') and target_info.get('host') == source_info.get('host')):
             parser.error('Restore target must be a separate, freshly created memory_restore* database')
-        restored = Store(target)
+        restored = Store(guarded_dsn(target))
         with restored.transaction() as connection:
             if connection.execute("SELECT 1 FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema') LIMIT 1").fetchone():
                 parser.error('Restore target must be empty; no cleanup or overwrite is performed')
@@ -529,7 +544,7 @@ def main(argv=None):
             before = manifest['fingerprints']
         else:
             before = store_fingerprints(store)
-        with pg_environment(target) as environment:
+        with pg_environment(guarded_dsn(target)) as environment:
             subprocess.run(['pg_restore', '--dbname=service=memory', '--no-owner', '--no-acl', '--exit-on-error', str(Path(args.backup).resolve())], env=environment, check=True, capture_output=True)
         after = store_fingerprints(restored)
         if before != after:

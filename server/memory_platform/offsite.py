@@ -132,11 +132,11 @@ class RcloneDestination:
     def target(self, name):
         return self.remote + name if self.remote.endswith((':', '/')) else self.remote + '/' + name
 
-    def run(self, *args, timeout=RCLONE_SHORT_TIMEOUT_SECONDS, capture=False, stdin=subprocess.DEVNULL):
+    def run(self, *args, timeout=RCLONE_SHORT_TIMEOUT_SECONDS, capture=False, stdin=subprocess.DEVNULL, pass_fds=()):
         """One `rclone` command: its output is returned only when `capture` (a listing) and its diagnostics are never kept."""
         try:
             result = subprocess.run(['rclone', *RCLONE_FLAGS, *args], stdin=stdin, stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
-                                    stderr=subprocess.DEVNULL, timeout=timeout)
+                                    stderr=subprocess.DEVNULL, timeout=timeout, pass_fds=pass_fds)
         except FileNotFoundError:
             raise OffsiteError('the rclone program is not installed here') from None
         except (OSError, subprocess.SubprocessError):
@@ -149,8 +149,10 @@ class RcloneDestination:
         return {line for line in self.run('lsf', '--files-only', self.remote, capture=True).splitlines() if line}
 
     def put(self, source, name):
-        """`rclone rcat` of the open file `source` through its descriptor (its stdin): rclone never opens a path the copy could have been swapped at."""
-        self.run('rcat', self.target(name), timeout=RCLONE_TIMEOUT_SECONDS, stdin=source)
+        """`rclone copyto` of the open file `source` through its descriptor, inherited by rclone (`pass_fds`) and read as `/proc/self/fd/<n>`: rclone never opens the path the copy could have been
+        swapped at, and since it reopens the same inode it can retry (`rcat` on stdin could not rewind, which cancelled `--retries`). `--copy-links` is what lets rclone 1.60 read that link
+        as a file; it only applies to this source, which is our own descriptor."""
+        self.run('copyto', '--copy-links', f'/proc/self/fd/{source.fileno()}', self.target(name), timeout=RCLONE_TIMEOUT_SECONDS, pass_fds=(source.fileno(),))
 
     def fetch(self, name, directory):
         target = Path(directory) / name
@@ -338,6 +340,10 @@ def upload(destination, directory, current, remote_keep, recipients_file, now):
                 destination.put(handle, name)
             sha, size = destination.digest(name)
             if sha != manifest['sha256'] or size != manifest['bytes']:
+                try:
+                    destination.delete(name)  # a copy rewritten in place leaves the bad bytes at the destination until the next cycle: not there, a copy without manifest is only resent
+                except OffsiteError:
+                    pass  # the mismatch is the error that is reported; the next cycle sends it again over it
                 raise BackupError('backup_checksum_mismatch', f'The copy {name} differs at the {destination.kind} destination from its manifest; its manifest was not sent and nothing was deleted')
             try:
                 handle = open_manifest(manifest_path(path), name, manifest)
@@ -451,6 +457,7 @@ def run_cycle(make_copy, directory, destination, *, keep, remote_keep, recipient
         try:
             report['prune'] = prune_backups(directory, keep, protect=copy, now=now)
         except (BackupError, OSError) as error:  # the copy exists and is at the destination: its report is printed whatever stopped the local retention
+            record_failure(directory)  # the metric was written 1 before the retention: a cycle that failed is never left at 1
             code = error.code if isinstance(error, BackupError) else 'backup_prune_failed'
             observability.log_event('backup_cycle_failed', 'error', exc_type=type(error).__name__, code=code)  # the report is printed, but the cycle failed: the event of every other failed cycle
             report['prune'] = {'status': 'failed', 'code': code}
