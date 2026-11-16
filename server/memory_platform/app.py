@@ -8,12 +8,13 @@ import uuid
 from fastapi import FastAPI, Request, Depends, Query
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from psycopg import errors as pg_errors
 from . import models as m
 from . import observability
 from . import schemas
 from .auth import Auth
 from .config import Settings
-from .errors import MemoryError, Unauthorized, Forbidden
+from .errors import MemoryError, StoreBusy, Unauthorized, Forbidden, public_store_failure
 from .store import Store
 from .store_pool import attach_pool, close_pool
 
@@ -136,6 +137,15 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
     @app.exception_handler(MemoryError)
     async def domain_error(request, exc):
         return error(request, exc.code, exc.message, exc.status_code)
+
+    async def store_failure(request, exc):
+        # A plazo of the database, not an outage: the pool had no connection within MEMORY_POOL_TIMEOUT (`store_busy`) or PostgreSQL cancelled the statement at its
+        # statement_timeout (`store_timeout`). Fixed messages, the type of the failure in the log and never its text.
+        code, message = public_store_failure(exc)
+        observability.log_failure(code, exc, 'warning', request_id=getattr(request.state, 'request_id', None))
+        return error(request, code, message, 503)
+    app.add_exception_handler(StoreBusy, store_failure)
+    app.add_exception_handler(pg_errors.QueryCanceled, store_failure)
 
     @app.exception_handler(RequestValidationError)
     async def invalid(request, exc):

@@ -108,6 +108,31 @@ def is_store_transient(exc):
     return state is not None and (state in TRANSIENT_SQLSTATES or state.startswith('53'))
 
 
+STORE_BUSY_MESSAGE = 'The store is busy; retry shortly'
+STORE_TIMEOUT_MESSAGE = 'The store took too long to answer; retry shortly'
+
+
+def is_statement_timeout(exc):
+    """True for the error PostgreSQL answers with when it cancels a statement that ran past `statement_timeout` (SQLSTATE 57014, `QueryCanceled`)."""
+    try:
+        import psycopg
+    except ImportError:
+        return False
+    return isinstance(exc, psycopg.errors.QueryCanceled)
+
+
+def public_store_failure(exc):
+    """`(code, message)` a client is given (always with status 503) for a failure of the database that is a plazo and not a plain outage, or None: `store_busy` (the pool had no
+    connection to give within MEMORY_POOL_TIMEOUT) and `store_timeout` (the database cancelled the statement at its `statement_timeout`). The messages are fixed: nothing of the
+    driver, the SQL or the DSN travels (CWE-209). The API, the mounted MCP and, through the API, `kairos-mcp` use it; the WORKER does not: for it the first is an outage
+    (`StoreBusy` is a `StoreUnavailable`) and the second a transient error it repeats (`is_store_transient`)."""
+    if isinstance(exc, StoreBusy):
+        return 'store_busy', STORE_BUSY_MESSAGE
+    if is_statement_timeout(exc):
+        return 'store_timeout', STORE_TIMEOUT_MESSAGE
+    return None
+
+
 def is_store_error(exc):
     """True for an error the database ANSWERED with (any driver error that is not an outage, see `is_store_unavailable`): not the provider's failure either."""
     try:

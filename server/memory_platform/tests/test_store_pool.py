@@ -13,10 +13,11 @@ import psycopg
 
 from memory_platform import models as m
 from memory_platform.config import DEFAULT_POOL_MAX, DEFAULT_POOL_MIN, DEFAULT_POOL_TIMEOUT, Settings, pool_settings
-from memory_platform.errors import StoreUnavailable
+from memory_platform.errors import StoreBusy, StoreUnavailable, is_store_unavailable
 from memory_platform.retrieval import Retrieval
 from memory_platform.store import Store
 from memory_platform.store_pool import StorePool, attach_pool, close_pool
+from memory_platform.tests.fault_proxy import FaultProxy
 from memory_platform.tests.test_store import create_core
 
 
@@ -187,6 +188,61 @@ class PoolTests(unittest.TestCase):
                     c.execute('SELECT * FROM public.no_such_table_' + uuid.uuid4().hex[:6])
         self.assertGreater(self.pid(store), 0)
         self.assertEqual(store.pool.stats()['pool_available'], 1)
+
+    def test_with_no_connection_to_give_a_transaction_waits_the_pool_timeout_and_raises_store_busy(self):
+        store = pool_store(minimum=1, maximum=1, timeout=0.3)
+        self.addCleanup(close_pool, store)
+        held, release = threading.Event(), threading.Event()
+
+        def hold():
+            with store.transaction():
+                held.set()
+                release.wait(60)
+        holder = threading.Thread(target=hold, daemon=True)
+        holder.start()
+        self.assertTrue(held.wait(30))
+        outcome = {}
+
+        def ask():
+            try:
+                with store.transaction():
+                    outcome['entered'] = True
+            except Exception as exc:
+                outcome['error'] = exc
+        asker = threading.Thread(target=ask, daemon=True)
+        asker.start()
+        asker.join(0.3 + 5)
+        stuck = asker.is_alive()
+        release.set()
+        holder.join(30)
+        asker.join(30)
+        self.assertFalse(stuck, 'a transaction hung on an exhausted pool')
+        self.assertNotIn('entered', outcome)
+        error = outcome['error']
+        self.assertIsInstance(error, StoreBusy)
+        self.assertTrue(isinstance(error, StoreUnavailable) and is_store_unavailable(error))  # the worker waits and tries again: no attempt is spent
+        self.assertEqual((str(error), error.cause_type), ('Database busy', 'PoolTimeout'))
+        self.assertGreater(self.pid(store), 0)  # and the pool is whole again
+
+    def test_a_database_that_refuses_connections_is_an_outage_not_a_busy_pool(self):
+        with FaultProxy() as proxy:
+            store = Store(proxy.dsn())
+            attach_pool(store, Settings('unused', pool_min=1, pool_max=1, pool_timeout=1.0), 'api')
+            self.addCleanup(close_pool, store)
+            self.assertGreater(self.pid(store), 0)
+            proxy.cut()  # the idle connection dies and every new one is closed at once
+            with self.assertRaises(StoreUnavailable) as raised:
+                self.pid(store)
+            self.assertIsNot(type(raised.exception), StoreBusy)
+            proxy.restore()
+            for _ in range(30):  # the pool retries its connection on a short backoff: recovery is a few transactions away, never a restart
+                try:
+                    self.assertGreater(self.pid(store), 0)
+                    break
+                except StoreUnavailable:
+                    continue
+            else:
+                self.fail('the pool did not recover after the database came back')
 
     def test_the_pool_never_holds_more_than_its_maximum_under_concurrency(self):
         store = pool_store(minimum=1, maximum=3)

@@ -22,6 +22,9 @@ from .config import service_statement_timeout
 from .errors import StoreBusy, StoreUnavailable
 from .observability import log_failure
 
+RECONNECT_TIMEOUT = 10.0  # seconds a pool keeps retrying one connection (the pool default is 300): the waits of its backoff (1, 2, 4... s) are cut at this, so once the database is back a
+# request never waits behind a retry scheduled minutes ahead; a slot that gives up is made again by the next request that finds the pool empty
+
 
 def service_conninfo(dsn, connect_timeout=None, statement_timeout_ms=None):
     """The DSN of the service connections: `connect_timeout` (seconds) and `statement_timeout` (milliseconds, a startup option, so it is the default of every session of the
@@ -67,7 +70,7 @@ class StorePool:
                     from psycopg_pool import ConnectionPool
                     values = self._parameters
                     pool = ConnectionPool(service_conninfo(values['dsn'], values['connect_timeout'], values['statement_timeout_ms']), min_size=values['min_size'], max_size=values['max_size'],
-                                          timeout=values['timeout'], open=False, kwargs={'row_factory': dict_row}, check=ConnectionPool.check_connection, name=self.name)
+                                          timeout=values['timeout'], open=False, kwargs={'row_factory': dict_row}, check=ConnectionPool.check_connection, reconnect_timeout=RECONNECT_TIMEOUT, name=self.name)
                     pool.open(wait=False)  # no connection is awaited: a database that is down must not stop the service from starting
                     self._pool, self._opened = pool, True
         return self._pool

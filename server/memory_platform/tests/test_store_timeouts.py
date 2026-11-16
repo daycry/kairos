@@ -13,22 +13,27 @@ import threading
 import time
 import unittest
 import uuid
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import psycopg
+from fastapi.testclient import TestClient
 from psycopg import errors as pgerrors
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from memory_platform import admin, store_documents, store_vectors
+from memory_platform.app import create_app
 from memory_platform.config import DEFAULT_CONNECT_TIMEOUT, DEFAULT_STATEMENT_TIMEOUT_MS, Settings, connection_timeouts, service_statement_timeout
-from memory_platform.errors import StoreUnavailable, is_store_transient, is_store_unavailable
+from memory_platform.errors import (MemoryError, STORE_BUSY_MESSAGE, STORE_TIMEOUT_MESSAGE, StoreBusy, StoreUnavailable, is_statement_timeout, is_store_transient, is_store_unavailable,
+                                    public_store_failure)
+from memory_platform.retrieval import Retrieval
 from memory_platform.store import Store
 from memory_platform.store_pool import attach_pool, close_pool, service_conninfo
 from memory_platform.tests import test_vector_search_paths as vector_paths
 from memory_platform.tests.fault_proxy import FaultProxy
+from memory_platform.tests.test_observability import fake_app
 from memory_platform.tests.test_store import create_core, event, extraction_receipt
 from memory_platform.tests.test_worker_db_down import Recorder, settings as worker_settings
-from memory_platform.worker import WRITE_RETRY_MAX, Worker
+from memory_platform.worker import IDLE_SECONDS, WRITE_RETRY_MAX, Worker
 
 
 def plazo_store(dsn=None, role='api', **changes):
@@ -322,6 +327,179 @@ class WorkerStatementTimeoutTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(worker.store_failures, 0)  # never counted as an outage
         state = self.row()
         self.assertEqual((state['state'], state['attempts'], state['error_code']), ('pending', 1, 'store_error'))  # back in the queue with an attempt left
+
+
+
+SECRET = 'hunter2-never-in-an-answer'
+
+
+class StoreFailureClassificationTests(unittest.TestCase):
+    """What a client is told when the database does not answer in time (CA-16, CA-19): fixed messages, nothing of the driver, the same everywhere a client can see it."""
+    headers = {'Authorization': 'Bearer fixture'}
+
+    def test_the_classifier_names_only_the_two_plazos(self):
+        self.assertEqual(public_store_failure(StoreBusy()), ('store_busy', STORE_BUSY_MESSAGE))
+        self.assertEqual(public_store_failure(pgerrors.QueryCanceled(SECRET)), ('store_timeout', STORE_TIMEOUT_MESSAGE))
+        for other in (StoreUnavailable('OperationalError'), psycopg.OperationalError(SECRET), pgerrors.LockNotAvailable(SECRET), RuntimeError(SECRET), MemoryError('x', 'y')):
+            self.assertIsNone(public_store_failure(other), type(other).__name__)
+        self.assertTrue(is_statement_timeout(pgerrors.QueryCanceled('x')))
+        self.assertFalse(is_statement_timeout(StoreBusy()))
+        for message in (STORE_BUSY_MESSAGE, STORE_TIMEOUT_MESSAGE):
+            self.assertNotIn('SELECT', message)
+            self.assertNotIn('postgres', message.lower())
+
+    def test_the_api_answers_503_with_the_code_of_the_plazo_a_fixed_message_and_the_request_id(self):
+        app, store, auth, retrieval = fake_app()
+        cases = [(StoreBusy(), 'store_busy', STORE_BUSY_MESSAGE),
+                 (pgerrors.QueryCanceled('canceling statement due to statement timeout: SELECT secret FROM ' + SECRET), 'store_timeout', STORE_TIMEOUT_MESSAGE),
+                 (StoreUnavailable('OperationalError'), 'service_unavailable', 'Service is temporarily unavailable'),  # an outage keeps its generic answer
+                 (RuntimeError(SECRET), 'service_unavailable', 'Service is temporarily unavailable')]
+        with TestClient(app, raise_server_exceptions=False) as client:
+            for exc, code, message in cases:
+                with self.subTest(code=code, exc=type(exc).__name__):
+                    store.list_projects.side_effect = exc
+                    response = client.get('/v1/projects', headers=self.headers)
+                    self.assertEqual(response.status_code, 503)
+                    self.assertEqual(response.json()['error'], {'code': code, 'message': message})
+                    self.assertEqual(response.json()['request_id'], response.headers['X-Request-ID'])
+                    self.assertNotIn(SECRET, response.text)
+
+    def test_the_mounted_mcp_gives_the_fixed_message_of_each_plazo_and_the_generic_one_otherwise(self):
+        app, store, auth, retrieval = fake_app()
+        cases = [(StoreBusy(), STORE_BUSY_MESSAGE), (pgerrors.QueryCanceled(SECRET), STORE_TIMEOUT_MESSAGE), (StoreUnavailable('OperationalError'), 'Memory service temporarily unavailable'),
+                 (RuntimeError(SECRET), 'Memory service temporarily unavailable')]
+        with TestClient(app, base_url='http://localhost:8790') as client:
+            for exc, message in cases:
+                with self.subTest(exc=type(exc).__name__):
+                    retrieval.search = AsyncMock(side_effect=exc)
+                    response = client.post('/mcp/', headers={**self.headers, 'Accept': 'application/json, text/event-stream'},
+                                           json={'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call', 'params': {'name': 'search', 'arguments': {'project_ids': ['a'], 'q': 'anything'}}})
+                    result = response.json()['result']
+                    self.assertTrue(result['isError'])
+                    self.assertEqual(result['content'][0]['text'], 'Error executing tool search: ' + message)
+                    self.assertNotIn(SECRET, response.text)
+
+
+class ApiPoolFailureTests(unittest.TestCase):
+    """The same answers from a real pool and a real PostgreSQL: an exhausted pool (503 `store_busy`, bounded wait) and a statement cancelled at the plazo (503 `store_timeout`, connection reusable)."""
+    headers = {'Authorization': 'Bearer fixture'}
+
+    def setUp(self):
+        if not os.getenv('MEMORY_TEST_DSN'):
+            raise unittest.SkipTest('MEMORY_TEST_DSN must point to an isolated PostgreSQL test database')
+        self.store, self.actor, self.project = create_core()
+        attach_pool(self.store, Settings('unused', pool_min=1, pool_max=1, pool_timeout=0.3, statement_timeout_ms=300), 'api')
+        self.addCleanup(close_pool, self.store)
+        auth = Mock()
+        auth.authenticate_bearer.return_value = self.actor
+        embeddings = Mock(embed=AsyncMock(return_value={'embedding': [1.0, 0.0], 'model': 'nomic-embed-text', 'verified': True}))
+        retrieval = Retrieval(self.store, Settings('unused', request_timeout=5), embeddings)
+        self.client = TestClient(create_app(Settings('unused', mount_mcp=False), self.store, auth, retrieval))
+
+    def test_with_the_pool_exhausted_a_request_waits_at_most_the_pool_timeout_and_gets_store_busy(self):
+        held, release = threading.Event(), threading.Event()
+
+        def hold():
+            with self.store.transaction():
+                held.set()
+                release.wait(60)
+        holder = threading.Thread(target=hold, daemon=True)
+        holder.start()
+        self.assertTrue(held.wait(30))
+        result = {}
+
+        def ask():
+            result['response'] = self.client.get('/v1/projects', headers=self.headers)
+        asker = threading.Thread(target=ask, daemon=True)
+        asker.start()
+        asker.join(0.3 + 5)  # MEMORY_POOL_TIMEOUT plus a margin; without the wait of the pool this would last until the holder lets go
+        stuck = asker.is_alive()
+        release.set()
+        holder.join(30)
+        asker.join(30)
+        self.assertFalse(stuck, 'the request hung on an exhausted pool')
+        response = result['response']
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()['error'], {'code': 'store_busy', 'message': STORE_BUSY_MESSAGE})
+        self.assertEqual(response.json()['request_id'], response.headers['X-Request-ID'])
+        self.assertEqual(self.client.get('/v1/projects', headers=self.headers).status_code, 200)  # the pool recovers as soon as the connection is back
+
+    def test_a_statement_cancelled_by_the_plazo_is_503_store_timeout_and_the_next_request_works(self):
+        def slow(actor):
+            with self.store.transaction() as c:
+                c.execute('SELECT pg_sleep(30)')
+        with patch.object(self.store, 'list_projects', slow):
+            response = self.client.get('/v1/projects', headers=self.headers)
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()['error'], {'code': 'store_timeout', 'message': STORE_TIMEOUT_MESSAGE})
+        self.assertEqual(response.json()['request_id'], response.headers['X-Request-ID'])
+        again = self.client.get('/v1/projects', headers=self.headers)
+        self.assertEqual(again.status_code, 200)
+        self.assertIsInstance(again.json()['projects'], list)  # the shared test database holds many projects: the answer is a list, not necessarily ours
+
+    def test_a_search_layer_cancelled_by_the_plazo_is_unavailable_and_the_semantic_deadline_still_says_timeout(self):
+        def slow(*args, **kwargs):
+            with self.store.transaction() as c:
+                c.execute('SELECT pg_sleep(30)')
+        request = {'project_ids': [self.project], 'q': 'anything', 'layers': ['episodic']}
+        with patch.object(self.store, 'search_items', slow):
+            response = self.client.post('/v1/search', headers=self.headers, json=request)
+        self.assertEqual(response.status_code, 200)  # a layer that failed is marked, the request is not
+        self.assertEqual(response.json()['backends']['episodic']['status'], 'unavailable')
+        self.assertTrue(response.json()['partial'])
+        exceeded = MemoryError('semantic_deadline_exceeded', 'Semantic query exceeded its time budget', 503)
+        with patch.object(self.store, 'has_vectors', return_value=True), patch.object(self.store, 'search_vectors', side_effect=exceeded):
+            response = self.client.post('/v1/search', headers=self.headers, json=request)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['backends']['semantic'], {'status': 'unavailable', 'count': 0, 'reason': 'timeout'})  # as before the pool
+
+
+class WorkerStoreBusyTests(unittest.IsolatedAsyncioTestCase):
+    """For the worker an exhausted pool is an outage (`StoreBusy` is a `StoreUnavailable`): it waits and tries again and never spends the attempt of a job. A statement cancelled by the
+    plazo (57014) is NOT one: it is the transient error of `WorkerStatementTimeoutTests`. 503 `store_timeout` exists only in the API (decision of phase 2, kept)."""
+    def setUp(self):
+        self.job = {'id': 'job', 'fence': 4, 'attempts': 1, 'destination': 'extract', 'policy': {}, 'payload': {'title': 'Source', 'content': 'Synthetic summary'}}
+        self.store = Mock()
+        self.store.claim_job.return_value = None
+        self.receipt = {'payload': {'title': 'Lesson', 'content': 'Synthetic summary'}, 'status': 'extracted'}
+        self.provider = Mock(extract=AsyncMock(return_value=self.receipt))
+
+    def worker(self, waiter):
+        return Worker(self.store, worker_settings(), {'extract': self.provider}, rng=lambda: 1.0, waiter=waiter)
+
+    async def test_a_claim_that_finds_no_connection_is_an_outage_with_the_backoff_of_one(self):
+        waiter = Recorder()
+        worker = self.worker(waiter)
+        answers = [StoreBusy(), StoreBusy()]
+
+        def claim(*args):
+            if answers:
+                raise answers.pop(0)
+            worker.stopping.set()
+            return None
+        self.store.claim_job.side_effect = claim
+        await asyncio.wait_for(worker.run(), 60)
+        self.assertEqual(waiter.delays, [1.0, 2.0, IDLE_SECONDS])  # the growing wait of an outage, then the idle wait of an empty queue
+        self.store.fail_job.assert_not_called()
+        self.assertEqual(worker.store_failures, 0)
+
+    async def test_a_result_that_finds_no_connection_is_written_when_one_is_free_without_spending_the_attempt(self):
+        self.store.claim_job.return_value = self.job
+        self.store.renew_lease.return_value = True
+        self.store.complete_job.side_effect = [StoreBusy(), True]
+        waiter = Recorder()
+        worker = self.worker(waiter)
+        self.assertTrue(await asyncio.wait_for(worker.run_once(), 60))
+        self.assertEqual(self.store.complete_job.call_count, 2)
+        self.store.fail_job.assert_not_called()
+        self.assertEqual(waiter.delays, [1.0])
+
+    async def test_a_statement_timeout_is_not_an_outage_for_the_worker(self):
+        self.store.claim_job.side_effect = pgerrors.QueryCanceled('x')
+        worker = self.worker(Recorder())
+        with self.assertRaises(pgerrors.QueryCanceled):  # not StoreUnavailable: it is classified by the loop of the worker as a transient database error
+            await worker.run_once()
+        self.assertEqual(worker.store_failures, 0)
 
 
 if __name__ == '__main__':

@@ -43,7 +43,7 @@ test-plan: n/a (sin UI)
 | Fase 1 — Arnés de fallos y tests de límites (C-07) | 6 | 6 | 100% | 0 / 32.4h | 0.83 / 4.3h | 0 / 1.1h | 0 / 1080 k |
 | Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 7 | 7 | 100% | 0 / 27.0h | 2.10 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 7 | 7 | 100% | 0 / 27.0h | 0.99 / 3.6h | 0 / 0.9h | 0 / 900 k |
-| Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 3 | 9 | 33.3% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
+| Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 4 | 9 | 44.4% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 0 | 5 | 0% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 0 | 9 | 0% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 0 | 6 | 0% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **23** | **98** | **23.5%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **24** | **98** | **24.5%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -776,30 +776,34 @@ RED: `tests/test_store_timeouts.py` falló con ImportError: cannot import name D
 ### T-24 — Errores 503 `store_timeout` y `store_busy` y su clasificación
 
 - **Descripción**: Mapear `statement_timeout` agotado a 503 `store_timeout` y pool agotado (`MEMORY_POOL_TIMEOUT`) a 503 `store_busy` con `request_id`; el worker los clasifica como `StoreUnavailable`. Fuente: CA-16, CA-19; B-07.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Cuando la base no responde a tiempo, la API contesta 503 store_timeout (consulta cancelada por plazo) o 503 store_busy (sin conexión libre en MEMORY_POOL_TIMEOUT), con mensaje fijo y request_id; una caída sigue siendo service_unavailable.
+- **Estado**: completado
+- **Cerrada**: 2026-11-16
 - **Tiempo humano**: est. 3h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.27h (medido)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 110 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: T-23
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/app.py`, `server/memory_platform/errors.py`, `server/memory_platform/worker.py`, `server/memory_platform/tests/test_store_timeouts.py`, `server/memory_platform/tests/test_store_pool.py`
+- **Archivos**: `server/memory_platform/app.py`, `server/memory_platform/errors.py`, `server/memory_platform/worker.py`, `server/memory_platform/tests/test_store_timeouts.py`, `server/memory_platform/tests/test_store_pool.py`, `server/memory_platform/mcp.py`, `mcp/tests/test_client.py`, `docs/roadmap/2026-11-15-reliable-operations/improvement-plan.md`, `server/memory_platform/store_pool.py`
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_store_timeouts|test_store_pool|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] La API responde 503 `store_timeout` si PostgreSQL cancela por plazo, y la búsqueda sigue marcando la capa `unavailable` con `reason: timeout` como hoy
-- [ ] Con el pool agotado, una petición espera como máximo `MEMORY_POOL_TIMEOUT` y recibe 503 `store_busy` con `request_id`; no se cuelga
-- [ ] El worker trata ambos como `StoreUnavailable` (espera y reintenta, sin consumir intento)
+- [x] La API responde 503 `store_timeout` si PostgreSQL cancela por plazo, y la búsqueda sigue marcando la capa `unavailable` con `reason: timeout` como hoy
+- [x] Con el pool agotado, una petición espera como máximo `MEMORY_POOL_TIMEOUT` y recibe 503 `store_busy` con `request_id`; no se cuelga
+- [x] El worker trata ambos como `StoreUnavailable` (espera y reintenta, sin consumir intento)
 
 **Subtareas**
-- [ ] Escribir primero las pruebas de pool agotado y plazo (rojo)
-- [ ] Añadir los dos códigos al manejador de errores
-- [ ] Enlazar con el clasificador de la Fase 2
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero las pruebas de pool agotado y plazo (rojo)
+- [x] Añadir los dos códigos al manejador de errores
+- [x] Enlazar con el clasificador de la Fase 2
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `app.py` (manejador de errores y `request_id`), `errors.py` y `retrieval.py:113-115`, `:146-148` (`asyncio.timeout` sobre `to_thread`, que no cancela la consulta). REVISION (intento 2 de la Fase 2, gap 3; decision vigente): la descripcion dice que el worker clasifica `store_timeout`/`store_busy` como `StoreUnavailable`. Se respeta solo en parte: el agotamiento del POOL (`store_busy`, sin conexion que dar) si es `StoreUnavailable` para el worker; un `statement_timeout` agotado (57014) en el worker NO lo es: es `store_error` transitorio (`errors.is_store_transient`, T-09), repetido en la escritura del resultado y reprogramado si agota el presupuesto. 503 `store_timeout` es solo cosa de la API. Si esta tarea quiere otro criterio, debe revisarlo explicitamente con nota y cambiar test_worker_db_down.
+**Notas**: Patrón: `app.py` (manejador de errores y `request_id`), `errors.py` y `retrieval.py:113-115`, `:146-148` (`asyncio.timeout` sobre `to_thread`, que no cancela la consulta). REVISION (intento 2 de la Fase 2, gap 3; decision vigente): la descripcion dice que el worker clasifica `store_timeout`/`store_busy` como `StoreUnavailable`. Se respeta solo en parte: el agotamiento del POOL (`store_busy`, sin conexion que dar) si es `StoreUnavailable` para el worker; un `statement_timeout` agotado (57014) en el worker NO lo es: es `store_error` transitorio (`errors.is_store_transient`, T-09), repetido en la escritura del resultado y reprogramado si agota el presupuesto. 503 `store_timeout` es solo cosa de la API. Si esta tarea quiere otro criterio, debe revisarlo explicitamente con nota y cambiar test_worker_db_down. (Archivos ampliados: `mcp.py` (el MCP montado clasifica igual), `mcp/tests/test_client.py` (kairos-mcp) y `improvement-plan.md` (cambios visibles de la Fase 4 para la Iniciativa 7); `worker.py` no cambia.) Diseño: `errors.public_store_failure` (única clasificación: `StoreBusy` → `store_busy`, `QueryCanceled` 57014 → `store_timeout`, mensajes fijos sin SQL ni DSN, CWE-209) usada por dos manejadores de excepción específicos de la API (no pasan por el manejador genérico, que seguía reenviando el error al servidor) y por `safe()` del MCP montado; una caída de la base y cualquier otro error siguen siendo `service_unavailable` / 'Memory service temporarily unavailable'. kairos-mcp ya trata un 503 con código de dominio como `semantic_deadline_exceeded`: muestra el mensaje tal cual (prueba nueva en `mcp/tests/test_client.py`; suite del MCP: 141 tests OK, sin psycopg en su imagen); el contrato `kairos-mcp.json` no cambia y los dos textos quedan declarados a la Iniciativa 7 en `improvement-plan.md`. Búsqueda: una capa cancelada por plazo sigue 'unavailable' (200 con `partial`) y el plazo semántico sigue diciendo `reason: timeout` (prueba con PostgreSQL real). Pool agotado: prueba con un hilo que retiene la única conexión: espera <= MEMORY_POOL_TIMEOUT (0,3 s) y 503 `store_busy` con request_id, y el pool se recupera. Base que rechaza conexiones: `StoreUnavailable` (no ocupado: se distingue por `connections_errors` desde la última conexión entregada); tras volver la base el pool se rehace solo. HALLAZGO: la espera de reconexión del pool crece 1, 2, 4… s hasta `reconnect_timeout` (300 s por defecto): tras una caída larga la API habría tardado minutos en recuperarse; `RECONNECT_TIMEOUT`=10 s lo acota (el hueco que se rinde lo rehace la siguiente petición). DECISIÓN DE LA FASE 2 RESPETADA, con revisión explícita de la descripción de la tarea: el worker NO trata un `statement_timeout` agotado como `StoreUnavailable` (es 57014 transitorio: `store_error` repetido en `_persist`; prueba `test_a_statement_timeout_is_not_an_outage_for_the_worker`); SÍ lo es el agotamiento del pool (`StoreBusy` ⊂ `StoreUnavailable`: espera con backoff sin gastar intento; pruebas del reclamo y de `complete_job`). `test_worker_db_down` no necesitó cambios. Mutantes (copia, rojo comprobado): sin el manejador de `StoreBusy` → 2 rojas; sin el de `QueryCanceled` → 2; MCP sin clasificar → 2; `getconn(timeout=20)` → 3 (cuelgue detectado); `StoreUnavailable` en vez de `StoreBusy` → 2; `StoreBusy` fuera de `StoreUnavailable` → 3. Primera suite con 1 fallo (mi prueba suponía que mi proyecto salía en `list_projects` de la base compartida); corregida. Suite completa: 970 tests, 0 fallos/errores/omitidos (959 + 11). Usage-meter T-24: 0.27h (medido).
+
+
+RED: `tests/test_store_timeouts.py` falló con ImportError: cannot import name STORE_BUSY_MESSAGE from memory_platform.errors (la prueba contra el codigo de HEAD, sin los 503) · 2026-11-16.
 
 ### T-25 — Pruebas de la clase entera con `FaultProxy`: plazo, pool y servidor mudo
 
