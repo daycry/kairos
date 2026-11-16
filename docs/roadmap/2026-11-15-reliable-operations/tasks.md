@@ -47,7 +47,7 @@ test-plan: n/a (sin UI)
 | Fase 5 — Permisos por transacción (C-03, B-02) | 5 | 5 | 100% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 9 | 9 | 100% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 6 | 6 | 100% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
-| Fase 8 — Cierre del hito A: no perder datos ni parar | 0 | 4 | 0% | 0 / 7.2h | 0 / 1.0h | 0 / 0.2h | 0 / 240 k |
+| Fase 8 — Cierre del hito A: no perder datos ni parar | 1 | 4 | 25% | 0 / 7.2h | 0.94 / 1.0h | 0 / 0.2h | 0 / 240 k |
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 0 | 7 | 0% | 0 / 19.8h | 0 / 2.6h | 0 / 0.7h | 0 / 660 k |
 | Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 0 | 7 | 0% | 0 / 34.2h | 0 / 4.6h | 0 / 1.1h | 0 / 1140 k |
 | Fase 11 — Sonda de ida y vuelta (C-06) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **49** | **98** | **50.0%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **50** | **98** | **51.0%** | **0 / 412.8h** | **4.86 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1557,37 +1557,39 @@ test-plan: n/a (sin UI)
 
 ## Fase 8 — Cierre del hito A: no perder datos ni parar
 
-**Estado**: borrador · **Hito**: A · **Estimado**: 7.2h (6.0h base, de ellas 0.0h de revisión adversarial) · **Real**: — · **Coste est.**: 360 € · **Tokens est.**: 240 k
+**Estado**: en-progreso · **Hito**: A · **Estimado**: 7.2h (6.0h base, de ellas 0.0h de revisión adversarial) · **Real**: — · **Coste est.**: 360 € · **Tokens est.**: 240 k
 
 ### T-50 — Ensayo de cierre del hito A: restauración externa y caída de base con el worker en marcha
 
 - **Descripción**: Crear `scripts/rehearse-reliable-operations.py` y ejecutar el ensayo aislado del hito A: runbook de restauración (criterio de cierre 1) y parada/arranque de `memory-postgres` con trabajos en cola (criterio de cierre 2). Fuente: CA-07, CA-37 (parte del hito A); criterios de cierre 1 y 2.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: ensayo aislado del cierre del hito A (restauración, huellas con 30.000 embeddings, parada y arranque de la base con el worker en marcha) y cinco endurecimientos de la copia externa: métrica a 0 al rechazar el arranque, evento `backup_cycle_failed` si falla la retención local, copia que desaparece en una poda concurrente y subida desde el mismo descriptor sin seguir enlaces.
+- **Cerrada**: 2026-11-17
+- **Estado**: completado
 - **Tiempo humano**: est. 2.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.33h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.33h (estimado) · real 0.94h (medido)
 - **Supervisión**: est. 0.08h (≈25 % IA) · real —
 - **Previsión IA**: 92 k in / 8 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
 - **Tipo**: devops
-- **Archivos**: `scripts/rehearse-reliable-operations.py`, `scripts/tests/test_rehearse_reliable_operations.py`, `server/memory_platform/admin.py`, `server/memory_platform/offsite.py`, `server/memory_platform/backup.py`, `server/memory_platform/tests/test_backup_cycle.py`, `server/memory_platform/tests/test_backup_prune.py`, `docs/operations.md` (deuda de la revisión de la Fase 7)
+- **Archivos**: `scripts/rehearse-reliable-operations.py`, `scripts/tests/test_rehearse_reliable_operations.py`, `server/memory_platform/admin.py`, `server/memory_platform/offsite.py`, `server/memory_platform/backup.py`, `server/memory_platform/tests/test_backup_cycle.py`, `server/memory_platform/tests/test_backup_prune.py`, `docs/operations.md` (deuda de la revisión de la Fase 7 y medida de las huellas), `docs/roadmap/2026-11-15-reliable-operations/improvement-plan.md` (ítem «Fase 8» de Coordinación; añadido)
 - **Cubre (tests)**: —
 - **Verificación**:
   - `python -m unittest discover -s scripts/tests -p test_rehearse_reliable_operations.py` → `OK`
   - `python scripts/rehearse-reliable-operations.py --project-name kairos-ops-c --embed-stub --stage a` → `restored_and_content_verified` y `worker_survived_db_restart` con contador de reinicios igual y 0 trabajos `failed`
+  - Salida (2026-11-16/17): `python -I -m unittest discover -s scripts/tests -p test_rehearse_reliable_operations.py` → `Ran 11 tests ... OK` (4 mutantes del script: 4 caen). Ensayo real (segundo intento; el primero cayó en `compose start memory-worker` por el `memory-migrate` ya retirado y se corrigió con `docker stop/start` por id) → exit 0: `{"cleanup": "complete", "project": "kairos-ops-c", "stage": "a", "status": "restored_and_content_verified", "restore": {"status": "restored_and_content_verified", "tables": 26, "server": "ephemeral"}, "cycle": {"bytes": 2235899, "destination": "dir"}, "seed": {"embeddings": 30000, "dims": 768}, "queue": {"events": 300, "pending_before_worker": 300}, "worker_survived_db_restart": {"restarts_before": 0, "restarts_after": 0, "same_start": true, "running": true, "running_while_down": true, "pending_at_stop": 256, "down_seconds": 30, "jobs": {"succeeded": 301}, "failed": 0}, "fingerprints": {"rows": 30001, "table_bytes": 132268032, "embeddings_seconds": 62.07, "all_tables_seconds": 56.34, "seconds_per_row": 0.002069, "megabytes_per_second": 2.1, "seconds_for_5_gb": 2519, "backup_timeout_seconds": 3600, "within_timeout": true}, "timings": {"backup_cycle_seconds": 93.1, "restore_step_seconds": 111.8}}`. `docker ps -a`, `volume ls`, `network ls` filtrados por `knowledge-graphs` (con `StartedAt` y reinicios), antes y después: idénticos; `kairos-ops` → 0 contenedores, 0 volúmenes, 0 redes y 0 imágenes `rehearsal-kairos-ops`; el Ollama del host sigue en 200.
 
 **Criterios de aceptación**
-- [ ] Con trabajos en cola, parar y arrancar `memory-postgres` del ensayo: `memory-worker` no se reinicia por error propio (contador de reinicios igual), la cola se vacía y ningún trabajo queda `failed` por esa caída
-- [ ] El ensayo es de un solo proyecto aislado `kairos-ops-c`, sin recursos `knowledge-graphs-*` ni Ollama del host
-- [ ] La evidencia (salida, contadores) queda en `Notas`
+- [x] Con trabajos en cola, parar y arrancar `memory-postgres` del ensayo: `memory-worker` no se reinicia por error propio (contador de reinicios igual), la cola se vacía y ningún trabajo queda `failed` por esa caída
+- [x] El ensayo es de un solo proyecto aislado `kairos-ops-c`, sin recursos `knowledge-graphs-*` ni Ollama del host
+- [x] La evidencia (salida, contadores) queda en `Notas`
 
 **Subtareas**
-- [ ] Escribir el script por etapas (`--stage a|b|all`) y su prueba con dobles
-- [ ] Ejecutar la etapa A (primer plano, de uno en uno)
-- [ ] Retirar el proyecto aislado
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir el script por etapas (`--stage a|b|all`) y su prueba con dobles
+- [x] Ejecutar la etapa A (primer plano, de uno en uno)
+- [x] Retirar el proyecto aislado
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Deuda Minor de la revisión de la Fase 7 (intento 2, n.º 1-5): (1) un fallo de la validación de arranque de `backup-cycle` debe escribir `kairos_backup_offsite_success 0` en el `.prom` (`admin.py:367-382`), con prueba de la métrica; (2) un fallo de la retención local en `--loop` debe registrar `backup_cycle_failed` (`offsite.py:379-400`); (3) en `prune_backups`, tratar cualquier código de `verify_backup` como copia desaparecida si la copia ya no existe (`backup.py:449-455`); (4) comprobar cabecera y sha256 y subir desde un mismo descriptor abierto con `O_NOFOLLOW` (CWE-367, `offsite.py:224-272`); (5) corregir «sin red» en la introducción del runbook de `operations.md` (el paso 6 usa una red interna). Estos ficheros se añaden a `Archivos` por esta deuda. Deuda Minor de la revisión de la Fase 6 (intento 3, n.º 3): medir en el ensayo la duración de las huellas de `backup` y `restore-check` con un volumen realista de `memory.embeddings`; si se acerca a `--backup-timeout`, calcular la huella por fila en el servidor (sha256 de `to_jsonb(t)::text`). Patrón: `scripts/tests/test_rehearsal_three_components.py` (ensayo de la Iniciativa 2) y `scripts/deploy-memory.py` (`--project-name`, `--embed-stub`, `--roundtrip`). R-10: ensayos agrupados.
+**Notas**: Evidencia en `Verificación`. Deuda saldada, cada una con su prueba en rojo (líneas `RED:`) y mutante que cae. **Fase 7 n.º 1** (`admin.py`): el arranque rechazado (sin destinatarios, fichero ilegible, destino o variable inválidos) llama a `record_failure` y deja `kairos_backup_offsite_success 0` en el `.prom` (crea el directorio de salida); sin la línea, `test_a_refused_start_zeroes_the_metric…` cae (1/7); `test_without_a_destination…` y `…without_recipients…` pasan a comprobar que no hay copias (`no_copies`), no que el directorio no exista. **n.º 2** (`offsite.py`): la retención local fallida registra `backup_cycle_failed` con `exc_type` y `code` en `run_cycle` (también fuera de `--loop`; sin el mensaje); sin la línea cae `LoopTests…local_retention…`. **n.º 3** (`backup.py`): en `prune_backups` cualquier código de `verify_backup` con la copia ya inexistente cuenta como desaparecida; con la condición antigua cae `…is_gone_whatever_code…`. **n.º 4** (`offsite.py`, CWE-367): `open_regular` (`O_NOFOLLOW` + `fstat` regular), `open_encrypted_copy` (cabecera `age` y sha256/tamaño sobre el descriptor, luego seek 0) y `open_manifest` (JSON leído una vez y comparado con el manifiesto verificado); `put` de `DirDestination` copia desde el descriptor y el de rclone usa `rclone rcat` por stdin (elegido por simple y sin copia privada del volcado en el scratch); lo que cambie tras verificar sale en `offsite.skipped` y no llega al destino (pruebas: enlace a un volcado en claro, fichero en claro, mismos bytes con otro contenido y cabecera `age`). Mutantes: sin la comprobación del sha256 cae la prueba del contenido alterado; abrir sin ninguna comprobación hace caer tres pruebas (enlace, fichero en claro y contenido alterado); quitar solo la cabecera o solo `O_NOFOLLOW` no cae porque el sha256 del descriptor cubre ambos casos (defensa redundante a propósito). Las pruebas de enlace y rclone corren en el contenedor (Linux); en Windows se omiten. **n.º 5**: la introducción del runbook dice ya «sin acceso a internet» (`--network none` en los pasos 2-4 y red interna `--internal` en el 6). **Fase 6 n.º 3** (huellas): 2,07 ms por fila de `memory.embeddings` de 768 dimensiones (30.001 filas: 62 s; las 26 tablas, 56 s; copia completa 93 s; restauración 112 s); el plazo de 3600 s se alcanzaría hacia 1,7 M filas en esta CPU (cota por bytes del ensayo: 2519 s para 5 GB; por filas incompresibles de ~9,3 KB, ~1.100 s). No se acerca: se deja el cálculo en Python y se documenta la medida y el aviso de CPU lenta en `docs/operations.md`. Cambios visibles para el operador declarados en `improvement-plan.md` (Fase 8, ítem 16). `usage-meter` de T-50: 0,94 h (medido), 14,9 M tokens de caché leídos, 84 k de salida.
 
 ### T-51 — Comprobaciones de cierre del hito A
 
