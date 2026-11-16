@@ -428,7 +428,7 @@ class EveryTransactionTests(unittest.TestCase):
     RESOLVERS = {'_require', '_active', '_global_admin', '_delegate', 'require_permission', '_authorized', '_generation'}
     NOT_REQUEST_PATHS = {
         ('admin.py', 'store_fingerprints'): 'operator command on a direct connection', ('admin.py', 'inspect_store'): 'operator command', ('admin.py', 'content_manifest'): 'operator command',
-        ('admin.py', 'mark_stale_unchunked'): 'operator command', ('admin.py', 'backfill_chunks'): 'operator command', ('admin.py', 'prune_tables'): 'operator command', ('admin.py', 'main'): 'operator command',
+        ('backup.py', 'create_backup'): 'operator command: one exported snapshot for the fingerprints and the dump', ('admin.py', 'mark_stale_unchunked'): 'operator command', ('admin.py', 'backfill_chunks'): 'operator command', ('admin.py', 'prune_tables'): 'operator command', ('admin.py', 'main'): 'operator command',
         ('auth.py', 'authenticate_bearer'): 'it IS the credential check (reads the key itself, every request, no cache)', ('auth.py', 'authenticate_session'): 'it IS the credential check',
         ('auth.py', 'login'): 'proves a password; opens the session', ('auth.py', 'logout'): 'revokes the session of the cookie it holds', ('auth.py', 'require_csrf'): 'reads the live session row itself',
         ('observability.py', '_read'): 'metrics read, no actor', ('store.py', 'transaction'): 'the provider of the transaction', ('auth_scope.py', 'savepoint'): 'a savepoint, not a transaction',
