@@ -1124,7 +1124,7 @@ test-plan: n/a (sin UI)
 - [x] Implementar `verify-backup`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `admin.py:286-294` (`pg_dump --format=custom`, `chmod 600`), `:23-47` (`store_fingerprints`, `pg_environment`) y `:295-313` (`restore-check`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `1f7fcb48b0f3`. fix1 (n.º 2, 8, 11): huellas por cursor de servidor y tramos (`FINGERPRINT_BUDGET`), igual resultado que el `fetchall` anterior (prueba con el código viejo de referencia y memoria con `tracemalloc`); `fsync` de la copia y del directorio; el manifiesto detecta corrupción, no manipulación (`operations.md`). Mutantes en rojo: `whole_table`, `trim_groups`, `no_fsync_file`, `no_fsync_dir`. fix2 (n.º 1): huella lineal, una pasada por tabla (suma módulo 2^256 de los sha256 por fila + nº de filas, sin tramos); `MANIFEST_FORMAT` 2 y el formato 1 da `backup_manifest_format_unsupported`. Pruebas: permutaciones, duplicados, fila alterada/añadida/quitada, 1 `execute` por tabla, `tracemalloc`. Mutantes en rojo: `passes` (segunda lectura), `order` (suma según el orden). Medido fix2 (`T-43-fix2`): 0,22 h entre T-35, T-36, T-37, T-39, T-40 y T-42.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-16 — notas de las fase 6», T-35).
 
 ### T-36 — Cifrado `age` con destinatarios y `MEMORY_BACKUP_REQUIRE_ENCRYPTION`
 
@@ -1155,7 +1155,7 @@ test-plan: n/a (sin UI)
 - [x] Añadir `age` a los targets `operator` y `test` del `Dockerfile`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `Dockerfile:16` (`FROM api AS operator`) y `:34-66` (target `test`, que debe contar con `age` para los tests). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `1b8c72aedf53`. fix1 (n.º 1, 3, 7): `pg_dump`→proceso→`age` sin fichero en claro; `terminate_as_exit` cubre todo `create_backup` y `reap` mata a los hijos; `init: true`; `--manifest` y `restore-check --from-manifest <manifiesto>` contra `content_sha256`; `backup_config_invalid`. Mutantes en rojo: `plain_on_disk`, `reap_off`, `handler_only_dump`, `no_content_check`, `config_traceback`, `compose_init`. Medido fix1 (clave `T-43-fix1`): 1.20h repartidas por igual entre T-35, T-36, T-37 y T-39. fix2 (n.º 4, 9): Changelog reescrito con la funcionalidad completa; si `age` falla, `backup_encryption_failed` se comprueba antes que el fallo de `pg_dump` (EPIPE), con un `age` falso que sale sin leer. Mutante en rojo: `epipe`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-16 — notas de las fase 6», T-36).
 
 ### T-37 — `backup --prune --keep N` con ficheros señuelo
 
@@ -1184,7 +1184,7 @@ test-plan: n/a (sin UI)
 - [x] Añadir `MEMORY_BACKUP_KEEP`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `admin.py:240-321` (registro de argumentos y salida de los subcomandos). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `6f0bba858ec4`. fix1 (n.º 1, 9, 14): `prune` verifica de la más reciente a la más antigua hasta N válidas y borra las anteriores sin rehashear (tamaño distinto = omitida); `FileNotFoundError` = ya borrada; barre `.kairos-partial-*` de más de 1 h (`swept_partials`); el señuelo `.kairos-partial-abc123` de `test_backup_prune.py` ahora es reciente. Mutantes en rojo: `prune_hashes_all`, `prune_race`, `sweep_off`. fix2 (n.º 2, 8): el proceso que escribe una copia mantiene un `flock` exclusivo sobre `lock` dentro de su parcial (abierto con `O_NOFOLLOW`) durante todo `create_backup`; el barrido que no lo obtiene salta el parcial sea cual sea su mtime, y sin cerrojo legible exige además la antigüedad; `FileNotFoundError` en el `stat()` = ya borrada; `--prune` imprime siempre el informe de la copia (también con `OSError`). Mutantes en rojo: `lock`, `stat`, `prune`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-16 — notas de las fase 6», T-37).
 
 ### T-38 — `--backup-timeout` en el despliegue (O-03)
 
@@ -1240,7 +1240,7 @@ test-plan: n/a (sin UI)
 - [x] Reutilizar `restore-check` y sus salvaguardas
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `admin.py:295-313` (`restore-check` solo en bases `memory_restore*` vacías), `deploy-memory.py:296-410` (fases) y `tests/test_deploy_isolation.py:43-99` (override con nombres propios). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `eeddb2e408f1`. fix1 (n.º 5, 6, 10, 12, 13, 14): nombres `kairos-verify-<proyecto>-<marca>` y etiqueta del proyecto; solo se elimina lo creado (la red se registra al crearse; `not found` no es fallo); contraseña por ejecución por entorno, `--user postgres --cap-drop ALL` (arranca sin capacidades, comprobado con una imagen local), `maintenance_work_mem=256MB`, `--init`. El sha256 de `restore-check` se repite a propósito (otro contenedor, más tarde; una lectura). Mutantes: `deploy_*`, `compose_init`. fix2 (n.º 11): `verify_name_part` recorta el proyecto a 24 caracteres con un hash corto de 8 (`kairos-verify-pg-<parte>-<marca>` ≤ 63, es un hostname); las etiquetas conservan el proyecto completo; prueba con 39 caracteres. Mutante en rojo: `name`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-16 — notas de las fase 6», T-39).
 
 ### T-40 — Ensayo aislado de `--verify-backup`
 
@@ -1272,7 +1272,7 @@ test-plan: n/a (sin UI)
 - [x] Retirar el proyecto aislado y comparar
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Restricción dura: nada contra la base desplegada ni recursos `knowledge-graphs-*`. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `990826af5db0`. fix2 (n.º 3): ensayo repetido tras el cambio de arranque del efímero (`--user postgres`, `--cap-drop ALL`, contraseña, DSN con `printf`); el aborto se ensaya con la fase `verify_backup_phase` sobre el volumen del ensayo, como en T-40.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-16 — notas de las fase 6», T-40).
 
 ### T-41 — Documentar copias, cifrado, retención y verificación
 
@@ -1299,8 +1299,7 @@ test-plan: n/a (sin UI)
 - [x] Actualizar `docs/operations.md`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Estilo: sección de copias de `docs/operations.md:128-201`.
-**Cierre**: secciones «Inspección y copia de base» y «Probar una restauración» reescritas (manifiesto, verify-backup y sus códigos, cifrado y R-03, retención, plazo del despliegue, `--verify-backup` e `integrity_only`, `restore-check --from-manifest`, coste de las huellas) y 3 filas + 1 frase en `configuration.md` (el Compose no propaga `MEMORY_BACKUP_*`). Medido `reliable-operations/T-41`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-16 — notas de las fase 6», T-41).
 
 ### T-42 — Cierre de fase: suite completa y subida del mínimo
 
@@ -1330,7 +1329,7 @@ test-plan: n/a (sin UI)
 - [x] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `7daa1c6d01e2`. fix1: 1145 pruebas (antes 1122); `KAIROS_MIN_TESTS`, `MIN_FLOOR`, `operations.md` y `README.md` suben al nuevo total. fix2 (n.º 5, 7): 1154 (+9: huella, barrido con cerrojo, `age` que sale sin leer, carrera y informe de `--prune`, nombre largo); el comentario de `ci.yml` y la lista de `MIN_FLOOR` recogen el historial completo.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-16 — notas de las fase 6», T-42).
 
 ### T-43 — Revisión adversarial de la fase (dos lentes)
 
@@ -1362,9 +1361,7 @@ test-plan: n/a (sin UI)
 - [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
 - [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas**: Cerrada en el intento 3 de 3 (intento 1: A+B+C+D; intento 2: A+B+C+D; intento 3: A+B+D; resumen en `review.md`). `scope-check.py --base 99079d8` exit 0; suite 1154 en verde (`MEMORY_TEST_RESULT` en T-42); ensayo T-40 repetido tras los fixes. Minor de cierre: n.º 1 corregido; n.º 2 → T-46; n.º 3 → T-50. Los revisores no tienen medición propia. Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
-
----
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-16 — notas de las fase 6», T-43).
 
 ## Fase 7 — Copia externa programada y runbook de restauración (C-01)
 
