@@ -203,6 +203,7 @@ services:
     entrypoint: [python, -m, memory_platform.admin]
     volumes: [memory-backups:/backups]
     networks: [memory-data]
+    init: true  # python must not be PID 1: as PID 1 it ignores SIGTERM unless it installed a handler, and `docker stop` would then SIGKILL a copy half written
 
 networks:
   memory-data: {internal: true}

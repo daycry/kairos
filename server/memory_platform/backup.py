@@ -7,6 +7,12 @@ plain dump too (`content_sha256`), which is what the restore of a decrypted copy
 A copy is COMPLETE only when `<copy>` and `<copy>.json` both exist and the manifest describes the file as it is on disk. Both are written to a private
 temporary directory next to the destination, hashed there and then renamed into place (the copy first, its manifest last), so a copy that stopped half way
 never looks valid: it has no manifest at its final name and `verify-backup` refuses it.
+
+The manifest is a checksum, not a signature: it detects a copy that was corrupted or truncated, not one whose file AND manifest were replaced together by someone
+who can write to the directory (it has no MAC). Authenticity is the job of the encryption (only the holder of the private key can produce a ciphertext it opens)
+and of keeping the directory out of reach.
+
+With recipients the plain dump never touches the disk: `pg_dump` -> this process (counts and hashes it) -> `age` -> the partial file.
 """
 from __future__ import annotations
 
@@ -20,6 +26,7 @@ import re
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 
 MANIFEST_FORMAT = 1
@@ -33,6 +40,10 @@ AGE_PRIVATE_PREFIX = 'AGE-SECRET' + '-KEY-'  # split so that this source does no
 COPY_NAME = re.compile(r'kairos-[a-z][a-z0-9]*-\d{8}T\d{6}(?:\d{6})?Z\.dump(?:\.age)?')  # the names this tool gives its copies; nothing else is ever pruned
 FUTURE_TOLERANCE_SECONDS = 86400  # a manifest dated further ahead than this is not believed (a decoy would otherwise rank as the newest)
 TIMESTAMP = re.compile(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z')
+PARTIAL_PREFIX = '.kairos-partial-'
+PARTIAL_MAX_AGE_SECONDS = 3600  # a partial directory untouched for this long belongs to a run that is gone
+FINGERPRINT_BUDGET = 64 << 20  # characters of encoded rows a fingerprint holds at once (about twice that at the peak); a bigger table is read again per slice, never held whole
+FINGERPRINT_ITERSIZE = 200  # rows the server-side cursor brings per round trip
 
 
 class BackupError(Exception):
@@ -76,15 +87,73 @@ def write_atomic(path, data, mode=0o600):
         raise
 
 
-def table_fingerprints(connection):
-    """Rows and sha256 of every table of the `memory` schema (provenance, grants, jobs, versions and tombstones included)."""
+def encode_row(value):
+    return json.dumps(value, sort_keys=True, ensure_ascii=False, default=str)
+
+
+def trim_to_budget(kept, budget):
+    """Sort `kept` and drop its largest strings until it fits `budget` (a group of equal strings is kept whole or dropped whole, and at least one group stays).
+
+    Returns the smallest dropped string, which is the new limit, or None if nothing was dropped.
+    """
+    kept.sort()
+    keep, total = 0, 0
+    while keep < len(kept) and total + len(kept[keep]) <= budget:
+        total += len(kept[keep])
+        keep += 1
+    while 0 < keep < len(kept) and kept[keep] == kept[keep - 1]:
+        keep -= 1
+    if keep == 0:
+        keep = 1
+        while keep < len(kept) and kept[keep] == kept[0]:
+            keep += 1
+    if keep >= len(kept):
+        return None
+    limit = kept[keep]
+    del kept[keep:]
+    return limit
+
+
+def table_digest(connection, table, budget=None):
+    """(rows, sha256) of one table: the sha256 of its rows as sorted JSON lines joined by newlines.
+
+    The rows come through a server-side cursor and only the rows of one slice of the sort order are held (`budget`), so the memory does not grow with the table:
+    a table that does not fit is read again for the next slice (strictly after the last string already hashed). The result is the one of sorting every row at once.
+    """
     from psycopg import sql
+    budget = FINGERPRINT_BUDGET if budget is None else budget
+    query = sql.SQL('SELECT to_jsonb(t) AS value FROM memory.{} t').format(sql.Identifier(table))
+    digest, rows, watermark = hashlib.sha256(), 0, None
+    while True:
+        kept, size, limit = [], 0, None
+        with connection.cursor(name='kairos_fingerprint') as cursor:
+            cursor.itersize = FINGERPRINT_ITERSIZE
+            cursor.execute(query)
+            for record in cursor:
+                text = encode_row(record['value'])
+                if (watermark is not None and text <= watermark) or (limit is not None and text >= limit):
+                    continue
+                kept.append(text)
+                size += len(text)
+                if size > 2 * budget:
+                    limit = trim_to_budget(kept, budget) or limit
+                    size = sum(len(item) for item in kept)
+        kept.sort()
+        for text in kept:
+            digest.update((text if rows == 0 else chr(10) + text).encode('utf-8'))
+            rows += 1
+        if limit is None or not kept:
+            return rows, digest.hexdigest()
+        watermark = kept[-1]
+
+
+def table_fingerprints(connection, budget=None):
+    """Rows and sha256 of every table of the `memory` schema (provenance, grants, jobs, versions and tombstones included), in bounded memory."""
     result = {}
     tables = connection.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='memory' ORDER BY table_name").fetchall()
     for row in tables:
-        values = connection.execute(sql.SQL('SELECT to_jsonb(t) AS value FROM memory.{} t').format(sql.Identifier(row['table_name']))).fetchall()
-        encoded = sorted(json.dumps(v['value'], sort_keys=True, ensure_ascii=False, default=str) for v in values)
-        result[row['table_name']] = {'rows': len(encoded), 'sha256': hashlib.sha256('\n'.join(encoded).encode('utf-8')).hexdigest()}
+        rows, sha = table_digest(connection, row['table_name'], budget)
+        result[row['table_name']] = {'rows': rows, 'sha256': sha}
     return result
 
 
@@ -145,17 +214,112 @@ def encrypted_name(output, recipients):
     return output.with_name(output.name + '.age') if recipients and not output.name.endswith('.age') else output
 
 
-def encrypt(source, target, recipients, workdir):
-    """`age` over `source` for `recipients`, into `target`; the recipients go through a private copy so what was validated is what is used."""
+def fsync_path(path, directory=False):
+    """Flush a file (or, on POSIX, a directory entry) to disk; where the platform cannot do it (a directory on Windows) it is a no-op."""
+    try:
+        descriptor = os.open(path, os.O_RDONLY | (getattr(os, 'O_DIRECTORY', 0) if directory else 0))
+    except OSError:
+        return
+    try:
+        os.fsync(descriptor)
+    except OSError:
+        pass
+    finally:
+        os.close(descriptor)
+
+
+def sweep_partials(directory, *, now=None, max_age=PARTIAL_MAX_AGE_SECONDS):
+    """Delete the `.kairos-partial-*` directories of `directory` untouched for more than `max_age` seconds (the leftovers of a run that was killed); returns their names.
+
+    "Untouched" is the newest modification time of the directory and of what is inside, so a copy that is still being written is never swept. A link or a file with that
+    name is not one of ours and is left alone. Every swept name is announced on stderr: a leftover means a run ended badly.
+    """
+    swept = []
+    moment = (now or datetime.now(timezone.utc)).timestamp()
+    try:
+        with os.scandir(directory) as scan:
+            entries = sorted(scan, key=lambda e: e.name)
+    except OSError:
+        return swept
+    for entry in entries:
+        if not entry.name.startswith(PARTIAL_PREFIX):
+            continue
+        try:
+            if entry.is_symlink() or not entry.is_dir(follow_symlinks=False):
+                continue
+            newest = entry.stat(follow_symlinks=False).st_mtime
+            with os.scandir(entry.path) as inside:
+                for child in inside:
+                    newest = max(newest, child.stat(follow_symlinks=False).st_mtime)
+            if moment - newest < max_age:
+                continue
+            shutil.rmtree(entry.path)
+            swept.append(entry.name)
+        except OSError:
+            continue
+    if swept:
+        print(f'warning: removed {len(swept)} orphan partial director{"y" if len(swept) == 1 else "ies"} left by a run that ended badly ({", ".join(swept)})', file=sys.stderr)
+    return swept
+
+
+def reap(children):
+    """Kill and collect every child process still running; nothing here raises."""
+    for child in children:
+        try:
+            if child.poll() is None:
+                child.kill()
+            child.wait(timeout=30)
+        except (OSError, subprocess.SubprocessError):  # already gone, or it did not die in time: nothing more can be done here
+            pass
+        for pipe in (child.stdin, child.stdout):
+            try:
+                if pipe:
+                    pipe.close()
+            except OSError:
+                pass
+
+
+def encrypted_dump(environment, snapshot, recipients, target, workdir, children):
+    """`pg_dump` -> this process -> `age` -> `target`: the plain dump exists only in the two pipes. Returns (content_sha256, content_bytes).
+
+    The recipients go through a private copy so what was validated is what is used. Every process started is appended to `children`, so a caller that is interrupted
+    can kill them. Error messages never carry what the processes print.
+    """
     keys = workdir / 'recipients'
     keys.write_text('\n'.join(recipients) + '\n', encoding='utf-8')
     os.chmod(keys, 0o600)
-    try:
-        subprocess.run(['age', '--encrypt', '-R', str(keys), '-o', str(target), str(source)], check=True, capture_output=True)
-    except subprocess.CalledProcessError as error:
-        raise BackupError('backup_encryption_failed', f'age failed to encrypt the copy (exit {error.returncode})') from None
-    except OSError:
-        raise BackupError('backup_encryption_unavailable', 'the age program could not be run') from None
+    digest, size = hashlib.sha256(), 0
+    with tempfile.TemporaryFile() as diagnostics:  # what the two programs print; never shown, never a pipe that could fill up and block them
+        try:
+            dump = subprocess.Popen(['pg_dump', '--dbname=service=memory', '--format=custom', '--no-owner', '--snapshot=' + snapshot],
+                                    env=environment, stdout=subprocess.PIPE, stderr=diagnostics)
+        except OSError:
+            raise BackupError('backup_dump_unavailable', 'the pg_dump program could not be run') from None
+        children.append(dump)
+        try:
+            cipher = subprocess.Popen(['age', '--encrypt', '-R', str(keys), '-o', str(target)], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=diagnostics)
+        except OSError:
+            raise BackupError('backup_encryption_unavailable', 'the age program could not be run') from None
+        children.append(cipher)
+        try:
+            for block in iter(lambda: dump.stdout.read(HASH_BLOCK), b''):
+                digest.update(block)
+                size += len(block)
+                cipher.stdin.write(block)
+        except BrokenPipeError:  # `age` stopped: its exit status says why, below
+            pass
+        finally:
+            for pipe in (cipher.stdin, dump.stdout):
+                try:
+                    pipe.close()
+                except OSError:
+                    pass
+        dump_status, cipher_status = dump.wait(), cipher.wait()
+    if dump_status:
+        raise subprocess.CalledProcessError(dump_status, 'pg_dump')
+    if cipher_status:
+        raise BackupError('backup_encryption_failed', f'age failed to encrypt the copy (exit {cipher_status})')
+    return digest.hexdigest(), size
 
 
 def create_backup(store, output, *, environment, recipients=None):
@@ -163,39 +327,51 @@ def create_backup(store, output, *, environment, recipients=None):
 
     The manifest's fingerprints and the dump are taken from ONE exported snapshot, so a database that keeps being written to still yields a manifest the
     restored copy matches exactly. `environment` is the `pg_environment` of the DSN (a service file; the DSN is never an argument).
+
+    A SIGTERM at any point (dump, hash, encryption, renames) stops the children, removes the partial directory and exits 143. With recipients nothing in the
+    directory ever holds the plain dump. The `.kairos-partial-*` directories that older runs left behind (SIGKILL, power) are swept first.
     """
     final = output
     manifest_final = manifest_path(final)
     final.parent.mkdir(parents=True, exist_ok=True)
-    partial = Path(tempfile.mkdtemp(prefix='.kairos-partial-', dir=final.parent))  # 0700, never at a name that looks like a copy
-    try:
-        with terminate_as_exit(), store.transaction() as connection:
-            connection.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
-            snapshot = connection.execute('SELECT pg_export_snapshot() AS snapshot').fetchone()['snapshot']
-            version = connection.execute('SELECT coalesce(max(version), 0) AS version FROM memory.schema_versions').fetchone()['version']
-            fingerprints = table_fingerprints(connection)
-            dump = partial / 'dump'
-            subprocess.run(['pg_dump', '--dbname=service=memory', '--format=custom', '--no-owner', '--snapshot=' + snapshot, '--file', str(dump)],
-                           env=environment, check=True, capture_output=True)
-        content_sha, content_bytes = sha256_file(dump)
-        published = dump
-        if recipients:
-            published = partial / 'dump.age'
-            encrypt(dump, published, recipients, partial)
-            dump.unlink()  # the plain dump goes as soon as the ciphertext exists
-        sha, size = sha256_file(published)
-        manifest = {'format': MANIFEST_FORMAT, 'file': final.name, 'sha256': sha, 'bytes': size, 'content_sha256': content_sha, 'content_bytes': content_bytes,
-                    'schema_version': version, 'created_at': utc_now(), 'encrypted': bool(recipients), 'fingerprints': fingerprints}
-        if recipients:
-            manifest['recipients'] = recipient_digests(recipients)
-        os.chmod(published, 0o600)
-        write_atomic(partial / 'manifest', (json.dumps(manifest, indent=2, sort_keys=True) + '\n').encode('utf-8'))
-        os.replace(published, final)  # the copy first...
-        os.replace(partial / 'manifest', manifest_final)  # ...its manifest last: until then the copy has none and is not valid
-    finally:
-        shutil.rmtree(partial, ignore_errors=True)
-    return {'status': 'backed_up', 'path': str(final), 'bytes': size, 'sha256': sha, 'encrypted': manifest['encrypted'], 'schema_version': version,
-            'created_at': manifest['created_at']}
+    swept = sweep_partials(final.parent)
+    children = []
+    with terminate_as_exit():
+        partial = Path(tempfile.mkdtemp(prefix=PARTIAL_PREFIX, dir=final.parent))  # 0700, never at a name that looks like a copy
+        try:
+            with store.transaction() as connection:
+                connection.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+                snapshot = connection.execute('SELECT pg_export_snapshot() AS snapshot').fetchone()['snapshot']
+                version = connection.execute('SELECT coalesce(max(version), 0) AS version FROM memory.schema_versions').fetchone()['version']
+                fingerprints = table_fingerprints(connection)
+                if recipients:
+                    published = partial / 'dump.age'
+                    content_sha, content_bytes = encrypted_dump(environment, snapshot, recipients, published, partial, children)
+                else:
+                    published = partial / 'dump'
+                    subprocess.run(['pg_dump', '--dbname=service=memory', '--format=custom', '--no-owner', '--snapshot=' + snapshot, '--file', str(published)],
+                                   env=environment, check=True, capture_output=True)
+            sha, size = sha256_file(published)
+            if not recipients:
+                content_sha, content_bytes = sha, size
+            manifest = {'format': MANIFEST_FORMAT, 'file': final.name, 'sha256': sha, 'bytes': size, 'content_sha256': content_sha, 'content_bytes': content_bytes,
+                        'schema_version': version, 'created_at': utc_now(), 'encrypted': bool(recipients), 'fingerprints': fingerprints}
+            if recipients:
+                manifest['recipients'] = recipient_digests(recipients)
+            os.chmod(published, 0o600)
+            fsync_path(published)
+            write_atomic(partial / 'manifest', (json.dumps(manifest, indent=2, sort_keys=True) + '\n').encode('utf-8'))
+            os.replace(published, final)  # the copy first...
+            os.replace(partial / 'manifest', manifest_final)  # ...its manifest last: until then the copy has none and is not valid
+            fsync_path(final.parent, directory=True)
+        finally:
+            reap(children)
+            shutil.rmtree(partial, ignore_errors=True)
+    report = {'status': 'backed_up', 'path': str(final), 'bytes': size, 'sha256': sha, 'encrypted': manifest['encrypted'], 'schema_version': version,
+              'created_at': manifest['created_at']}
+    if swept:
+        report['swept_partials'] = swept
+    return report
 
 
 def check_keep(keep):
@@ -208,17 +384,21 @@ def check_keep(keep):
 def prune_backups(directory, keep, *, protect=None, now=None):
     """Delete the copies of `directory` beyond the `keep` newest VERIFIED ones; returns {keep, kept, deleted, skipped, ignored}.
 
-    Only a regular file whose name is exactly one of this tool's (`COPY_NAME`) and that `verify_backup` accepts, with its manifest, is ever a candidate or counted: a decoy,
-    a link, a directory, a copy without manifest or with a manifest that does not match, a half-written copy and a manifest dated in the future are skipped and left alone.
-    `protect` (the copy just written) is always kept and counts as one of the `keep`, so a clock that ran ahead cannot make the run delete the copy it has just made.
-    Never leaves fewer than `keep` verified copies (only the ones beyond the `keep` newest are candidates) and never touches the newest one: it deletes oldest first, copy before manifest, and a deletion that fails is reported
-    (`backup_prune_failed`) after the others were tried. A second run finds nothing to delete.
+    Only a regular file whose name is exactly one of this tool's (`COPY_NAME`) with a readable manifest is ever a candidate: a decoy, a link, a directory, a copy
+    without manifest or with a malformed one, a half-written copy and a manifest dated in the future are skipped and left alone. The candidates are walked from the
+    newest to the oldest and each is VERIFIED (sha256 against its manifest) until `keep` valid ones are found: a copy that does not verify is skipped and does not
+    count. The older ones are then deleted WITHOUT hashing them again (they are this tool's own copies with a manifest; one whose size differs from its manifest's is
+    left alone as truncated). `protect` (the copy just written) is always kept, counts as one of the `keep` and is not hashed again, so a clock that ran ahead
+    cannot make the run delete the copy it has just made. Never leaves fewer than `keep` verified copies and never touches the newest one: it deletes oldest first,
+    copy before manifest; a copy another run deleted meanwhile is simply gone; a deletion that fails is reported (`backup_prune_failed`) after the others were tried.
+    Old `.kairos-partial-*` directories of killed runs are swept first (`swept_partials`). A second run finds nothing to delete.
     """
     keep = check_keep(keep)
     directory = Path(directory)
     now = now or datetime.now(timezone.utc)
     limit = (now + timedelta(seconds=FUTURE_TOLERANCE_SECONDS)).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
-    valid, skipped, ignored = [], [], 0
+    swept = sweep_partials(directory, now=now)
+    candidates, skipped, ignored = [], [], 0
     protect_name = Path(protect).name if protect else None
     with os.scandir(directory) as scan:
         entries = sorted(scan, key=lambda e: e.name)
@@ -226,36 +406,62 @@ def prune_backups(directory, keep, *, protect=None, now=None):
         if not COPY_NAME.fullmatch(entry.name):
             ignored += 1
             continue
+        path = directory / entry.name
         try:
-            manifest = verify_backup(directory / entry.name)
+            if path.is_symlink() or not path.is_file():
+                raise BackupError('backup_not_found', f'The copy {entry.name} is not a regular file')
+            manifest = read_manifest(path)
             if manifest['created_at'] > limit:
                 raise BackupError('backup_created_in_the_future', f'The manifest of {entry.name} is dated in the future')
         except BackupError as error:
             skipped.append({'name': entry.name, 'code': error.code})
             continue
-        valid.append((manifest['created_at'], entry.name))
-    valid.sort(reverse=True)
-    protected = [item for item in valid if item[1] == protect_name]
-    rest = [item for item in valid if item[1] != protect_name]
-    kept = sorted(protected + rest[:max(keep - len(protected), 0)], reverse=True)
-    doomed = [item for item in valid if item not in kept]
+        candidates.append((manifest['created_at'], entry.name, manifest))
+    candidates.sort(key=lambda item: item[:2], reverse=True)  # newest first
+    kept = [item for item in candidates if item[1] == protect_name]
+    doomed = []
+    for item in candidates:
+        created_at, name, manifest = item
+        if item in kept:
+            continue
+        if len(kept) < keep:
+            try:
+                verify_backup(directory / name)
+            except BackupError as error:
+                skipped.append({'name': name, 'code': error.code})
+                continue
+            kept.append(item)
+        elif (directory / name).stat().st_size != manifest['bytes']:
+            skipped.append({'name': name, 'code': 'backup_checksum_mismatch'})
+        else:
+            doomed.append(item)
+    kept.sort(key=lambda item: item[:2], reverse=True)
     deleted, failed = [], []
-    for created_at, name in reversed(doomed):  # oldest first
+    for created_at, name, manifest in reversed(doomed):  # oldest first
         try:
-            os.unlink(directory / name)
-            os.unlink(manifest_path(directory / name))
+            for victim in (directory / name, manifest_path(directory / name)):
+                try:
+                    os.unlink(victim)
+                except FileNotFoundError:  # another run deleted it meanwhile: it is gone, which is what was wanted
+                    pass
             deleted.append(name)
         except OSError:
             failed.append(name)
     deleted.reverse()  # newest first, like `kept`
     if failed:
         raise BackupError('backup_prune_failed', f'{len(failed)} old cop{"y" if len(failed) == 1 else "ies"} could not be deleted ({", ".join(failed)}); {len(deleted)} deleted')
-    return {'keep': keep, 'kept': [{'name': name, 'created_at': created_at} for created_at, name in kept], 'deleted': deleted, 'skipped': skipped, 'ignored': ignored}
+    report = {'keep': keep, 'kept': [{'name': name, 'created_at': created_at} for created_at, name, manifest in kept], 'deleted': deleted, 'skipped': skipped, 'ignored': ignored}
+    if swept:
+        report['swept_partials'] = swept
+    return report
 
 
-def read_manifest(copy):
-    """The manifest of `copy`, checked for shape; `BackupError` `backup_manifest_missing` / `backup_manifest_invalid` otherwise."""
-    path = manifest_path(copy)
+def read_manifest(copy, explicit=None):
+    """The manifest of `copy` (`<copy>.json`, or the file `explicit`), checked for shape; `BackupError` `backup_manifest_missing` / `backup_manifest_invalid` otherwise.
+
+    An explicit manifest belongs to ANOTHER file than `copy` (the ciphertext, when `copy` is its decrypted dump), so the name inside it is not compared.
+    """
+    path = Path(explicit) if explicit else manifest_path(copy)
     try:
         if path.is_symlink() or not path.is_file():
             raise FileNotFoundError
@@ -271,17 +477,20 @@ def read_manifest(copy):
     recipients = manifest.get('recipients')
     if manifest['encrypted'] and (not isinstance(recipients, list) or not recipients or any(not isinstance(r, str) or not SHA256.fullmatch(r) for r in recipients)):
         raise BackupError('backup_manifest_invalid', f'The manifest {path.name} of an encrypted copy lists no valid recipients')
-    if (manifest['file'] != copy.name or not SHA256.fullmatch(manifest['sha256']) or not SHA256.fullmatch(manifest['content_sha256'])
+    if ((manifest['file'] != copy.name and not explicit) or not SHA256.fullmatch(manifest['sha256']) or not SHA256.fullmatch(manifest['content_sha256'])
             or manifest['bytes'] < 0 or manifest['content_bytes'] < 0 or not TIMESTAMP.fullmatch(manifest['created_at'])):
         raise BackupError('backup_manifest_invalid', f'The manifest {path.name} does not describe the file {copy.name}')
     return manifest
 
 
-def verify_backup(copy, recipients_file=None):
-    """Recompute the sha256 of the copy as it is on disk and compare it with its manifest. Never decrypts. Returns the manifest.
+def verify_backup(copy, recipients_file=None, manifest_file=None):
+    """Recompute the sha256 of the copy as it is on disk and compare it with its manifest. Never decrypts. Returns the manifest plus `verified`: 'copy' or 'content'.
 
     With `recipients_file` (MEMORY_BACKUP_RECIPIENTS_FILE) an encrypted copy must also have been encrypted for at least one of its recipients (`backup_recipients_mismatch`):
     that is how a copy made for some other key is told. It is the manifest's claim, not a proof (only the private key proves it).
+
+    With `manifest_file` (the manifest of a ciphertext) and a PLAIN dump, the dump is the decrypted copy: its sha256 and size are compared with the manifest's
+    `content_sha256` and `content_bytes` (`verified` is 'content'). That is how a copy that was encrypted, decrypted and restored is tied to what the backup recorded.
 
     `backup_checksum_mismatch` for any difference of content or size (a truncated copy says so); `backup_manifest_*` for a missing or malformed manifest;
     `backup_not_found` for a copy that is not a regular file (a symbolic link is refused).
@@ -289,9 +498,17 @@ def verify_backup(copy, recipients_file=None):
     copy = Path(copy)
     if copy.is_symlink() or not copy.is_file():
         raise BackupError('backup_not_found', f'The copy {copy.name} is not a regular file')
-    manifest = read_manifest(copy)
+    manifest = read_manifest(copy, manifest_file)
     with open(copy, 'rb') as handle:
         head = handle.read(len(AGE_MAGIC))
+    if manifest_file and manifest['encrypted'] and head.startswith(PG_DUMP_MAGIC):
+        sha, size = sha256_file(copy)
+        if size != manifest['content_bytes']:
+            raise BackupError('backup_checksum_mismatch', f"The decrypted copy {copy.name} has {size} bytes but its manifest says {manifest['content_bytes']}"
+                              + (' (truncated)' if size < manifest['content_bytes'] else ''))
+        if sha != manifest['content_sha256']:
+            raise BackupError('backup_checksum_mismatch', f'The sha256 of the decrypted copy {copy.name} does not match the content_sha256 of its manifest')
+        return dict(manifest, verified='content')
     if manifest['encrypted'] != head.startswith(AGE_MAGIC) or (not manifest['encrypted'] and not head.startswith(PG_DUMP_MAGIC)):
         raise BackupError('backup_manifest_invalid', f"The manifest says encrypted={str(manifest['encrypted']).lower()} but the file {copy.name} is not")
     sha, size = sha256_file(copy)
@@ -303,4 +520,4 @@ def verify_backup(copy, recipients_file=None):
     if manifest['encrypted'] and recipients_file:
         if not set(manifest['recipients']) & set(recipient_digests(load_recipients(recipients_file))):
             raise BackupError('backup_recipients_mismatch', f'The copy {copy.name} was encrypted for other recipients than MEMORY_BACKUP_RECIPIENTS_FILE lists')
-    return manifest
+    return dict(manifest, verified='copy')

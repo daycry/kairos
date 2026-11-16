@@ -342,11 +342,12 @@ def main(argv=None):
     backup.add_argument('--keep', default=None, help='With --prune: copies to keep, 1 or more (default MEMORY_BACKUP_KEEP, 7)')
     verify = commands.add_parser('verify-backup', help='Recompute the sha256 of a copy and compare it with its manifest (never decrypts)')
     verify.add_argument('--backup', required=True)
+    verify.add_argument('--manifest', default=None, help='The manifest of the ENCRYPTED copy (<copy>.age.json) when --backup is its decrypted dump: its sha256 is compared with content_sha256')
     restore = commands.add_parser('restore-check')
     restore.add_argument('--backup', required=True)
     restore.add_argument('--target-dsn-file', required=True)
-    restore.add_argument('--from-manifest', action='store_true',
-                         help='Verify the copy against <backup>.json and compare the restored tables with the counts recorded there (one snapshot with the dump) instead of with the live database, which is then never read')
+    restore.add_argument('--from-manifest', nargs='?', const='auto', default=None, metavar='MANIFEST',
+                         help='Verify the copy against <backup>.json (or against MANIFEST, the manifest of the ciphertext, when --backup is its decrypted dump) and compare the restored tables with the counts recorded there (one snapshot with the dump) instead of with the live database, which is then never read')
     args = parser.parse_args(argv)
     if args.command == 'prune-tables':
         if not 1 <= args.batch <= PRUNE_BATCH_MAX:
@@ -357,10 +358,12 @@ def main(argv=None):
             parser.error(str(error))  # a clear message and nothing touched
     if args.command == 'verify-backup':  # needs no database: it reads the copy and its manifest
         try:
-            manifest = verify_backup(Path(args.backup), backup_recipients_file())
+            manifest = verify_backup(Path(args.backup), backup_recipients_file(), args.manifest)
         except BackupError as error:
             raise SystemExit(f'{error.code}: {error}') from None
-        print(json.dumps({'status': 'verified', 'path': str(Path(args.backup).resolve()), 'bytes': manifest['bytes'], 'sha256': manifest['sha256'],
+        content = manifest['verified'] == 'content'  # a decrypted dump: what was checked is the content, not the ciphertext
+        print(json.dumps({'status': 'verified', 'verified': manifest['verified'], 'path': str(Path(args.backup).resolve()),
+                          'bytes': manifest['content_bytes' if content else 'bytes'], 'sha256': manifest['content_sha256' if content else 'sha256'],
                           'encrypted': manifest['encrypted'], 'schema_version': manifest['schema_version'], 'created_at': manifest['created_at']}, sort_keys=True))
         return
     settings = Settings.from_env()
@@ -408,7 +411,11 @@ def main(argv=None):
                     keep = check_keep(int(args.keep))
             # Before any file exists: a copy that must be encrypted and cannot be fails here, in the clear it is never written.
             recipients_file = backup_recipients_file()
-            recipients = encryption_plan(recipients_file, backup_require_encryption())
+            try:
+                require_encryption = backup_require_encryption()
+            except ValueError as error:  # a typo in the requirement fails closed, with a code a script can test
+                raise BackupError('backup_config_invalid', str(error)) from None
+            recipients = encryption_plan(recipients_file, require_encryption)
             output = encrypted_name(output, recipients)
             plain = output.with_name(output.name[:-4]) if output.name.endswith('.age') else output  # the name is taken in either form
             if any(os.path.lexists(name) or os.path.lexists(manifest_path(name)) for name in (plain, plain.with_name(plain.name + '.age'))):
@@ -438,8 +445,8 @@ def main(argv=None):
                 parser.error('Restore target must be empty; no cleanup or overwrite is performed')
         if args.from_manifest:
             try:
-                manifest = verify_backup(Path(args.backup))
-                if manifest['encrypted']:
+                manifest = verify_backup(Path(args.backup), manifest_file=None if args.from_manifest == 'auto' else args.from_manifest)
+                if manifest['encrypted'] and manifest['verified'] != 'content':
                     raise BackupError('backup_encrypted', 'This copy is encrypted: decrypt it with the private key (which is not on this host) and restore the plain dump')
             except BackupError as error:
                 raise SystemExit(f'{error.code}: {error}') from None

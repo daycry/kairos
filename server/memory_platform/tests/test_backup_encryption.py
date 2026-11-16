@@ -177,18 +177,19 @@ class EncryptedBackupTests(unittest.TestCase):
         with workspace() as root:
             public, _ = new_identity(root)
             keys = recipients_file(root, public)
-            real_run = subprocess.run
+            real_popen = subprocess.Popen
             seen = []
 
-            def run(command, **kwargs):
+            def popen(command, **kwargs):
                 if command[0] == 'age':
                     seen.append(command)
-                    Path(command[command.index('-o') + 1]).write_bytes(b'age-encryption.org/v1 half')  # it had started
-                    raise subprocess.CalledProcessError(1, command, stderr=b'secret detail ' + str(keys).encode())
-                return real_run(command, **kwargs)
+                    # a program that had started writing, reads its input to the end and fails printing a detail and a path
+                    script = 'printf "age-encryption.org/v1 half" > "$1"; cat > /dev/null; printf "secret detail %s" "$2" >&2; exit 1'
+                    return real_popen(['sh', '-c', script, 'age', command[command.index('-o') + 1], str(keys)], **kwargs)
+                return real_popen(command, **kwargs)
             sink = root / 'sink'
             sink.mkdir()
-            with patch.object(backup.subprocess, 'run', run), patch.dict(os.environ, dict(self.environ, MEMORY_BACKUP_RECIPIENTS_FILE=str(keys))):
+            with patch.object(backup.subprocess, 'Popen', popen), patch.dict(os.environ, dict(self.environ, MEMORY_BACKUP_RECIPIENTS_FILE=str(keys))):
                 with self.assertRaises(SystemExit) as raised, contextlib.redirect_stdout(io.StringIO()):
                     main(['backup', '--output', str(sink / 'kairos-before-20261116T090000000006Z.dump')])
             self.assertTrue(seen)

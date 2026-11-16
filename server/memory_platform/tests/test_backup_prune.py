@@ -71,6 +71,9 @@ class PruneTests(unittest.TestCase):
             (folder / 'inside').write_bytes(b'x')
             (root / '.kairos-partial-abc123').mkdir()
             (root / '.kairos-partial-abc123' / 'dump').write_bytes(b'PGDMP half')
+            recent = datetime(2026, 11, 20, tzinfo=timezone.utc).timestamp() - 60  # a run that is still going (older ones are swept: see test_backup_hardening)
+            os.utime(root / '.kairos-partial-abc123' / 'dump', (recent, recent))
+            os.utime(root / '.kairos-partial-abc123', (recent, recent))
             before = {n: (root / n).read_bytes() for n in names(root) if (root / n).is_file()}
             report = run_prune(root, 2)
             self.assertEqual(report['deleted'], [good[1].name, good[0].name])

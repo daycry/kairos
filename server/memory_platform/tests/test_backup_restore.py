@@ -139,6 +139,54 @@ class RestoreFromManifestTests(unittest.TestCase):
             self.assertIsNone(failure, failure)
             self.assertEqual(json.loads(out)['tables'], store_fingerprints(self.store))
 
+    def encrypted_copy(self, root):
+        """(ciphertext, manifest, decrypted dump, target file): the copy as the server makes it and as the operator decrypts it with a key the server never had."""
+        import subprocess
+        from memory_platform.tests.test_backup_encryption import new_identity, recipients_file
+        public, identity = new_identity(root)
+        self.environ = dict(self.environ, MEMORY_BACKUP_RECIPIENTS_FILE=str(recipients_file(root, public)))
+        failure, out = self.run_command('backup', '--output', str(root / 'kairos-before-20261116T090000000002Z.dump'))
+        self.assertIsNone(failure, failure)
+        ciphertext = Path(json.loads(out)['path'])
+        plain = root / 'decrypted.dump'
+        subprocess.run(['age', '--decrypt', '-i', str(identity), '-o', str(plain), str(ciphertext)], check=True, capture_output=True)
+        target_file = root / 'target.dsn'
+        target_file.write_text(self.target, encoding='utf-8')
+        return ciphertext, Path(str(ciphertext) + '.json'), plain, target_file
+
+    @unittest.skipUnless(shutil.which('age') and shutil.which('age-keygen'), 'age is required')
+    def test_a_decrypted_copy_restores_against_the_manifest_of_its_ciphertext(self):
+        """The runbook: decrypt with the private key, then `restore-check --from-manifest <manifest of the .age>`: the dump is compared with content_sha256 first."""
+        with workspace() as root:
+            ciphertext, manifest_file, plain, target_file = self.encrypted_copy(root)
+            failure, out = self.run_command('restore-check', '--backup', str(plain), '--target-dsn-file', str(target_file), '--from-manifest', str(manifest_file))
+            self.assertIsNone(failure, failure)
+            report = json.loads(out)
+            self.assertEqual(report['status'], 'restored_and_content_verified')
+            self.assertEqual(report['tables'], json.loads(manifest_file.read_text(encoding='utf-8'))['fingerprints'])
+
+    @unittest.skipUnless(shutil.which('age') and shutil.which('age-keygen'), 'age is required')
+    def test_a_decrypted_copy_with_one_altered_byte_is_refused_before_restoring(self):
+        with workspace() as root:
+            ciphertext, manifest_file, plain, target_file = self.encrypted_copy(root)
+            data = bytearray(plain.read_bytes())
+            data[len(data) // 2] ^= 0x01
+            plain.write_bytes(bytes(data))
+            with patch.object(admin.subprocess, 'run') as run:
+                failure, out = self.run_command('restore-check', '--backup', str(plain), '--target-dsn-file', str(target_file), '--from-manifest', str(manifest_file))
+            self.assertTrue(failure.startswith('backup_checksum_mismatch: '), failure)
+            run.assert_not_called()
+            self.assertEqual(out, '')
+
+    @unittest.skipUnless(shutil.which('age') and shutil.which('age-keygen'), 'age is required')
+    def test_the_ciphertext_is_still_refused_even_with_an_explicit_manifest(self):
+        with workspace() as root:
+            ciphertext, manifest_file, plain, target_file = self.encrypted_copy(root)
+            with patch.object(admin.subprocess, 'run') as run:
+                failure, _ = self.run_command('restore-check', '--backup', str(ciphertext), '--target-dsn-file', str(target_file), '--from-manifest', str(manifest_file))
+            self.assertTrue(failure.startswith('backup_encrypted: '), failure)
+            run.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()
