@@ -1594,15 +1594,15 @@ test-plan: n/a (sin UI)
 ### T-51 — Comprobaciones de cierre del hito A
 
 - **Descripción**: Comprobar migraciones aditivas, diff aditivo de contratos frente a `contracts_base`, ausencia de referencias a `knowledge-graphs-*` y al puerto 11434 (salvo para rechazarlos), alcance declarado y suite. Fuente: CA-38 (parte del hito A).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: la suite del servidor pasa a 1201 pruebas y la CI exige ese mínimo; comprobaciones de cierre del hito A (alcance, referencias prohibidas, migraciones y contratos aditivos).
+- **Estado**: en-progreso
 - **Tiempo humano**: est. 1.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real 0.08h (medido)
 - **Supervisión**: est. 0.05h (≈25 % IA) · real —
 - **Previsión IA**: 55 k in / 5 k out tok · ⚠️ verificar €
 - **Dependencias**: T-50
 - **Tipo**: test
-- **Archivos**: `docs/roadmap/2026-11-15-reliable-operations/review.md`
+- **Archivos**: `docs/roadmap/2026-11-15-reliable-operations/review.md`, `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `README.md`, `docs/operations.md` (mínimo de la suite: 1201; añadidos), `docs/roadmap/2026-11-12-three-components/retro.md` y `docs/roadmap/CALIBRATION.md` (retro de la Iniciativa 2 commiteada en esta rama antes de la Fase 1, que `scope-check --base origin/main` ve; añadidos)
 - **Cubre (tests)**: —
 - **Verificación**:
   - `python3 "$SHAREDKIT/scope-check.py" docs/roadmap/2026-11-15-reliable-operations` → exit 0
@@ -1610,17 +1610,17 @@ test-plan: n/a (sin UI)
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
 
 **Criterios de aceptación**
-- [ ] Suite con 0 fallos y 0 omitidos; `test_migrations_additive` y `test_contract_additive` pasan
-- [ ] Ninguna referencia nueva a `knowledge-graphs-*` o 11434 salvo para rechazarlos
+- [x] Suite con 0 fallos y 0 omitidos; `test_migrations_additive` y `test_contract_additive` pasan
+- [x] Ninguna referencia nueva a `knowledge-graphs-*` o 11434 salvo para rechazarlos
 - [ ] Revisión del hito: lectura del diff completo del hito A por una persona/lente distinta de la de cada fase, con hallazgos en `review.md`
 
 **Subtareas**
-- [ ] Ejecutar `scope-check.py`
-- [ ] Buscar referencias prohibidas
-- [ ] Ejecutar la suite y los contratos
-- [ ] `usage-meter start/close` de la tarea
+- [x] Ejecutar `scope-check.py`
+- [x] Buscar referencias prohibidas
+- [x] Ejecutar la suite y los contratos
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `test_contract_additive.py` y `contracts_base` / `contracts_base_23ced03`.
+**Notas** (2026-11-17): **Suite**: `docker build -f server/memory_platform/Dockerfile --target test -t kairos-test:i3p8 --progress=plain .` → exit 0, `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1201}` (6 pruebas más que 1195; mínimo subido a 1201 en `ci.yml`, `MIN_FLOOR` y su historia, `docs/operations.md` y `README.md`; `test_ci_workflow.py` en host: `Ran 45 tests ... OK`; `scripts/tests` en host: `Ran 161 tests ... OK`). `test_contract_additive` y `test_migrations_additive` van dentro de esa suite y pasan. **Alcance**: `scope-check.py docs/roadmap/2026-11-15-reliable-operations --base eaff0d1` → exit 0 (27 ficheros, 0 fuera de alcance). El `main` LOCAL está obsoleto (7f116d0, sin la fusión de la PR #3 que sí tiene `origin/main`), así que `--base main` da exit 1 con 304 ficheros de las iniciativas 1 y 2; con la base real del PR, `--base origin/main`, solo salían `docs/roadmap/2026-11-12-three-components/retro.md` y `docs/roadmap/CALIBRATION.md` (la retro de la Iniciativa 2, commiteada en esta rama): declarados en `Archivos` de esta tarea, con lo que `--base origin/main` da exit 0. **Referencias**: `grep -rn "knowledge-graphs-\|11434" scripts server/memory_platform/tests docker-compose.yml` solo da apariciones que rechazan o nombran esos recursos (`deploy-memory.py` 42 puerto del stub y 88 comentario, los docstrings de los dos ensayos, las pruebas de aislamiento y los pares de rechazo de `retrieval_eval`/`test_ollama_proxy`/`test_deploy_isolation`, y `docker-compose.yml` 8, 45 y 53 del proxy propio de Ollama); las líneas añadidas por el hito frente a `origin/main` con esas cadenas son 5 (los dos docstrings, dos `assertNotIn` y la lista de nombres rechazados de las pruebas de los ensayos): ninguna referencia nueva que use esos recursos. `usage-meter` de T-51: 0,08 h (medido). **Pendiente**: «Revisión del hito» (lectura del diff completo por una lente distinta; la despacha el orquestador); T-51 sigue `en-progreso`.
 
 ### T-52 — Notas de cambio del hito A
 
