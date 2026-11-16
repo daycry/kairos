@@ -3085,3 +3085,7 @@ Lentes: A+B+D (re-evalúan lo corregido; C sin hallazgos en el intento 2). Diff 
 | 1 | Minor | El Changelog de T-36 perdió `verify-backup --manifest` / `restore-check --from-manifest <m>` y `backup_config_invalid` | T-36 | corregido en el cierre (T-43) | Lente A n.º 1; `tasks.md` T-36 |
 | 2 | Minor | Resto de la carrera de dos `--prune`: una copia que se está verificando para conservarla y que otro proceso borra deja escapar `FileNotFoundError` (`backup_prune_failed` falso) | T-37 | deuda → T-46 (servicio `memory-backup` programado, donde la concurrencia es real) | Lente B n.º 1 (reproducido); `backup.py:447-452,527-530` |
 | 3 | Minor | La recodificación por fila en Python domina el coste de las huellas (~2-15 MB/s según CPU): con 5 GB de embeddings en un vCPU lento se acerca a `--backup-timeout` | T-35, T-39 | deuda → T-50 (medir en el ensayo del hito A; si no cabe, huella por fila en el servidor) | Lente D n.º 1; `backup.py:96-97,119` |
+
+## Revisión de dos lentes — intento 1: Fase 7 (T-44..T-48) (T-44, T-45, T-46, T-47, T-48)
+
+Pendiente de revisión; sin veredicto.
