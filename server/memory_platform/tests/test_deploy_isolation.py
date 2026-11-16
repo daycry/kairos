@@ -182,6 +182,7 @@ class IsolatedDeploymentTests(unittest.TestCase):
             instance = deploy.Deployment(arguments(secret_dir=str(secrets), project_name='kairos-rehearsal', api_port=18790, web_port=15173, **changes), root)
             commands = []
             self.timeouts = []  # the timeout of each call of `commands`, in step
+            self.extra_envs = []  # the extra environment of each call (where a secret may travel), in step
             answers = {'inspect': '{"tables":{"actors":1}}', 'content-manifest': '{"sha256":"s","documents":[],"projects":[]}',
                        'backup': '{"status":"backed_up","path":"/backups/kairos-before-20261116T090000000000Z.dump","bytes":1}', 'migrate': '{"status":"migrated"}',
                        'verify-backup': verify_answer or '{"status":"verified","encrypted":false,"bytes":1}',
@@ -190,6 +191,7 @@ class IsolatedDeploymentTests(unittest.TestCase):
             def run(command, **kwargs):
                 commands.append(command)
                 self.timeouts.append(kwargs.get('timeout'))
+                self.extra_envs.append(kwargs.get('extra_env'))
                 if fail_stop and 'stop' in command:
                     raise RuntimeError('stop failed')
                 if fail_when and fail_when(command):
@@ -347,18 +349,62 @@ class VerifyBackupPhaseTests(unittest.TestCase):
         self.assertIn('--internal', network)
         start = commands[labels.index('database-start')]
         self.assertEqual(start[start.index('--network') + 1], network[-1])
-        self.assertEqual(start[-1], 'rehearsal-kairos-rehearsal-postgres:latest')
+        self.assertEqual(start[-3], 'rehearsal-kairos-rehearsal-postgres:latest')  # then its server options
         self.assertIn('no-new-privileges:true', start)
         restore = commands[labels.index('restore')]
         self.assertEqual(restore[restore.index('--network') + 1], network[-1])
         self.assertIn(f'{instance.volumes[1]}:/backups:ro', restore)  # the project's backups, read only
         self.assertIn('rehearsal-kairos-rehearsal-operator:latest', restore)
         self.assertIn('--from-manifest', restore[-1])
-        target = next(part for part in restore if part.startswith('TARGET_DSN='))
-        self.assertEqual(target, f"TARGET_DSN=postgresql://postgres@{start[start.index('--name') + 1]}:5432/{instance.report['verify_backup']['database']}")
+        self.assertIn(f"TARGET_HOST={start[start.index('--name') + 1]}", restore)
+        self.assertIn(f"TARGET_DATABASE={instance.report['verify_backup']['database']}", restore)
+        self.assertIn('TARGET_PASSWORD', restore)  # the name only: the value goes through the environment of the process
         self.assertIn('MEMORY_DSN=postgresql://unused@127.0.0.1:1/unused', restore)  # the live database is not even named
         for name in (start[start.index('--name') + 1], restore[restore.index('--name') + 1], network[-1]):
-            self.assertRegex(name, r'^kairos-verify-(pg-|op-)?[0-9a-f]{12}$')
+            self.assertRegex(name, r'^kairos-verify-(pg-|op-)?kairos-rehearsal-[0-9a-f]{12}$')  # the project is in the name (CA-05)
+        for command in (network, start, restore):
+            self.assertIn('com.kairos.project=kairos-rehearsal', command)
+
+    def test_the_ephemeral_postgres_has_a_password_of_this_run_that_never_travels_in_an_argument_or_the_report(self):
+        helper = IsolatedDeploymentTests('migrate_run')
+        instance, commands = helper.migrate_run()
+        labels = [label(command) for command in commands]
+        envs = dict(zip(labels, helper.extra_envs))
+        password = envs['database-start']['POSTGRES_PASSWORD']
+        self.assertGreaterEqual(len(password), 24)
+        self.assertEqual((envs['create-database']['PGPASSWORD'], envs['restore']['TARGET_PASSWORD']), (password, password))
+        joined = chr(10).join(' '.join(command) for command in commands)
+        self.assertNotIn(password, joined)
+        self.assertNotIn(password, json.dumps(instance.report))
+        self.assertNotIn('trust', joined.lower(), 'no HOST_AUTH_METHOD=trust any more')
+        start = commands[labels.index('database-start')]
+        self.assertEqual(start[start.index('POSTGRES_PASSWORD') - 1:start.index('POSTGRES_PASSWORD') + 1], ['-e', 'POSTGRES_PASSWORD'])  # the name alone: docker takes the value from the environment
+        again = IsolatedDeploymentTests('migrate_run')
+        _, other = again.migrate_run()
+        self.assertNotEqual(dict(zip([label(c) for c in other], again.extra_envs))['database-start']['POSTGRES_PASSWORD'], password, 'a password per run')
+
+    def test_the_ephemeral_postgres_runs_unprivileged_without_capabilities_and_with_enough_memory_to_index(self):
+        instance, commands, labels = self.run_phases()
+        start = commands[labels.index('database-start')]
+        for pair in (['--cap-drop', 'ALL'], ['--user', 'postgres'], ['--security-opt', 'no-new-privileges:true']):
+            self.assertEqual(start[start.index(pair[0]):start.index(pair[0]) + 2], pair, pair)
+        self.assertIn('--init', start)
+        image = start.index('rehearsal-kairos-rehearsal-postgres:latest')
+        self.assertEqual(start[image + 1:], ['-c', 'maintenance_work_mem=256MB'])
+        self.assertIn('--init', commands[labels.index('restore')])  # python is not PID 1 there either: SIGTERM reaches it
+
+    def test_a_removal_of_something_that_is_not_there_is_not_a_failure_in_either_wording_of_docker(self):
+        with workspace() as root:
+            instance = deploy.Deployment(arguments(project_name='kairos-rehearsal', api_port=18790, web_port=15173), root)
+            for details, expected in (('Error response from daemon: No such container: x', True), ('Error response from daemon: network x not found', True), ('permission denied', False)):
+                done = SimpleNamespace(returncode=1, stdout='', stderr=details)
+                with patch.object(deploy.subprocess, 'run', return_value=done):
+                    self.assertIs(instance.quietly(['docker', 'network', 'rm', 'x']), expected, details)
+
+    def test_the_operator_service_runs_under_an_init_process_so_that_python_is_not_pid_1(self):
+        text = COMPOSE.read_text(encoding='utf-8')
+        block = text.split('  memory-admin:' + chr(10), 1)[1].split(chr(10) + 'networks:', 1)[0]
+        self.assertRegex(block, r'(?m)^    init: true')
 
     def test_the_verify_and_restore_commands_get_the_backup_timeout(self):
         helper = IsolatedDeploymentTests('migrate_run')
@@ -385,9 +431,15 @@ class VerifyBackupPhaseTests(unittest.TestCase):
             with self.subTest(step=step):
                 instance, commands, labels = self.run_phases(fail_when=lambda command, step=step: label(command) == step)
                 self.assertNotIn('operator:migrate', labels)
+                created = {'network-create': (), 'database-start': ('network-rm', 'remove:pg'), 'create-database': ('network-rm', 'remove:pg'),
+                           'restore': ('remove:op', 'remove:pg', 'network-rm')}[step]
                 for name in ('remove:op', 'remove:pg', 'network-rm'):
-                    self.assertIn(name, labels, step)
+                    if name in created:
+                        self.assertIn(name, labels, step)
+                    else:
+                        self.assertNotIn(name, labels, step + ': what was never created is not removed')
                 self.assertEqual(instance.report['verify_backup']['status'], 'failed')
+                self.assertEqual(instance.report['verify_backup'].get('cleanup'), 'complete', step)
 
     def test_an_ephemeral_database_that_never_answers_is_a_failure_after_the_wait_and_is_removed(self):
         ticks = iter(range(0, 10000, 40))

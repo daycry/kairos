@@ -13,6 +13,7 @@ import json
 import os
 import re
 from pathlib import Path
+import secrets
 import subprocess
 import sys
 import tempfile
@@ -28,6 +29,8 @@ MIGRATE_TIMEOUT_SECONDS = 3600  # the first pgvector migration rewrites and inde
 BACKUP_TIMEOUT_SECONDS = 3600  # O-03: `content-manifest`, `backup` and `verify-backup` read or dump the whole database; the default 120 s of `operator()` aborts a large one
 VERIFY_WAIT_SECONDS = 90  # the ephemeral PostgreSQL of `--verify-backup` must accept connections within this
 VERIFY_LABEL = 'com.kairos.verify-backup'
+VERIFY_PROJECT_LABEL = 'com.kairos.project'
+VERIFY_MAINTENANCE_WORK_MEM = '256MB'  # the restore rebuilds the vector indexes: the 64 MB default makes a big one slow enough to exhaust the plazo
 BACKUP_TIMEOUT_MAX_SECONDS = 86400  # a timeout is a bound: 0 or "no limit" would let a stuck copy hang the deployment
 ISOLATED_PRIVATE_FILES = ('memory-platform.env', 'compose.override.yml', 'deployment-status.json', 'deployment-status.tmp')
 VOLUMES = (DEFAULT_PROJECT + '_memory-postgres-data', DEFAULT_PROJECT + '_memory-backups')
@@ -249,9 +252,11 @@ class Deployment:
         self.phase = 'engine'
         self.secret_values = []
 
-    def run(self, command, timeout=120):
+    def run(self, command, timeout=120, extra_env=None):
+        """Run `command`; `extra_env` adds variables to ITS environment only (a secret that a `-e NAME` of docker takes from there, never from the argument list)."""
+        environment = self.environment if not extra_env else dict(os.environ if self.environment is None else self.environment, **extra_env)
         try:
-            result = subprocess.run(command, cwd=self.root, capture_output=True, env=self.environment,
+            result = subprocess.run(command, cwd=self.root, capture_output=True, env=environment,
                                     text=True, encoding='utf-8', errors='replace', timeout=timeout)
         except (OSError, subprocess.TimeoutExpired):
             raise DeploymentError('Command unavailable or timed out; verify its actual state before retrying') from None
@@ -301,7 +306,8 @@ class Deployment:
             self.run(command, timeout=timeout)
             return True
         except DeploymentError:
-            return 'no such' in (self.report.get('command_failure') or {}).get('details', '').lower()  # removing what is not there is not a failure
+            details = (self.report.get('command_failure') or {}).get('details', '').lower()
+            return 'no such' in details or 'not found' in details  # removing what is not there is not a failure
         finally:
             if kept is None:
                 self.report.pop('command_failure', None)
@@ -313,16 +319,24 @@ class Deployment:
 
         The sha256 against the manifest first (`verify-backup`). Then, on a network of its own (internal: no route out, no published port), a container of the project's postgres image
         with a database `memory_restore_<mark>`, where a throw-away operator container restores the copy (read-only mount of the project's backups volume) and compares the tables
-        with the manifest (`restore-check --from-manifest`: the live database is not read, let alone written). Whatever happens the three containers and the network are removed, and
-        the report keeps the result and the duration. An encrypted copy is verified without decrypting (its key is never on this host) and reported as `integrity_only`.
-        Nothing here uses a `knowledge-graphs` name or the project's own database.
+        with the manifest (`restore-check --from-manifest`: the live database is not read, let alone written). Whatever was created is removed, and the report keeps the result and
+        the duration. An encrypted copy is verified without decrypting (its key is never on this host) and reported as `integrity_only`.
+        Nothing here uses the project's own database. Names and labels carry the project and the mark (`kairos-verify-<project>-<mark>`).
+
+        The ephemeral PostgreSQL holds the restored data in the clear, so it gets a password drawn for this run (given to docker through the environment, never in an argument or
+        in the report), no capability, no privilege escalation and the unprivileged `postgres` user; its only door is the internal network.
         """
         started = time.monotonic()
         mark = uuid.uuid4().hex[:12]
         result = self.report['verify_backup'] = {'status': 'running', 'backup': copy.get('path')}
-        net, database_container, restore_container = f'kairos-verify-{mark}', f'kairos-verify-pg-{mark}', f'kairos-verify-op-{mark}'
+        tag = f'{self.project}-{mark}'
+        net, database_container, restore_container = f'kairos-verify-{tag}', f'kairos-verify-pg-{tag}', f'kairos-verify-op-{tag}'
         database = 'memory_restore_' + mark
-        labels = ['--label', f'{VERIFY_LABEL}={mark}']
+        labels = ['--label', f'{VERIFY_LABEL}={mark}', '--label', f'{VERIFY_PROJECT_LABEL}={self.project}']
+        password = secrets.token_urlsafe(24)
+        self.secret_values.append(password)
+        secret_env = {'POSTGRES_PASSWORD': password, 'PGPASSWORD': password, 'TARGET_PASSWORD': password}
+        created = []  # (name, remover) of everything this phase created, in order: only that is removed and only that can be reported as left over
         try:
             integrity = self.long_operator('verify-backup', '--backup', copy['path'])
             if integrity.get('status') != 'verified':
@@ -332,19 +346,25 @@ class Deployment:
                 return
             result['database'] = database
             self.run(['docker', 'network', 'create', '--internal', *labels, net])
-            self.run(['docker', 'run', '--detach', '--name', database_container, '--network', net, *labels, '--security-opt', 'no-new-privileges:true',
-                      '-e', 'POSTGRES_HOST_AUTH_METHOD=trust', self.image('postgres')], timeout=120)
+            created.append((net, ['docker', 'network', 'rm', net]))
+            created.append((database_container, ['docker', 'rm', '--force', '--volumes', database_container]))  # registered first: a start that failed half way may have made it
+            self.run(['docker', 'run', '--detach', '--name', database_container, '--network', net, *labels, '--init', '--user', 'postgres', '--cap-drop', 'ALL',
+                      '--security-opt', 'no-new-privileges:true', '-e', 'POSTGRES_PASSWORD', self.image('postgres'), '-c', f'maintenance_work_mem={VERIFY_MAINTENANCE_WORK_MEM}'],
+                     timeout=120, extra_env=secret_env)
             deadline = time.monotonic() + VERIFY_WAIT_SECONDS
             while not self.quietly(['docker', 'exec', database_container, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres'], timeout=15):
                 if time.monotonic() > deadline:
                     raise DeploymentError(f'The ephemeral PostgreSQL did not accept connections in {VERIFY_WAIT_SECONDS} s')
                 time.sleep(2)
-            self.run(['docker', 'exec', database_container, 'psql', '-h', '127.0.0.1', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', f'CREATE DATABASE {database}'])
-            command = ['docker', 'run', '--rm', '--name', restore_container, '--network', net, *labels, '--entrypoint', 'sh', '-v', f'{self.volumes[1]}:/backups:ro',
-                       '-e', 'MEMORY_DSN=postgresql://unused@127.0.0.1:1/unused', '-e', f'TARGET_DSN=postgresql://postgres@{database_container}:5432/{database}',
+            self.run(['docker', 'exec', '-e', 'PGPASSWORD', database_container, 'psql', '-h', '127.0.0.1', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', f'CREATE DATABASE {database}'],
+                     extra_env=secret_env)
+            created.append((restore_container, ['docker', 'rm', '--force', '--volumes', restore_container]))
+            command = ['docker', 'run', '--rm', '--name', restore_container, '--network', net, *labels, '--init', '--entrypoint', 'sh', '-v', f'{self.volumes[1]}:/backups:ro',
+                       '-e', 'MEMORY_DSN=postgresql://unused@127.0.0.1:1/unused', '-e', f'TARGET_HOST={database_container}', '-e', f'TARGET_DATABASE={database}', '-e', 'TARGET_PASSWORD',
                        '-e', 'BACKUP=' + copy['path'], self.image('operator'), '-c',
-                       'printf %s "$TARGET_DSN" > /tmp/target.dsn && exec python -m memory_platform.admin restore-check --backup "$BACKUP" --target-dsn-file /tmp/target.dsn --from-manifest']
-            restored = decode_json(self.run(command, timeout=self.backup_timeout))
+                       'printf "postgresql://postgres:%s@%s:5432/%s" "$TARGET_PASSWORD" "$TARGET_HOST" "$TARGET_DATABASE" > /tmp/target.dsn '
+                       '&& exec python -m memory_platform.admin restore-check --backup "$BACKUP" --target-dsn-file /tmp/target.dsn --from-manifest']
+            restored = decode_json(self.run(command, timeout=self.backup_timeout, extra_env=secret_env))
             if restored.get('status') != 'restored_and_content_verified':
                 raise DeploymentError('The copy did not restore to the content its manifest records')
             result.update(status='verified', tables=len(restored.get('tables', {})))
@@ -353,13 +373,13 @@ class Deployment:
             raise
         finally:
             result['duration_seconds'] = round(time.monotonic() - started, 2)
-            if result.get('database'):
-                gone = [self.quietly(['docker', 'rm', '--force', '--volumes', restore_container]),
-                        self.quietly(['docker', 'rm', '--force', '--volumes', database_container]),
-                        self.quietly(['docker', 'network', 'rm', net])]
-                result['cleanup'] = 'complete' if all(gone) else 'incomplete: remove ' + ', '.join(f'{label}' for label, ok in zip((restore_container, database_container, net), gone) if not ok) + ' by hand'
-                if not all(gone):
+            if created:
+                gone = [(name, self.quietly(command)) for name, command in reversed(created)]  # the container that uses the network goes before the network
+                result['cleanup'] = 'complete' if all(ok for name, ok in gone) else 'incomplete: remove ' + ', '.join(name for name, ok in gone if not ok) + ' by hand'
+                if not all(ok for name, ok in gone):
                     print('WARNING: ' + result['cleanup'], file=sys.stderr)
+            elif result.get('database'):
+                result['cleanup'] = 'complete'  # nothing had been created yet, so nothing is left
 
     def long_operator(self, verb, *args):
         """A command that reads or dumps the whole database: the `--backup-timeout`, in a container that is reaped on failure."""
