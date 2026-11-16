@@ -3124,3 +3124,18 @@ Lentes: A+B+C+D (C por `auth.py`, `auth_scope.py`, `store_auth.py` y `ci.yml`; D
 | 6 | Minor | Del lado de quien recibe la conexión sigue la carrera de `saturated()`; con el pool creciendo y la base sana, un `PoolTimeout` con `_in_use < max` sale como `service_unavailable` | T-30 | corregido (fix1): `store_busy` sin fallo registrado, `service_unavailable` solo con fallo registrado, `/health/ready` igual; mutantes M6 y M6b en rojo; documentado en `operations.md`; commit `T-30: fix1` | Lente B n.º 1, Lente A (fuera de lente); `store_pool.py:158-166,405-407` |
 | 7 | Minor | Sin línea `RED:` en T-30/T-31 y evidencia de Verificación resumida en T-30/T-32 | T-30, T-31, T-32 | corregido (fix1): líneas `RED:` de T-30 y T-31 (con la evidencia real, dicha tal cual) y la Verificación literal de T-30 y T-32; commits `T-30: fix1`, `T-31: fix1`, `T-32: fix1` | Lente A n.º 3 y 4 |
 | 8 | Minor | Con un `StoreUnavailable`, `gather` devuelve el 503 sin cancelar las capas hermanas, que retienen conexiones hasta su plazo | T-30 | deuda aceptada (ya ocurría con `StoreBusy`; acotado por el plazo de sentencia) | Lente B (fuera de lente); `retrieval.py:175` |
+
+## Revisión de dos lentes — intento 2: Fase 5 tras fix1 (T-30, T-31, T-32, T-33)
+
+Lentes: A+B+C (C re-evalúa su hallazgo de seguridad). Diff `425f2bb..afdc228`. Veredicto: n.º 1-7 del intento 1 cerrados; C sin hallazgos (el TOCTOU queda cerrado). Sin Critical ni Important: **fase cerrada en el intento 2 de 3**. Suite 1048, 0 fallos. Decisión del orquestador: los Minor n.º 1-3 y 6-8 se corrigen en el cierre (commit de T-34, con la suite completa); n.º 4 y 5 quedan como deuda.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Minor | `ingest_event` vacía la caché tras sus esperas pero no vuelve a exigir `write`; los manuales y la coordinación prometen 401/403 también en la ingesta | T-30, T-32 | pendiente (cierre) | Lente B n.º 1, Lente C (fuera de lente); `store_ingest.py:151,160-162`, `architecture.md:63` |
+| 2 | Minor | `/health/ready` da 200 con un pool que nunca entregó una conexión (base muda al arrancar): el contenedor pasa a healthy | T-30 | pendiente (cierre) | Lente B n.º 2; `store_pool.py:162,234-235` |
+| 3 | Minor | `_faults_at_ok` se escribe fuera de `_lock` y no es monótono; una sola conexión ociosa cortada cuenta como caída | T-30 | pendiente (cierre) | Lente B n.º 3; `store_pool.py:168` |
+| 4 | Minor | Falsos negativos del recorrido estático (concatenación, SQL en variable local, constantes en f-strings, `LOCK` sin `TABLE`, vaciado condicional, helpers a un nivel) | T-31 | deuda aceptada → Iniciativa 9 (hoy ningún caso real; las pruebas de comportamiento de `test_auth_race.py` son la red) | Lente B n.º 4 |
+| 5 | Minor | `test_auth_race.py` deja un hilo suelto si el predicado no coincide | T-30 | deuda aceptada → Iniciativa 9 | Lente B n.º 5; `test_auth_race.py:51` |
+| 6 | Minor | La tabla «Respuesta de la API por ruta y fallo» de `operations.md` no sigue a fix1 | T-30, T-32 | pendiente (cierre) | Lente A n.º 1; `operations.md:248-250` |
+| 7 | Minor | La coordinación de la Fase 5 (1) describe mal el cambio frente a la Fase 4 y no declara el de `/health/ready` | T-30 | pendiente (cierre) | Lente A n.º 2 |
+| 8 | Minor | Changelog de T-30 y T-33 desactualizados; comentario de `app.py:178` desfasado | T-30, T-33 | pendiente (cierre) | Lente A n.º 3, Lente B (fuera de lente) |
