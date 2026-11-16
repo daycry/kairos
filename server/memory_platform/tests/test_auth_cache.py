@@ -6,8 +6,10 @@ What these tests hold, each with a mutant that turns it red (the mutants are lis
 * the cache dies with the COMMIT: a revocation committed by anybody is seen by the NEXT transaction, also on the very same pooled connection;
 * it is never shared: two actors, two credentials of one actor and two projects, in turn on one connection and in the same transaction, in two threads;
 * it is emptied inside a transaction that changes permissions or rolls a savepoint back;
-* every statement that writes a permission table sits in a function that empties it, and every function that opens a transaction either resolves permissions or is on the
-  reviewed list of those that do not (the walk over the transactions of the package);
+* every statement that writes a permission table (literal or composed SQL: an unrecognised write fails) is followed by the function emptying it; every wait for a lock (advisory, `FOR UPDATE`,
+  `FOR SHARE`, `FOR NO KEY UPDATE`, `FOR KEY SHARE`, `LOCK TABLE`, also through a helper that takes the connection) is followed by emptying it BEFORE the next permission check; no savepoint is
+  opened but by `auth_scope.savepoint`, whatever the connection is called (a static walk over the package; the behaviour of the waits is in `test_auth_race.py`, with two connections);
+* every function that opens a transaction either resolves permissions or is on the reviewed list of those that do not (the walk over the transactions of the package);
 * every `/v1` route and every `Store` method that takes an actor answers 401/`Unauthorized` right after the credential is revoked, on a pool of ONE connection.
 
 Real PostgreSQL (the isolated test database); no test waits for a clock."""
@@ -192,13 +194,6 @@ class RevocationTests(Fixture):
                 self.store._require(c, user, self.pid, 'read')
             self.store._require(c, user, self.pid, 'read')
 
-    def test_a_search_that_rolls_a_savepoint_back_still_answers_with_current_permissions(self):
-        # `bounded_fallback` and the exact routes run in savepoints; a cancelled one must leave the permissions of the transaction as the database says
-        _, actor = self.key()
-        self.assertEqual(self.store.search_items(actor, self.projects, 'nothing'), [])
-        self.assertIn('savepoint(c)', (PACKAGE / 'store_documents.py').read_text(encoding='utf-8'))
-        self.assertIn('savepoint(c)', (PACKAGE / 'store_vectors.py').read_text(encoding='utf-8'))
-
 
 class IsolationTests(Fixture):
     def test_two_actors_in_turn_on_one_connection_never_see_each_other(self):
@@ -278,45 +273,153 @@ class IsolationTests(Fixture):
         self.assertFalse([name for name, value in vars(auth_scope).items() if isinstance(value, (dict, set, list)) and not name.startswith('__')], 'no module-level state in auth_scope')
 
 
+LOCK = re.compile(r'pg_(try_)?advisory_(xact_)?lock|\bFOR\s+(NO\s+KEY\s+UPDATE|UPDATE|KEY\s+SHARE|SHARE)\b|\bLOCK\s+TABLE\b', re.I)
+WRITE_VERB = r'(?<!FOR )(?<!DO )(?<!KEY )(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|MERGE\s+INTO|TRUNCATE(?:\s+TABLE)?)\s+(?:ONLY\s+)?'  # not the `FOR UPDATE` / `DO UPDATE` of a lock or an upsert
+PERMISSION_WRITE = re.compile(WRITE_VERB + r'memory\.(actors|api_keys|web_sessions|project_grants|projects)\b', re.I)
+COMPOSED_WRITE = re.compile(WRITE_VERB + r'(?:memory\.)?(?![A-Za-z_])', re.I)  # a write whose table is not spelled out: a placeholder, a `{}`, a variable
+RESOLVERS = {'_require', '_active', '_global_admin', '_delegate', 'require_permission', '_authorized', '_generation', '_protect_validated', '_corpus'}
+SELF_REFRESHING = {'_authorized', '_generation', '_protect_validated'}  # each one empties the cache after its own waits and before its checks (this walk proves it of each)
+EMPTIES = 'invalidate_auth'
+
+
+def text_of(node, consts, seen=frozenset()):
+    """The SQL text a node can build: string constants, the pieces of an f-string (a hole is NUL), `sql.SQL('...').format(...)`, concatenations and the module-level constants it names."""
+    if isinstance(node, ast.Constant):
+        return node.value if isinstance(node.value, str) else ''
+    if isinstance(node, ast.JoinedStr):
+        return ''.join(text_of(v, consts, seen) if isinstance(v, ast.Constant) else '\x00' for v in node.values)
+    if isinstance(node, ast.Name) and node.id in consts and node.id not in seen:
+        return text_of(consts[node.id], consts, seen | {node.id})
+    return ' '.join(text_of(child, consts, seen) for child in ast.iter_child_nodes(node))
+
+
+def module_constants(tree):
+    return {node.targets[0].id: node.value for node in tree.body if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)}
+
+
+def functions():
+    for file in sorted(PACKAGE.glob('*.py')):
+        tree = ast.parse(file.read_text(encoding='utf-8'))
+        consts = module_constants(tree)
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                yield file.name, node, consts
+
+
+def called(call):
+    return call.func.attr if isinstance(call.func, ast.Attribute) else call.func.id if isinstance(call.func, ast.Name) else ''
+
+
+def argument_text(call, consts):
+    return ' '.join(text_of(a, consts) for a in [*call.args, *(k.value for k in call.keywords)])
+
+
+def lock_helpers():
+    """Private functions of the package that take the connection `c` and wait for a lock in it: calling one is waiting, in the caller's transaction. (Public methods open their own transaction.)"""
+    found = set()
+    for _, node, consts in functions():
+        if node.name.startswith('_') and 'c' in {a.arg for a in node.args.args} and node.name not in SELF_REFRESHING and node.name != '_require':
+            if any(isinstance(n, ast.Call) and LOCK.search(argument_text(n, consts)) for n in ast.walk(node)):
+                found.add(node.name)
+    return found
+
+
+def timeline(name, node, consts, helpers):
+    """The calls of one function in source order: ('lock', end) a wait for a lock, ('empty', start) the cache is emptied, ('check', start) permissions are resolved from the cache."""
+    events = []
+    for call in (n for n in ast.walk(node) if isinstance(n, ast.Call)):
+        start, end, function = (call.lineno, call.col_offset), (call.end_lineno, call.end_col_offset), called(call)
+        refreshing = function in SELF_REFRESHING or (name == 'extended_store.py' and function == '_require' and ast.unparse(call.func) == 'self._require')
+        if function == EMPTIES or refreshing:
+            events.append((start, 'empty'))
+        elif function in RESOLVERS:
+            events.append((start, 'check'))
+        if LOCK.search(argument_text(call, consts)) or function in helpers:
+            events.append((end, 'lock'))
+    return sorted(events)
+
+
+def stale_checks(events):
+    """The checks that follow a wait for a lock with no emptying of the cache in between."""
+    waited, bad = False, []
+    for position, kind in events:
+        if kind == 'lock':
+            waited = True
+        elif kind == 'empty':
+            waited = False
+        elif waited:
+            bad.append(position)
+    return bad
+
+
 class WritersEmptyTheCacheTests(unittest.TestCase):
-    """Every statement that writes who may do what sits in a function that empties the cache (a static walk over the package, so a new writer fails here until it does)."""
-    TABLES = re.compile(r'(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+memory\.(actors|api_keys|web_sessions|project_grants|projects)\b', re.I)
+    """Every statement that writes who may do what is followed by the emptying of the cache, and every wait for a lock by it BEFORE the next check (a static walk over the package, so a new
+    writer or a new lock fails here until it does)."""
 
-    def functions(self):
-        for path in sorted(PACKAGE.glob('*.py')):
-            tree = ast.parse(path.read_text(encoding='utf-8'))
-            for node in ast.walk(tree):
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    yield path.name, node
-
-    def test_every_function_that_writes_a_permission_table_empties_the_cache(self):
+    def test_every_function_that_writes_a_permission_table_empties_the_cache_after_the_write(self):
         # admin.py (the operator's retention, which only deletes expired sessions and runs on a direct connection) and the migration are not request paths
         exempt = {('admin.py', name) for name in ('prune_tables', 'main')} | {('store_auth.py', 'migrate')}
         writers = set()
-        for name, node in self.functions():
-            source = ast.get_source_segment((PACKAGE / name).read_text(encoding='utf-8'), node)
-            literal_writes = any(isinstance(n, ast.Constant) and isinstance(n.value, str) and self.TABLES.search(n.value) for n in ast.walk(node))
-            if literal_writes and (name, node.name) not in exempt:
+        for name, node, consts in functions():
+            if (name, node.name) in exempt:
+                continue
+            writes = [(c.end_lineno, c.end_col_offset) for c in ast.walk(node) if isinstance(c, ast.Call) and PERMISSION_WRITE.search(argument_text(c, consts))]
+            if writes:
                 writers.add((name, node.name))
-                self.assertIn('invalidate_auth(c)', source, '%s:%s writes a permission table and does not empty the cache' % (name, node.name))
+                empties = [(c.lineno, c.col_offset) for c in ast.walk(node) if isinstance(c, ast.Call) and called(c) == EMPTIES]
+                self.assertTrue(empties and max(empties) > max(writes), '%s:%s writes a permission table and does not empty the cache after the last write' % (name, node.name))
         self.assertTrue({('store_auth.py', 'revoke_key'), ('store_auth.py', 'create_key'), ('store_auth.py', 'create_user'), ('store_auth.py', 'create_project'),
                          ('store_auth.py', 'bootstrap_user'), ('auth.py', 'logout'), ('auth.py', 'login'), ('auth.py', 'refresh_csrf')} <= writers, sorted(writers))
 
-    def test_a_function_that_locks_authority_rows_empties_the_cache_before_it_checks_again(self):
-        # `FOR SHARE` on the actor, key, session or grant rows is taken to fence a revocation; the check that follows must read the rows the lock protects (R-05)
-        lockers = set()
-        for name, node in self.functions():
-            source = ast.get_source_segment((PACKAGE / name).read_text(encoding='utf-8'), node)
-            if re.search(r"FROM memory\.(actors|api_keys|web_sessions|project_grants)[^'\"]*FOR SHARE", source):
-                lockers.add((name, node.name))
-                self.assertIn('invalidate_auth(c)', source, '%s:%s locks authority rows and rechecks with the cache of the transaction' % (name, node.name))
-        self.assertEqual(lockers, {('extended_store.py', '_require'), ('corpus_answers.py', '_authorized')})
+    def test_a_write_to_a_table_that_is_not_spelled_out_fails_unless_it_is_reviewed(self):
+        # `sql.SQL('UPDATE memory.{}')`, an f-string or a concatenation can write the permission tables without the literal name: any write whose target is not a plain table fails
+        reviewed = {('admin.py', 'prune_tables'): 'operator retention on a list of tables of its own, direct connection, only expired sessions and finished jobs'}
+        composed = {(name, node.name) for name, node, consts in functions()
+                    if COMPOSED_WRITE.search(re.sub(r'\s+', ' ', ' '.join(text_of(c, consts) for c in node.body if not (isinstance(c, ast.Expr) and isinstance(c.value, ast.Constant)))))}
+        self.assertEqual(sorted(composed - set(reviewed)), [], 'a write whose table is composed at run time: spell it out or review it here')
+        self.assertEqual(sorted(set(reviewed) - composed), [], 'reviewed but no longer composed (or gone): remove it from the list')
 
-    def test_no_function_opens_a_savepoint_without_the_helper(self):
-        for path in sorted(PACKAGE.glob('*.py')):
-            if path.name in ('store.py', 'auth_scope.py'):
-                continue
-            self.assertNotRegex(path.read_text(encoding='utf-8'), r'\bc\.transaction\(\)', '%s opens a raw savepoint: use `auth_scope.savepoint(c)`' % path.name)
+    def test_every_wait_for_a_lock_is_followed_by_emptying_the_cache_before_the_next_permission_check(self):
+        # advisory locks, FOR UPDATE / SHARE / NO KEY UPDATE / KEY SHARE and LOCK TABLE, in this function or in a helper that takes the connection: a revocation committed while it waited must be read (CWE-367)
+        helpers, guarded, stale = lock_helpers(), set(), []
+        for name, node, consts in functions():
+            events = timeline(name, node, consts, helpers)
+            if any(kind == 'lock' for _, kind in events) and any(kind in ('check', 'empty') for _, kind in events):
+                guarded.add((name, node.name))
+            stale += [(name, node.name, line) for line, _ in stale_checks(events)]
+        self.assertEqual(stale, [], 'a permission check after a wait for a lock that reads what the transaction cached before the wait: call `invalidate_auth(c)` after the lock')
+        self.assertTrue({('store_ingest.py', 'ingest_event'), ('store_ingest.py', '_protect_validated'), ('store_documents.py', 'publish_document'), ('store_documents.py', 'delete_document'),
+                         ('store_jobs.py', 'retry_job'), ('extended_store.py', '_require'), ('corpus_answers.py', '_authorized')} <= guarded, sorted(guarded))
+        self.assertTrue({'_lock', '_corpus', '_verify_entries'} <= helpers, sorted(helpers))
+
+    def test_the_walk_sees_a_lock_taken_in_any_form_and_a_check_that_comes_too_early(self):
+        # the detector itself: each of these sources must be reported (or, with the emptying between the lock and the check, accepted)
+        template = 'def f(self, c, actor, p):\n    self._require(c, actor, p, "read")\n    %s\n    %s\n'
+        waits = ["c.execute('SELECT pg_advisory_xact_lock(1)')", "c.execute('SELECT 1 FROM memory.t FOR UPDATE')", "c.execute('select 1 from memory.t for share')", "c.execute('SELECT 1 FOR NO KEY UPDATE')",
+                 "c.execute('SELECT 1 FOR KEY SHARE')", "c.execute('LOCK TABLE memory.t')", "c.execute(f'SELECT 1 FROM {t} FOR UPDATE')", "c.execute(LOCKED)", "self._lock(c)"]
+        for wait in waits:
+            for check, accepted in (("self._require(c, actor, p, 'validate')", False), ("invalidate_auth(c)\n    self._require(c, actor, p, 'validate')", True),
+                                    ("self._require(c, actor, p, 'validate')\n    invalidate_auth(c)", False)):
+                tree = ast.parse(template % (wait, check))
+                consts = {**module_constants(tree), 'LOCKED': ast.parse("'SELECT 1 FOR UPDATE'").body[0].value}
+                self.assertEqual(not stale_checks(timeline('x.py', tree.body[0], consts, {'_lock'})), accepted, (wait, check))
+
+    def test_no_function_opens_a_savepoint_without_the_helper_whatever_the_connection_is_called(self):
+        # a savepoint is `<connection>.transaction()` inside a transaction. The receivers that are NOT a connection: the store (`self`, `self.store`, `store`) and the three places that open one
+        allowed = {'self', 'self.store', 'store'}
+        reviewed = {('store.py', 'connection'), ('admin.py', 'restored'), ('auth_scope.py', 'c')}
+        for file in sorted(PACKAGE.glob('*.py')):
+            source = file.read_text(encoding='utf-8')
+            tree = ast.parse(source)
+            attributes = [n for n in ast.walk(tree) if isinstance(n, ast.Attribute) and n.attr == 'transaction']
+            calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == 'transaction']
+            self.assertEqual(len(attributes), len(calls), '%s refers to `.transaction` without calling it (an alias of a savepoint)' % file.name)
+            for call in calls:
+                receiver = ast.unparse(call.func.value)
+                self.assertTrue(receiver in allowed or (file.name, receiver) in reviewed, '%s opens a savepoint on `%s`: use `auth_scope.savepoint(c)`' % (file.name, receiver))
+            consts = module_constants(tree)
+            for call in (n for n in ast.walk(tree) if isinstance(n, ast.Call)):
+                self.assertNotRegex(argument_text(call, consts), r'(?i)^\s*(SAVEPOINT\s+\w|RELEASE\s+SAVEPOINT|ROLLBACK\s+TO\b)', '%s opens a savepoint in SQL: use `auth_scope.savepoint(c)`' % file.name)
 
 
 class EveryTransactionTests(unittest.TestCase):
@@ -432,8 +535,8 @@ class RouteTableTests(Fixture):
         found = []
         for route in self.client.app.routes:
             path = getattr(route, 'path', '')
-            if not path.startswith('/v1') or path.startswith('/v1/auth/'):
-                continue  # `/v1/auth/*` are the cookie routes: login proves a password, the others take the session, tested in test_api
+            if not path.startswith('/v1') or path == '/v1/auth/login':
+                continue  # login proves a password and takes no credential; `/v1/auth/me` and `/v1/auth/logout` accept a bearer and are in the table
             for method in sorted(getattr(route, 'methods', set()) - {'HEAD', 'OPTIONS'}):
                 found.append((method, path))
         return found
@@ -444,6 +547,8 @@ class RouteTableTests(Fixture):
     def test_every_v1_route_answers_401_right_after_the_key_is_revoked_on_a_pool_of_one_connection(self):
         routes = self.routes()
         self.assertGreaterEqual(len(routes), 40)
+        self.assertLessEqual({('GET', '/v1/auth/me'), ('POST', '/v1/auth/logout')}, set(routes))  # the two cookie routes that also accept a bearer
+        self.assertNotIn(('POST', '/v1/auth/login'), routes)
         for method, path in routes:
             with self.subTest(route='%s %s' % (method, path)):
                 created = self.store.create_key(self.admin, {'name': 'route', 'project_ids': self.projects, 'scopes': ['read', 'write', 'publish', 'validate', 'admin']})
