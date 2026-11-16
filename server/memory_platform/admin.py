@@ -10,9 +10,9 @@ import subprocess
 import tempfile
 import hashlib
 
-from .backup import BackupError, create_backup, manifest_path, table_fingerprints, verify_backup
+from .backup import BackupError, create_backup, encrypted_name, encryption_plan, manifest_path, table_fingerprints, verify_backup
 from .chunking import chunk_text, embedding_text
-from .config import Settings, retention_windows
+from .config import Settings, backup_recipients_file, backup_require_encryption, retention_windows
 from .store import Store
 from .store_vectors import CURRENT_RESOURCE
 
@@ -353,7 +353,7 @@ def main(argv=None):
             parser.error(str(error))  # a clear message and nothing touched
     if args.command == 'verify-backup':  # needs no database: it reads the copy and its manifest
         try:
-            manifest = verify_backup(Path(args.backup))
+            manifest = verify_backup(Path(args.backup), backup_recipients_file())
         except BackupError as error:
             raise SystemExit(f'{error.code}: {error}') from None
         print(json.dumps({'status': 'verified', 'path': str(Path(args.backup).resolve()), 'bytes': manifest['bytes'], 'sha256': manifest['sha256'],
@@ -388,11 +388,16 @@ def main(argv=None):
         print(json.dumps(content_manifest(store), sort_keys=True, default=str))
     elif args.command == 'backup':
         output = Path(args.output).resolve()
-        if os.path.lexists(output) or os.path.lexists(manifest_path(output)):
-            parser.error('Backup destination already exists; choose a new filename')
         try:
+            # Before any file exists: a copy that must be encrypted and cannot be fails here, in the clear it is never written.
+            recipients_file = backup_recipients_file()
+            recipients = encryption_plan(recipients_file, backup_require_encryption())
+            output = encrypted_name(output, recipients)
+            plain = output.with_name(output.name[:-4]) if output.name.endswith('.age') else output  # the name is taken in either form
+            if any(os.path.lexists(name) or os.path.lexists(manifest_path(name)) for name in (plain, plain.with_name(plain.name + '.age'))):
+                parser.error('Backup destination already exists; choose a new filename')
             with pg_environment(settings.dsn) as environment:
-                print(json.dumps(create_backup(store, output, environment=environment), sort_keys=True))
+                print(json.dumps(create_backup(store, output, environment=environment, recipients=recipients), sort_keys=True))
         except BackupError as error:
             raise SystemExit(f'{error.code}: {error}') from None
     elif args.command == 'restore-check':

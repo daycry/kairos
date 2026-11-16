@@ -15,7 +15,10 @@ ENTRYPOINT ["python", "-m", "memory_platform.app"]
 
 FROM api AS operator
 USER root
-RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client \
+# `age` (C-01, P-01): the copies are encrypted for public-key recipients; the private key is never in this image or on this host.
+# Pinned to the version of the Debian release the python base image is built on (trixie: 1.2.1); the `test` target pins bookworm's own build.
+ARG AGE_VERSION=1.2.1-1+b5
+RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client age=${AGE_VERSION} \
     && rm -rf /var/lib/apt/lists/*
 USER 10001:10001
 ENTRYPOINT ["python", "-m", "memory_platform.admin"]
@@ -33,7 +36,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends postgresql-17-p
 
 FROM postgres-pgvector AS test
 USER root
-RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv \
+# `age` and `age-keygen` for the encrypted-copy tests (the test generates its own key pair in a temporary directory); bookworm's build, pinned.
+ARG AGE_VERSION=1.1.1-1+b3
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv age=${AGE_VERSION} \
     && rm -rf /var/lib/apt/lists/*
 RUN python3 -m venv /opt/memory-venv
 ENV PATH=/opt/memory-venv/bin:$PATH PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1

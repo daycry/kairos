@@ -282,6 +282,39 @@ def retention_windows(environ=None) -> dict:
     return windows
 
 
+BACKUP_KEEP_DEFAULT = 7
+BACKUP_KEEP_MAX = 100000
+
+
+def backup_recipients_file(environ=None):
+    """MEMORY_BACKUP_RECIPIENTS_FILE: the file of public `age` recipients the copies are encrypted for; blank or unset is None (no encryption unless it is required)."""
+    environ = os.environ if environ is None else environ
+    return environ.get('MEMORY_BACKUP_RECIPIENTS_FILE', '').strip() or None
+
+
+def backup_require_encryption(environ=None) -> bool:
+    """MEMORY_BACKUP_REQUIRE_ENCRYPTION: with it on, a copy without recipients fails instead of being written in the clear. Anything that is not a clear yes or no is an
+    error (a typo must not turn the requirement off)."""
+    environ = os.environ if environ is None else environ
+    raw = environ.get('MEMORY_BACKUP_REQUIRE_ENCRYPTION', '').strip().lower()
+    if raw in ('1', 'true', 'yes', 'on'):
+        return True
+    if raw in ('', '0', 'false', 'no', 'off'):
+        return False
+    raise ValueError('MEMORY_BACKUP_REQUIRE_ENCRYPTION must be 1/true/yes/on or 0/false/no/off')
+
+
+def backup_keep(environ=None) -> int:
+    """MEMORY_BACKUP_KEEP: the copies `backup --prune` keeps when `--keep` is not given (default 7); an integer of 1 or more."""
+    environ = os.environ if environ is None else environ
+    raw = environ.get('MEMORY_BACKUP_KEEP', '').strip()
+    if not raw:
+        return BACKUP_KEEP_DEFAULT
+    if not raw.isascii() or not raw.isdigit() or not 1 <= int(raw) <= BACKUP_KEEP_MAX:
+        raise ValueError(f'MEMORY_BACKUP_KEEP must be an integer between 1 and {BACKUP_KEEP_MAX}')
+    return int(raw)
+
+
 def max_attempts(environ=None) -> int:
     """MEMORY_MAX_ATTEMPTS: the attempts a job is allowed (also the cap of claims of a job whose lease expires). An integer of 1 or more: with 0 or a negative
     number a job would never run or would be failed as `attempts_exhausted` on its first lost lease."""

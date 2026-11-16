@@ -45,7 +45,7 @@ test-plan: n/a (sin UI)
 | Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 7 | 7 | 100% | 0 / 27.0h | 0.99 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 9 | 9 | 100% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 5 | 5 | 100% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
-| Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 1 | 9 | 11.1% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
+| Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 2 | 9 | 22.2% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 0 | 6 | 0% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 0 | 4 | 0% | 0 / 7.2h | 0 / 1.0h | 0 / 0.2h | 0 / 240 k |
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 0 | 7 | 0% | 0 / 19.8h | 0 / 2.6h | 0 / 0.7h | 0 / 660 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **35** | **98** | **35.7%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **36** | **98** | **36.7%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1156,32 +1156,34 @@ RED: sin captura del rojo previo (no se guardó). Evidencia real: mutantes M1, M
 ### T-36 — Cifrado `age` con destinatarios y `MEMORY_BACKUP_REQUIRE_ENCRYPTION`
 
 - **Descripción**: Cifrar la copia con `age` y clave pública (`MEMORY_BACKUP_RECIPIENTS_FILE`); con `MEMORY_BACKUP_REQUIRE_ENCRYPTION=1` y sin destinatarios falla sin dejar fichero. La imagen `operator` y la de pruebas incorporan `age` fijado por versión; la clave privada de prueba se genera en el test y nunca está en el contenedor del servidor. Fuente: CA-02, CA-08 (parte); S-06; P-01.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Las copias se cifran con age para las claves públicas de MEMORY_BACKUP_RECIPIENTS_FILE y, con MEMORY_BACKUP_REQUIRE_ENCRYPTION=1 y sin destinatarios, la copia falla en vez de escribirse en claro.
+- **Cerrada**: 2026-11-16
+- **Estado**: completado
 - **Tiempo humano**: est. 5.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.73h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.73h (estimado) · real 0.31h (medido)
 - **Supervisión**: est. 0.18h (≈25 % IA) · real —
 - **Previsión IA**: 202 k in / 18 k out tok · ⚠️ verificar €
 - **Dependencias**: T-35
 - **Tipo**: backend
 - **Archivos**: `server/memory_platform/admin.py`, `server/memory_platform/config.py`, `server/memory_platform/Dockerfile`, `server/memory_platform/tests/test_backup_encryption.py`
 - **Cubre (tests)**: —
-- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_backup_encryption|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
+- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_backup_encryption|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos Salida (2026-11-16): bucle rápido `Ran 47 tests ... OK` (test_backup_encryption 15, test_backup_manifest 12, test_admin); `"errors": 0, "failures": 0, "skipped": 0`. Imagen `operator` construida: age 1.2.1-1+b5 (test: bookworm 1.1.1-1+b3).
 
 **Criterios de aceptación**
-- [ ] Con una clave pública `age` de prueba, la copia no empieza por `PGDMP` ni contiene el texto de una fila sembrada, y solo se restaura tras descifrar con la clave privada del test
-- [ ] Con `MEMORY_BACKUP_REQUIRE_ENCRYPTION=1` y sin destinatarios, `backup` falla nombrando `MEMORY_BACKUP_RECIPIENTS_FILE` y no deja fichero
-- [ ] El manifiesto marca `encrypted: true` y su sha256 es el del fichero cifrado (se verifica sin descifrar)
-- [ ] `age` queda fijado por versión (paquete de Debian bookworm o binario con sha256 verificado) en los targets `operator` y `test`; ninguna clave privada entra en el repositorio ni en una imagen
+- [x] Con una clave pública `age` de prueba, la copia no empieza por `PGDMP` ni contiene el texto de una fila sembrada, y solo se restaura tras descifrar con la clave privada del test
+- [x] Con `MEMORY_BACKUP_REQUIRE_ENCRYPTION=1` y sin destinatarios, `backup` falla nombrando `MEMORY_BACKUP_RECIPIENTS_FILE` y no deja fichero
+- [x] El manifiesto marca `encrypted: true` y su sha256 es el del fichero cifrado (se verifica sin descifrar)
+- [x] `age` queda fijado por versión (paquete de Debian bookworm o binario con sha256 verificado) en los targets `operator` y `test`; ninguna clave privada entra en el repositorio ni en una imagen
 
 **Subtareas**
-- [ ] Comprobar la disponibilidad de `age` en bookworm y anotar la versión en `Notas`
-- [ ] Escribir primero las pruebas (rojo)
-- [ ] Implementar el cifrado y la exigencia de destinatarios
-- [ ] Añadir `age` a los targets `operator` y `test` del `Dockerfile`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Comprobar la disponibilidad de `age` en bookworm y anotar la versión en `Notas`
+- [x] Escribir primero las pruebas (rojo)
+- [x] Implementar el cifrado y la exigencia de destinatarios
+- [x] Añadir `age` a los targets `operator` y `test` del `Dockerfile`
+- [x] `usage-meter start/close` de la tarea
 
 **Notas**: Patrón: `Dockerfile:16` (`FROM api AS operator`) y `:34-66` (target `test`, que debe contar con `age` para los tests). Hipótesis de la spec: `age` en bookworm; si no, binario oficial con sha256 verificado. R-03: la clave privada nunca está en el host.
+**Cierre**: age fijado por `ARG AGE_VERSION` (operator trixie 1.2.1-1+b5; test bookworm 1.1.1-1+b3; sin binario con sha256). Un fichero de destinatarios con clave privada se rechaza (R-03); el manifiesto guarda sha256 de cada destinatario, `verify-backup` con el fichero configurado detecta otra clave. Mutantes en rojo: E1 sin cifrar, E2 dump en claro vivo hasta publicar, E3 sin exigir, E4 clave privada aceptada, E5 fichero omitido sin exigencia, E6 `encrypted` falso, E7 sha del claro, E8 destinatarios sin comprobar, E10 sin `.age`, E11 sin binario, E12 errata abre la exigencia, E13 stderr de age filtrado, E15 sin fijar. Medido `reliable-operations/T-36` 0,31h.
 
 ### T-37 — `backup --prune --keep N` con ficheros señuelo
 

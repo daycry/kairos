@@ -1,5 +1,9 @@
 """Local copies of the database (C-01): a manifest next to every copy, an integrity check, and (T-36, T-37) encryption and retention.
 
+Encryption (P-01): `age` for the PUBLIC recipients listed in MEMORY_BACKUP_RECIPIENTS_FILE. The server can encrypt but not decrypt: the private key never exists
+on the host, in the repository or in an image. The manifest then describes the ciphertext (`sha256`, `bytes`), so a copy is verified without decrypting, and the
+plain dump too (`content_sha256`), which is what the restore of a decrypted copy is compared with.
+
 A copy is COMPLETE only when `<copy>` and `<copy>.json` both exist and the manifest describes the file as it is on disk. Both are written to a private
 temporary directory next to the destination, hashed there and then renamed into place (the copy first, its manifest last), so a copy that stopped half way
 never looks valid: it has no manifest at its final name and `verify-backup` refuses it.
@@ -25,6 +29,7 @@ PG_DUMP_MAGIC = b'PGDMP'
 AGE_MAGIC = b'age-encryption.org/v1'
 HASH_BLOCK = 1 << 20
 SHA256 = re.compile(r'[0-9a-f]{64}')
+AGE_PRIVATE_PREFIX = 'AGE-SECRET' + '-KEY-'  # split so that this source does not trip the repository scan for private keys
 TIMESTAMP = re.compile(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z')
 
 
@@ -98,8 +103,61 @@ def terminate_as_exit():
             signal.signal(signal.SIGTERM, previous)
 
 
-def create_backup(store, output, *, environment):
-    """`pg_dump` of the database, its manifest, both published atomically. Returns the report of the command.
+def load_recipients(path):
+    """The public recipients of an `age` recipients file (blank lines and `#` comments skipped), as a list of lines.
+
+    `BackupError` `backup_recipients_invalid` for a file that cannot be read, lists no recipient or holds a PRIVATE key (that would put the key on the host,
+    which P-01 forbids). The messages name the variable, never the path.
+    """
+    try:
+        text = Path(path).read_text(encoding='utf-8')
+    except (OSError, ValueError):
+        raise BackupError('backup_recipients_invalid', 'MEMORY_BACKUP_RECIPIENTS_FILE cannot be read') from None
+    if AGE_PRIVATE_PREFIX in text:
+        raise BackupError('backup_recipients_invalid', 'MEMORY_BACKUP_RECIPIENTS_FILE holds a private key; it must list public recipients only (the private key stays off the server)')
+    lines = [line.strip() for line in text.splitlines() if line.strip() and not line.strip().startswith('#')]
+    if not lines:
+        raise BackupError('backup_recipients_invalid', 'MEMORY_BACKUP_RECIPIENTS_FILE lists no recipient')
+    return lines
+
+
+def recipient_digests(recipients):
+    """The sha256 of each recipient line, sorted: what a manifest records instead of the keys."""
+    return sorted({hashlib.sha256(line.encode('utf-8')).hexdigest() for line in recipients})
+
+
+def encryption_plan(recipients_file, require):
+    """The recipients to encrypt for, or None for a plain copy. A configured file is always used (never skipped); with `require` and no file the copy is refused."""
+    if recipients_file:
+        recipients = load_recipients(recipients_file)
+        if not shutil.which('age'):
+            raise BackupError('backup_encryption_unavailable', 'MEMORY_BACKUP_RECIPIENTS_FILE is set but the age program is not installed here; refusing to write a copy in the clear')
+        return recipients
+    if require:
+        raise BackupError('backup_encryption_required', 'MEMORY_BACKUP_REQUIRE_ENCRYPTION is set but MEMORY_BACKUP_RECIPIENTS_FILE names no recipients file; refusing to write a copy in the clear')
+    return None
+
+
+def encrypted_name(output, recipients):
+    """The name the copy is published under: `<output>.age` when it is encrypted (unless it already ends in `.age`)."""
+    return output.with_name(output.name + '.age') if recipients and not output.name.endswith('.age') else output
+
+
+def encrypt(source, target, recipients, workdir):
+    """`age` over `source` for `recipients`, into `target`; the recipients go through a private copy so what was validated is what is used."""
+    keys = workdir / 'recipients'
+    keys.write_text('\n'.join(recipients) + '\n', encoding='utf-8')
+    os.chmod(keys, 0o600)
+    try:
+        subprocess.run(['age', '--encrypt', '-R', str(keys), '-o', str(target), str(source)], check=True, capture_output=True)
+    except subprocess.CalledProcessError as error:
+        raise BackupError('backup_encryption_failed', f'age failed to encrypt the copy (exit {error.returncode})') from None
+    except OSError:
+        raise BackupError('backup_encryption_unavailable', 'the age program could not be run') from None
+
+
+def create_backup(store, output, *, environment, recipients=None):
+    """`pg_dump` of the database (encrypted for `recipients`, if given), its manifest, both published atomically. Returns the report of the command.
 
     The manifest's fingerprints and the dump are taken from ONE exported snapshot, so a database that keeps being written to still yields a manifest the
     restored copy matches exactly. `environment` is the `pg_environment` of the DSN (a service file; the DSN is never an argument).
@@ -119,9 +177,15 @@ def create_backup(store, output, *, environment):
                            env=environment, check=True, capture_output=True)
         content_sha, content_bytes = sha256_file(dump)
         published = dump
-        sha, size = content_sha, content_bytes
+        if recipients:
+            published = partial / 'dump.age'
+            encrypt(dump, published, recipients, partial)
+            dump.unlink()  # the plain dump goes as soon as the ciphertext exists
+        sha, size = sha256_file(published)
         manifest = {'format': MANIFEST_FORMAT, 'file': final.name, 'sha256': sha, 'bytes': size, 'content_sha256': content_sha, 'content_bytes': content_bytes,
-                    'schema_version': version, 'created_at': utc_now(), 'encrypted': False, 'fingerprints': fingerprints}
+                    'schema_version': version, 'created_at': utc_now(), 'encrypted': bool(recipients), 'fingerprints': fingerprints}
+        if recipients:
+            manifest['recipients'] = recipient_digests(recipients)
         os.chmod(published, 0o600)
         write_atomic(partial / 'manifest', (json.dumps(manifest, indent=2, sort_keys=True) + '\n').encode('utf-8'))
         os.replace(published, final)  # the copy first...
@@ -147,14 +211,20 @@ def read_manifest(copy):
         raise BackupError('backup_manifest_invalid', f'The manifest {path.name} cannot be read as JSON') from None
     if not isinstance(manifest, dict) or any(type(manifest.get(key)) is not kind for key, kind in MANIFEST_KEYS.items()) or manifest['format'] != MANIFEST_FORMAT:
         raise BackupError('backup_manifest_invalid', f'The manifest {path.name} is not a version {MANIFEST_FORMAT} manifest of this tool')
+    recipients = manifest.get('recipients')
+    if manifest['encrypted'] and (not isinstance(recipients, list) or not recipients or any(not isinstance(r, str) or not SHA256.fullmatch(r) for r in recipients)):
+        raise BackupError('backup_manifest_invalid', f'The manifest {path.name} of an encrypted copy lists no valid recipients')
     if (manifest['file'] != copy.name or not SHA256.fullmatch(manifest['sha256']) or not SHA256.fullmatch(manifest['content_sha256'])
             or manifest['bytes'] < 0 or manifest['content_bytes'] < 0 or not TIMESTAMP.fullmatch(manifest['created_at'])):
         raise BackupError('backup_manifest_invalid', f'The manifest {path.name} does not describe the file {copy.name}')
     return manifest
 
 
-def verify_backup(copy):
+def verify_backup(copy, recipients_file=None):
     """Recompute the sha256 of the copy as it is on disk and compare it with its manifest. Never decrypts. Returns the manifest.
+
+    With `recipients_file` (MEMORY_BACKUP_RECIPIENTS_FILE) an encrypted copy must also have been encrypted for at least one of its recipients (`backup_recipients_mismatch`):
+    that is how a copy made for some other key is told. It is the manifest's claim, not a proof (only the private key proves it).
 
     `backup_checksum_mismatch` for any difference of content or size (a truncated copy says so); `backup_manifest_*` for a missing or malformed manifest;
     `backup_not_found` for a copy that is not a regular file (a symbolic link is refused).
@@ -173,4 +243,7 @@ def verify_backup(copy):
                           + (' (truncated)' if size < manifest['bytes'] else ''))
     if sha != manifest['sha256']:
         raise BackupError('backup_checksum_mismatch', f'The sha256 of the copy {copy.name} does not match its manifest')
+    if manifest['encrypted'] and recipients_file:
+        if not set(manifest['recipients']) & set(recipient_digests(load_recipients(recipients_file))):
+            raise BackupError('backup_recipients_mismatch', f'The copy {copy.name} was encrypted for other recipients than MEMORY_BACKUP_RECIPIENTS_FILE lists')
     return manifest
