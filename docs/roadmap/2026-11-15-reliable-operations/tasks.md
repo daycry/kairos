@@ -45,7 +45,7 @@ test-plan: n/a (sin UI)
 | Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 7 | 7 | 100% | 0 / 27.0h | 0.99 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 9 | 9 | 100% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 5 | 5 | 100% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
-| Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 4 | 9 | 44.4% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
+| Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 5 | 9 | 55.6% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 0 | 6 | 0% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 0 | 4 | 0% | 0 / 7.2h | 0 / 1.0h | 0 / 0.2h | 0 / 240 k |
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 0 | 7 | 0% | 0 / 19.8h | 0 / 2.6h | 0 / 0.7h | 0 / 660 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **38** | **98** | **38.8%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **39** | **98** | **39.8%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1246,30 +1246,32 @@ RED: sin captura del rojo previo (no se guardó). Evidencia real: mutantes M1, M
 ### T-39 — `--verify-backup`: restauración en PostgreSQL efímero antes de `migrate`
 
 - **Descripción**: Opción de `deploy-memory.py` (activada por defecto en los ensayos) que restaura la copia previa en un contenedor PostgreSQL efímero del propio proyecto con base `memory_restore_<marca>`, compara `store_fingerprints`, aborta antes de `migrate` si difieren y elimina el contenedor; el informe registra resultado y duración. Fuente: CA-05; O-02.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: El despliegue restaura la copia previa en un PostgreSQL efímero y aislado y compara sus tablas con el manifiesto antes de migrar; si difieren se detiene sin tocar la base y elimina lo efímero.
+- **Cerrada**: 2026-11-16
+- **Estado**: completado
 - **Tiempo humano**: est. 5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.67h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.67h (estimado) · real 0.48h (medido)
 - **Supervisión**: est. 0.17h (≈25 % IA) · real —
 - **Previsión IA**: 184 k in / 16 k out tok · ⚠️ verificar €
 - **Dependencias**: T-38, T-36
 - **Tipo**: devops
-- **Archivos**: `scripts/deploy-memory.py`, `server/memory_platform/admin.py`, `server/memory_platform/tests/test_deploy.py`, `server/memory_platform/tests/test_deploy_isolation.py`
+- **Archivos**: `scripts/deploy-memory.py`, `server/memory_platform/admin.py`, `server/memory_platform/tests/test_deploy.py`, `server/memory_platform/tests/test_deploy_isolation.py`, `server/memory_platform/tests/test_backup_restore.py` (nuevo: `restore-check --from-manifest`)
 - **Cubre (tests)**: —
-- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_deploy|test_deploy_isolation|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
+- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_deploy|test_deploy_isolation|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos Salida (2026-11-16): bucle rápido `Ran 84 tests ... OK` (test_deploy, test_deploy_isolation, test_backup_restore, test_admin); `"errors": 0, "failures": 0, "skipped": 0`.
 
 **Criterios de aceptación**
-- [ ] Una prueba con dobles comprueba la secuencia: copia → contenedor efímero con nombre del proyecto → `restore-check` con `memory_restore_<marca>` → comparación → eliminación → `migrate`; una diferencia aborta antes de `migrate`
-- [ ] El contenedor efímero se elimina también si falla la comparación
-- [ ] Nunca escribe en la base del proyecto ni usa nombres `knowledge-graphs-*`; el informe registra resultado y duración
+- [x] Una prueba con dobles comprueba la secuencia: copia → contenedor efímero con nombre del proyecto → `restore-check` con `memory_restore_<marca>` → comparación → eliminación → `migrate`; una diferencia aborta antes de `migrate`
+- [x] El contenedor efímero se elimina también si falla la comparación
+- [x] Nunca escribe en la base del proyecto ni usa nombres `knowledge-graphs-*`; el informe registra resultado y duración
 
 **Subtareas**
-- [ ] Escribir primero las pruebas con dobles (rojo)
-- [ ] Implementar la fase y su limpieza
-- [ ] Reutilizar `restore-check` y sus salvaguardas
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero las pruebas con dobles (rojo)
+- [x] Implementar la fase y su limpieza
+- [x] Reutilizar `restore-check` y sus salvaguardas
+- [x] `usage-meter start/close` de la tarea
 
 **Notas**: Patrón: `admin.py:295-313` (`restore-check` solo en bases `memory_restore*` vacías), `deploy-memory.py:296-410` (fases) y `tests/test_deploy_isolation.py:43-99` (override con nombres propios).
+**Cierre**: fase `verify_backup` tras `backup` (por defecto en ensayos, opt-in en la instalación; `--no-verify-backup`): `verify-backup` + red `--internal` + contenedor PG efímero (`kairos-verify-*`, sin puertos) + `restore-check --from-manifest` (no lee la base viva; MEMORY_DSN ficticio) + limpieza siempre. Copia cifrada: `integrity_only`. Mutantes en rojo V1-V20 (fase, diferencia ignorada, sin limpieza, red no interna, puerto, volumen rw, defecto, plazos, cifrada, nombres, DSN real…) y A1-A5 (admin: contra la viva, sin verificar, cifrada, sin tablas, error opaco). Medido `reliable-operations/T-39`.
 
 ### T-40 — Ensayo aislado de `--verify-backup`
 

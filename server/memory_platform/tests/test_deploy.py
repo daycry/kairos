@@ -147,7 +147,7 @@ class BackfillPhaseTests(unittest.TestCase):
 
 class BackupTimeoutTests(unittest.TestCase):
     """O-03 / CA-04: `content-manifest`, `backup` (and `verify-backup`) get `--backup-timeout` (3,600 s by default) instead of the 120 s of `operator()`; the other phases keep theirs."""
-    LONG = ('content-manifest', 'backup')
+    LONG = ('content-manifest', 'backup', 'verify-backup')
 
     def phases(self, **changes):
         from memory_platform.tests.test_deploy_isolation import IsolatedDeploymentTests
@@ -162,7 +162,7 @@ class BackupTimeoutTests(unittest.TestCase):
     def test_the_default_is_3600_seconds_for_the_long_commands_and_it_is_in_the_report(self):
         instance, verbs = self.phases()
         long_ones = [(verb, timeout) for verb, timeout, _ in verbs if verb in self.LONG]
-        self.assertEqual(long_ones, [('content-manifest', 3600), ('backup', 3600), ('content-manifest', 3600), ('content-manifest', 3600)])
+        self.assertEqual(long_ones, [('content-manifest', 3600), ('backup', 3600), ('verify-backup', 3600), ('content-manifest', 3600), ('content-manifest', 3600)])
         self.assertEqual(deploy.BACKUP_TIMEOUT_SECONDS, 3600)
         self.assertEqual(instance.report['backup_timeout_seconds'], 3600)
 

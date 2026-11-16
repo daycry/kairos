@@ -345,6 +345,8 @@ def main(argv=None):
     restore = commands.add_parser('restore-check')
     restore.add_argument('--backup', required=True)
     restore.add_argument('--target-dsn-file', required=True)
+    restore.add_argument('--from-manifest', action='store_true',
+                         help='Verify the copy against <backup>.json and compare the restored tables with the counts recorded there (one snapshot with the dump) instead of with the live database, which is then never read')
     args = parser.parse_args(argv)
     if args.command == 'prune-tables':
         if not 1 <= args.batch <= PRUNE_BATCH_MAX:
@@ -434,11 +436,23 @@ def main(argv=None):
         with restored.transaction() as connection:
             if connection.execute("SELECT 1 FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema') LIMIT 1").fetchone():
                 parser.error('Restore target must be empty; no cleanup or overwrite is performed')
-        before = store_fingerprints(store)
+        if args.from_manifest:
+            try:
+                manifest = verify_backup(Path(args.backup))
+                if manifest['encrypted']:
+                    raise BackupError('backup_encrypted', 'This copy is encrypted: decrypt it with the private key (which is not on this host) and restore the plain dump')
+            except BackupError as error:
+                raise SystemExit(f'{error.code}: {error}') from None
+            before = manifest['fingerprints']
+        else:
+            before = store_fingerprints(store)
         with pg_environment(target) as environment:
             subprocess.run(['pg_restore', '--dbname=service=memory', '--no-owner', '--no-acl', '--exit-on-error', str(Path(args.backup).resolve())], env=environment, check=True, capture_output=True)
         after = store_fingerprints(restored)
         if before != after:
+            if args.from_manifest:
+                differing = sorted(table for table in set(before) | set(after) if before.get(table) != after.get(table))
+                raise SystemExit('backup_restore_mismatch: the restored tables differ from the manifest of the copy: ' + ', '.join(differing))
             raise RuntimeError('Restore data fingerprints differ; inspect the isolated restored database')
         print(json.dumps({'status': 'restored_and_content_verified', 'tables': after}, sort_keys=True))
 
