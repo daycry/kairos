@@ -7,6 +7,9 @@ for anything. The three orders take effect before they return:
 * `cut()`: every open connection is closed and every new one is accepted and closed at once (the client sees
   `psycopg.OperationalError`);
 * `mute()`: a new connection is accepted and then ignored, forever (a server that does not answer); the open ones are closed;
+* `freeze()`: the connections that are ALREADY open stay open and stop carrying data in both directions (what a partition or a frozen host looks like to a client: the socket is alive and
+  nothing ever comes back); a new connection is accepted and ignored. `thaw()` lets what was held through, in order, and closes the ones that were accepted and ignored. This is the half-open
+  case, which `mute()` does not reproduce (it closes the open connections), and the oracle of the client-side plazo of the pool;
 * `restore()`: the proxy forwards again; connections that were held mute are closed (the client reconnects).
 
 It listens on 127.0.0.1 only, on a port the system chooses, and it only ever connects to the upstream it was given. It belongs to
@@ -18,7 +21,7 @@ import os
 import socket
 import threading
 
-FORWARD, CUT, MUTE = 'forward', 'cut', 'mute'
+FORWARD, CUT, MUTE, FREEZE = 'forward', 'cut', 'mute', 'freeze'
 
 
 def database_address() -> tuple[str, int]:
@@ -34,6 +37,7 @@ class FaultProxy:
         self._lock = threading.Condition()  # a lock that can also announce an accepted connection
         self._mode = FORWARD
         self._held: set[socket.socket] = set()  # every socket this proxy owns and must close on cut/mute/stop
+        self._ignored: set[socket.socket] = set()  # accepted while muted or frozen and never forwarded: what `thaw()` closes
         self._threads: list[threading.Thread] = []
         self._stopped = False
         self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -56,6 +60,7 @@ class FaultProxy:
                 return
             self._stopped = True
             self._close_held()
+            self._lock.notify_all()
         try:
             self._listener.shutdown(socket.SHUT_RDWR)  # wakes accept() on Linux
         except OSError:
@@ -77,16 +82,35 @@ class FaultProxy:
         with self._lock:
             self._mode = CUT
             self._close_held()
+            self._lock.notify_all()
 
     def mute(self) -> None:
         with self._lock:
             self._mode = MUTE
             self._close_held()
+            self._lock.notify_all()
 
     def restore(self) -> None:
         with self._lock:
             self._mode = FORWARD
             self._close_held()
+            self._lock.notify_all()
+
+    def freeze(self) -> None:
+        """Stop forwarding in both directions WITHOUT closing anything that is open; new connections are accepted and ignored."""
+        with self._lock:
+            self._mode = FREEZE
+            self._lock.notify_all()
+
+    def thaw(self) -> None:
+        """Forward again: what was held in the pumps goes through in order; the connections accepted while frozen are closed (their clients reconnect)."""
+        with self._lock:
+            self._mode = FORWARD
+            for sock in list(self._ignored):
+                self._held.discard(sock)
+                self._close(sock)
+            self._ignored.clear()
+            self._lock.notify_all()
 
     def wait_accepted(self, count: int, timeout: float = 30.0) -> bool:
         """Block until the proxy has accepted `count` connections in total (a condition, not a sleep)."""
@@ -111,6 +135,7 @@ class FaultProxy:
         for sock in list(self._held):
             self._close(sock)
         self._held.clear()
+        self._ignored.clear()
 
     @staticmethod
     def _close(sock: socket.socket) -> None:
@@ -137,8 +162,10 @@ class FaultProxy:
                     continue
                 self._held.add(client)
                 mode = self._mode
-            if mode == MUTE:
-                continue  # accepted and ignored; cut/mute/restore/stop close it
+                if mode in (MUTE, FREEZE):
+                    self._ignored.add(client)
+            if mode in (MUTE, FREEZE):
+                continue  # accepted and ignored; cut/mute/restore/stop close it (and thaw, for the frozen ones)
             thread = threading.Thread(target=self._session, args=(client,), name='fault-proxy-session', daemon=True)
             self._threads.append(thread)
             thread.start()
@@ -153,7 +180,7 @@ class FaultProxy:
             self._close(client)
             return
         with self._lock:
-            if self._stopped or client not in self._held or self._mode != FORWARD:
+            if self._stopped or client not in self._held or self._mode not in (FORWARD, FREEZE):
                 self._close(upstream)  # a cut/mute/restore closed the client while the upstream was being opened
                 return
             self._held.add(upstream)
@@ -169,6 +196,8 @@ class FaultProxy:
                 data = source.recv(65536)
                 if not data:
                     break
+                with self._lock:  # frozen: what arrives is held here (not lost) until thaw; a cut, a stop or a restore ends the wait
+                    self._lock.wait_for(lambda: self._mode != FREEZE or self._stopped or source not in self._held)
                 target.sendall(data)
         except OSError:
             pass

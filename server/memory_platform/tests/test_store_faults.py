@@ -4,14 +4,14 @@ pool wait plus a margin") on threads that are always released, never a sleep wai
 
 What each route answers (API; every 503 carries `request_id`, a fixed message and nothing of the driver):
 
-| route                     | cut (refused/closed)               | mute (accepts, never answers) | slow (statement past the plazo)                 |
+| route                     | cut (refused/closed)               | mute (accepts, never answers; cold pool) | slow (statement past the plazo)      |
 |---------------------------|------------------------------------|-------------------------------|-------------------------------------------------|
 | read   GET /v1/projects   | 503 service_unavailable            | 503 store_busy                | 503 store_timeout                               |
 | write  POST /v1/projects  | 503 service_unavailable            | 503 store_busy                | 503 store_timeout                               |
 | search POST /v1/search    | 503 service_unavailable (scope)    | 503 store_busy (scope)        | 200, the slow layer `unavailable`, `partial`    |
 | ready  GET /health/ready  | 503 not_ready                      | 503 not_ready                 | (a one-row read: not slow-able)                 |
 
-Mute is `store_busy` and not `service_unavailable` because a connection attempt that has not failed yet is not an error: the pool simply had nothing to give within MEMORY_POOL_TIMEOUT.
+Mute with a cold pool is `store_busy` and not `service_unavailable` because a connection attempt that has not failed yet is not an error: the pool simply had nothing to give within MEMORY_POOL_TIMEOUT (the connect plazo is longer than the wait in these tests; with the defaults it is shorter, see `ConnectAndWaitTests`). A connection that was already in the pool and dies is an outage (`service_unavailable`).
 The worker treats `store_busy` as an outage (it waits and tries again without spending the attempt) and a cancelled statement (57014) as a transient error of the database."""
 import asyncio
 import io
@@ -63,15 +63,21 @@ class ApiFaultTests(unittest.TestCase):
         self.addCleanup(self.proxy.stop)
         self.store = service_store(self.proxy)
         self.addCleanup(close_pool, self.store)
+        self.client = self.client_for(self.store)
+        self.routes = self.routes_of(self.client)
+
+    def client_for(self, store):
         auth = Mock()
         auth.authenticate_bearer.return_value = self.actor
-        retrieval = Retrieval(self.store, Settings('unused', request_timeout=5), Mock(embed=AsyncMock()))
-        self.client = TestClient(create_app(Settings('unused', mount_mcp=False), self.store, auth, retrieval), raise_server_exceptions=False)  # the generic 503 is answered, then raised to the server
-        self.routes = {
-            'read': lambda: self.client.get('/v1/projects', headers=HEADERS),
-            'write': lambda: self.client.post('/v1/projects', headers=HEADERS, json={'id': 'fault-' + uuid.uuid4().hex[:12], 'title': 'Fault'}),
-            'search': lambda: self.client.post('/v1/search', headers=HEADERS, json={'project_ids': [self.project], 'q': 'anything', 'layers': ['episodic'], 'semantic': False}),
-            'ready': lambda: self.client.get('/health/ready'),
+        retrieval = Retrieval(store, Settings('unused', request_timeout=5), Mock(embed=AsyncMock()))
+        return TestClient(create_app(Settings('unused', mount_mcp=False), store, auth, retrieval), raise_server_exceptions=False)  # the generic 503 is answered, then raised to the server
+
+    def routes_of(self, client):
+        return {
+            'read': lambda: client.get('/v1/projects', headers=HEADERS),
+            'write': lambda: client.post('/v1/projects', headers=HEADERS, json={'id': 'fault-' + uuid.uuid4().hex[:12], 'title': 'Fault'}),
+            'search': lambda: client.post('/v1/search', headers=HEADERS, json={'project_ids': [self.project], 'q': 'anything', 'layers': ['episodic'], 'semantic': False}),
+            'ready': lambda: client.get('/health/ready'),
         }
 
     def bounded(self, ask):
@@ -110,14 +116,29 @@ class ApiFaultTests(unittest.TestCase):
                 self.assertTrue(self.recovered(), 'the API did not recover after the database came back')
 
     def test_a_mute_database_gives_store_busy_within_the_pool_wait_and_the_api_recovers(self):
+        """A database that is mute BEFORE the pool made a connection: its first attempt has neither worked nor failed within the wait (connect plazo 2 s > wait 0.5 s), so it is `store_busy`
+        on every route. One fresh pool per route (a pool that already holds a connection that dies is the next test)."""
         expected = {'read': (503, 'store_busy'), 'write': (503, 'store_busy'), 'search': (503, 'store_busy'), 'ready': (503, 'not_ready')}
+        for route in expected:
+            with self.subTest(route=route):
+                self.proxy.mute()
+                store = service_store(self.proxy)
+                self.addCleanup(close_pool, store)
+                response = self.bounded(self.routes_of(self.client_for(store))[route])
+                self.assertEqual((response.status_code, answer_code(response)), expected[route])
+                self.assertEqual(response.json()['request_id'], response.headers['X-Request-ID'])
+                self.proxy.restore()
+                self.assertTrue(self.recovered(), 'the API did not recover after the database came back')
+
+    def test_a_connection_of_the_pool_that_dies_when_the_database_goes_mute_is_an_outage_on_every_route(self):
+        """The pool already held a connection and the mute closed it: the check at hand-out failed, which is evidence of an outage (fix1, gap 3): `service_unavailable`, not a busy pool."""
+        expected = {'read': (503, 'service_unavailable'), 'write': (503, 'service_unavailable'), 'search': (503, 'service_unavailable'), 'ready': (503, 'not_ready')}
         for route, ask in self.routes.items():
             with self.subTest(route=route):
                 self.warm()
                 self.proxy.mute()
                 response = self.bounded(ask)
                 self.assertEqual((response.status_code, answer_code(response)), expected[route])
-                self.assertEqual(response.json()['request_id'], response.headers['X-Request-ID'])
                 self.proxy.restore()
                 self.assertTrue(self.recovered(), 'the API did not recover after the database came back')
 
@@ -153,7 +174,7 @@ class ApiFaultTests(unittest.TestCase):
 
     def test_a_connection_cut_in_the_middle_of_a_query_does_not_go_back_to_the_pool_broken(self):
         store = Store(self.proxy.dsn())
-        attach_pool(store, Settings('unused', pool_min=1, pool_max=1, pool_timeout=POOL_WAIT * 4, connect_timeout=2), 'api')
+        attach_pool(store, Settings('unused', pool_min=1, pool_max=1, pool_timeout=POOL_WAIT * 4, connect_timeout=3), 'api')
         self.addCleanup(close_pool, store)
 
         def pid():
@@ -189,8 +210,8 @@ class ApiFaultTests(unittest.TestCase):
         self.assertEqual(pid(), second)  # and the replacement is a healthy, reusable one
 
 
-class WorkerFaultTests(unittest.IsolatedAsyncioTestCase):
-    """The accesses of the worker against a real database behind the proxy, in a database of its own."""
+class WorkerFixture:
+    """The database of its own behind the proxy, the pool and the log of the worker tests (shared with `test_store_halfopen.py`)."""
     def setUp(self):
         dsn = os.getenv('MEMORY_TEST_DSN')
         if not dsn:
@@ -220,6 +241,9 @@ class WorkerFaultTests(unittest.IsolatedAsyncioTestCase):
         entries = [json.loads(line) for line in self.stream.getvalue().splitlines() if line.startswith('{')]
         return [entry for entry in entries if name is None or entry['event'] == name]
 
+
+class WorkerFaultTests(WorkerFixture, unittest.IsolatedAsyncioTestCase):
+    """The accesses of the worker against a real database behind the proxy, in a database of its own."""
     async def test_a_claim_against_a_mute_server_fails_within_the_plazo_and_the_worker_stops_without_needing_a_kill(self):
         """Debt of phase 2 (T-08, gap 4): with no plazo a claim hung about two minutes and the stop ended in SIGKILL."""
         ingested = self.direct.ingest_event(self.actor, event(self.pid))['jobs'][0]
@@ -338,12 +362,14 @@ class PersistWithTheHeartbeatTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.sleep(0.001)
             await asyncio.sleep(0.05)  # the coroutine of the heartbeat takes the answer and marks the lease lost
         worker = self.worker(waiter=waiter, heartbeat_wait=heartbeat_wait)
-        with patch('memory_platform.worker.job_outcome', return_value={'state': 'succeeded', 'error_code': None}):
+        with patch('memory_platform.worker.job_outcome', return_value={'state': 'succeeded', 'error_code': None}), patch.object(observability, 'record_job') as record:
             self.assertTrue(await asyncio.wait_for(worker.run_once(), 30))
         self.assertEqual(self.store.complete_job.call_count, 1)
         self.assertEqual(self.events('job_write_abandoned'), [])
         self.assertEqual(len(self.events('job_completed')), 1)
         self.store.fail_job.assert_not_called()
+        record.assert_called_once()
+        self.assertEqual(record.call_args.args[2], 'completed')  # fix1 (gap 2): the log and the metric say the same, `completed`, and not `lost`
 
     async def test_with_the_heartbeat_beating_all_along_the_write_is_repeated_and_lands(self):
         """The heartbeat and `_persist` both renew the lease while the database is down: the write ends up written once it answers, with no attempt spent."""
@@ -372,14 +398,19 @@ class WriteRetryDefaultTests(unittest.TestCase):
         self.assertEqual(worker_write_retry_seconds({}, 1), 1.0)
         self.assertEqual(worker_write_retry_seconds({}, 86400), 86400.0)
         for lease in (0, -5, 86401, float('nan')):
-            with self.subTest(lease=lease), self.assertRaisesRegex(ValueError, 'MEMORY_WORKER_WRITE_RETRY_SECONDS defaults to MEMORY_LEASE_SECONDS'):
+            with self.subTest(lease=lease), self.assertRaisesRegex(ValueError, 'MEMORY_LEASE_SECONDS must be between 1 and 86400'):
                 worker_write_retry_seconds({}, lease)
-        self.assertEqual(worker_write_retry_seconds({'MEMORY_WORKER_WRITE_RETRY_SECONDS': '30'}, 0), 30.0)  # an explicit value does not depend on the lease
+            with self.subTest(lease=lease, explicit=True), self.assertRaisesRegex(ValueError, 'MEMORY_LEASE_SECONDS must be between 1 and 86400'):
+                worker_write_retry_seconds({'MEMORY_WORKER_WRITE_RETRY_SECONDS': '30'}, lease)  # fix1 (gap 10): the lease is validated also when the budget is set
+        self.assertEqual(worker_write_retry_seconds({'MEMORY_WORKER_WRITE_RETRY_SECONDS': '30'}, 240), 30.0)
 
     def test_a_lease_out_of_range_stops_the_start_of_every_process_that_reads_the_settings(self):
         for lease in ('0', '86401'):
             with self.subTest(lease=lease), patch.dict(os.environ, {'MEMORY_DSN': 'postgresql://x', 'MEMORY_LEASE_SECONDS': lease}, clear=True):
-                with self.assertRaisesRegex(ValueError, 'MEMORY_WORKER_WRITE_RETRY_SECONDS'):
+                with self.assertRaisesRegex(ValueError, 'MEMORY_LEASE_SECONDS'):
+                    Settings.from_env()
+            with self.subTest(lease=lease, explicit=True), patch.dict(os.environ, {'MEMORY_DSN': 'postgresql://x', 'MEMORY_LEASE_SECONDS': lease, 'MEMORY_WORKER_WRITE_RETRY_SECONDS': '30'}, clear=True):
+                with self.assertRaisesRegex(ValueError, 'MEMORY_LEASE_SECONDS'):
                     Settings.from_env()
         with patch.dict(os.environ, {'MEMORY_DSN': 'postgresql://x', 'MEMORY_LEASE_SECONDS': '300'}, clear=True):
             self.assertEqual(Settings.from_env().worker_write_retry_seconds, 300.0)

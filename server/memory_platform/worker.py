@@ -242,6 +242,7 @@ class Worker:
         lost = asyncio.Event()
         destination = observability.closed(job['destination'], observability.DESTINATIONS)
         started, outcome = time.monotonic(), 'failed'
+        written = False  # the write of the outcome landed (also when the heartbeat had marked the lease lost and `_landed` proved it): the metric then says what really happened
         lease = [self.clock()+self.settings.lease_seconds]  # when this worker's own clock says the lease runs out; moved by every renewal that works
         async def heartbeat():
             while True:
@@ -264,6 +265,12 @@ class Worker:
                     observability.log_failure('heartbeat_failed', exc, 'warning', destination=destination)
                     lost.set()
                     return
+        async def failed(*args):
+            nonlocal outcome, written
+            if await self._fail(job, lease, lost, destination, *args):
+                written = True
+            else:
+                outcome = 'lost'
         pulse = asyncio.create_task(heartbeat())
         try:
             provider = self.providers.get(job['destination']) if job['destination'] in {'extract', 'embed'} else None
@@ -302,7 +309,7 @@ class Worker:
             if await self._persist(job, lease, lost, destination, 'complete', self.store.complete_job, receipt) is False:
                 outcome = 'lost'  # the lease or fence was no longer ours: somebody else owns the job, nothing was completed
             else:
-                outcome = 'completed'
+                outcome, written = 'completed', True
                 observability.log_event('job_completed', destination=destination, duration_ms=observability.elapsed_ms(started))
         except Abandoned:
             outcome = 'lost'  # already logged (`job_write_abandoned`): the job stays as the database has it and is claimed again
@@ -316,19 +323,16 @@ class Worker:
                 retry_at = None
                 if exc.retryable and job['attempts'] < self.settings.max_attempts:
                     retry_at = datetime.now(timezone.utc)+timedelta(seconds=min(60, 2**job['attempts']))
-                if not await self._fail(job, lease, lost, destination, exc.code, retry_at, False):
-                    outcome = 'lost'
+                await failed(exc.code, retry_at, False)
         except TimeoutError as exc:
             observability.log_failure('job_failed', exc, 'warning', destination=destination, code='provider_timeout', duration_ms=observability.elapsed_ms(started))
             if not lost.is_set():
                 retry_at = datetime.now(timezone.utc)+timedelta(seconds=30) if job['attempts'] < self.settings.max_attempts else None
-                if not await self._fail(job, lease, lost, destination, 'provider_timeout', retry_at, False):
-                    outcome = 'lost'
+                await failed('provider_timeout', retry_at, False)
         except MemoryError as exc:
             observability.log_failure('job_failed', exc, 'warning', destination=destination, code=exc.code, duration_ms=observability.elapsed_ms(started))
             if not lost.is_set():
-                if not await self._fail(job, lease, lost, destination, exc.code):
-                    outcome = 'lost'
+                await failed(exc.code)
         except Exception as exc:
             # An error of the database that is not an outage (a cancelled query, a lock timeout...) is told apart from a provider failure by its code.
             code = 'store_error' if is_store_error(exc) else 'provider_error'
@@ -337,10 +341,9 @@ class Worker:
                 retry_at = None
                 if is_store_transient(exc) and job['attempts'] < self.settings.max_attempts:
                     retry_at = datetime.now(timezone.utc)+timedelta(seconds=min(60, 2**job['attempts']))  # it may well work next time; not terminal until the attempts run out
-                if not await self._fail(job, lease, lost, destination, code, retry_at, False):
-                    outcome = 'lost'
+                await failed(code, retry_at, False)
         finally:
-            observability.record_job(destination, time.monotonic()-started, 'lost' if lost.is_set() else outcome)
+            observability.record_job(destination, time.monotonic()-started, 'lost' if lost.is_set() and not written else outcome)
             pulse.cancel()
             try:
                 await pulse

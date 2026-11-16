@@ -95,6 +95,50 @@ class FaultProxyTests(unittest.TestCase):
         with self.connect() as c:
             self.assertEqual(c.execute('SELECT 3').fetchone()[0], 3)
 
+    def test_freeze_keeps_the_open_connection_alive_and_silent_and_thaw_delivers_what_was_held(self):
+        """The half-open case (T-23/T-25 fix1): unlike mute(), the open connection is NOT closed; the query sent while frozen gets no answer until thaw(), then it does, in order."""
+        c = self.connect()
+        self.assertEqual(c.execute('SELECT 1').fetchone()[0], 1)
+        self.proxy.freeze()
+        self.assertEqual(self.proxy.mode, 'freeze')
+        answered, result = threading.Event(), {}
+
+        def ask():
+            result['value'] = c.execute('SELECT 2').fetchone()[0]
+            answered.set()
+        thread = threading.Thread(target=ask, daemon=True)
+        thread.start()
+        self.assertFalse(answered.wait(0.5), 'a frozen connection answered')  # nothing comes back...
+        self.assertFalse(c.closed)  # ...and nothing was closed: the socket is alive, which is what mute() cannot reproduce
+        with self.assertRaises(self.psycopg.OperationalError):  # a NEW connection is accepted and ignored: it never completes
+            self.psycopg.connect(self.proxy.dsn(), connect_timeout=2)
+        self.proxy.thaw()
+        self.assertEqual(self.proxy.mode, 'forward')
+        self.assertTrue(answered.wait(10), 'thaw did not deliver the held query')
+        self.assertEqual(result['value'], 2)
+        self.assertEqual(c.execute('SELECT 3').fetchone()[0], 3)  # the same connection works again
+        c.close()
+        with self.connect() as fresh:
+            self.assertEqual(fresh.execute('SELECT 4').fetchone()[0], 4)
+
+    def test_stop_releases_a_frozen_connection_without_hanging(self):
+        proxy = FaultProxy().start()
+        c = self.psycopg.connect(proxy.dsn(), autocommit=True)
+        c.execute('SELECT 1')
+        proxy.freeze()
+        thread = threading.Thread(target=lambda: self._swallow(c), daemon=True)
+        thread.start()
+        proxy.stop()
+        thread.join(10)
+        self.assertFalse(thread.is_alive(), 'stop() left a query hanging on a frozen connection')
+        self.assertEqual([t for t in proxy._threads if t.is_alive()], [])
+
+    def _swallow(self, c):
+        try:
+            c.execute('SELECT 2')
+        except self.psycopg.Error:
+            pass
+
     def test_stop_closes_every_socket_and_thread(self):
         proxy = FaultProxy().start()
         c = self.psycopg.connect(proxy.dsn(), autocommit=True)
