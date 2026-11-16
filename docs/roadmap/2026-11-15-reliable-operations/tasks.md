@@ -45,7 +45,7 @@ test-plan: n/a (sin UI)
 | Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 7 | 7 | 100% | 0 / 27.0h | 0.99 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 9 | 9 | 100% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 5 | 5 | 100% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
-| Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 5 | 9 | 55.6% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
+| Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 6 | 9 | 66.7% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 0 | 6 | 0% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 0 | 4 | 0% | 0 / 7.2h | 0 / 1.0h | 0 / 0.2h | 0 / 240 k |
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 0 | 7 | 0% | 0 / 19.8h | 0 / 2.6h | 0 / 0.7h | 0 / 660 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **39** | **98** | **39.8%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **40** | **98** | **40.8%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1276,10 +1276,11 @@ RED: sin captura del rojo previo (no se guardó). Evidencia real: mutantes M1, M
 ### T-40 — Ensayo aislado de `--verify-backup`
 
 - **Descripción**: Ejecutar un ensayo aislado real con `--verify-backup` y comprobar el contenedor efímero, el aborto ante una diferencia y la limpieza. Fuente: CA-05 (ensayo).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: ensayo aislado real de la verificación de copias antes de migrar (restauración, aborto ante una diferencia y limpieza).
+- **Cerrada**: 2026-11-16
+- **Estado**: completado
 - **Tiempo humano**: est. 2h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real 0.13h (medido)
 - **Supervisión**: est. 0.07h (≈25 % IA) · real —
 - **Previsión IA**: 74 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-39
@@ -1291,17 +1292,18 @@ RED: sin captura del rojo previo (no se guardó). Evidencia real: mutantes M1, M
   - `docker ps --filter name=knowledge-graphs` y `docker volume ls --filter name=knowledge-graphs` → idénticos antes y después
 
 **Criterios de aceptación**
-- [ ] El ensayo usa el proyecto `kairos-ops-a`, nunca `knowledge-graphs`, ni el Ollama del host (`--embed-stub`)
-- [ ] El contenedor `memory_restore_*` no queda vivo tras el ensayo
-- [ ] Los recursos del ensayo se retiran con `docker compose -p kairos-ops-a down -v`
+- [x] El ensayo usa el proyecto `kairos-ops-a`, nunca `knowledge-graphs`, ni el Ollama del host (`--embed-stub`)
+- [x] El contenedor `memory_restore_*` no queda vivo tras el ensayo
+- [x] Los recursos del ensayo se retiran con `docker compose -p kairos-ops-a down -v`
 
 **Subtareas**
-- [ ] Anotar `docker ps`/`volume ls` de la instalación antes
-- [ ] Ejecutar el ensayo (primer plano, de uno en uno)
-- [ ] Retirar el proyecto aislado y comparar
-- [ ] `usage-meter start/close` de la tarea
+- [x] Anotar `docker ps`/`volume ls` de la instalación antes
+- [x] Ejecutar el ensayo (primer plano, de uno en uno)
+- [x] Retirar el proyecto aislado y comparar
+- [x] `usage-meter start/close` de la tarea
 
 **Notas**: Restricción dura: nada contra la base desplegada ni recursos `knowledge-graphs-*`. Patrón: ensayos de la Iniciativa 2 (`scripts/deploy-memory.py --project-name`).
+**Cierre**: proyecto `kairos-ops-a` (puertos 28791/25174, secretos sintéticos fuera del repo), `--embed-stub`, sin Ollama del host. (1) `--fresh --roundtrip` OK; (2) segundo despliegue con `--verify-backup` salió 0: `verify_backup` `verified`, 26 tablas, 39,91 s, `cleanup: complete`, fases `backup, verify_backup, migrate`; (3) aborto real: copia con manifiesto alterado (tabla `actors`) → `backup_restore_mismatch`, `status: failed`, limpieza completa, sin `migrate`; tras ambos no queda ningún `kairos-verify-*` (contenedor ni red). Retirado por nombre exacto (7 contenedores, 2 volúmenes, 5 redes, 6 imágenes `rehearsal-kairos-ops-a-*`, secretos y `.private/rehearsal-kairos-ops-a`). `knowledge-graphs-*` (15 contenedores, 7 volúmenes, 6 redes): antes y después IDÉNTICOS (ids y estados). Medido `reliable-operations/T-40`.
 
 ### T-41 — Documentar copias, cifrado, retención y verificación
 
