@@ -52,3 +52,17 @@ Cada fase cierra con su revisión adversarial. El detalle de cada intento está 
 | 1 | Minor | Un reclamo concurrente puede esperar un ciclo por el trabajo que perdió la comparación | Deuda aceptada, documentada |
 | 2 | Minor | Textos de `configuration.md`, coordinación (`counts.jobs`), spec P-03, dry-run y `--table` | Corregidos en el cierre |
 | 2 | Minor | Invariancia sin `publish_document`/`revoke_document`/portal; NOT EXISTS sobre `events` sin índice | Deuda aceptada |
+
+## Fase 4 — Pool y plazos de conexión (T-21 a T-29)
+
+- **Fecha**: 2026-11-16
+- **Lentes**: intento 1, A, B, C y D (C por `ci.yml`; D por `worker.py`); intento 2, A y B.
+- **Veredicto**: cerrada en el intento 2 de 3, sin hallazgos Critical ni Important abiertos.
+- **Evidencia**: suite del servidor 1006 tests, 0 fallos, errores y omitidos; suite de kairos-mcp en verde; `KAIROS_MIN_TESTS` y `MIN_FLOOR` 1006; `scope-check.py --base 9416128` exit 0; contrato MCP sin cambios; mutantes en rojo en las Notas (`execution-history.md`).
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Important | Una conexión establecida que se queda muda (half-open) se colgaba ~15 min y reabría la deuda de la Fase 2 | Corregido: keepalives y `tcp_user_timeout`, plazo del cliente en `Connection.wait`, `FaultProxy.freeze()` y 14 pruebas |
+| 1 | Minor | Métrica con `_landed`; carrera busy/caída; búsqueda saturada `partial`; readiness; texto de sesión; S-08; casilla de T-24; mediciones; validación del lease; `graph_data` | Corregidos |
+| 2 | Minor | Changelog desactualizados y frase de `PREPARE` | Corregidos en el cierre |
+| 2 | Minor | Plazo total en `executemany`; carrera de `saturated()`; clasificación con varias direcciones; `StoreUnavailable` en una capa; mutantes sin anotar | Deuda → T-30 (Fase 5) |

@@ -43,7 +43,7 @@ test-plan: n/a (sin UI)
 | Fase 1 — Arnés de fallos y tests de límites (C-07) | 6 | 6 | 100% | 0 / 32.4h | 0.83 / 4.3h | 0 / 1.1h | 0 / 1080 k |
 | Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 7 | 7 | 100% | 0 / 27.0h | 2.10 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 7 | 7 | 100% | 0 / 27.0h | 0.99 / 3.6h | 0 / 0.9h | 0 / 900 k |
-| Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 8 | 9 | 88.9% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
+| Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 9 | 9 | 100% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 0 | 5 | 0% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 0 | 9 | 0% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 0 | 6 | 0% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **28** | **98** | **28.6%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **29** | **98** | **29.6%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -677,7 +677,7 @@ test-plan: n/a (sin UI)
 
 ## Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07)
 
-**Estado**: borrador · **Hito**: A · **Estimado**: 48.0h (40.0h base, de ellas 20.0h de revisión adversarial) · **Real**: — · **Coste est.**: 2.400 € · **Tokens est.**: 1600 k
+**Estado**: completado · **Hito**: A · **Estimado**: 48.0h (40.0h base, de ellas 20.0h de revisión adversarial) · **Real**: — · **Coste est.**: 2.400 € · **Tokens est.**: 1600 k
 
 ### T-21 — Medición previa: consultas, conexiones y latencia por búsqueda
 
@@ -709,7 +709,7 @@ test-plan: n/a (sin UI)
 ### T-22 — `psycopg_pool` en `Store.transaction()` con `MEMORY_POOL_*`
 
 - **Descripción**: Tomar las conexiones de `Store.transaction()` de un `psycopg_pool.ConnectionPool` (versión fijada) con `MEMORY_POOL_MIN`/`MAX`/`TIMEOUT` (1 / 10 / 5 s a medir); los comandos de `admin` siguen con conexión directa y `store_surface.json` no cambia. Fuente: CA-15; B-02.
-- **Changelog**: Las transacciones de la API y del worker reutilizan conexiones de un pool (MEMORY_POOL_MIN/MAX/TIMEOUT, 1/10/5 s): una búsqueda con el pool caliente ya no abre conexiones nuevas.
+- **Changelog**: Las transacciones de la API y del worker reutilizan conexiones de un pool (MEMORY_POOL_MIN/MAX/TIMEOUT, 1/10/5 s): una búsqueda con el pool caliente ya no abre conexiones nuevas. Un `MEMORY_LEASE_SECONDS` fuera de 1-86400 impide arrancar.
 - **Estado**: completado
 - **Cerrada**: 2026-11-16
 - **Tiempo humano**: est. 6h (base) · real —
@@ -776,7 +776,7 @@ RED: `tests/test_store_timeouts.py` falló con ImportError: cannot import name D
 ### T-24 — Errores 503 `store_timeout` y `store_busy` y su clasificación
 
 - **Descripción**: Mapear `statement_timeout` agotado a 503 `store_timeout` y pool agotado (`MEMORY_POOL_TIMEOUT`) a 503 `store_busy` con `request_id`; el worker los clasifica como `StoreUnavailable`. Fuente: CA-16, CA-19; B-07.
-- **Changelog**: Cuando la base no responde a tiempo, la API contesta 503 store_timeout (consulta cancelada por plazo) o 503 store_busy (sin conexión libre en MEMORY_POOL_TIMEOUT), con mensaje fijo y request_id; una caída sigue siendo service_unavailable.
+- **Changelog**: Cuando la base no responde a tiempo, la API contesta 503 store_timeout (consulta cancelada por plazo) o 503 store_busy (sin conexión libre en MEMORY_POOL_TIMEOUT), con mensaje fijo y request_id; una caída o una conexión que se queda muda es service_unavailable. Una búsqueda con el pool saturado responde 503 store_busy en vez de un resultado parcial; `/health/ready` sigue en 200 con el pool lleno. `MEMORY_CONNECT_TIMEOUT` (3 s) debe quedar al menos 1 s por debajo de `MEMORY_POOL_TIMEOUT` o el proceso no arranca.
 - **Estado**: completado
 - **Cerrada**: 2026-11-16
 - **Tiempo humano**: est. 3h (base) · real —
@@ -840,7 +840,7 @@ RED: `tests/test_store_faults.py::PersistWithTheHeartbeatTests` falló con test_
 ### T-26 — Medición posterior del pool y defaults de `MEMORY_POOL_*`
 
 - **Descripción**: Repetir la medición con el pool y fijar los valores por defecto del pool y de los plazos con la cifra. Fuente: CA-15 (medición); B-02.
-- **Changelog**: Interno: medición posterior del pool; una búsqueda híbrida con el pool caliente abre 0 conexiones (antes 7) y baja a casi la mitad de latencia; los valores por defecto del pool se mantienen.
+- **Changelog**: Interno: medición posterior del pool; una búsqueda híbrida con el pool caliente abre 0 conexiones (antes 7) y la transacción mínima pasa de unos 15 ms a 1 ms; la latencia de la búsqueda completa no se pudo medir de forma fiable (varía con la carga de la máquina); los valores por defecto del pool se mantienen.
 - **Estado**: completado
 - **Cerrada**: 2026-11-16
 - **Tiempo humano**: est. 0.75h (base) · real —
@@ -867,7 +867,7 @@ RED: `tests/test_store_faults.py::PersistWithTheHeartbeatTests` falló con test_
 ### T-27 — Documentar pool, plazos y errores 503
 
 - **Descripción**: Documentar `MEMORY_POOL_*`, `MEMORY_CONNECT_TIMEOUT`, `MEMORY_STATEMENT_TIMEOUT_MS`, los códigos `store_timeout`/`store_busy` y qué comandos de `admin` no heredan el plazo. Fuente: CA-15 a CA-19 (documentación).
-- **Changelog**: Documentado cómo funcionan el pool de conexiones y los plazos de la base: las cinco variables nuevas, los errores 503 store_busy y store_timeout y qué comandos de admin no heredan el plazo.
+- **Changelog**: Documentado cómo funcionan el pool de conexiones y los plazos de la base: las nueve variables nuevas (pool, plazos y `MEMORY_TCP_*`), los errores 503 store_busy y store_timeout y qué comandos de admin no heredan el plazo.
 - **Estado**: completado
 - **Cerrada**: 2026-11-16
 - **Tiempo humano**: est. 1h (base) · real —
@@ -893,7 +893,7 @@ RED: `tests/test_store_faults.py::PersistWithTheHeartbeatTests` falló con test_
 ### T-28 — Cierre de fase: suite completa y subida del mínimo
 
 - **Descripción**: Ejecuta la suite completa del servidor, anota el recuento `MEMORY_TEST_RESULT` y sube `KAIROS_MIN_TESTS` y `MIN_FLOOR` al número observado (la suite solo crece).  Fuente: Puerta de fase; CA-38 (suite con 0 fallos y 0 omitidos).
-- **Changelog**: Interno: el mínimo de pruebas que exige la integración continua sube a 984; no cambia el comportamiento del producto.
+- **Changelog**: Interno: el mínimo de pruebas que exige la integración continua sube a 1006; no cambia el comportamiento del producto.
 - **Estado**: completado
 - **Cerrada**: 2026-11-16
 - **Tiempo humano**: est. 0.5h (base) · real —
@@ -923,8 +923,8 @@ RED: `tests/test_store_faults.py::PersistWithTheHeartbeatTests` falló con test_
 ### T-29 — Revisión adversarial de la fase (dos lentes)
 
 - **Descripción**: Revisión adversarial del diff de la fase con dos lentes: A (contrato, seguridad, regresiones, alcance declarado) y B (mutantes: cada control nuevo se quita y su prueba debe fallar). Superficie expuesta a todas las peticiones: R-02 (plazo que corta trabajo legítimo) y pool compartido entre hilos; revisión a 1,0 ×. Cada hallazgo se corrige para la clase entera y se anota con intento y evidencia en `review.md`; cada intento abre y cierra `usage-meter`. Fuente: Lección de la retro de la Iniciativa 2: la revisión es partida propia (0,5 × la implementación; 1,0 × en C-03 y C-05).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: revisión adversarial de la fase 4; el pool y los plazos aguantan una base caída, muda o congelada.
+- **Estado**: completado
 - **Tiempo humano**: est. 20h (base) · real —
 - **Tiempo IA (ejec.)**: est. 2.67h (estimado) · real —
 - **Supervisión**: est. 0.67h (≈25 % IA) · real —
@@ -939,18 +939,18 @@ RED: `tests/test_store_faults.py::PersistWithTheHeartbeatTests` falló con test_
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
 
 **Criterios de aceptación**
-- [ ] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
-- [ ] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
-- [ ] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
-- [ ] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
+- [x] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
+- [x] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
+- [x] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
+- [x] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
 
 **Subtareas**
-- [ ] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
-- [ ] Lente B: mutantes en memoria sobre cada control nuevo
-- [ ] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
-- [ ] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
+- [x] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
+- [x] Lente B: mutantes en memoria sobre cada control nuevo
+- [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
+- [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas**: Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+**Notas**: Cerrada en el intento 2 de 3 (intento 1: A+B+C+D; intento 2: A+B; resumen en `review.md`). `scope-check.py --base 9416128` exit 0; suite 1006 en verde. Los revisores no tienen medición propia. Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
 
 ---
 
@@ -984,7 +984,7 @@ RED: `tests/test_store_faults.py::PersistWithTheHeartbeatTests` falló con test_
 - [ ] Limpiar en `COMMIT`, `ROLLBACK` y devolución al pool
 - [ ] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `store_auth.py:36-53` (`_active`: actor y clave) y `:60-77` (`_require`: concesiones por proyecto), `store.py:24-30`. R-05: la revocación no puede relajarse.
+**Notas**: Deuda Minor heredada de la revisión de la Fase 4 (intento 2, n.º 3-7; ver la tabla al final del ledger): (a) plazo del cliente por sentencia y no total en `executemany` (o lotes acotados), con prueba de un `embed` de muchos fragmentos con la base sana; (b) carrera de `saturated()` en `/health/ready`; (c) clasificación con hosts de varias direcciones y con conexiones cerradas por el plazo; (d) `StoreUnavailable` en una capa de búsqueda no debe dar 200 `partial` silencioso; (e) mutantes en rojo del control estático de sesión y de `_landed`. Añade los ficheros que toque a `Archivos` con nota. Patrón: `store_auth.py:36-53` (`_active`: actor y clave) y `:60-77` (`_require`: concesiones por proyecto), `store.py:24-30`. R-05: la revocación no puede relajarse.
 
 ### T-31 — Pruebas de revocación, aislamiento entre peticiones y recorrido de las 86 transacciones
 
@@ -3098,3 +3098,17 @@ Lentes: A+B+C+D (C por `ci.yml`; D por `worker.py`). Diff `9416128..078b465`. `s
 | 11 | Minor | `graph_data` no tiene exención ni prueba de que quepa en los 15 s de la API (R-02) | T-23 | corregido (T-23 fix1: `graph_data` probado con el plazo de la API activo; exención documentada) | Lente A (fuera de lente) |
 
 Corrección (fix1): suite 1006 en verde (`MEMORY_TEST_RESULT`), `ledger-lint.py` y `scope-check.py --base 9416128` exit 0; mutantes de cada control en rojo en una copia.
+
+## Revisión de dos lentes — intento 2: Fase 4 tras fix1 (T-21, T-23, T-24, T-25, T-26, T-27, T-28)
+
+Lentes: A+B (re-evalúan solo lo corregido). Diff `078b465..5d8a75c`. Veredicto: n.º 1-11 del intento 1 cerrados. Sin Critical ni Important: **fase cerrada en el intento 2 de 3**. Suite 1006, 0 fallos (Notas de T-28 en `execution-history.md`).
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Minor | El Changelog de T-26 seguía diciendo «casi la mitad de latencia» | T-26 | corregido en el cierre | Lente A n.º 1 |
+| 2 | Minor | Changelog de T-22, T-24, T-27 y T-28 desactualizados frente a fix1 | T-22, T-24, T-27, T-28 | corregido en el cierre | Lente A n.º 2 |
+| 3 | Minor | Sin mutante anotado para el control estático de sesión ni «rojo» en el de `_landed`; el manual decía que no se usa `PREPARE`, pero psycopg prepara por su cuenta | T-23, T-25, T-27 | manual precisado en el cierre; la evidencia de mutantes queda como deuda → T-30 | Lente A n.º 3 y fuera de lente |
+| 4 | Minor | El plazo del cliente es total por `wait` y `executemany` en pipeline mete todos los INSERT en uno: un `embed` con cientos de fragmentos puede superar el plazo con la base sana, tratarse como caída y repetirse en cada reclamo | T-23 | deuda → T-30 | Lente B n.º 1; `store_jobs.py:219`, `store_pool.py:203` |
+| 5 | Minor | Carrera en `saturated()`: entre devolver y entregar la conexión, `/health/ready` puede dar 503 con el pool saturado | T-24 | deuda → T-30 | Lente B n.º 2; `store_pool.py:169-178` |
+| 6 | Minor | La regla de 1 s no deja la clasificación determinista con hosts de varias direcciones (`connect_timeout` por dirección) ni con todas las conexiones cerradas por el plazo a mitad de sentencia | T-24 | deuda → T-30 | Lente B n.º 3; `config.py:61-67` |
+| 7 | Minor | Un `StoreUnavailable` dentro de una capa de búsqueda sigue dando 200 `partial` con todas las capas `unavailable` | T-24 | deuda → T-30 | Lente B n.º 4; `retrieval.py:126-130` |
