@@ -44,7 +44,7 @@ test-plan: n/a (sin UI)
 | Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 7 | 7 | 100% | 0 / 27.0h | 2.10 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 7 | 7 | 100% | 0 / 27.0h | 0.99 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 9 | 9 | 100% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
-| Fase 5 — Permisos por transacción (C-03, B-02) | 0 | 5 | 0% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
+| Fase 5 — Permisos por transacción (C-03, B-02) | 1 | 5 | 20.0% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 0 | 9 | 0% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 0 | 6 | 0% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 0 | 4 | 0% | 0 / 7.2h | 0 / 1.0h | 0 / 0.2h | 0 / 240 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **29** | **98** | **29.6%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **30** | **98** | **30.6%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -961,31 +961,33 @@ RED: `tests/test_store_faults.py::PersistWithTheHeartbeatTests` falló con test_
 ### T-30 — Caché de `_active` y de concesiones por proyecto válida hasta el `COMMIT`
 
 - **Descripción**: Cachear la lectura de actor y clave y las concesiones por proyecto en el ámbito de la transacción, descartándola al `COMMIT`/`ROLLBACK`, para que una búsqueda sobre N proyectos lea actor y clave una sola vez. Fuente: CA-18; B-02; R-05.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Los permisos se leen una vez por transacción (menos consultas por búsqueda; la revocación vale desde la petición siguiente) y una base caída dentro de una capa de búsqueda da 503, no un 200 parcial.
+- **Cerrada**: 2026-11-16
+- **Estado**: completado
 - **Tiempo humano**: est. 5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.67h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.67h (estimado) · real 0.29h (medido)
 - **Supervisión**: est. 0.17h (≈25 % IA) · real —
 - **Previsión IA**: 184 k in / 16 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/store_auth.py`, `server/memory_platform/store.py`, `server/memory_platform/tests/test_auth_cache.py`
+- **Archivos**: `server/memory_platform/store_auth.py`, `server/memory_platform/store.py`, `server/memory_platform/tests/test_auth_cache.py`, `server/memory_platform/auth_scope.py` (nuevo: el ciclo de vida de la caché; `store_auth.py` y `auth.py` se importan entre sí y no podía vivir en el primero), `server/memory_platform/auth.py`, `server/memory_platform/store_documents.py`, `server/memory_platform/store_vectors.py` (savepoints), `server/memory_platform/extended_store.py`, `server/memory_platform/corpus_answers.py` (releer tras `FOR SHARE`), `server/memory_platform/store_jobs.py`, `server/memory_platform/store_pool.py`, `server/memory_platform/retrieval.py`, `server/memory_platform/errors.py` (deuda de la Fase 4), `server/memory_platform/tests/test_store_phase4_debt.py` (nuevo), `server/memory_platform/tests/test_store_faults.py` (una expectativa cambia: ver Notas)
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_auth_cache|test_auth|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Una búsqueda sobre N proyectos ejecuta la lectura de actor y clave una sola vez por transacción (contador de consultas en la prueba)
-- [ ] Una clave revocada deja de valer en la petición siguiente (la caché no sobrevive al `COMMIT`)
-- [ ] La caché no se comparte entre peticiones que reutilizan la misma conexión del pool (prueba con dos actores seguidos)
+- [x] Una búsqueda sobre N proyectos ejecuta la lectura de actor y clave una sola vez por transacción (contador de consultas en la prueba)
+- [x] Una clave revocada deja de valer en la petición siguiente (la caché no sobrevive al `COMMIT`)
+- [x] La caché no se comparte entre peticiones que reutilizan la misma conexión del pool (prueba con dos actores seguidos)
 
 **Subtareas**
-- [ ] Escribir primero las pruebas de contador y revocación (rojo)
-- [ ] Implementar la caché ligada al objeto de transacción
-- [ ] Limpiar en `COMMIT`, `ROLLBACK` y devolución al pool
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero las pruebas de contador y revocación (rojo)
+- [x] Implementar la caché ligada al objeto de transacción
+- [x] Limpiar en `COMMIT`, `ROLLBACK` y devolución al pool
+- [x] `usage-meter start/close` de la tarea
 
 **Notas**: Deuda Minor heredada de la revisión de la Fase 4 (intento 2, n.º 3-7; ver la tabla al final del ledger): (a) plazo del cliente por sentencia y no total en `executemany` (o lotes acotados), con prueba de un `embed` de muchos fragmentos con la base sana; (b) carrera de `saturated()` en `/health/ready`; (c) clasificación con hosts de varias direcciones y con conexiones cerradas por el plazo; (d) `StoreUnavailable` en una capa de búsqueda no debe dar 200 `partial` silencioso; (e) mutantes en rojo del control estático de sesión y de `_landed`. Añade los ficheros que toque a `Archivos` con nota. Patrón: `store_auth.py:36-53` (`_active`: actor y clave) y `:60-77` (`_require`: concesiones por proyecto), `store.py:24-30`. R-05: la revocación no puede relajarse.
 
+**Cierre**: Diseño: `auth_scope.py` pone un dict en la conexión al empezar `Store.transaction()` y lo quita antes del COMMIT/ROLLBACK (no está en el módulo, el `Store` ni el pool); `_active` (clave: actor+credencial) y `_require` (concesiones: actor+proyecto; existencia del proyecto para el administrador) lo usan; `invalidate_auth` lo vacía en cada escritor de permisos (bootstrap, usuario, clave, proyecto, política, revocar, login/logout/csrf) y `savepoint(c)` lo vacía si el savepoint falla. **Hallazgo propio (R-05):** `ExtendedStore._require` y `CorpusAnswers._authorized` toman `FOR SHARE` y repiten la comprobación para que una revocación intermedia falle; con la caché la segunda lectura repetía la primera y `test_revocation_between_authorization_and_lock_is_rechecked` quedó en rojo (1 fallo de 1037); corregido vaciando la caché tras los bloqueos y con una prueba estática de que todo bloqueo de filas de autoridad la vacía. Deuda de la Fase 4 cerrada, cada una con prueba y mutante en rojo (`test_store_phase4_debt.py`): (a) `CHUNK_INSERT_BATCH=50` fragmentos por `executemany` (un plazo del cliente por lote; 200 fragmentos = 4 lotes, misma transacción); (b) `_in_use` baja DESPUÉS de `putconn`, y `ready_probe` da `saturated` por el `StoreBusy` mismo, sin repreguntar; (c) `StoreBusy` solo si todas las conexiones estaban en uso al vencer la espera, si no `StoreUnavailable` (determinista, sin depender de temporizadores; hosts de varias direcciones y conexiones cerradas por el plazo simulados con `PoolTimeout`); (d) `StoreUnavailable` dentro de una capa de búsqueda es el 503 de la petición; (e) mutantes del control estático de sesión y de `_landed` ejecutados. **Cambio visible:** con huecos libres, una base muda da 503 `service_unavailable` y no `store_busy`; `test_store_faults` actualizado (antes fijaba la carrera). Mutantes (todos en rojo; se aplicaron en copia y se descartaron): M1 caché a nivel de módulo (rojo: 4 pruebas de aislamiento/revocación + tabla), M2 caché de conexión que no muere (28 fallos), M3 sin `invalidate_auth` en `revoke_key` (prueba estática), M4 savepoint sin vaciar, M5 clave solo por actor, M6 concesiones sin proyecto en la clave, M7 sin caché (recuentos); D1 lote de 100000, D2 `_in_use` antes de `putconn`, D3 clasificación antigua, D4 `StoreBusy` en vez de `StoreUnavailable` en la capa; control de sesión: `SET ROLE`, `PREPARE`, `LISTEN`, `CREATE TEMP TABLE`, `pg_advisory_lock`, `SET SESSION` añadidos al código → `SessionStateTests` en rojo; `_landed`: L1 siempre falso, L2 siempre verdadero, L3 `complete` sin comprobar el estado, L4 `fail` sin comparar `error_code`, L5 y L6 sin llamarlo en cada punto de `_persist` → `test_store_faults`/`test_worker_db_down` en rojo. Verificación (build `kairos-test:i3p5`, suite completa): `MEMORY_TEST_RESULT {... "errors": 0, "failures": 0, "skipped": 0, "tests": 1038}`; `test_auth_cache` (CountingTests 5, RevocationTests 7, IsolationTests 4) y `test_store_phase4_debt` (8) en `ok`. Medición de la tarea: usage-meter `{"fuente":"medido","horas_ia":0.29,"duracion_reloj":"37m","tokens_reales":{"entrada":90,"salida":27190,"cache_creacion":60605,"cache_lectura":10567171,"respuestas":45}}` (arrancó tras el diseño y el primer borrador del código: subestima el tiempo de la tarea).
 ### T-31 — Pruebas de revocación, aislamiento entre peticiones y recorrido de las 86 transacciones
 
 - **Descripción**: Cubrir la clase entera: revocación entre transacciones, dos actores en la misma conexión, y que ninguna de las rutas que usan `transaction()` salta la comprobación de permisos. Fuente: CA-18; R-05.

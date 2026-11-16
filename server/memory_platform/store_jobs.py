@@ -6,6 +6,7 @@ from .errors import MemoryError, NotFound
 from .privacy import has_sensitive, sanitize_payload
 from .store_common import canonical, digest, clean
 
+CHUNK_INSERT_BATCH = 50  # fragments per `executemany` of `complete_job` (each one is its own wait, so its own client-side plazo)
 DEFAULT_MAX_ATTEMPTS = 3  # the cap of `claim_job` when nobody told the store otherwise; the worker passes MEMORY_MAX_ATTEMPTS (`store.max_attempts`)
 LEGACY_EMBED_CHARS = 8000  # what a receipt without `chunks` (a previous worker) embedded: the first 8,000 characters
 # The two places a claim can take a job from, each read in claim order through its own partial index (schema version 12) with ONE row locked at most. They are two
@@ -215,9 +216,13 @@ class JobsMixin:
                 c.execute('UPDATE memory.embeddings SET chunked=true WHERE project_id=%s AND item_id=%s AND resource_type=%s AND version<%s AND NOT chunked',(row['project_id'],row['item_id'],row['resource_type'],row['version']))
                 # Fragments of this version are replaced as a set; those of older versions of the item are derived data nobody can read any more.
                 c.execute('DELETE FROM memory.embedding_chunks WHERE project_id=%s AND item_id=%s AND resource_type=%s AND model=%s AND version<=%s',(row['project_id'],row['item_id'],row['resource_type'],model,row['version']))
+                chunk_values=[(row['project_id'],row['item_id'],row['resource_type'],row['version'],row['canonical_hash'],model,ordinal,start,end,vector_literal(values)) for ordinal,start,end,values in fragments]
                 with c.cursor() as cursor:
-                    cursor.executemany('INSERT INTO memory.embedding_chunks(project_id,item_id,resource_type,version,canonical_hash,model,ordinal,char_start,char_end,embedding) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::vector)',
-                        [(row['project_id'],row['item_id'],row['resource_type'],row['version'],row['canonical_hash'],model,ordinal,start,end,vector_literal(values)) for ordinal,start,end,values in fragments])
+                    # Batches, not one `executemany`: psycopg sends all of it in ONE pipeline wait, and the client-side plazo of a pooled connection is per wait (`store_pool.GuardedConnection`):
+                    # hundreds of fragments could outlast it with a healthy database, be read as an outage and be repeated at every claim. Same rows, same transaction, one plazo per batch.
+                    for first in range(0,len(chunk_values),CHUNK_INSERT_BATCH):
+                        cursor.executemany('INSERT INTO memory.embedding_chunks(project_id,item_id,resource_type,version,canonical_hash,model,ordinal,char_start,char_end,embedding) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::vector)',
+                            chunk_values[first:first+CHUNK_INSERT_BATCH])
                 receipt={'model':model,'dimensions':len(vector),'hash':digest(vector),'status':'verified','verified':True}
                 if incoming.get('chunks') is not None:
                     receipt['chunks']=len(fragments)

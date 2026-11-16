@@ -46,7 +46,8 @@ class StoreUnavailable(Exception):
 
 
 class StoreBusy(StoreUnavailable):
-    """The pool of connections could not give one within `MEMORY_POOL_TIMEOUT` (all of them in use, or the database is not answering to the new ones).
+    """The pool of connections could not give one within `MEMORY_POOL_TIMEOUT` with ALL of them in use (a busy service). A pool that has free slots and still gave none, or whose
+    connect attempts failed, is a `StoreUnavailable` (the database does not answer): see `store_pool.StorePool.connection`.
 
     It IS a `StoreUnavailable`, so the worker waits and tries again without spending the attempt of a job; the API answers it as 503 `store_busy`.
     Fixed message, no driver text (the DSN is never in it)."""

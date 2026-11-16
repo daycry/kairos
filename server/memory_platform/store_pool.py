@@ -6,7 +6,9 @@ is not (every test and every `admin` command). The pool lives in an attribute of
 
 What the pool guarantees, and `tests/test_store_pool.py` / `tests/test_store_faults.py` hold it:
 * the sizes (`MEMORY_POOL_MIN`/`MEMORY_POOL_MAX`) and the wait (`MEMORY_POOL_TIMEOUT`) are validated in `config.py`; a transaction that finds no connection within the wait
-  raises `StoreBusy` (503 `store_busy` in the API), or `StoreUnavailable` when the pool could not connect since the last connection it gave (the database is down);
+  raises `StoreBusy` (503 `store_busy` in the API) ONLY when every connection the pool may have was in use at that moment (the service is busy: the one fact that does not depend on a
+  timer); in any other case (a connect error or a failed check since the last connection it gave, or free slots that did not become a connection in time: a host with several
+  addresses that each take their `connect_timeout`, connections closed by the client-side plazo that the pool is replacing) it raises `StoreUnavailable` (the database does not answer);
 * a connection is checked when it is handed out (`ConnectionPool.check_connection`): one that broke while idle is discarded and replaced, never given to a request;
 * a connection that comes back is reset (`RESET ALL`) before it is given back: the code only sets transaction-local settings (`set_config(..., true)`, `SET LOCAL`), so this is
   the net under it, and one request can never see what another one set in the session. It is done here, in the request, and not with the `reset=` callback of the pool: that one
@@ -155,7 +157,9 @@ class StorePool:
         try:
             connection = pool.getconn(timeout=wait)
         except PoolTimeout:
-            raise (StoreUnavailable('PoolTimeout') if self._faults(pool) > self._faults_at_ok else StoreBusy()) from None
+            with self._lock:
+                saturated = self._in_use >= self.max_size
+            raise (StoreBusy() if saturated and self._faults(pool) <= self._faults_at_ok else StoreUnavailable('PoolTimeout')) from None
         except PoolClosed:
             raise StoreUnavailable('PoolClosed') from None
         with self._lock:
@@ -166,8 +170,6 @@ class StorePool:
             with connection:
                 yield connection
         finally:
-            with self._lock:
-                self._in_use -= 1
             try:
                 if not connection.closed and not connection.broken:
                     connection.guard_seconds = self.check_seconds
@@ -175,7 +177,11 @@ class StorePool:
             except Exception as exc:
                 log_failure('pool_reset_failed', exc, 'warning')  # the type only, never the message
                 connection.close()  # one that cannot be reset is not given to anybody: the pool replaces it
-            pool.putconn(connection)
+            try:
+                pool.putconn(connection)
+            finally:
+                with self._lock:
+                    self._in_use -= 1  # AFTER the connection is back: between the two a waiter would see a pool that is neither full nor able to give it (`/health/ready` answered 503)
 
     def wait(self, timeout=30.0):
         """Block until the pool holds `min_size` connections (tests and the measurement use it to start warm; the services never wait for it)."""
@@ -226,9 +232,7 @@ def ready_probe(store):
         with pool.connection(wait=READY_WAIT, guard=READY_GUARD) as c:
             c.execute('SELECT version FROM memory.schema_versions LIMIT 1')
     except StoreBusy:
-        if pool.saturated():
-            return 'saturated'
-        raise
+        return 'saturated'  # `StoreBusy` is only raised with every connection in use, decided at the timeout itself: asking again afterwards would race with a connection coming back
     return 'ready'
 
 

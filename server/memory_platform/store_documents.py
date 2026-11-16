@@ -7,6 +7,7 @@ from datetime import datetime
 
 from .errors import Conflict, MemoryError, NotFound
 from .privacy import has_sensitive
+from .auth_scope import savepoint
 from .store_common import TRIGRAM_FALLBACK_MS, TRIGRAM_THRESHOLD, LexicalResults, as_dict, canonical, digest, fts_match, fts_rank, item_columns, lexical_query, clean, trigram_wanted
 
 
@@ -26,7 +27,7 @@ def bounded_fallback(c,fetch):
     from psycopg import errors
     baseline=c.execute("SELECT current_setting('statement_timeout') AS value").fetchone()['value']
     try:
-        with c.transaction():
+        with savepoint(c):
             c.execute("SELECT set_config('statement_timeout',%s,true)",(str(TRIGRAM_FALLBACK_MS),))
             c.execute("SELECT set_config('pg_trgm.word_similarity_threshold',%s,true)",(str(TRIGRAM_THRESHOLD),))
             rows=fetch()

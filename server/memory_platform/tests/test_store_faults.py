@@ -115,10 +115,11 @@ class ApiFaultTests(unittest.TestCase):
                 self.proxy.restore()
                 self.assertTrue(self.recovered(), 'the API did not recover after the database came back')
 
-    def test_a_mute_database_gives_store_busy_within_the_pool_wait_and_the_api_recovers(self):
-        """A database that is mute BEFORE the pool made a connection: its first attempt has neither worked nor failed within the wait (connect plazo 2 s > wait 0.5 s), so it is `store_busy`
-        on every route. One fresh pool per route (a pool that already holds a connection that dies is the next test)."""
-        expected = {'read': (503, 'store_busy'), 'write': (503, 'store_busy'), 'search': (503, 'store_busy'), 'ready': (503, 'not_ready')}
+    def test_a_mute_database_gives_service_unavailable_within_the_pool_wait_and_the_api_recovers(self):
+        """A database that is mute BEFORE the pool made a connection: its first attempt has neither worked nor failed within the wait (connect plazo 2 s > wait 0.5 s). The pool still has free
+        slots, so nobody is using them up: it is `service_unavailable` on every route (T-30: `store_busy` is only for a pool with EVERY connection in use, which no timer decides).
+        One fresh pool per route (a pool that already holds a connection that dies is the next test)."""
+        expected = {'read': (503, 'service_unavailable'), 'write': (503, 'service_unavailable'), 'search': (503, 'service_unavailable'), 'ready': (503, 'not_ready')}
         for route in expected:
             with self.subTest(route=route):
                 self.proxy.mute()

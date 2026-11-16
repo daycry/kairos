@@ -6,6 +6,7 @@ import time
 from .config import EXACT_CANDIDATE_LIMIT, chunk_settings, HNSW_EF_SEARCH, HNSW_MAX_SCAN_TUPLES, exact_fallback_ms, vector_indexes
 from .chunking import embedding_text
 from .errors import MemoryError
+from .auth_scope import savepoint
 from .store_common import canonical
 
 
@@ -110,7 +111,7 @@ def rank_ann(c,projects,model,dims,unit,categories,tags,size,arm=lambda cap=None
         return rows,HNSW_MAX_SCAN_TUPLES,True  # another route of this search spent the whole allowance: say so, do not run it again
     started=time.monotonic()
     try:
-        with c.transaction():  # savepoint: a cancelled fallback is rolled back, the transaction stays usable
+        with savepoint(c):  # savepoint: a cancelled fallback is rolled back, the transaction stays usable
             exact=rank_exact(c,projects,model,dims,unit,categories,tags,size,lambda:arm(budget.left),**({'skip_chunked':True} if skip_chunked else {}))
     except errors.QueryCanceled:
         budget.spend(started)
@@ -218,7 +219,7 @@ def rank_chunks_ann(c,projects,model,dims,unit,categories,tags,size,arm=lambda c
         return index_rows,HNSW_MAX_SCAN_TUPLES,True
     started=time.monotonic()
     try:
-        with c.transaction():
+        with savepoint(c):
             exact,candidates_truncated,exact_saturated=chunk_exact_rows(c,projects,model,dims,unit,categories,tags,size,lambda:arm(budget.left))
     except errors.QueryCanceled:
         budget.spend(started)
