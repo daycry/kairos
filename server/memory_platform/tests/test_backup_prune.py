@@ -166,6 +166,40 @@ class PruneTests(unittest.TestCase):
             self.assertEqual(report['skipped'], [])
             self.assertEqual(names(root), sorted(f'kairos-before-{stamp(d)}.dump' + ext for d in (2, 4) for ext in ('', '.json')))
 
+    def test_a_copy_that_is_really_deleted_between_the_listing_and_the_verification_is_gone_not_skipped(self):
+        """The real race: the file disappears and the REAL `verify_backup` answers `backup_not_found` (not `FileNotFoundError`); that is a copy that is gone, not one that was skipped."""
+        with workspace() as root:
+            for day in (1, 2, 3, 4):
+                copy(root, day)
+            real = backup.verify_backup
+
+            def deleted_then_verified(path, *args, **kwargs):
+                if path.name.endswith(stamp(3) + '.dump'):
+                    path.unlink()
+                    backup.manifest_path(path).unlink()
+                return real(path, *args, **kwargs)
+            with patch.object(backup, 'verify_backup', deleted_then_verified):
+                report = run_prune(root, 2)
+            self.assertEqual(report['skipped'], [], 'a vanished copy is not reported as skipped')
+            self.assertEqual([c['name'] for c in report['kept']], [f'kairos-before-{stamp(4)}.dump', f'kairos-before-{stamp(2)}.dump'])
+            self.assertEqual(report['deleted'], [f'kairos-before-{stamp(1)}.dump'])
+
+    def test_a_copy_that_is_a_link_or_a_directory_at_verification_time_is_still_skipped(self):
+        """Positive control of the check above: `backup_not_found` for something that STILL exists is a skip, only a path that is gone counts as vanished."""
+        with workspace() as root:
+            for day in (1, 2, 3):
+                copy(root, day)
+            real = backup.verify_backup
+
+            def replaced_by_directory(path, *args, **kwargs):
+                if path.name.endswith(stamp(3) + '.dump'):
+                    path.unlink()
+                    path.mkdir()
+                return real(path, *args, **kwargs)
+            with patch.object(backup, 'verify_backup', replaced_by_directory):
+                report = run_prune(root, 2)
+            self.assertEqual(report['skipped'], [{'name': f'kairos-before-{stamp(3)}.dump', 'code': 'backup_not_found'}])
+
     def test_keep_must_be_a_whole_number_of_one_or_more(self):
         with workspace() as root:
             copy(root, 1)
