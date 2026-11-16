@@ -46,7 +46,7 @@ test-plan: n/a (sin UI)
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 9 | 9 | 100% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 5 | 5 | 100% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 9 | 9 | 100% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
-| Fase 7 — Copia externa programada y runbook de restauración (C-01) | 5 | 6 | 83.3% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
+| Fase 7 — Copia externa programada y runbook de restauración (C-01) | 6 | 6 | 100% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 0 | 4 | 0% | 0 / 7.2h | 0 / 1.0h | 0 / 0.2h | 0 / 240 k |
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 0 | 7 | 0% | 0 / 19.8h | 0 / 2.6h | 0 / 0.7h | 0 / 660 k |
 | Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 0 | 7 | 0% | 0 / 34.2h | 0 / 4.6h | 0 / 1.1h | 0 / 1140 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **48** | **98** | **49.0%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **49** | **98** | **50.0%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1365,7 +1365,7 @@ test-plan: n/a (sin UI)
 
 ## Fase 7 — Copia externa programada y runbook de restauración (C-01)
 
-**Estado**: borrador · **Hito**: A · **Estimado**: 28.8h (24.0h base, de ellas 8.0h de revisión adversarial) · **Real**: — · **Coste est.**: 1.440 € · **Tokens est.**: 960 k
+**Estado**: completado · **Hito**: A · **Estimado**: 28.8h (24.0h base, de ellas 8.0h de revisión adversarial) · **Real**: — · **Coste est.**: 1.440 € · **Tokens est.**: 960 k
 
 ### T-44 — `admin backup-cycle` con destinos `dir:` y `rclone:`
 
@@ -1395,10 +1395,7 @@ test-plan: n/a (sin UI)
 - [x] Fijar `rclone` por versión en `operator`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Módulo `offsite.py` (destinos `dir:`/`rclone:`, ciclo, retención, bucle) y gauges de `observability.py` añadidos a Archivos. `rclone` 1.60.1 de Debian fijado por versión (trixie `-4` en operator, bookworm `-2+b5` en test); sin binario externo. Se sube la copia, se lee de vuelta el sha256 y solo entonces su manifiesto; las copias locales recientes que el destino no tiene se reenvían (reintento de T-45, mismo flujo). Mutantes M1,M2,M6,M7,M9,M10,M11 en rojo. Horas: ventana común T-44..T-46 = 1.01h IA (medido), repartida por estimado. Fix1 (revisión F7 int. 1, n.º 1/8/9): solo suben copias con manifiesto `encrypted` y cabecera `age` (el resto: `offsite.skipped_plain` y aviso `backup_offsite_plain_skipped`); `backup-cycle` sin destinatarios → `backup_encryption_required` con cualquier `REQUIRE_ENCRYPTION`; la retención remota conserva lo más nuevo que la protegida; se valida el manifiesto remoto antes de omitir. Mutantes en rojo: sin cifrado (M1), sin cabecera (M2), copia propia en claro (M3), admin sin la puerta (M4), manifiesto remoto sin validar (M7), retención antigua (M8). Horas fix1: 0.24h (medido).
-
-
-RED: `server/memory_platform/tests/test_backup_cycle.py::CommandTests` falló con usage: ... argument command: invalid choice: 'backup-cycle' (los 4 tests de la linea de comandos fallaron antes de cablear admin.py) · 2026-11-16.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-16 — notas de la fase 7», T-44).
 
 ### T-45 — Fallos del destino externo: `backup_offsite_failed`, métrica y reintento
 
@@ -1428,10 +1425,7 @@ RED: `server/memory_platform/tests/test_backup_cycle.py::CommandTests` falló co
 - [x] Comprobar la redacción de credenciales
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: El manejo está en `run_cycle` (commit de T-44: es el mismo flujo); este commit añade las pruebas de fallo. Las series viven en `OFFSITE_REGISTRY`, aparte (memory-api no las expone: un 0 fijo alertaría en falso) y en `kairos-offsite.prom` junto a las copias. Con un fallo no se poda lo local. Rutas y salida de rclone nunca se guardan (stderr a DEVNULL). Mutantes M3,M4,M5,M8,M12 en rojo (y M1,M11 por sha256). Horas: ventana común de T-44. Fix1 (n.º 2/3): todo fallo del ciclo (base, pg_dump, cifrado, verificación local, copia en claro y lo previo a `run_cycle` en admin) escribe `kairos_backup_offsite_success 0`, actualiza `last_run` y reescribe el `.prom`; `run_loop` registra `backup_cycle_failed` (`exc_type`, `code`; nunca el mensaje). Prueba: ciclo correcto y luego 5 etapas fallidas. Mutantes en rojo: sin métrica (M5, 10 pruebas), bucle sin evento (M6), admin sin registro previo (M10). Horas fix1: 0.23h (medido).
-
-
-RED: `server/memory_platform/tests/test_backup_cycle.py::OffsiteFailureTests (mutantes M3,M4,M5,M1,M11,M12)` falló con cada mutante deja la prueba en rojo: poda local con fallo, metrica 1 con fallo, sin log, sin comparar sha256, manifiesto antes de la lectura, salida de rclone en el mensaje · 2026-11-16.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-16 — notas de la fase 7», T-45).
 
 ### T-46 — Servicio Compose `memory-backup` (perfil `backup`) sin clave privada
 
@@ -1461,10 +1455,7 @@ RED: `server/memory_platform/tests/test_backup_cycle.py::OffsiteFailureTests (mu
 - [x] Documentar en `docs/configuration.md`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Deuda de la Fase 6 saldada: `FileNotFoundError` de `verify_backup` en `prune_backups` = copia desaparecida (no cuenta, se verifica la siguiente), con prueba de la carrera. El servicio usa `egress` además de `memory-data` (el remoto lo necesita) y monta solo `/backups`, `/config` (público, ro) y `/offsite`. `isolation_override` incluye el servicio. Mutantes Ma-Mi (perfil, cifrado, clave, intervalo, solo lectura, puerto, secreto, rclone sin fijar, carrera) en rojo. Horas: ventana común de T-44. Runbook y comandos: T-47. Fix1 (n.º 6/12): `configuration.md` documenta propietario y permisos de `rclone.conf` (uid 10001, 0400/0600, nunca 644) y la limitación OAuth con `:ro`. `prune_backups`: `backup_not_found` de una copia que ya no existe cuenta como desaparecida, no `skipped` (la prueba borra el fichero de verdad; control positivo: un directorio sigue en `skipped`). Mutante M9 en rojo. Horas fix1: 0.23h (medido).
-
-
-RED: `test_backup_service.py y test_backup_prune.py::test_a_copy_that_another_prune_deletes (mutantes Ma-Mi)` falló con FileNotFoundError sin tratar en prune_backups y 9 mutantes del Compose y del Dockerfile (perfil, puerto, clave privada, secreto extra, cifrado, solo lectura, intervalo, rclone sin fijar) en rojo · 2026-11-16.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-16 — notas de la fase 7», T-46).
 
 ### T-47 — Runbook de restauración desde la copia externa y ensayo automatizado
 
@@ -1498,10 +1489,7 @@ RED: `test_backup_service.py y test_backup_prune.py::test_a_copy_that_another_pr
 - [x] Retirar el proyecto aislado y comprobar que nada de `knowledge-graphs-*` cambió
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Ensayo real 2026-11-16 (`kairos-ops-b`, 28792/25175, `--embed-stub --roundtrip`): `restored_and_content_verified`, 26 tablas, copia cifrada de 73 391 B, sha256 b912ffa9…; el servicio `memory-backup` real hizo el ciclo; clave `age` generada y destruida en contenedores sin red que no son servicios; `knowledge-graphs-*` idéntico. 10 mutantes del guion en rojo. Horas: 0.06h solo del ensayo; guion y runbook, en la ventana común de T-44. Fix1 (n.º 5/7/11): restaura en un PostgreSQL efímero NUEVO (imagen del proyecto; contenedor, red interna y volumen propios); la clave nace en contenedor con umask 077 y se destruye con `shred` en contenedor (sin chmod del anfitrión; SIGTERM/SIGHUP; se comprueban clave y directorio); la limpieza sigue ante un fallo, conserva el original y filtra por `^nombre$` más igualdad. 11 mutantes en rojo (R5 por caída del proceso). Ensayo repetido: ver Verificación. Horas fix1: 0.23h (medido).
-
-
-RED: `scripts/tests/test_rehearse_restore.py::RunbookTests` falló con IndexError: la seccion '## Restaurar desde la copia externa' no existia en docs/operations.md; 10 mutantes del guion (clave montada, sha256 sin comparar, red en la herramienta, clave sin destruir, limpieza omitida) en rojo · 2026-11-16.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-16 — notas de la fase 7», T-47).
 
 ### T-48 — Cierre de fase: suite completa y subida del mínimo
 
@@ -1533,13 +1521,13 @@ RED: `scripts/tests/test_rehearse_restore.py::RunbookTests` falló con IndexErro
 - [x] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: 1.ª y 2.ª ejecución: pruebas de rclone en rojo solo en la compilación: el `ARG RCLONE_VERSION` del Dockerfile es una variable de entorno de los RUN y rclone lee `RCLONE_*` como opciones (`--version`, exit 1). Renombrado a `DEBIAN_RCLONE_VERSION` con prueba que prohíbe `ARG/ENV RCLONE_*`; los controles positivos detectan un rclone roto (antes las pruebas de fallo pasaban en vacío). Recuento 1184 (+30: ciclo 23, servicio 6, carrera 1); `KAIROS_MIN_TESTS`, `MIN_FLOOR`, `operations.md` y `README.md` suben a 1184. Fix1: 1184 → 1195 (+11: 9 del ciclo y del comando, 2 de la carrera de `prune`); `KAIROS_MIN_TESTS`, `MIN_FLOOR`, `operations.md` y `README.md` a 1195. Horas fix1: 0.23h (medido).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-16 — notas de la fase 7», T-48).
 
 ### T-49 — Revisión adversarial de la fase (dos lentes)
 
 - **Descripción**: Revisión adversarial del diff de la fase con dos lentes: A (contrato, seguridad, regresiones, alcance declarado) y B (mutantes: cada control nuevo se quita y su prueba debe fallar). Cuidado: copias externas (sha256 antes de borrar nada), ausencia de credenciales y de clave privada montada. Cada hallazgo se corrige para la clase entera y se anota con intento y evidencia en `review.md`; cada intento abre y cierra `usage-meter`. Fuente: Lección de la retro de la Iniciativa 2: la revisión es partida propia (0,5 × la implementación; 1,0 × en C-03 y C-05).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: revisión adversarial de la fase 7; al destino externo solo salen copias cifradas y la métrica de la copia externa baja a 0 ante cualquier fallo del ciclo.
+- **Estado**: completado
 - **Tiempo humano**: est. 8h (base) · real —
 - **Tiempo IA (ejec.)**: est. 1.07h (estimado) · real —
 - **Supervisión**: est. 0.27h (≈25 % IA) · real —
@@ -1554,20 +1542,18 @@ RED: `scripts/tests/test_rehearse_restore.py::RunbookTests` falló con IndexErro
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
 
 **Criterios de aceptación**
-- [ ] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
-- [ ] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
-- [ ] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
-- [ ] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
+- [x] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
+- [x] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
+- [x] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
+- [x] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
 
 **Subtareas**
-- [ ] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
-- [ ] Lente B: mutantes en memoria sobre cada control nuevo
-- [ ] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
-- [ ] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
+- [x] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
+- [x] Lente B: mutantes en memoria sobre cada control nuevo
+- [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
+- [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas**: Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
-
----
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-16 — notas de la fase 7», T-49).
 
 ## Fase 8 — Cierre del hito A: no perder datos ni parar
 
@@ -1584,7 +1570,7 @@ RED: `scripts/tests/test_rehearse_restore.py::RunbookTests` falló con IndexErro
 - **Previsión IA**: 92 k in / 8 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
 - **Tipo**: devops
-- **Archivos**: `scripts/rehearse-reliable-operations.py`, `scripts/tests/test_rehearse_reliable_operations.py`
+- **Archivos**: `scripts/rehearse-reliable-operations.py`, `scripts/tests/test_rehearse_reliable_operations.py`, `server/memory_platform/admin.py`, `server/memory_platform/offsite.py`, `server/memory_platform/backup.py`, `server/memory_platform/tests/test_backup_cycle.py`, `server/memory_platform/tests/test_backup_prune.py`, `docs/operations.md` (deuda de la revisión de la Fase 7)
 - **Cubre (tests)**: —
 - **Verificación**:
   - `python -m unittest discover -s scripts/tests -p test_rehearse_reliable_operations.py` → `OK`
@@ -1601,7 +1587,7 @@ RED: `scripts/tests/test_rehearse_restore.py::RunbookTests` falló con IndexErro
 - [ ] Retirar el proyecto aislado
 - [ ] `usage-meter start/close` de la tarea
 
-**Notas**: Deuda Minor de la revisión de la Fase 6 (intento 3, n.º 3): medir en el ensayo la duración de las huellas de `backup` y `restore-check` con un volumen realista de `memory.embeddings`; si se acerca a `--backup-timeout`, calcular la huella por fila en el servidor (sha256 de `to_jsonb(t)::text`). Patrón: `scripts/tests/test_rehearsal_three_components.py` (ensayo de la Iniciativa 2) y `scripts/deploy-memory.py` (`--project-name`, `--embed-stub`, `--roundtrip`). R-10: ensayos agrupados.
+**Notas**: Deuda Minor de la revisión de la Fase 7 (intento 2, n.º 1-5): (1) un fallo de la validación de arranque de `backup-cycle` debe escribir `kairos_backup_offsite_success 0` en el `.prom` (`admin.py:367-382`), con prueba de la métrica; (2) un fallo de la retención local en `--loop` debe registrar `backup_cycle_failed` (`offsite.py:379-400`); (3) en `prune_backups`, tratar cualquier código de `verify_backup` como copia desaparecida si la copia ya no existe (`backup.py:449-455`); (4) comprobar cabecera y sha256 y subir desde un mismo descriptor abierto con `O_NOFOLLOW` (CWE-367, `offsite.py:224-272`); (5) corregir «sin red» en la introducción del runbook de `operations.md` (el paso 6 usa una red interna). Estos ficheros se añaden a `Archivos` por esta deuda. Deuda Minor de la revisión de la Fase 6 (intento 3, n.º 3): medir en el ensayo la duración de las huellas de `backup` y `restore-check` con un volumen realista de `memory.embeddings`; si se acerca a `--backup-timeout`, calcular la huella por fila en el servidor (sha256 de `to_jsonb(t)::text`). Patrón: `scripts/tests/test_rehearsal_three_components.py` (ensayo de la Iniciativa 2) y `scripts/deploy-memory.py` (`--project-name`, `--embed-stub`, `--roundtrip`). R-10: ensayos agrupados.
 
 ### T-51 — Comprobaciones de cierre del hito A
 
@@ -3104,3 +3090,15 @@ Lentes: A+B+C (C por `ci.yml`, `docker-compose.yml`, `Dockerfile`, credenciales 
 | 11 | Minor | Una excepción en `cleanup()` del ensayo aborta el resto de la limpieza y pierde el fallo original; el filtro `name=<proyecto>` casa por subcadena | T-47 | corregido (fix1, 7944f49) | Lente B n.º 5; `rehearse-restore.py:66-67,205-218,243` |
 | 12 | Minor | En la carrera real de dos `--prune` la copia borrada sale como `backup_not_found` en `skipped` y no como desaparecida; la prueba inyecta un `FileNotFoundError` sintético | T-46 | corregido (fix1, a9ce06a) | Lente B n.º 6; `backup.py:450-451` |
 | 13 | Minor | T-48.3 marcado sin el JSON de usage-meter en Notas | T-48 | deuda aceptada (mismo patrón aceptado en T-42; las horas medidas están) | Lente A n.º 4 |
+
+## Revisión de dos lentes — intento 2: Fase 7 tras fix1 (T-44, T-45, T-46, T-47, T-48)
+
+Lentes: A+B+C+D (A, B y C re-evalúan lo corregido; D aplica por primera vez: `sleep` acotado en `rehearse-restore.py:196`). Diff `1762a96..15b9a03`. Veredicto: n.º 1-9, 11 y 12 del intento 1 cerrados en las cuatro lentes; n.º 10 y 13 sin reabrir. Lente A: todos los criterios de T-44 a T-48 ✓ salvo T-48.3 (deuda aceptada, n.º 13), mínimos 1195 alineados en los cuatro sitios, Coordinación con los ítems (14) y (15). Lente D: sin hallazgos. Sin Critical ni Important: **fase cerrada en el intento 2 de 3**. Suite 1195, 0 fallos. El filtro `name=^x$` de `docker volume ls` y `docker network ls` respeta las anclas (comprobado por el orquestador con `bridge` y un volumen existente), así que `remaining()` del ensayo sí detecta restos.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Minor | Un fallo de la validación de arranque de `backup-cycle` (sin destinatarios, fichero ilegible, destino mal escrito) sale sin `record_failure`: con `restart: unless-stopped` el `.prom` se queda en 1 indefinidamente, contra `operations.md:198` | T-45 | deuda → T-50 | Lente B n.º 1; `admin.py:367-382` |
+| 2 | Minor | Un ciclo que falla en la retención local (`backup_prune_failed`) no deja `backup_cycle_failed` ni `log_event` en `--loop` | T-44, T-45 | deuda → T-50 | Lente B n.º 2, Lente A (fuera de lente); `offsite.py:379-384,398-400` |
+| 3 | Minor | Resto de la carrera del n.º 12: si el otro `--prune` borra copia y manifiesto antes de `read_manifest`, `backup_manifest_missing` sale como `skipped` y no como desaparecida (solo afecta al informe) | T-46 | deuda → T-50 | Lente B n.º 3; `backup.py:449-455,531-533` |
+| 4 | Minor | Ventana entre comprobar y subir: cabecera y sha256 se comprueban por ruta y `put` reabre la ruta siguiendo enlaces; un escritor con privilegios en `memory-backups` podría cambiar la copia por un enlace a un volcado en claro (la verificación posterior no sube el manifiesto, pero el fichero queda en el destino) | T-44 | deuda → T-50 (comprobar y subir desde un mismo descriptor con `O_NOFOLLOW`) | Lente C n.º 1 (CWE-367); `offsite.py:224-227,264-272` |
+| 5 | Minor | La introducción del runbook dice «sin red» para los pasos que ven el volcado en claro; el paso 6 usa una red interna | T-47 | deuda → T-50 | Lente A (fuera de lente); `operations.md` |

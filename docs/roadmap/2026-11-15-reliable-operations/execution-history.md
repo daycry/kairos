@@ -541,3 +541,57 @@ SHA-256: `f2147889cef2dc6c95f9a43c36c14c26d5cf6f69271b5a51f0732e5d3494be94`.
 **Notas**: Cerrada en el intento 3 de 3 (intento 1: A+B+C+D; intento 2: A+B+C+D; intento 3: A+B+D; resumen en `review.md`). `scope-check.py --base 99079d8` exit 0; suite 1154 en verde (`MEMORY_TEST_RESULT` en T-42); ensayo T-40 repetido tras los fixes. Minor de cierre: n.º 1 corregido; n.º 2 → T-46; n.º 3 → T-50. Los revisores no tienen medición propia. Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
 
 ---
+
+## Compactación 2026-11-16 — notas de la fase 7
+
+Notas y cierres completos de las tareas cerradas T-44 a T-49, movidos tal cual desde `tasks.md` para mantener el ledger por debajo del límite de lectura de los writers. Criterios, campos y estados siguen en `tasks.md`.
+
+### T-44
+
+SHA-256: `6679c9e1b027aecf8e13d7cdb3a5053791fec7f593451442dd4061dcb0b52121`.
+
+**Notas**: Módulo `offsite.py` (destinos `dir:`/`rclone:`, ciclo, retención, bucle) y gauges de `observability.py` añadidos a Archivos. `rclone` 1.60.1 de Debian fijado por versión (trixie `-4` en operator, bookworm `-2+b5` en test); sin binario externo. Se sube la copia, se lee de vuelta el sha256 y solo entonces su manifiesto; las copias locales recientes que el destino no tiene se reenvían (reintento de T-45, mismo flujo). Mutantes M1,M2,M6,M7,M9,M10,M11 en rojo. Horas: ventana común T-44..T-46 = 1.01h IA (medido), repartida por estimado. Fix1 (revisión F7 int. 1, n.º 1/8/9): solo suben copias con manifiesto `encrypted` y cabecera `age` (el resto: `offsite.skipped_plain` y aviso `backup_offsite_plain_skipped`); `backup-cycle` sin destinatarios → `backup_encryption_required` con cualquier `REQUIRE_ENCRYPTION`; la retención remota conserva lo más nuevo que la protegida; se valida el manifiesto remoto antes de omitir. Mutantes en rojo: sin cifrado (M1), sin cabecera (M2), copia propia en claro (M3), admin sin la puerta (M4), manifiesto remoto sin validar (M7), retención antigua (M8). Horas fix1: 0.24h (medido).
+
+
+RED: `server/memory_platform/tests/test_backup_cycle.py::CommandTests` falló con usage: ... argument command: invalid choice: 'backup-cycle' (los 4 tests de la linea de comandos fallaron antes de cablear admin.py) · 2026-11-16.
+
+### T-45
+
+SHA-256: `6128700baf477de0add27c341049503d7696d40aef0d1fe9eea44eb16313ae92`.
+
+**Notas**: El manejo está en `run_cycle` (commit de T-44: es el mismo flujo); este commit añade las pruebas de fallo. Las series viven en `OFFSITE_REGISTRY`, aparte (memory-api no las expone: un 0 fijo alertaría en falso) y en `kairos-offsite.prom` junto a las copias. Con un fallo no se poda lo local. Rutas y salida de rclone nunca se guardan (stderr a DEVNULL). Mutantes M3,M4,M5,M8,M12 en rojo (y M1,M11 por sha256). Horas: ventana común de T-44. Fix1 (n.º 2/3): todo fallo del ciclo (base, pg_dump, cifrado, verificación local, copia en claro y lo previo a `run_cycle` en admin) escribe `kairos_backup_offsite_success 0`, actualiza `last_run` y reescribe el `.prom`; `run_loop` registra `backup_cycle_failed` (`exc_type`, `code`; nunca el mensaje). Prueba: ciclo correcto y luego 5 etapas fallidas. Mutantes en rojo: sin métrica (M5, 10 pruebas), bucle sin evento (M6), admin sin registro previo (M10). Horas fix1: 0.23h (medido).
+
+
+RED: `server/memory_platform/tests/test_backup_cycle.py::OffsiteFailureTests (mutantes M3,M4,M5,M1,M11,M12)` falló con cada mutante deja la prueba en rojo: poda local con fallo, metrica 1 con fallo, sin log, sin comparar sha256, manifiesto antes de la lectura, salida de rclone en el mensaje · 2026-11-16.
+
+### T-46
+
+SHA-256: `c452a27cc639766518f8f86cc534367822c4dd4357fa316b59825bf8a7fc41ed`.
+
+**Notas**: Deuda de la Fase 6 saldada: `FileNotFoundError` de `verify_backup` en `prune_backups` = copia desaparecida (no cuenta, se verifica la siguiente), con prueba de la carrera. El servicio usa `egress` además de `memory-data` (el remoto lo necesita) y monta solo `/backups`, `/config` (público, ro) y `/offsite`. `isolation_override` incluye el servicio. Mutantes Ma-Mi (perfil, cifrado, clave, intervalo, solo lectura, puerto, secreto, rclone sin fijar, carrera) en rojo. Horas: ventana común de T-44. Runbook y comandos: T-47. Fix1 (n.º 6/12): `configuration.md` documenta propietario y permisos de `rclone.conf` (uid 10001, 0400/0600, nunca 644) y la limitación OAuth con `:ro`. `prune_backups`: `backup_not_found` de una copia que ya no existe cuenta como desaparecida, no `skipped` (la prueba borra el fichero de verdad; control positivo: un directorio sigue en `skipped`). Mutante M9 en rojo. Horas fix1: 0.23h (medido).
+
+
+RED: `test_backup_service.py y test_backup_prune.py::test_a_copy_that_another_prune_deletes (mutantes Ma-Mi)` falló con FileNotFoundError sin tratar en prune_backups y 9 mutantes del Compose y del Dockerfile (perfil, puerto, clave privada, secreto extra, cifrado, solo lectura, intervalo, rclone sin fijar) en rojo · 2026-11-16.
+
+### T-47
+
+SHA-256: `0c4fd6d973849c1c10289924700bbab01a4941d9ab6d1b11beadd680816353d1`.
+
+**Notas**: Ensayo real 2026-11-16 (`kairos-ops-b`, 28792/25175, `--embed-stub --roundtrip`): `restored_and_content_verified`, 26 tablas, copia cifrada de 73 391 B, sha256 b912ffa9…; el servicio `memory-backup` real hizo el ciclo; clave `age` generada y destruida en contenedores sin red que no son servicios; `knowledge-graphs-*` idéntico. 10 mutantes del guion en rojo. Horas: 0.06h solo del ensayo; guion y runbook, en la ventana común de T-44. Fix1 (n.º 5/7/11): restaura en un PostgreSQL efímero NUEVO (imagen del proyecto; contenedor, red interna y volumen propios); la clave nace en contenedor con umask 077 y se destruye con `shred` en contenedor (sin chmod del anfitrión; SIGTERM/SIGHUP; se comprueban clave y directorio); la limpieza sigue ante un fallo, conserva el original y filtra por `^nombre$` más igualdad. 11 mutantes en rojo (R5 por caída del proceso). Ensayo repetido: ver Verificación. Horas fix1: 0.23h (medido).
+
+
+RED: `scripts/tests/test_rehearse_restore.py::RunbookTests` falló con IndexError: la seccion '## Restaurar desde la copia externa' no existia en docs/operations.md; 10 mutantes del guion (clave montada, sha256 sin comparar, red en la herramienta, clave sin destruir, limpieza omitida) en rojo · 2026-11-16.
+
+### T-48
+
+SHA-256: `0a946440dda54be330994ee2b7c8c5d27380c585bce2c68a16a1efa410c88e36`.
+
+**Notas**: 1.ª y 2.ª ejecución: pruebas de rclone en rojo solo en la compilación: el `ARG RCLONE_VERSION` del Dockerfile es una variable de entorno de los RUN y rclone lee `RCLONE_*` como opciones (`--version`, exit 1). Renombrado a `DEBIAN_RCLONE_VERSION` con prueba que prohíbe `ARG/ENV RCLONE_*`; los controles positivos detectan un rclone roto (antes las pruebas de fallo pasaban en vacío). Recuento 1184 (+30: ciclo 23, servicio 6, carrera 1); `KAIROS_MIN_TESTS`, `MIN_FLOOR`, `operations.md` y `README.md` suben a 1184. Fix1: 1184 → 1195 (+11: 9 del ciclo y del comando, 2 de la carrera de `prune`); `KAIROS_MIN_TESTS`, `MIN_FLOOR`, `operations.md` y `README.md` a 1195. Horas fix1: 0.23h (medido).
+
+### T-49
+
+SHA-256: `7d642175cf65c49b00b0253095bdfd639ef6468ba030228bedc04c5e15ba66a1`.
+
+**Notas**: Cerrada en el intento 2 de 3 (intento 1: A+B+C; intento 2: A+B+C+D; resumen en `review.md`). `scope-check.py --base eaff0d1` exit 0; suite 1195 en verde (`MEMORY_TEST_RESULT` en T-48); ensayo T-47 repetido tras fix1 (`kairos-ops-b`, `restored_and_content_verified`, servidor efímero). Mutantes en rojo en las Notas de T-44 a T-47. Minor de cierre n.º 1-5 → T-50. Los revisores no tienen medición propia. Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+
+---

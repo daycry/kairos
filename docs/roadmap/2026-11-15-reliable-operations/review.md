@@ -101,3 +101,18 @@ Cada fase cierra con su revisión adversarial. El detalle de cada intento está 
 | 2 | Minor | Changelog, recuento pegado, `ci.yml`, `stat()` en `prune`, fallo de `age` frente a EPIPE, nombre ≤ 63 | Corregidos en fix2 |
 | 3 | Minor | Changelog de T-36 incompleto | Corregido en el cierre |
 | 3 | Minor | Resto de la carrera de dos `--prune`; coste por fila de las huellas en Python | Deuda → T-46 y T-50 |
+
+## Fase 7 — Copia externa programada y runbook de restauración (T-44 a T-49)
+
+- **Fecha**: 2026-11-16
+- **Lentes**: intento 1, A, B y C (C por `ci.yml`, `docker-compose.yml`, `Dockerfile`, credenciales de `rclone` y clave del ensayo); intento 2, A, B, C y D (D por un `sleep` acotado del ensayo).
+- **Veredicto**: cerrada en el intento 2 de 3, sin hallazgos Critical ni Important abiertos.
+- **Evidencia**: suite del servidor 1195 tests, 0 fallos, errores y omitidos; `KAIROS_MIN_TESTS` y `MIN_FLOOR` 1195; `scope-check.py --base eaff0d1` exit 0; contrato MCP sin cambios; ensayo aislado `kairos-ops-b` repetido tras fix1 (`restored_and_content_verified` en un PostgreSQL efímero nuevo, `knowledge-graphs-*` idéntico, `kairos-ops` sin restos); mutantes en rojo en las Notas.
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Critical (seguridad, CWE-311) | `upload` subía al destino externo copias en claro, como la `kairos-before-*` de cada despliegue | Corregido: solo salen copias con manifiesto `encrypted` y cabecera age; `backup-cycle` no arranca con destino y sin destinatarios (`backup_encryption_required`) |
+| 1 | Important | La métrica de la copia externa seguía en 1 si el ciclo fallaba antes de la etapa externa | Corregido: cualquier fallo del ciclo escribe 0 y `backup_cycle_failed` |
+| 1 | Minor | Coordinación, ensayo en el mismo clúster, permisos de `rclone.conf`, limpieza de la clave, retención remota, manifiesto remoto truncado, `cleanup()`, carrera de `--prune` | Corregidos en fix1 |
+| 1 | Minor | Red `egress` con destino `dir:`; JSON de usage-meter en T-48 | Deuda → Fase 9; deuda aceptada |
+| 2 | Minor | Métrica en la validación de arranque, evento en la retención local, resto de la carrera de `--prune`, ventana comprobar-subir (CWE-367), «sin red» en el runbook | Deuda → T-50 |
