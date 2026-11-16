@@ -45,6 +45,17 @@ class StoreUnavailable(Exception):
         self.cause_type = cause_type
 
 
+class StoreBusy(StoreUnavailable):
+    """The pool of connections could not give one within `MEMORY_POOL_TIMEOUT` (all of them in use, or the database is not answering to the new ones).
+
+    It IS a `StoreUnavailable`, so the worker waits and tries again without spending the attempt of a job; the API answers it as 503 `store_busy`.
+    Fixed message, no driver text (the DSN is never in it)."""
+
+    def __init__(self, cause_type='PoolTimeout'):
+        super().__init__(cause_type)
+        self.args = ('Database busy',)
+
+
 # SQLSTATEs that mean "the server is going away" and nothing else: class 08 (connection exception) and the three shutdown states of class 57.
 # Every other OperationalError that carries a SQLSTATE is a problem of ONE statement (57014 query_canceled, 55P03 lock_not_available, 54xxx limits,
 # 40001/40P01 serialization and deadlock, 53xxx resources): the database answered, so it is not an outage and must keep its own path.

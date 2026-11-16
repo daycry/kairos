@@ -1,6 +1,8 @@
 """Private memory HTTP boundary. App construction never migrates or contacts providers."""
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager
 import time
 import uuid
 from fastapi import FastAPI, Request, Depends, Query
@@ -13,6 +15,7 @@ from .auth import Auth
 from .config import Settings
 from .errors import MemoryError, Unauthorized, Forbidden
 from .store import Store
+from .store_pool import attach_pool, close_pool
 
 COOKIE = 'memory_session'
 # Headers a reverse proxy adds: a request that carries any of them did not come from inside the internal network.
@@ -76,14 +79,27 @@ def mount_label(request):
 def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity_duration=25.0, activity_poll_interval=2.0):
     settings = settings or Settings.from_env()
     schemas.load_all()  # fail here, not on the first observation, when a schema file is missing or broken
+    owned_pool = store is None  # the pool of a store the app built is the app's to close; a store handed in (tests) keeps whatever it has
     if store is None:
         store = Store(settings.dsn, settings.project_maps, embedding_enabled=getattr(settings, 'embed_enabled', True))
         store.extraction_enabled = getattr(settings, 'extract_enabled', False)
+        attach_pool(store, settings, 'api')
     auth = auth or Auth(store, settings.allowed_origins, settings.session_ttl)
     if retrieval is None:
         from .retrieval import Retrieval
         retrieval = Retrieval(store, settings)
     app = FastAPI(title='Kairos', docs_url=None, redoc_url=None)
+    if owned_pool:
+        previous_lifespan = app.router.lifespan_context
+
+        @asynccontextmanager
+        async def lifespan(application):
+            try:
+                async with previous_lifespan(application):
+                    yield
+            finally:
+                await asyncio.to_thread(close_pool, store)  # connections are closed on shutdown, also when the app failed to start
+        app.router.lifespan_context = lifespan
     app.state.store, app.state.auth, app.state.retrieval = store, auth, retrieval
     app.state.settings = settings
     app.add_middleware(BodyLimit, maximum=settings.max_body_bytes)

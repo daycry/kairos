@@ -10,6 +10,7 @@ import uuid
 from . import observability
 from .config import DEFAULT_BACKOFF_MAX, Settings, embedding_job_timeout
 from .store import Store
+from .store_pool import attach_pool, close_pool
 from .store_jobs import job_outcome, stored_item_vector
 from .providers import Ollama, Embeddings, ProviderError
 from .errors import MemoryError, StoreUnavailable, is_store_error, is_store_transient, is_store_unavailable
@@ -369,6 +370,7 @@ async def serve():
     settings = Settings.from_env()
     store = Store(settings.dsn, settings.project_maps, embedding_enabled=getattr(settings, 'embed_enabled', True))
     store.extraction_enabled = getattr(settings, 'extract_enabled', False)
+    attach_pool(store, settings, 'worker')
     worker = Worker(store, settings)
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -376,7 +378,10 @@ async def serve():
             loop.add_signal_handler(sig, worker.stopping.set)
         except NotImplementedError:
             pass
-    await worker.run()
+    try:
+        await worker.run()
+    finally:
+        await asyncio.to_thread(close_pool, store)  # the connections are closed on SIGTERM too: the process leaves no session behind in PostgreSQL
 
 
 if __name__ == '__main__':

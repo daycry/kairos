@@ -43,7 +43,7 @@ test-plan: n/a (sin UI)
 | Fase 1 — Arnés de fallos y tests de límites (C-07) | 6 | 6 | 100% | 0 / 32.4h | 0.83 / 4.3h | 0 / 1.1h | 0 / 1080 k |
 | Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 7 | 7 | 100% | 0 / 27.0h | 2.10 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 7 | 7 | 100% | 0 / 27.0h | 0.99 / 3.6h | 0 / 0.9h | 0 / 900 k |
-| Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 1 | 9 | 11.1% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
+| Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 2 | 9 | 22.2% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 0 | 5 | 0% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 0 | 9 | 0% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 0 | 6 | 0% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **21** | **98** | **21.4%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **22** | **98** | **22.4%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -709,32 +709,36 @@ test-plan: n/a (sin UI)
 ### T-22 — `psycopg_pool` en `Store.transaction()` con `MEMORY_POOL_*`
 
 - **Descripción**: Tomar las conexiones de `Store.transaction()` de un `psycopg_pool.ConnectionPool` (versión fijada) con `MEMORY_POOL_MIN`/`MAX`/`TIMEOUT` (1 / 10 / 5 s a medir); los comandos de `admin` siguen con conexión directa y `store_surface.json` no cambia. Fuente: CA-15; B-02.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Las transacciones de la API y del worker reutilizan conexiones de un pool (MEMORY_POOL_MIN/MAX/TIMEOUT, 1/10/5 s): una búsqueda con el pool caliente ya no abre conexiones nuevas.
+- **Estado**: completado
+- **Cerrada**: 2026-11-16
 - **Tiempo humano**: est. 6h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.80h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.80h (estimado) · real 0.40h (medido)
 - **Supervisión**: est. 0.20h (≈25 % IA) · real —
 - **Previsión IA**: 221 k in / 19 k out tok · ⚠️ verificar €
 - **Dependencias**: T-21
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/store.py`, `server/memory_platform/config.py`, `server/memory_platform/app.py`, `server/memory_platform/worker.py`, `server/memory_platform/requirements.txt`, `server/memory_platform/tests/test_store_pool.py`
+- **Archivos**: `server/memory_platform/store.py`, `server/memory_platform/config.py`, `server/memory_platform/app.py`, `server/memory_platform/worker.py`, `server/memory_platform/requirements.txt`, `server/memory_platform/tests/test_store_pool.py`, `server/memory_platform/store_pool.py`, `server/memory_platform/errors.py`
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_store_pool|test_store_surface|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] `Store.transaction()` toma conexiones del pool (`psycopg_pool` fijado por versión en `requirements.txt`); tras calentar, una búsqueda híbrida no abre conexiones nuevas (el conjunto de `pg_backend_pid()` es estable)
-- [ ] `store_surface.json` no cambia y `test_store_surface` pasa
-- [ ] El pool se cierra al apagar la API y el worker; `admin` usa conexión directa
-- [ ] El tamaño máximo del pool se razona frente a los hilos de `asyncio.to_thread` y queda en `Notas`
+- [x] `Store.transaction()` toma conexiones del pool (`psycopg_pool` fijado por versión en `requirements.txt`); tras calentar, una búsqueda híbrida no abre conexiones nuevas (el conjunto de `pg_backend_pid()` es estable)
+- [x] `store_surface.json` no cambia y `test_store_surface` pasa
+- [x] El pool se cierra al apagar la API y el worker; `admin` usa conexión directa
+- [x] El tamaño máximo del pool se razona frente a los hilos de `asyncio.to_thread` y queda en `Notas`
 
 **Subtareas**
-- [ ] Escribir primero la prueba del conjunto de `pg_backend_pid()` (rojo)
-- [ ] Fijar `psycopg_pool` compatible con `psycopg 3.3.7` en `requirements.txt`
-- [ ] Integrar el pool en `Store.transaction()` y su ciclo de vida
-- [ ] Mantener `admin` con conexión directa
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero la prueba del conjunto de `pg_backend_pid()` (rojo)
+- [x] Fijar `psycopg_pool` compatible con `psycopg 3.3.7` en `requirements.txt`
+- [x] Integrar el pool en `Store.transaction()` y su ciclo de vida
+- [x] Mantener `admin` con conexión directa
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `store.py:24-30` (único `psycopg.connect`), `requirements.txt:5` (`psycopg 3.3.7`), `tests/test_store_surface.py` + `store_surface.json` (congelado). Hipótesis de la spec: `psycopg_pool` es compatible con `to_thread`; si no, detenerse y pedir decisión.
+**Notas**: (Archivos ampliados: `store_pool.py` es el módulo nuevo del pool y `errors.py` recibe `StoreBusy`.) Patrón: `store.py:24-30` (único `psycopg.connect`), `requirements.txt:5` (`psycopg 3.3.7`), `tests/test_store_surface.py` + `store_surface.json` (congelado). Hipótesis de la spec: `psycopg_pool` es compatible con `to_thread`; si no, detenerse y pedir decisión. Diseño: `store_pool.py` (psycopg-pool 3.3.3 fijado; está en la imagen: `pip list` del build) y `store.pool` como atributo de instancia (la superficie de `Store` está congelada: `test_store_surface` pasa sin cambios); `Store.transaction()` usa el pool si lo hay y conexión directa si no (admin, tests). `admin` nunca importa el pool (prueba). Pool abierto perezosamente y sin esperar (una base caída no impide arrancar); cierre en el lifespan de la API (también con el MCP montado) y en `serve()` del worker (`finally`, también con SIGTERM). `check_connection` al entregar (la rota se descarta); reset de sesión (`RESET ALL`) SÍNCRONO antes de devolverla, no con `reset=` del pool: ese corre en un hilo DESPUÉS de devolverla y la petición siguiente no la encontraba y el pool abría otra (medido: 1 fallo del test de 'cero conexiones' y pool_available=0 tras devolver). Pool agotado: `StoreBusy` (subclase de `StoreUnavailable`; el 503 es T-24); si el pool no pudo conectar desde la última conexión entregada, `StoreUnavailable` (base caída, no ocupada). Un reset que falla cierra la conexión y se registra `pool_reset_failed` (solo tipo; el test estático de excepciones lo exigió). TAMAÑO MÁXIMO (10): una petición mantiene una conexión solo dentro de `transaction()`, nunca durante una llamada al proveedor; hilos que pueden pedirla a la vez: executor por defecto de `asyncio.to_thread` min(32, cpus+4), threadpool de anyio de FastAPI 40, `_VECTOR_EXECUTOR` 2 (+2 slots); una búsqueda híbrida usa hasta 3 transacciones en paralelo (capas) tras las secuenciales de `_scope`. 10 cubre ~3 búsquedas simultáneas; lo que excede espera ≤ MEMORY_POOL_TIMEOUT y recibe 503 `store_busy` (contrapresión en vez de abrir 70 conexiones); PostgreSQL por defecto max_connections=100: API 10 + worker 10 (usa ≤ 3) deja margen a admin/backup. Transacciones anidadas (interbloqueo del pool): análisis AST de todo el paquete: ningún `with transaction()` llama a otro método del store que abra la suya (solo coincidencias de nombre en `trigram_*`, que reciben `c`); si ocurriera, la espera queda acotada por MEMORY_POOL_TIMEOUT. Deuda (c) de T-25 cerrada aquí: `MEMORY_WORKER_WRITE_RETRY_SECONDS` hereda `MEMORY_LEASE_SECONDS` y ahora el defecto se valida contra 1..86400 (error con mensaje propio). Mutantes (en una copia, rojo comprobado): sin reset → `test_session_settings_never_leak…`; `transaction` ignora el pool → 5 rojas (cálida, excepciones, cierre, sesión, máximo); sin `putconn` → 7 rojas; sin cierre en el lifespan → 2 rojas (con y sin MCP); sin cierre en el worker → rojo; admin con pool → rojo; reset fallido sin cerrar → rojo. Suite completa: 942 tests, 0 fallos/errores/omitidos (925 + 17). Usage-meter T-22: 0.40h (medido).
+
+
+RED: `tests/test_store_pool.py` falló con ImportError: cannot import name DEFAULT_POOL_MAX from memory_platform.config (la prueba contra el codigo de HEAD, sin pool) · 2026-11-16.
 
 ### T-23 — `connect_timeout` y `statement_timeout` como opciones de conexión de servicio
 

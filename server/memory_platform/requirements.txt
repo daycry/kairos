@@ -3,6 +3,7 @@ pydantic==2.12.4
 uvicorn[standard]==0.46.0
 httpx==0.28.1
 psycopg[binary]==3.3.7
+psycopg-pool==3.3.3
 mcp==1.27.1
 jsonschema==4.26.0
 attrs==26.1.0

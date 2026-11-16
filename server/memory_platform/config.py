@@ -138,6 +138,9 @@ def worker_write_retry_seconds(environ=None, lease_seconds=240):
     environ = os.environ if environ is None else environ
     raw = environ.get('MEMORY_WORKER_WRITE_RETRY_SECONDS', '').strip()
     if not raw:
+        # The default inherits the lease, so it has to fit the same range as an explicit value: a lease outside it is refused here, not silently used.
+        if not 1 <= float(lease_seconds) <= 86400:
+            raise ValueError('MEMORY_WORKER_WRITE_RETRY_SECONDS defaults to MEMORY_LEASE_SECONDS, which must be between 1 and 86400 seconds')
         return float(lease_seconds)
     try:
         value = float(raw)
@@ -146,6 +149,38 @@ def worker_write_retry_seconds(environ=None, lease_seconds=240):
     if not 1 <= value <= 86400:  # also rejects NaN
         raise ValueError('MEMORY_WORKER_WRITE_RETRY_SECONDS must be a number of seconds between 1 and 86400')
     return value
+
+
+DEFAULT_POOL_MIN, DEFAULT_POOL_MAX, DEFAULT_POOL_TIMEOUT = 1, 10, 5.0
+POOL_MAX_LIMIT = 100
+
+
+def check_pool(minimum, maximum, timeout):
+    """The sizes and the wait of the connection pool (MEMORY_POOL_MIN / MEMORY_POOL_MAX / MEMORY_POOL_TIMEOUT): whole numbers, 1 <= min <= max <= 100, and a wait of 0.1 to 300 seconds
+    (a pool that waits for ever, or not at all, is the hang or the error storm this setting exists to prevent)."""
+    if isinstance(minimum, bool) or isinstance(maximum, bool) or not isinstance(minimum, int) or not isinstance(maximum, int) or not 1 <= minimum <= maximum <= POOL_MAX_LIMIT:
+        raise ValueError(f'MEMORY_POOL_MIN and MEMORY_POOL_MAX must be whole numbers with 1 <= MEMORY_POOL_MIN <= MEMORY_POOL_MAX <= {POOL_MAX_LIMIT}')
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0.1 <= timeout <= 300:  # also rejects NaN
+        raise ValueError('MEMORY_POOL_TIMEOUT must be a number of seconds between 0.1 and 300')
+
+
+def pool_settings(environ=None) -> tuple:
+    """(minimum, maximum, wait in seconds) of the connection pool of the API and of the worker, from MEMORY_POOL_MIN / MEMORY_POOL_MAX / MEMORY_POOL_TIMEOUT."""
+    environ = os.environ if environ is None else environ
+
+    def whole(name, default):
+        raw = environ.get(name, str(default)).strip()
+        if not raw.isascii() or not raw.isdigit():
+            raise ValueError(f'{name} must be a whole number')
+        return int(raw)
+    minimum, maximum = whole('MEMORY_POOL_MIN', DEFAULT_POOL_MIN), whole('MEMORY_POOL_MAX', DEFAULT_POOL_MAX)
+    raw = environ.get('MEMORY_POOL_TIMEOUT', str(DEFAULT_POOL_TIMEOUT)).strip()
+    try:
+        timeout = float(raw)
+    except ValueError:
+        raise ValueError('MEMORY_POOL_TIMEOUT must be a number of seconds between 0.1 and 300') from None
+    check_pool(minimum, maximum, timeout)
+    return minimum, maximum, timeout
 
 
 # Retention of the tables that only grow (decision P-03): the days after which `admin prune-tables` may delete a row, per table. `events` has NO window by default:
@@ -313,6 +348,9 @@ class Settings:
     fusion_k: int = DEFAULT_FUSION_K
     fusion_validated_bonus: float = DEFAULT_FUSION_VALIDATED_BONUS
     fusion_weights: dict = field(default_factory=dict)
+    pool_min: int = DEFAULT_POOL_MIN  # MEMORY_POOL_MIN: connections the pool of the API / of the worker keeps open
+    pool_max: int = DEFAULT_POOL_MAX  # MEMORY_POOL_MAX
+    pool_timeout: float = DEFAULT_POOL_TIMEOUT  # MEMORY_POOL_TIMEOUT: seconds a transaction waits for a connection before 503 `store_busy`
     metrics_mode: str = 'internal'
     mount_mcp: bool = True  # MEMORY_MOUNT_MCP: the internal MCP at `/mcp`, deprecated since 0.4.0 and removed in 0.5.0 (P-07)
 
@@ -320,6 +358,7 @@ class Settings:
         if self.metrics_mode not in METRICS_MODES:
             raise ValueError('metrics_mode must be one of: ' + ', '.join(METRICS_MODES))
         check_fusion(self.fusion_k, self.fusion_validated_bonus, self.fusion_weights)
+        check_pool(self.pool_min, self.pool_max, self.pool_timeout)
 
     @classmethod
     def from_env(cls):
@@ -340,6 +379,7 @@ class Settings:
         exact_fallback_ms()  # fail at startup, not on the first short semantic answer
         chunk_chars, chunk_overlap, chunk_max = chunk_settings()
         batch_size = embed_batch_size()
+        pool_min, pool_max, pool_timeout = pool_settings()
         batch_timeout, job_timeout_max = embed_timeouts()
         fusion_k, fusion_bonus, fusion_weights = fusion_from_env()
         metrics_mode = metrics_mode_from_env()
@@ -369,5 +409,6 @@ class Settings:
             chunk_chars=chunk_chars, chunk_overlap=chunk_overlap, chunk_max=chunk_max, embedding_batch_size=batch_size,
             embedding_batch_timeout=batch_timeout, embedding_job_timeout_max=job_timeout_max,
             fusion_k=fusion_k, fusion_validated_bonus=fusion_bonus, fusion_weights=fusion_weights,
+            pool_min=pool_min, pool_max=pool_max, pool_timeout=pool_timeout,
             metrics_mode=metrics_mode, mount_mcp=mount_mcp,
         )
