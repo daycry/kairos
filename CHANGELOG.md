@@ -6,6 +6,35 @@ Kairos has no tagged releases yet. Everything below is unreleased. The three com
 
 ## [Unreleased]
 
+### Changed — `reliable-operations` initiative, milestone A (2026-11-15 to 2026-11-16)
+
+Kairos no longer loses data or stops when the database does: copies are verified, encrypted and sent out of the machine on a schedule, the worker rides out a database outage, and the tables that only grow have a retention. [Ledger](docs/roadmap/2026-11-15-reliable-operations/tasks.md)
+
+**Backups you can trust**
+
+- **Verified copies.** Every copy has a manifest `<copy>.json` (sha256, size, schema version, time and per-table row counts and fingerprints). `admin verify-backup` detects an altered byte, a truncated copy or a missing or tampered manifest without decrypting anything. Manifests are format 2; copies of the earlier format are refused with `backup_manifest_format_unsupported` and need a new copy.
+- **Encrypted copies.** With `MEMORY_BACKUP_RECIPIENTS_FILE` (public `age` recipients) the copy is encrypted as `<name>.age` and the dump in the clear never touches the disk; `MEMORY_BACKUP_REQUIRE_ENCRYPTION=1` refuses to write a plain copy. The private key never lives on the server: losing it means losing the copies. A decrypted dump is checked against the manifest of the encrypted copy with `admin verify-backup --manifest` or `admin restore-check --from-manifest`.
+- **Retention of copies.** `admin backup --prune --keep N` verifies the N newest copies, deletes the older ones of its own name and never touches another file.
+- **Safer deployment.** `scripts/deploy-memory.py` gives the copy, the content manifest and their verification a deadline (`--backup-timeout`, 3,600 s by default, up to 24 h) and can restore the previous copy into an isolated, ephemeral PostgreSQL and compare its tables with the manifest before migrating (`--verify-backup`; for an encrypted copy it only checks integrity).
+- **Scheduled external copy.** `admin backup-cycle` (and the optional `memory-backup` service, profile `backup`, every 24 h) makes an encrypted copy, verifies it, sends it to a directory (`dir:<path>`) or an `rclone` remote (`rclone:<remote>:<path>`), reads it back there, and applies the retention of both places. Only encrypted copies leave the machine, and it refuses to start without recipients. Any failure sets `kairos_backup_offsite_success` to 0 in `kairos-offsite.prom`, logs `backup_offsite_failed` or `backup_cycle_failed`, keeps every local copy and retries on the next cycle. The destination must belong to one installation.
+- **Restore runbook.** [Operations](docs/operations.md) has the step-by-step restore, with the private key outside the server, and `scripts/rehearse-restore.py` rehearses it end to end in an isolated project until the restored tables equal the manifest.
+- **Closing of the milestone.** A refused start of `backup-cycle` also sets the metric to 0; a failure of only the local retention logs `backup_cycle_failed`; a copy changed after it was verified is never sent (it is checked and uploaded from the same open file, without following links; `rclone` receives it with `rcat`). `scripts/rehearse-reliable-operations.py` rehearses, in an isolated project, the restore, the measure of the fingerprints and a stop and start of the database with the worker running.
+
+**A server that rides out a database outage**
+
+- **The worker waits instead of dying.** When the database stops answering it waits with growing pauses (up to `MEMORY_WORKER_DB_BACKOFF_MAX`, 60 s by default), logs `store_unavailable` and takes the queue up again when the database is back. A result it cannot save is kept and written again (up to `MEMORY_WORKER_WRITE_RETRY_SECONDS`); an outage longer than the lease can cost the attempt. A database error is now told apart from a provider failure (`store_error`).
+- **A job that cannot finish stops being retried for ever.** A job whose worker dies without stopping is no longer claimed once it uses `MEMORY_MAX_ATTEMPTS`: it ends `failed` with `attempts_exhausted` and `POST /v1/jobs/{id}/retry` revives it. An invalid `MEMORY_MAX_ATTEMPTS` or `MEMORY_LEASE_SECONDS` stops the startup.
+- **Connection pool and deadlines.** API and worker reuse connections from a pool (`MEMORY_POOL_MIN`/`MAX`/`TIMEOUT`, 1/10/5 s) and use connection and statement deadlines and TCP keepalives (`MEMORY_CONNECT_TIMEOUT`, `MEMORY_STATEMENT_TIMEOUT_MS`, `MEMORY_TCP_*`). A query that hangs is cancelled by the server. `MEMORY_CONNECT_TIMEOUT` must stay at least 1 s below `MEMORY_POOL_TIMEOUT`. A warm pool opens no new connection per search.
+- **Clear errors.** A database that answers too slowly gives 503 `store_timeout`, a saturated pool 503 `store_busy` and an outage 503 `service_unavailable`, each with a fixed message and a `request_id`; search never answers 200 with a partial result for these. `/health/ready` stays 200 with a full pool and gives 503 only when the pool never delivered a connection.
+- **Permissions per transaction.** Permissions are read once per transaction: a revoked key, user, session or grant stops working from the next request, also after waiting for a lock (ingest, publish, delete and retry answer 401/403). A hybrid search makes 14 fewer queries (63 to 49 with the pool).
+- **Faster job claim.** Claiming a job no longer walks and sorts everything pending: with tens of thousands queued it goes from about 110 ms to under 1 ms. Two partial indexes (schema version 12) are added without touching rows or columns.
+
+**Tables that no longer grow for ever**
+
+- **`admin prune-tables [--dry-run]`.** Deletes old rows in batches from `login_attempts` (30 days), expired or revoked `web_sessions` (30), `audit_events` (365) and orphan failed jobs (90: no receipt, not cited by a kept event and not the current version of a document or note), by the `MEMORY_RETENTION_*_DAYS` windows. Nothing runs it on its own; `backup-cycle --prune-tables` can run it at the end of each cycle. `events` is **not** pruned unless you set `MEMORY_RETENTION_EVENTS_DAYS`; each real run leaves a `retention_prune` row in `audit_events`. Pruned orphan jobs answer 404 on `GET /v1/jobs/{id}` and retry; the MCP contract is unchanged.
+
+Migrations are additive and `docs/contracts/kairos-mcp.json` is unchanged. Everything new is for the operator; clients only see the 503 codes, `attempts_exhausted`, `store_error` and the pruned jobs described above.
+
 ### Changed — `three-components` initiative (2026-11-12 to 2026-11-14)
 
 Kairos is split into three components: the server, kairos-mcp and the CLI, plus the web portal. The server no longer needs a language model. [Ledger](docs/roadmap/2026-11-12-three-components/tasks.md) · [final review](docs/roadmap/2026-11-12-three-components/review.md)

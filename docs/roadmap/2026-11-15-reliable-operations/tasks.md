@@ -47,7 +47,7 @@ test-plan: n/a (sin UI)
 | Fase 5 — Permisos por transacción (C-03, B-02) | 5 | 5 | 100% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 9 | 9 | 100% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 6 | 6 | 100% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
-| Fase 8 — Cierre del hito A: no perder datos ni parar | 1 | 4 | 25% | 0 / 7.2h | 0.94 / 1.0h | 0 / 0.2h | 0 / 240 k |
+| Fase 8 — Cierre del hito A: no perder datos ni parar | 2 | 4 | 50% | 0 / 7.2h | 1.06 / 1.0h | 0 / 0.2h | 0 / 240 k |
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 0 | 7 | 0% | 0 / 19.8h | 0 / 2.6h | 0 / 0.7h | 0 / 660 k |
 | Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 0 | 7 | 0% | 0 / 34.2h | 0 / 4.6h | 0 / 1.1h | 0 / 1140 k |
 | Fase 11 — Sonda de ida y vuelta (C-06) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **50** | **98** | **51.0%** | **0 / 412.8h** | **4.86 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **51** | **98** | **52.0%** | **0 / 412.8h** | **4.98 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1625,10 +1625,11 @@ test-plan: n/a (sin UI)
 ### T-52 — Notas de cambio del hito A
 
 - **Descripción**: Añadir al `CHANGELOG.md` y `CHANGELOG.es.md` (sección sin publicar) las novedades del hito A: copias verificadas y cifradas, worker resistente, pool y plazos, retención. Fuente: CA-38 (documentación del hito A).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: las novedades del hito A (copias verificadas y cifradas, copia externa, runbook, worker resistente, pool y plazos, retención) quedan en el CHANGELOG en inglés y en español, sin versión nueva.
+- **Cerrada**: 2026-11-17
+- **Estado**: completado
 - **Tiempo humano**: est. 1h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real 0.04h (medido)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 37 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: T-51
@@ -1638,14 +1639,14 @@ test-plan: n/a (sin UI)
 - **Verificación**: lectura: ambos CHANGELOG describen, en una frase por cambio visible, copias cifradas y verificadas, `store_unavailable`/`attempts_exhausted`, pool y plazos, `prune-tables` (ventanas) y la nota de que `events` no se poda por defecto
 
 **Criterios de aceptación**
-- [ ] Los dos idiomas dicen lo mismo
-- [ ] La versión sigue siendo la del árbol (0.4.0) hasta la tarea de cierre
+- [x] Los dos idiomas dicen lo mismo
+- [x] La versión sigue siendo la del árbol (0.4.0) hasta la tarea de cierre
 
 **Subtareas**
-- [ ] Redactar las entradas
-- [ ] `usage-meter start/close` de la tarea
+- [x] Redactar las entradas
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: formato de `CHANGELOG.md` de la Iniciativa 2.
+**Notas** (2026-11-17): sección nueva `### Changed — reliable-operations initiative, milestone A` encima de la de `three-components` en `## [Unreleased]` de `CHANGELOG.md` y `CHANGELOG.es.md` (29 líneas cada una, misma estructura y mismas cifras), sacada de los campos `Changelog` de T-01 a T-50; incluye el punto «Cierre del hito» con lo visible para el operador de la Fase 8. Verificación por lectura: cada uno cubre copias cifradas y verificadas, `store_unavailable`, `attempts_exhausted`, pool y plazos, `prune-tables` con sus ventanas y que `events` no se poda por defecto. La versión sigue en 0.4.0 (cabecera sin tocar; `test_versions` lee solo lo anterior a `## [Unreleased]`). `usage-meter` de T-52: 0,04 h (medido).
 
 ### T-53 — Pull request del hito A (solo con OK del usuario)
 
