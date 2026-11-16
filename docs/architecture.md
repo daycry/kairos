@@ -54,6 +54,10 @@ El backend usa Python, FastAPI, Pydantic y PostgreSQL mediante psycopg. MCP usa 
 
 El modelo de embeddings configurado es `nomic-embed-text`; `MEMORY_LLM_MODEL` no tiene valor por defecto y solo hace falta un modelo de lenguaje si activas la extracción o las respuestas generadas. El motor de modelos sigue siendo necesario para los embeddings. La persistencia y la autenticación son responsabilidades del servicio central. Cambiar el modelo requiere una decisión operativa y comprobaciones de compatibilidad; instalar un cliente no lo cambia.
 
+## Conexiones a la base: el pool
+
+`Store.transaction()` es el único punto que da una conexión. La API y el worker le asignan un pool de `psycopg-pool` (`MEMORY_POOL_*`) al arrancar: las conexiones se reutilizan entre peticiones, se comprueban al entregarlas, se restablecen al devolverlas y se cierran al apagar; cada conexión nace con un plazo de conexión y un `statement_timeout` (`MEMORY_CONNECT_TIMEOUT`, `MEMORY_STATEMENT_TIMEOUT_MS`), mientras que `admin` conecta directamente, sin pool y sin plazo. Un pool sin conexión que dar acaba en `StoreBusy` (503 `store_busy` en la API; una caída de la base para el worker) y una consulta cancelada por plazo en 503 `store_timeout` (un error transitorio para el worker). El detalle, los valores y la medición están en [operaciones](operations.md#pool-de-conexiones-y-plazos-de-la-base).
+
 ## Tres capas de recuperación
 
 | Capa | Contenido | Interpretación |

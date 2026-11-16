@@ -43,7 +43,7 @@ test-plan: n/a (sin UI)
 | Fase 1 — Arnés de fallos y tests de límites (C-07) | 6 | 6 | 100% | 0 / 32.4h | 0.83 / 4.3h | 0 / 1.1h | 0 / 1080 k |
 | Fase 2 — Worker resistente a la caída de base (C-02, B-03) | 7 | 7 | 100% | 0 / 27.0h | 2.10 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 7 | 7 | 100% | 0 / 27.0h | 0.99 / 3.6h | 0 / 0.9h | 0 / 900 k |
-| Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 6 | 9 | 66.7% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
+| Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 7 | 9 | 77.8% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 0 | 5 | 0% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 0 | 9 | 0% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 0 | 6 | 0% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **26** | **98** | **26.5%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **27** | **98** | **27.6%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -867,10 +867,11 @@ RED: `tests/test_store_faults.py::PersistWithTheHeartbeatTests` falló con test_
 ### T-27 — Documentar pool, plazos y errores 503
 
 - **Descripción**: Documentar `MEMORY_POOL_*`, `MEMORY_CONNECT_TIMEOUT`, `MEMORY_STATEMENT_TIMEOUT_MS`, los códigos `store_timeout`/`store_busy` y qué comandos de `admin` no heredan el plazo. Fuente: CA-15 a CA-19 (documentación).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Documentado cómo funcionan el pool de conexiones y los plazos de la base: las cinco variables nuevas, los errores 503 store_busy y store_timeout y qué comandos de admin no heredan el plazo.
+- **Estado**: completado
+- **Cerrada**: 2026-11-16
 - **Tiempo humano**: est. 1h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real 0.11h (medido)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 37 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: T-26
@@ -880,14 +881,14 @@ RED: `tests/test_store_faults.py::PersistWithTheHeartbeatTests` falló con test_
 - **Verificación**: lectura: `docs/configuration.md` lista las cinco variables con defaults iguales a `config.py` y `docs/operations.md` explica los dos 503
 
 **Criterios de aceptación**
-- [ ] Defaults y códigos iguales al código
-- [ ] `docs/architecture.md` describe el pool
+- [x] Defaults y códigos iguales al código
+- [x] `docs/architecture.md` describe el pool
 
 **Subtareas**
-- [ ] Actualizar los tres manuales
-- [ ] `usage-meter start/close` de la tarea
+- [x] Actualizar los tres manuales
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Estilo: `docs/configuration.md` (tabla de variables).
+**Notas**: Estilo: `docs/configuration.md` (tabla de variables). Verificación (lectura): `docs/configuration.md` lista las cinco variables con los defaults de `config.py` (1, 10, 5 s, 5 s, 15.000/30.000 ms; rangos iguales a los validadores) y la fila de `MEMORY_WORKER_WRITE_RETRY_SECONDS` recoge la validación de su defecto; `docs/operations.md` tiene la sección «Pool de conexiones y plazos de la base» (tamaño razonado y medición 7 → 0 conexiones y p50 127 → 69 ms, plazos, exenciones, los dos 503 con sus textos fijos y el tercero genérico, el worker, y la tabla ruta × fallo comprobada por `test_store_faults`); `docs/architecture.md` describe el pool. Los tres ficheros conservan su fin de línea (`git diff --stat` con y sin `--ignore-cr-at-eol` coinciden). Límite declarado: el Compose NO propaga las cinco variables (como `MEMORY_WORKER_*` y `MEMORY_RETENTION_*`): para cambiarlas hay que declararlas en `x-memory-environment`; `docker-compose.yml` queda fuera de esta fase (restricción de la iniciativa: lo recoge la instalación en su próximo `up`, Iniciativa 5). Usage-meter T-27: 0.11h (medido).
 
 ### T-28 — Cierre de fase: suite completa y subida del mínimo
 
