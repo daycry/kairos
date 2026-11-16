@@ -137,10 +137,10 @@ def worker_write_retry_seconds(environ=None, lease_seconds=240):
     back to the queue when the lease ends."""
     environ = os.environ if environ is None else environ
     raw = environ.get('MEMORY_WORKER_WRITE_RETRY_SECONDS', '').strip()
+    # The lease fits its range whether or not the budget is set: it is the budget's default, and the heartbeat and every wait of the worker are derived from it.
+    if not 1 <= float(lease_seconds) <= 86400:
+        raise ValueError('MEMORY_LEASE_SECONDS must be between 1 and 86400 seconds (it is also the default of MEMORY_WORKER_WRITE_RETRY_SECONDS)')
     if not raw:
-        # The default inherits the lease, so it has to fit the same range as an explicit value: a lease outside it is refused here, not silently used.
-        if not 1 <= float(lease_seconds) <= 86400:
-            raise ValueError('MEMORY_WORKER_WRITE_RETRY_SECONDS defaults to MEMORY_LEASE_SECONDS, which must be between 1 and 86400 seconds')
         return float(lease_seconds)
     try:
         value = float(raw)
@@ -164,7 +164,7 @@ def check_pool(minimum, maximum, timeout):
         raise ValueError('MEMORY_POOL_TIMEOUT must be a number of seconds between 0.1 and 300')
 
 
-DEFAULT_CONNECT_TIMEOUT = 5
+DEFAULT_CONNECT_TIMEOUT = 3  # below the default MEMORY_POOL_TIMEOUT (5 s): a database that does not answer is `service_unavailable` (see `check_timeout_pair`)
 CONNECT_TIMEOUT_RANGE = (2, 120)  # libpq never waits less than 2 seconds for a connection: 1 would be read as 2
 DEFAULT_STATEMENT_TIMEOUT_MS = {'api': 15000, 'worker': 30000}  # per role; below `request_timeout` (30 s) for the API
 STATEMENT_TIMEOUT_RANGE_MS = (100, 3600000)
@@ -179,8 +179,46 @@ def check_timeouts(connect, statement):
         raise ValueError('MEMORY_STATEMENT_TIMEOUT_MS must be a whole number of milliseconds between %d and %d' % STATEMENT_TIMEOUT_RANGE_MS)
 
 
+POOL_CONNECT_GAP = 1.0  # seconds MEMORY_POOL_TIMEOUT and MEMORY_CONNECT_TIMEOUT must differ by
+
+
+def check_timeout_pair(connect, pool_timeout):
+    """`MEMORY_CONNECT_TIMEOUT` and `MEMORY_POOL_TIMEOUT` must differ by at least a second. With a connect plazo SHORTER than the pool wait a silent database makes the connection fail inside
+    the wait (503 `service_unavailable`); with a LONGER one the attempt is still going when the wait ends (503 `store_busy`). Equal or almost equal, which of the two it was would be a race
+    between two timers, so that case is refused at the start instead of being answered at random."""
+    if abs(float(connect) - float(pool_timeout)) < POOL_CONNECT_GAP:
+        raise ValueError('MEMORY_POOL_TIMEOUT and MEMORY_CONNECT_TIMEOUT must differ by at least %d second: when they are close, a database that does not answer is reported as store_busy or '
+                         'service_unavailable depending on a race (a connect plazo below the pool wait is an outage; above it, a busy pool)' % POOL_CONNECT_GAP)
+
+
+DEFAULT_TCP = {'idle': 30, 'interval': 10, 'count': 3, 'user_timeout_ms': 30000}  # TCP keepalives and TCP_USER_TIMEOUT of the service connections: a dead peer is noticed in ~60 s, not in 15 minutes
+TCP_RANGES = {'idle': (1, 7200), 'interval': (1, 600), 'count': (1, 20), 'user_timeout_ms': (1000, 3600000)}
+TCP_VARIABLES = {'idle': 'MEMORY_TCP_KEEPALIVES_IDLE', 'interval': 'MEMORY_TCP_KEEPALIVES_INTERVAL', 'count': 'MEMORY_TCP_KEEPALIVES_COUNT', 'user_timeout_ms': 'MEMORY_TCP_USER_TIMEOUT_MS'}
+
+
+def check_tcp(idle, interval, count, user_timeout_ms):
+    """Whole numbers inside TCP_RANGES (seconds for idle and interval, a number of probes for count, milliseconds for the user timeout)."""
+    for key, value in (('idle', idle), ('interval', interval), ('count', count), ('user_timeout_ms', user_timeout_ms)):
+        low, high = TCP_RANGES[key]
+        if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+            raise ValueError('%s must be a whole number between %d and %d' % (TCP_VARIABLES[key], low, high))
+
+
+def tcp_settings(environ=None) -> tuple:
+    """(keepalives idle, interval, count, tcp user timeout in ms) of the service connections, from MEMORY_TCP_KEEPALIVES_IDLE / _INTERVAL / _COUNT and MEMORY_TCP_USER_TIMEOUT_MS."""
+    environ = os.environ if environ is None else environ
+    values = {}
+    for key, name in TCP_VARIABLES.items():
+        raw = environ.get(name, '').strip()
+        if raw and (not raw.isascii() or not raw.isdigit()):
+            raise ValueError(f'{name} must be a whole number')
+        values[key] = int(raw) if raw else DEFAULT_TCP[key]
+    check_tcp(values['idle'], values['interval'], values['count'], values['user_timeout_ms'])
+    return values['idle'], values['interval'], values['count'], values['user_timeout_ms']
+
+
 def connection_timeouts(environ=None) -> tuple:
-    """(connect timeout in seconds, statement timeout in milliseconds or None) of the service connections, from MEMORY_CONNECT_TIMEOUT (default 5) and
+    """(connect timeout in seconds, statement timeout in milliseconds or None) of the service connections, from MEMORY_CONNECT_TIMEOUT (default 3) and
     MEMORY_STATEMENT_TIMEOUT_MS (unset: 15,000 in the API and 30,000 in the worker; set: that value in both). `admin` never applies them."""
     environ = os.environ if environ is None else environ
 
@@ -390,6 +428,10 @@ class Settings:
     pool_timeout: float = DEFAULT_POOL_TIMEOUT  # MEMORY_POOL_TIMEOUT: seconds a transaction waits for a connection before 503 `store_busy`
     connect_timeout: int = DEFAULT_CONNECT_TIMEOUT  # MEMORY_CONNECT_TIMEOUT: seconds a service connection may take to be made
     statement_timeout_ms: int | None = None  # MEMORY_STATEMENT_TIMEOUT_MS; None = the default of the role (API 15,000, worker 30,000); `admin` ignores it
+    keepalives_idle: int = DEFAULT_TCP['idle']  # MEMORY_TCP_KEEPALIVES_IDLE (s): TCP keepalives of the service connections (a peer that vanished is noticed)
+    keepalives_interval: int = DEFAULT_TCP['interval']  # MEMORY_TCP_KEEPALIVES_INTERVAL (s)
+    keepalives_count: int = DEFAULT_TCP['count']  # MEMORY_TCP_KEEPALIVES_COUNT
+    tcp_user_timeout_ms: int = DEFAULT_TCP['user_timeout_ms']  # MEMORY_TCP_USER_TIMEOUT_MS: how long sent data may stay unacknowledged before the connection is dropped
     metrics_mode: str = 'internal'
     mount_mcp: bool = True  # MEMORY_MOUNT_MCP: the internal MCP at `/mcp`, deprecated since 0.4.0 and removed in 0.5.0 (P-07)
 
@@ -399,6 +441,8 @@ class Settings:
         check_fusion(self.fusion_k, self.fusion_validated_bonus, self.fusion_weights)
         check_pool(self.pool_min, self.pool_max, self.pool_timeout)
         check_timeouts(self.connect_timeout, self.statement_timeout_ms)
+        check_timeout_pair(self.connect_timeout, self.pool_timeout)
+        check_tcp(self.keepalives_idle, self.keepalives_interval, self.keepalives_count, self.tcp_user_timeout_ms)
 
     @classmethod
     def from_env(cls):
@@ -421,6 +465,8 @@ class Settings:
         batch_size = embed_batch_size()
         pool_min, pool_max, pool_timeout = pool_settings()
         connect_timeout, statement_timeout = connection_timeouts()
+        check_timeout_pair(connect_timeout, pool_timeout)
+        keepalives_idle, keepalives_interval, keepalives_count, tcp_user_timeout_ms = tcp_settings()
         batch_timeout, job_timeout_max = embed_timeouts()
         fusion_k, fusion_bonus, fusion_weights = fusion_from_env()
         metrics_mode = metrics_mode_from_env()
@@ -451,5 +497,6 @@ class Settings:
             embedding_batch_timeout=batch_timeout, embedding_job_timeout_max=job_timeout_max,
             fusion_k=fusion_k, fusion_validated_bonus=fusion_bonus, fusion_weights=fusion_weights,
             pool_min=pool_min, pool_max=pool_max, pool_timeout=pool_timeout, connect_timeout=connect_timeout, statement_timeout_ms=statement_timeout,
+            keepalives_idle=keepalives_idle, keepalives_interval=keepalives_interval, keepalives_count=keepalives_count, tcp_user_timeout_ms=tcp_user_timeout_ms,
             metrics_mode=metrics_mode, mount_mcp=mount_mcp,
         )

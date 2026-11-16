@@ -364,5 +364,78 @@ class PoolTests(unittest.TestCase):
         self.assertNotIn('store_pool', open(admin.__file__, encoding='utf-8').read(), 'admin must not import the pool')
 
 
+class ConnectAndWaitTests(unittest.TestCase):
+    """Fix1, gap 3: a silent database is answered the same way every time, with the defaults and with any valid setting."""
+    def test_the_defaults_leave_a_second_or_more_between_the_connect_plazo_and_the_pool_wait(self):
+        settings = Settings('unused')
+        self.assertGreaterEqual(abs(settings.pool_timeout - settings.connect_timeout), 1.0)
+        self.assertLess(settings.connect_timeout, settings.pool_timeout)  # a silent database: the connection fails INSIDE the wait, so it is `service_unavailable`, deterministically
+
+    def test_close_values_are_refused_at_the_start_and_far_ones_are_fine(self):
+        for connect, pool in ((5, 5.0), (3, 3.0), (3, 3.9), (4, 3.5), (2, 1.5)):
+            with self.subTest(connect=connect, pool=pool), self.assertRaisesRegex(ValueError, 'MEMORY_POOL_TIMEOUT and MEMORY_CONNECT_TIMEOUT must differ'):
+                Settings('unused', connect_timeout=connect, pool_timeout=pool)
+        for connect, pool in ((3, 5.0), (2, 0.5), (10, 5.0), (3, 4.0)):
+            Settings('unused', connect_timeout=connect, pool_timeout=pool)
+        with patch.dict(os.environ, {'MEMORY_DSN': 'postgresql://x', 'MEMORY_CONNECT_TIMEOUT': '5', 'MEMORY_POOL_TIMEOUT': '5'}, clear=True):
+            with self.assertRaisesRegex(ValueError, 'must differ'):
+                Settings.from_env()
+
+    def test_a_silent_database_with_the_default_plazos_is_service_unavailable_and_not_store_busy(self):
+        if not os.getenv('MEMORY_TEST_DSN'):
+            self.skipTest('MEMORY_TEST_DSN must point to an isolated PostgreSQL test database')
+        with FaultProxy() as proxy:
+            proxy.mute()
+            store = Store(proxy.dsn())
+            attach_pool(store, Settings('unused'), 'api')  # the real defaults: connect 3 s, wait 5 s
+            self.addCleanup(close_pool, store)
+            for _ in range(2):  # twice: not a race that happened to go one way
+                with self.assertRaises(StoreUnavailable) as raised:
+                    with store.transaction():
+                        pass
+                self.assertIsNot(type(raised.exception), StoreBusy)
+
+
+class TcpSettingsTests(unittest.TestCase):
+    def test_defaults_ranges_and_environment(self):
+        from memory_platform.config import tcp_settings
+        self.assertEqual(tcp_settings({}), (30, 10, 3, 30000))
+        settings = Settings('unused')
+        self.assertEqual((settings.keepalives_idle, settings.keepalives_interval, settings.keepalives_count, settings.tcp_user_timeout_ms), (30, 10, 3, 30000))
+        self.assertEqual(tcp_settings({'MEMORY_TCP_KEEPALIVES_IDLE': '60', 'MEMORY_TCP_KEEPALIVES_INTERVAL': '5', 'MEMORY_TCP_KEEPALIVES_COUNT': '9', 'MEMORY_TCP_USER_TIMEOUT_MS': '120000'}), (60, 5, 9, 120000))
+        bad = [('MEMORY_TCP_KEEPALIVES_IDLE', v) for v in ('0', '7201', '-1', '1.5', 'soon')] + [('MEMORY_TCP_KEEPALIVES_INTERVAL', v) for v in ('0', '601')] + \
+              [('MEMORY_TCP_KEEPALIVES_COUNT', v) for v in ('0', '21')] + [('MEMORY_TCP_USER_TIMEOUT_MS', v) for v in ('999', '3600001', '30s')]
+        for name, value in bad:
+            with self.subTest(name=name, value=value), self.assertRaisesRegex(ValueError, name):
+                tcp_settings({name: value})
+        for changes in ({'keepalives_idle': 0}, {'keepalives_interval': 601}, {'keepalives_count': 0}, {'tcp_user_timeout_ms': 999}, {'keepalives_idle': True}):
+            with self.subTest(changes=changes), self.assertRaisesRegex(ValueError, 'MEMORY_TCP_'):
+                Settings('unused', **changes)
+        with patch.dict(os.environ, {'MEMORY_DSN': 'postgresql://x', 'MEMORY_TCP_KEEPALIVES_COUNT': '7'}, clear=True):
+            self.assertEqual(Settings.from_env().keepalives_count, 7)
+
+
+class SessionStateTests(unittest.TestCase):
+    """Fix1, gap 6: the pool resets a connection with `RESET ALL`, which undoes session SETTINGS (GUCs) and nothing else (not `SET ROLE`, `SET SESSION AUTHORIZATION`, temporary tables, `PREPARE`,
+    session advisory locks, `LISTEN`). The manual promises only what `RESET ALL` delivers; this fails if the service code starts using anything it does not undo, until the pool resets with `DISCARD ALL`."""
+    FORBIDDEN = (r'\bSET\s+ROLE\b', r'\bSET\s+SESSION\b', r'\bLISTEN\b', r'\bPREPARE\b', r'\bCREATE\s+(GLOBAL\s+|LOCAL\s+)?TEMP(ORARY)?\b', r'\bpg_advisory_lock\s*\(', r'\bpg_try_advisory_lock\s*\(')
+    SKIPPED = {'admin.py', 'initialize.py'}  # connect directly, never through the pool
+
+    def test_the_service_code_uses_no_session_state_that_reset_all_does_not_undo(self):
+        import re
+        from pathlib import Path
+        package = Path(__file__).resolve().parents[1]
+        found = []
+        for path in sorted(package.glob('*.py')):
+            if path.name in self.SKIPPED:
+                continue
+            text = path.read_text(encoding='utf-8')
+            for pattern in self.FORBIDDEN:
+                for match in re.finditer(pattern, text, re.IGNORECASE):
+                    line = text.count('\n', 0, match.start()) + 1
+                    found.append('%s:%d %s' % (path.name, line, match.group(0)))
+        self.assertEqual(found, [], 'session state that RESET ALL does not undo: use DISCARD ALL in store_pool.reset_session (and check the psycopg prepared-statement cache) before adding it')
+
+
 if __name__ == '__main__':
     unittest.main()

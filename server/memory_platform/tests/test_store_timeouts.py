@@ -48,12 +48,12 @@ def milliseconds(c):
 
 
 class TimeoutSettingsTests(unittest.TestCase):
-    def test_defaults_are_five_seconds_and_fifteen_or_thirty_thousand_milliseconds_by_role(self):
-        self.assertEqual(DEFAULT_CONNECT_TIMEOUT, 5)
+    def test_defaults_are_three_seconds_and_fifteen_or_thirty_thousand_milliseconds_by_role(self):
+        self.assertEqual(DEFAULT_CONNECT_TIMEOUT, 3)  # below the 5 s of MEMORY_POOL_TIMEOUT (fix1, gap 3)
         self.assertEqual(DEFAULT_STATEMENT_TIMEOUT_MS, {'api': 15000, 'worker': 30000})
-        self.assertEqual(connection_timeouts({}), (5, None))
+        self.assertEqual(connection_timeouts({}), (3, None))
         default = Settings('unused')
-        self.assertEqual((default.connect_timeout, default.statement_timeout_ms), (5, None))
+        self.assertEqual((default.connect_timeout, default.statement_timeout_ms), (3, None))
         self.assertEqual((service_statement_timeout(default, 'api'), service_statement_timeout(default, 'worker')), (15000, 30000))
 
     def test_an_explicit_statement_timeout_applies_to_both_roles(self):
@@ -276,7 +276,7 @@ class AdminPlazoTests(unittest.TestCase):
         with patch.object(admin.subprocess, 'run', fake_run):
             self.run_admin('backup', '--output', str(target))
         self.assertIn('dbname=' + self.name, captured['text'])
-        for forbidden in ('statement_timeout', 'connect_timeout', 'options'):
+        for forbidden in ('statement_timeout', 'connect_timeout', 'options', 'keepalives', 'tcp_user_timeout'):
             self.assertNotIn(forbidden, captured['text'])
 
 
@@ -442,7 +442,7 @@ class ApiPoolFailureTests(unittest.TestCase):
             with self.store.transaction() as c:
                 c.execute('SELECT pg_sleep(30)')
         request = {'project_ids': [self.project], 'q': 'anything', 'layers': ['episodic']}
-        with patch.object(self.store, 'search_items', slow):
+        with patch.object(self.store, 'search_items', slow), patch.object(self.store, 'has_vectors', return_value=False):  # one connection in this pool: the semantic layer must not contend for it (that is `store_busy`, see test_store_halfopen)
             response = self.client.post('/v1/search', headers=self.headers, json=request)
         self.assertEqual(response.status_code, 200)  # a layer that failed is marked, the request is not
         self.assertEqual(response.json()['backends']['episodic']['status'], 'unavailable')
