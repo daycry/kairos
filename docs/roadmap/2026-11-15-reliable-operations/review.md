@@ -81,3 +81,23 @@ Cada fase cierra con su revisión adversarial. El detalle de cada intento está 
 | 1 | Minor | `gather` no cancela las capas hermanas tras un 503 | Deuda aceptada |
 | 2 | Minor | Ingesta sin re-exigir `write`; readiness sin conexión previa; `_faults_at_ok` sin lock; tabla de respuestas, coordinación y Changelog | Corregidos en el cierre (886388a) |
 | 2 | Minor | Falsos negativos del recorrido estático; hilo suelto en `test_auth_race` al fallar | Deuda aceptada → Iniciativa 9 |
+
+## Fase 6 — Copias locales: integridad, cifrado, retención y verificación (T-35 a T-43)
+
+- **Fecha**: 2026-11-16
+- **Lentes**: intento 1, A, B, C y D (C por `ci.yml`, `Dockerfile`, copias cifradas y `deploy-memory.py`; D por `backup.py`); intento 2, A, B, C y D; intento 3, A, B y D.
+- **Veredicto**: cerrada en el intento 3 de 3, sin hallazgos Critical ni Important abiertos.
+- **Evidencia**: suite del servidor 1154 tests, 0 fallos, errores y omitidos; `KAIROS_MIN_TESTS` y `MIN_FLOOR` 1154; `scope-check.py --base 99079d8` exit 0; contrato MCP sin cambios; ensayo aislado `kairos-ops-a` repetido tras los fixes (`verified` antes de `migrate`, aborto con manifiesto alterado, `knowledge-graphs-*` idéntico); mutantes en rojo en las Notas.
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Important (seguridad, CWE-312/459) | Un SIGTERM durante el cifrado dejaba el volcado completo en claro en el volumen de copias | Corregido: `pg_dump` → `age` por tubería, manejador en todo `create_backup`, `init: true`, barrido de parciales |
+| 1 | Important | Las huellas cargaban cada tabla entera en RAM en cada copia y despliegue | Corregido en fix1 (tramos) y de nuevo en fix2 (una pasada, suma de sha256 por fila) |
+| 1 | Important | `content_sha256` nunca se comparaba: una copia cifrada descifrada no se podía verificar | Corregido: `verify-backup --manifest`, `restore-check --from-manifest <m>` |
+| 1 | Minor | Coordinación con la Iniciativa 7, nombre del efímero, `trust`, `fsync`, carreras de `prune`, códigos estables, `maintenance_work_mem`, rehash en `prune` | Corregidos (el rehash de `restore-check` quedó rebatido) |
+| 2 | Important | Huellas por tramos de coste cuadrático | Corregido en fix2 (una lectura por tabla) |
+| 2 | Important | El barrido podía borrar el parcial de una copia viva | Corregido: cerrojo `flock` durante toda la copia |
+| 2 | Important | Sin ensayo real tras cambiar el arranque del efímero | Corregido: ensayo T-40 repetido |
+| 2 | Minor | Changelog, recuento pegado, `ci.yml`, `stat()` en `prune`, fallo de `age` frente a EPIPE, nombre ≤ 63 | Corregidos en fix2 |
+| 3 | Minor | Changelog de T-36 incompleto | Corregido en el cierre |
+| 3 | Minor | Resto de la carrera de dos `--prune`; coste por fila de las huellas en Python | Deuda → T-46 y T-50 |

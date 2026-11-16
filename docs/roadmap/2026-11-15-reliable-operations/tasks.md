@@ -45,7 +45,7 @@ test-plan: n/a (sin UI)
 | Fase 3 — Cola: índices parciales y retención de tablas (C-02, B-06) | 7 | 7 | 100% | 0 / 27.0h | 0.99 / 3.6h | 0 / 0.9h | 0 / 900 k |
 | Fase 4 — Pool y plazos de conexión (C-03, B-02 y B-07) | 9 | 9 | 100% | 0 / 48.0h | 0 / 6.4h | 0 / 1.6h | 0 / 1600 k |
 | Fase 5 — Permisos por transacción (C-03, B-02) | 5 | 5 | 100% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
-| Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 8 | 9 | 88.9% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
+| Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 9 | 9 | 100% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 0 | 6 | 0% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 0 | 4 | 0% | 0 / 7.2h | 0 / 1.0h | 0 / 0.2h | 0 / 240 k |
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 0 | 7 | 0% | 0 / 19.8h | 0 / 2.6h | 0 / 0.7h | 0 / 660 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **42** | **98** | **42.9%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **43** | **98** | **43.9%** | **0 / 412.8h** | **3.92 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1095,7 +1095,7 @@ test-plan: n/a (sin UI)
 
 ## Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01)
 
-**Estado**: borrador · **Hito**: A · **Estimado**: 43.2h (36.0h base, de ellas 12.0h de revisión adversarial) · **Real**: — · **Coste est.**: 2.160 € · **Tokens est.**: 1440 k
+**Estado**: completado · **Hito**: A · **Estimado**: 43.2h (36.0h base, de ellas 12.0h de revisión adversarial) · **Real**: — · **Coste est.**: 2.160 € · **Tokens est.**: 1440 k
 
 ### T-35 — Manifiesto `<copia>.json` y `admin verify-backup`
 
@@ -1129,7 +1129,7 @@ test-plan: n/a (sin UI)
 ### T-36 — Cifrado `age` con destinatarios y `MEMORY_BACKUP_REQUIRE_ENCRYPTION`
 
 - **Descripción**: Cifrar la copia con `age` y clave pública (`MEMORY_BACKUP_RECIPIENTS_FILE`); con `MEMORY_BACKUP_REQUIRE_ENCRYPTION=1` y sin destinatarios falla sin dejar fichero. La imagen `operator` y la de pruebas incorporan `age` fijado por versión; la clave privada de prueba se genera en el test y nunca está en el contenedor del servidor. Fuente: CA-02, CA-08 (parte); S-06; P-01.
-- **Changelog**: Las copias se cifran con age para los destinatarios de MEMORY_BACKUP_RECIPIENTS_FILE (el volcado en claro nunca toca el disco) y MEMORY_BACKUP_REQUIRE_ENCRYPTION=1 prohíbe copias en claro.
+- **Changelog**: Las copias se cifran con age para los destinatarios de MEMORY_BACKUP_RECIPIENTS_FILE (el volcado en claro nunca toca el disco) y MEMORY_BACKUP_REQUIRE_ENCRYPTION=1 prohíbe copias en claro. Una copia descifrada se verifica contra el manifiesto de la cifrada con `admin verify-backup --manifest` o `admin restore-check --from-manifest <manifiesto>`; un valor inválido de MEMORY_BACKUP_REQUIRE_ENCRYPTION falla con `backup_config_invalid`.
 - **Cerrada**: 2026-11-16
 - **Estado**: completado
 - **Tiempo humano**: est. 5.5h (base) · real —
@@ -1335,8 +1335,8 @@ test-plan: n/a (sin UI)
 ### T-43 — Revisión adversarial de la fase (dos lentes)
 
 - **Descripción**: Revisión adversarial del diff de la fase con dos lentes: A (contrato, seguridad, regresiones, alcance declarado) y B (mutantes: cada control nuevo se quita y su prueba debe fallar). Cuidado: cifrado correcto (nada en claro), clave privada fuera del servidor (R-03) y borrado de copias (retención). Cada hallazgo se corrige para la clase entera y se anota con intento y evidencia en `review.md`; cada intento abre y cierra `usage-meter`. Fuente: Lección de la retro de la Iniciativa 2: la revisión es partida propia (0,5 × la implementación; 1,0 × en C-03 y C-05).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: revisión adversarial de la fase 6; copias sin volcado en claro en disco, huellas lineales y barrido de parciales con cerrojo.
+- **Estado**: completado
 - **Tiempo humano**: est. 12h (base) · real —
 - **Tiempo IA (ejec.)**: est. 1.60h (estimado) · real —
 - **Supervisión**: est. 0.40h (≈25 % IA) · real —
@@ -1351,18 +1351,18 @@ test-plan: n/a (sin UI)
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
 
 **Criterios de aceptación**
-- [ ] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
-- [ ] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
-- [ ] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
-- [ ] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
+- [x] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
+- [x] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
+- [x] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
+- [x] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
 
 **Subtareas**
-- [ ] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
-- [ ] Lente B: mutantes en memoria sobre cada control nuevo
-- [ ] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
-- [ ] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
+- [x] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
+- [x] Lente B: mutantes en memoria sobre cada control nuevo
+- [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
+- [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas**: Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+**Notas**: Cerrada en el intento 3 de 3 (intento 1: A+B+C+D; intento 2: A+B+C+D; intento 3: A+B+D; resumen en `review.md`). `scope-check.py --base 99079d8` exit 0; suite 1154 en verde (`MEMORY_TEST_RESULT` en T-42); ensayo T-40 repetido tras los fixes. Minor de cierre: n.º 1 corregido; n.º 2 → T-46; n.º 3 → T-50. Los revisores no tienen medición propia. Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
 
 ---
 
@@ -1452,7 +1452,7 @@ test-plan: n/a (sin UI)
 - [ ] Documentar en `docs/configuration.md`
 - [ ] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `docker-compose.yml:31-85` (`x-process`, rotación de logs) y `:154` (`memory-mcp`); `tests/test_deploy_isolation.py:43-48` (lectura del compose con `yaml.safe_load`). R-08: no se despliega nada.
+**Notas**: Deuda Minor de la revisión de la Fase 6 (intento 3, n.º 2): en `prune_backups`, una copia que otro `--prune` borra mientras esta ejecución la verifica para conservarla no debe dar `backup_prune_failed` (tratar `FileNotFoundError` de `verify_backup` como copia desaparecida), con prueba de la carrera. Patrón: `docker-compose.yml:31-85` (`x-process`, rotación de logs) y `:154` (`memory-mcp`); `tests/test_deploy_isolation.py:43-48` (lectura del compose con `yaml.safe_load`). R-08: no se despliega nada.
 
 ### T-47 — Runbook de restauración desde la copia externa y ensayo automatizado
 
@@ -1580,7 +1580,7 @@ test-plan: n/a (sin UI)
 - [ ] Retirar el proyecto aislado
 - [ ] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `scripts/tests/test_rehearsal_three_components.py` (ensayo de la Iniciativa 2) y `scripts/deploy-memory.py` (`--project-name`, `--embed-stub`, `--roundtrip`). R-10: ensayos agrupados.
+**Notas**: Deuda Minor de la revisión de la Fase 6 (intento 3, n.º 3): medir en el ensayo la duración de las huellas de `backup` y `restore-check` con un volumen realista de `memory.embeddings`; si se acerca a `--backup-timeout`, calcular la huella por fila en el servidor (sha256 de `to_jsonb(t)::text`). Patrón: `scripts/tests/test_rehearsal_three_components.py` (ensayo de la Iniciativa 2) y `scripts/deploy-memory.py` (`--project-name`, `--embed-stub`, `--roundtrip`). R-10: ensayos agrupados.
 
 ### T-51 — Comprobaciones de cierre del hito A
 
@@ -3056,4 +3056,10 @@ Lentes: A+B+C+D (re-evalúan lo corregido y lo que introduce el fix). Diff `155d
 
 ## Revisión de dos lentes — intento 3: Fase 6 tras fix2 (T-35, T-36, T-37, T-39, T-40, T-42)
 
-Pendiente de revisión; sin veredicto.
+Lentes: A+B+D (re-evalúan lo corregido; C sin hallazgos en el intento 2). Diff `cdf79c7..1b0f736`. Veredicto: n.º 1-5, 7-9 y 11 del intento 2 cerrados (n.º 4 en parte, ver n.º 1); ensayo T-40 repetido con Docker real tras fix1/fix2 (`verified` en 38,65 s, aborto `backup_restore_mismatch`, `knowledge-graphs-*` idéntico). Sin Critical ni Important: **fase cerrada en el intento 3 de 3**. Suite 1154, 0 fallos.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Minor | El Changelog de T-36 perdió `verify-backup --manifest` / `restore-check --from-manifest <m>` y `backup_config_invalid` | T-36 | corregido en el cierre (T-43) | Lente A n.º 1; `tasks.md` T-36 |
+| 2 | Minor | Resto de la carrera de dos `--prune`: una copia que se está verificando para conservarla y que otro proceso borra deja escapar `FileNotFoundError` (`backup_prune_failed` falso) | T-37 | deuda → T-46 (servicio `memory-backup` programado, donde la concurrencia es real) | Lente B n.º 1 (reproducido); `backup.py:447-452,527-530` |
+| 3 | Minor | La recodificación por fila en Python domina el coste de las huellas (~2-15 MB/s según CPU): con 5 GB de embeddings en un vCPU lento se acerca a `--backup-timeout` | T-35, T-39 | deuda → T-50 (medir en el ensayo del hito A; si no cabe, huella por fila en el servidor) | Lente D n.º 1; `backup.py:96-97,119` |
