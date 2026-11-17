@@ -14,6 +14,8 @@ import os
 import re
 from pathlib import Path
 import secrets
+import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -33,7 +35,8 @@ VERIFY_PROJECT_LABEL = 'com.kairos.project'
 VERIFY_NAME_PROJECT = 24  # the longest project text in a verify container name: `kairos-verify-pg-<project>-<mark>` is a hostname and must stay within 63 characters
 VERIFY_MAINTENANCE_WORK_MEM = '256MB'  # the restore rebuilds the vector indexes: the 64 MB default makes a big one slow enough to exhaust the plazo
 BACKUP_TIMEOUT_MAX_SECONDS = 86400  # a timeout is a bound: 0 or "no limit" would let a stuck copy hang the deployment
-ISOLATED_PRIVATE_FILES = ('memory-platform.env', 'compose.override.yml', 'deployment-status.json', 'deployment-status.tmp')
+LOCK_FILE = 'deployment.lock'  # in the private directory of the project: created exclusively by the deployment that runs, removed when it ends (T-61, CA-23)
+ISOLATED_PRIVATE_FILES = ('memory-platform.env', 'compose.override.yml', 'deployment-status.json', 'deployment-status.tmp', LOCK_FILE)
 VOLUMES = (DEFAULT_PROJECT + '_memory-postgres-data', DEFAULT_PROJECT + '_memory-backups')
 SERVICES = ('memory-api', 'memory-worker', 'memory-mcp', 'memory-web')
 NEW_NETWORKS = ('mcp',)  # networks that an installation made before this release does not have yet: the start creates them, a missing one is not an error
@@ -48,6 +51,119 @@ PHASES = ('engine', 'configuration', 'build', 'database', 'inspect', 'backup',
 
 class DeploymentError(Exception):
     pass
+
+
+class DeploymentLocked(DeploymentError):
+    """`deployment_locked` (CA-23): another deployment of the project holds the lock, or a lock is left that only `--break-lock` removes. `owner` is what the lock file says (may be empty)."""
+    code = 'deployment_locked'
+
+    def __init__(self, message, owner=None):
+        super().__init__(message)
+        self.owner = owner or {}
+
+
+def pid_alive(pid):
+    """Whether a process with this PID exists on this machine. `os.kill(pid, 0)` is the POSIX probe; on Windows it would TERMINATE the process, so the process table is asked instead."""
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return False
+    if os.name == 'nt':
+        import ctypes
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel.OpenProcess.restype = ctypes.c_void_p
+        kernel.OpenProcess.argtypes = (ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong)
+        kernel.GetExitCodeProcess.argtypes = (ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong))
+        kernel.CloseHandle.argtypes = (ctypes.c_void_p,)
+        handle = kernel.OpenProcess(0x1000, 0, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return ctypes.get_last_error() == 5  # access denied: it exists
+        try:
+            code = ctypes.c_ulong()
+            return bool(kernel.GetExitCodeProcess(handle, ctypes.byref(code))) and code.value == 259  # STILL_ACTIVE
+        finally:
+            kernel.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+class DeployLock:
+    """One deployment at a time per project (CA-23): `deployment.lock` in the private directory, created exclusively (`O_EXCL`) with the PID, host, start time and a token.
+
+    A lock that exists makes `acquire` raise `DeploymentLocked` and run nothing. If its owner is on this host and dead, the message says so; it is still not removed: only
+    `break_lock` does it, and never for an owner that is alive here. A lock of another host or one that cannot be read cannot be checked: `break_lock` removes it. The lock is
+    removed by `release` only while the file still carries this deployment's token (one that somebody else took over is not ours to delete).
+    """
+
+    def __init__(self, directory, project, break_lock=False):
+        self.path = Path(directory) / LOCK_FILE
+        self.project, self.break_lock = project, break_lock
+        self.token = uuid.uuid4().hex
+        self.held = False
+        self.broken = None  # the owner of the lock this one replaced
+
+    def owner(self):
+        try:
+            value = json.loads(self.path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    def describe(self, owner):
+        pid, host, started = owner.get('pid'), owner.get('host'), owner.get('started_at')
+        if not owner:
+            return 'a lock file exists and cannot be read'
+        return f'started by PID {pid} on {host} at {started}'
+
+    def acquire(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        for attempt in (1, 2):
+            try:
+                descriptor = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            except FileExistsError:
+                owner = self.owner()
+                if attempt == 2 or not self.break_lock or not self.breakable(owner):
+                    raise DeploymentLocked(self.refusal(owner), owner) from None
+                self.broken = owner
+                self.path.unlink(missing_ok=True)
+                continue
+            with os.fdopen(descriptor, 'w', encoding='utf-8') as handle:
+                json.dump({'pid': os.getpid(), 'host': socket.gethostname(), 'started_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+                           'project': self.project, 'token': self.token}, handle)
+            self.held = True
+            return self
+        raise DeploymentLocked('the lock could not be taken')  # pragma: no cover (the loop always returns or raises)
+
+    def local(self, owner):
+        return bool(owner) and owner.get('host') == socket.gethostname() and isinstance(owner.get('pid'), int)
+
+    def breakable(self, owner):
+        return not (self.local(owner) and pid_alive(owner['pid']))
+
+    def refusal(self, owner):
+        head = f'the project {self.project} is locked by a deployment {self.describe(owner)} (lock file {self.path}); no phase was run.'
+        if self.local(owner):
+            if pid_alive(owner['pid']):
+                return head + (' That deployment is still running here' + ('; --break-lock does not break the lock of a process that is alive: wait for it or stop it.' if self.break_lock else '.'))
+            return head + f" The owner process (PID {owner['pid']}) is not running: if that deployment was killed, check the state of the services and remove the lock with --break-lock."
+        if owner:
+            return head + ' That host is not this one, so its process cannot be checked here; if it is gone, remove the lock with --break-lock.'
+        return head + ' If no deployment is running, remove the lock with --break-lock.'
+
+    def release(self):
+        if not self.held:
+            return
+        self.held = False
+        if self.owner().get('token') == self.token:
+            try:
+                self.path.unlink()
+            except FileNotFoundError:
+                pass
 
 
 def validate_isolation(project, api_port, web_port):
@@ -878,7 +994,7 @@ def failure_hints(report, phase):
     return hints
 
 
-def main(argv=None):
+def main(argv=None, root=ROOT):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply', action='store_true')
     parser.add_argument('--dry-run', action='store_true', help='Print the plan only (the default; it cannot be combined with --apply)')
@@ -901,6 +1017,8 @@ def main(argv=None):
                              'Default: on for an isolated --project-name, off for the installed project')
     parser.add_argument('--stop-services-before-migrate', action='store_true',
                         help='Stop memory-api and memory-worker before the migrate phase (they are started again by the start phase); default: leave them running')
+    parser.add_argument('--break-lock', action='store_true',
+                        help='Remove the lock file of a deployment whose process is gone (deployment_locked); it never breaks the lock of a process that is still running here')
     args = parser.parse_args(argv)
     if args.apply and args.dry_run:
         parser.error('--dry-run and --apply exclude each other')
@@ -921,26 +1039,62 @@ def main(argv=None):
                           'data_removed': False}, indent=2))
         return 0
     try:
-        deployment = Deployment(args)
+        deployment = Deployment(args, root)
     except DeploymentError as exc:
         parser.error(str(exc))
+    lock = DeployLock(deployment.private, deployment.project, break_lock=args.break_lock)
     try:
-        deployment.apply()
-    except Exception as exc:
-        deployment.report.update(status='failed', failed_phase=deployment.phase,
-                                 error_code=type(exc).__name__,
-                                 message=str(exc) if isinstance(exc, DeploymentError) else 'Unexpected failure; inspect the local phase without sharing credentials')
-        if deployment.phase != 'engine':
-            deployment.save_report()
-        reason = str(exc) if isinstance(exc, DeploymentError) else 'Unexpected failure.'
-        print(f'Kairos stopped during {deployment.phase}. {reason} No later phase was run. '
-              'Inspect the current state before retrying; credentials are not printed.', file=sys.stderr)
-        if deployment.report.get('command_failure'):
-            print(deployment.report['command_failure']['details'], file=sys.stderr)
-        for hint in failure_hints(deployment.report, deployment.phase):
-            print(hint, file=sys.stderr)
-        return 1
-    return 0
+        lock.acquire()
+    except DeploymentLocked as exc:  # before any phase and without touching the report of the deployment that holds the lock
+        print(f'{exc.code}: {exc}', file=sys.stderr)
+        return 3
+    put_back = install_signal_handlers()
+    try:
+        if lock.broken is not None:
+            deployment.report['lock_broken'] = {key: lock.broken.get(key) for key in ('pid', 'host', 'started_at')}
+            print(f'WARNING: lock broken: it was held by a deployment {lock.describe(lock.broken)}.', file=sys.stderr)
+        try:
+            deployment.apply()
+        except Exception as exc:
+            deployment.report.update(status='failed', failed_phase=deployment.phase,
+                                     error_code=type(exc).__name__,
+                                     message=str(exc) if isinstance(exc, DeploymentError) else 'Unexpected failure; inspect the local phase without sharing credentials')
+            if deployment.phase != 'engine':
+                deployment.save_report()
+            reason = str(exc) if isinstance(exc, DeploymentError) else 'Unexpected failure.'
+            print(f'Kairos stopped during {deployment.phase}. {reason} No later phase was run. '
+                  'Inspect the current state before retrying; credentials are not printed.', file=sys.stderr)
+            if deployment.report.get('command_failure'):
+                print(deployment.report['command_failure']['details'], file=sys.stderr)
+            for hint in failure_hints(deployment.report, deployment.phase):
+                print(hint, file=sys.stderr)
+            return 1
+        return 0
+    finally:  # a phase that fails, an unexpected error, Ctrl-C and SIGTERM all release the lock
+        try:
+            lock.release()
+        finally:
+            put_back()
+
+
+def install_signal_handlers():
+    """SIGTERM and SIGHUP end the deployment like an exception, so that the lock is released on the way out; returns the function that puts the old handlers back."""
+    def stop(signum, frame):
+        raise SystemExit(128 + signum)
+    previous = {}
+    for name in ('SIGTERM', 'SIGHUP'):
+        number = getattr(signal, name, None)
+        if number is None:
+            continue
+        try:
+            previous[number] = signal.signal(number, stop)
+        except (ValueError, OSError):  # not the main thread: the caller owns the signals
+            pass
+
+    def put_back():
+        for number, handler in previous.items():
+            signal.signal(number, handler)
+    return put_back
 
 
 if __name__ == '__main__':

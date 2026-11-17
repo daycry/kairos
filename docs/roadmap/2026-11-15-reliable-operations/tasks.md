@@ -49,14 +49,14 @@ test-plan: n/a (sin UI)
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 6 | 6 | 100% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 4 | 4 | 100% | 0 / 7.2h | 1.06 / 1.0h | 0 / 0.2h | 0 / 240 k |
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 6 | 7 | 85.7% | 0 / 19.8h | 0.27 / 2.6h | 0 / 0.7h | 0 / 660 k |
-| Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 0 | 7 | 0% | 0 / 34.2h | 0 / 4.6h | 0 / 1.1h | 0 / 1140 k |
+| Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 1 | 7 | 14.3% | 0 / 34.2h | 0.17 / 4.6h | 0 / 1.1h | 0 / 1140 k |
 | Fase 11 — Sonda de ida y vuelta (C-06) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 0 | 7 | 0% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 0 | 6 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **59** | **98** | **60.2%** | **0 / 412.8h** | **5.25 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **60** | **98** | **61.2%** | **0 / 412.8h** | **5.42 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1892,35 +1892,36 @@ test-plan: n/a (sin UI)
 
 ## Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04)
 
-**Estado**: borrador · **Hito**: B · **Estimado**: 34.2h (28.5h base, de ellas 9.5h de revisión adversarial) · **Real**: — · **Coste est.**: 1.710 € · **Tokens est.**: 1140 k
+**Estado**: en-progreso · **Hito**: B · **Estimado**: 34.2h (28.5h base, de ellas 9.5h de revisión adversarial) · **Real**: — · **Coste est.**: 1.710 € · **Tokens est.**: 1140 k
 
 ### T-61 — Bloqueo exclusivo de despliegue y `--break-lock`
 
 - **Descripción**: Fichero de bloqueo exclusivo en el directorio privado del proyecto con PID, host y hora; un segundo despliegue termina con `deployment_locked` sin ejecutar fases; un bloqueo con PID muerto se informa y solo se rompe con `--break-lock`. Fuente: CA-23; O-06.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Un segundo despliegue del mismo proyecto termina con `deployment_locked` sin ejecutar ninguna fase; un bloqueo de un proceso muerto solo se rompe con `--break-lock`.
+- **Estado**: completado
+- **Cerrada**: 2026-11-17
 - **Tiempo humano**: est. 3.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.47h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.47h (estimado) · real 0.17h (medido)
 - **Supervisión**: est. 0.12h (≈25 % IA) · real —
 - **Previsión IA**: 129 k in / 11 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
 - **Tipo**: devops
-- **Archivos**: `scripts/deploy-memory.py`, `server/memory_platform/tests/test_deploy.py`, `server/memory_platform/tests/test_deploy_lock.py`
+- **Archivos**: `scripts/deploy-memory.py`, `server/memory_platform/tests/test_deploy.py`, `server/memory_platform/tests/test_deploy_lock.py`, `scripts/rehearse-restore.py` (una línea: `deployment.lock` entra en `PRIVATE_FILES`, para que su limpieza reconozca el directorio privado del proyecto)
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_deploy_lock|test_deploy|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Un segundo despliegue sobre el mismo proyecto termina con `deployment_locked` (PID y hora del dueño) sin ejecutar ninguna fase (doble de `subprocess` sin llamadas)
-- [ ] Un bloqueo con PID muerto se informa y solo se rompe con `--break-lock`
-- [ ] El bloqueo se libera también si una fase falla o el proceso se interrumpe
+- [x] Un segundo despliegue sobre el mismo proyecto termina con `deployment_locked` (PID y hora del dueño) sin ejecutar ninguna fase (doble de `subprocess` sin llamadas)
+- [x] Un bloqueo con PID muerto se informa y solo se rompe con `--break-lock`
+- [x] El bloqueo se libera también si una fase falla o el proceso se interrumpe
 
 **Subtareas**
-- [ ] Escribir primero las pruebas (rojo)
-- [ ] Implementar el bloqueo con creación exclusiva
-- [ ] Añadir `--break-lock`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero las pruebas (rojo)
+- [x] Implementar el bloqueo con creación exclusiva
+- [x] Añadir `--break-lock`
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `deploy-memory.py:296-410` (secuencia de fases) y el directorio privado del proyecto (`deployment-status.json`, `docs/operations.md:186`). El script no se ejecuta contra la instalación real.
+**Notas** (2026-11-17): RED: `test_deploy_lock` falló con `AssertionError: SystemExit not raised` (SIGTERM no liberaba nada), `AssertionError: 1 != 0` (sin bloqueo: `main` ejecutaba la fase) y `AttributeError: ... does not have the attribute 'pid_alive'`/`DeployLock` · 2026-11-17. Diseño: `DeployLock` crea `deployment.lock` con `O_EXCL` en el directorio privado del proyecto (JSON: `pid`, `host`, `started_at`, `project`, `token`); `main` lo toma tras construir `Deployment` y ANTES de `apply` (sin fases, sin tocar `deployment-status.json` del dueño) y lo libera en un `finally` (fallo de fase, error inesperado, Ctrl-C) más manejadores de SIGTERM/SIGHUP que lanzan `SystemExit` (códigos 128+n) y se restauran. Salida: `deployment_locked: ...` por stderr con PID, host y hora, código de salida 3. Dueño local con PID muerto: se informa («not running … --break-lock») y NO se rompe; `--break-lock` solo rompe un dueño muerto, de otro host o ilegible, y NUNCA el de un proceso vivo aquí (decisión del implementador para que no se rompa en silencio; aviso `lock broken` por stderr y `lock_broken` en el informe). Un bloqueo que otro tomó no lo borra el que termina (token). `pid_alive` usa `os.kill(pid, 0)` en POSIX y la tabla de procesos en Windows (allí `os.kill` TERMINARÍA el proceso). `main(argv, root=ROOT)` admite la raíz para las pruebas. Verificación: la orden de `docker build --target test` entera (suite completa) es de T-66; se ejecutó el equivalente dirigido en la imagen `kairos-test:i3p9f2` con los ficheros montados: `memory_platform.tests.test_deploy_lock memory_platform.tests.test_deploy memory_platform.tests.test_deploy_isolation` → `Ran 77 tests ... OK` (14 nuevas); `python -I -m unittest discover -s scripts/tests` → `Ran 162 tests ... OK`. Patrón: `deploy-memory.py:296-410` (secuencia de fases) y el directorio privado del proyecto (`deployment-status.json`, `docs/operations.md:186`). El script no se ejecuta contra la instalación real.
 
 ### T-62 — Etiquetas locales `kairos-*:<versión>-<marca>` y registro en `deployment-status.json`
 
