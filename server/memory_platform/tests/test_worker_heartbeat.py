@@ -129,6 +129,110 @@ class HeartbeatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.stamp(), last_deadline)
         self.assertLessEqual(last_deadline-last_at, 900/3+HEARTBEAT_MARGIN)
 
+    async def drive_loop(self, lease, backoff, length, renewals=None, probe_every=30.0):
+        """The REAL sequence of the service: an idle turn, then the loop's own beat, the claim of a job and the job of `length` seconds on a simulated clock, with the
+        probe of the healthcheck every `probe_every` seconds. Returns (probes, worker): each probe is (clock, deadline in the file or None, healthy)."""
+        job = {'id': 'job', 'fence': 4, 'attempts': 1, 'destination': 'extract', 'policy': {}, 'payload': {'title': 'Source', 'content': 'Synthetic summary'}}
+        claims = iter([None, job])
+        self.store.claim_job.side_effect = lambda *args: next(claims, None)
+        outcomes = iter(renewals or [])
+        def renew(*args):
+            outcome = next(outcomes, True)
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return outcome
+        self.store.renew_lease.side_effect = renew
+        probes, holder = [], []
+        def probe():
+            deadline = self.stamp()
+            probes.append((self.clock.now, deadline, deadline is not None and deadline >= self.clock.now))
+        parked = {'until': None}  # when the lease heartbeat, waiting in `hb_wait`, is due; stale (<= now) while it is renewing: the store call runs in a real thread
+        async def hb_wait(seconds):
+            target = parked['until'] = self.clock.now+seconds
+            while self.clock.now < target:
+                await asyncio.sleep(0)
+        async def waiter(seconds):
+            self.clock.now += 1  # the idle turn before the job
+        async def slow(source):
+            end = self.clock.now+length
+            while self.clock.now < end:
+                self.clock.now += probe_every
+                probe()
+                for _ in range(20000):  # let the heartbeat finish what is due before the clock moves again (no race with the thread of the store call)
+                    await asyncio.sleep(0)
+                    if parked['until'] is not None and parked['until'] > self.clock.now:
+                        break
+            holder[0].stopping.set()
+            return {'payload': {'title': 'Lesson', 'content': 'Synthetic summary'}, 'status': 'extracted'}
+        worker = Worker(self.store, settings(lease_seconds=lease, worker_db_backoff_max=backoff), {'extract': Mock(extract=slow)}, clock=self.clock, rng=lambda: 1.0,
+                        waiter=waiter, heartbeat_wait=hb_wait, heartbeat_file=self.path)
+        holder.append(worker)
+        await asyncio.wait_for(worker.run(), 20)
+        return probes, worker
+
+    async def test_the_probe_never_finds_the_deadline_passed_between_the_claim_and_the_first_renewal_for_any_lease_and_backoff(self):
+        """The loop beats with the longest wait of a turn (backoff max + margin); a job that outlives that before its first renewal (lease/3) must not look dead."""
+        for lease in (240, 900, 3600):
+            for backoff in (1.0, 60.0, 600.0):
+                with self.subTest(lease=lease, backoff=backoff):
+                    self.clock.now = 1000.0
+                    self.path.unlink(missing_ok=True)
+                    probes, worker = await self.drive_loop(lease, backoff, max(lease*1.2, backoff+HEARTBEAT_MARGIN+120))
+                    self.assertGreater(len(probes), 4)
+                    self.assertGreater(probes[-1][0]-probes[0][0], backoff+HEARTBEAT_MARGIN, 'the job is longer than the deadline of the loop beat')
+                    self.assertEqual([p for p in probes if not p[2]], [], 'a probe of the healthcheck found the deadline of a healthy worker passed')
+
+    async def test_a_failed_renewal_is_repeated_after_a_short_wait_while_the_lease_lives_and_the_worker_stays_healthy(self):
+        """One renewal that fails (a one-second cut, an answered transient error) is not waited out for another lease/3: it is repeated after the wait of a claim."""
+        for failure in (DOWN, psycopg.errors.SerializationFailure('could not serialize')):
+            with self.subTest(failure=type(failure).__name__):
+                self.clock.now = 1000.0
+                self.path.unlink(missing_ok=True)
+                probes, worker = await self.drive_loop(900, 60.0, 1100, renewals=[failure])
+                self.assertEqual([p for p in probes if not p[2]], [])
+                self.assertEqual(self.store.renew_lease.call_count > 3, True)
+
+    async def test_the_retry_of_a_renewal_waits_at_most_the_backoff_max_and_never_past_the_lease(self):
+        job = {'id': 'job', 'fence': 4, 'attempts': 1, 'destination': 'extract', 'policy': {}, 'payload': {'title': 'Source', 'content': 'Synthetic summary'}}
+        self.store.claim_job.return_value = job
+        self.store.renew_lease.side_effect = [DOWN]*60+[True]*50
+        waits, holder = [], []
+        async def hb_wait(seconds):
+            waits.append(seconds)
+            self.clock.now += seconds
+            await asyncio.sleep(0)
+        async def slow(source):
+            while len(waits) < 40:
+                await asyncio.sleep(0)
+            return {'payload': {'title': 'Lesson', 'content': 'Synthetic summary'}, 'status': 'extracted'}
+        worker = Worker(self.store, settings(lease_seconds=900, worker_db_backoff_max=20.0), {'extract': Mock(extract=slow)}, clock=self.clock, rng=lambda: 1.0,
+                        waiter=AsyncMock(), heartbeat_wait=hb_wait, heartbeat_file=self.path)
+        await asyncio.wait_for(worker.run_once(), 20)
+        self.assertEqual(waits[0], 300, 'the first renewal comes at lease/3')
+        shorts = [w for w in waits[1:] if w < 300]
+        self.assertTrue(shorts and max(shorts) <= 20.0, 'the retries wait at most the backoff max')
+        self.assertEqual(shorts[:6], [1.0, 2.0, 4.0, 8.0, 16.0, 20.0], 'growing like the wait of a claim')
+        # once the lease this worker keeps has run out, a failed renewal is not repeated every few seconds: back to the period
+        self.assertEqual(waits[-1], 300, 'after the lease ran out the wait is the period again')
+
+    async def test_a_renewal_the_database_refuses_is_never_repeated(self):
+        """`renew_lease` False: the lease or fence is no longer ours; the heartbeat ends and marks it lost, it does not try again."""
+        job = {'id': 'job', 'fence': 4, 'attempts': 1, 'destination': 'extract', 'policy': {}, 'payload': {'title': 'Source', 'content': 'Synthetic summary'}}
+        self.store.claim_job.return_value = job
+        self.store.renew_lease.return_value = False
+        async def hb_wait(seconds):
+            self.clock.now += seconds
+            await asyncio.sleep(0)
+        async def slow(source):
+            for _ in range(50):
+                await asyncio.sleep(0)
+            return {'payload': {'title': 'Lesson', 'content': 'Synthetic summary'}, 'status': 'extracted'}
+        worker = Worker(self.store, settings(lease_seconds=900), {'extract': Mock(extract=slow)}, clock=self.clock, rng=lambda: 1.0, waiter=AsyncMock(),
+                        heartbeat_wait=hb_wait, heartbeat_file=self.path)
+        await asyncio.wait_for(worker.run_once(), 20)
+        self.assertEqual(self.store.renew_lease.call_count, 1)
+        self.store.complete_job.assert_not_called()
+
     async def test_a_heartbeat_file_that_cannot_be_written_does_not_stop_the_worker(self):
         seen, holder = [], []
         async def waiter(seconds):

@@ -147,7 +147,7 @@ services:
   memory-api:
     <<: *process
     image: kairos-api:latest
-    mem_limit: ${MEMORY_API_MEM_LIMIT:-2g}  # ~100 MB of base + the pool's 10 requests at ~200 MB of peak each for a 60 MB answer; see docs/configuration.md
+    mem_limit: ${MEMORY_API_MEM_LIMIT:-2g}  # ~100 MB of base + 360 MB peak while one 120 MB maximum answer is rendered (the pool does not bound answers held in memory): 2g holds ~14 maximum answers at once, 1g ~5; see docs/configuration.md
     cpus: ${MEMORY_API_CPUS:-0}
     build: {context: ., dockerfile: server/memory_platform/Dockerfile, target: api}
     profiles: [memory]
@@ -204,8 +204,9 @@ services:
     depends_on:
       memory-migrate: {condition: service_completed_successfully}
     # Healthy while the worker's beat is on time (T-56): /tmp/kairos-worker-heartbeat (tmpfs of x-process) holds the epoch second by which the next beat is due (the loop
-    # writes it every turn, a long job's lease renewal every lease/3, both only while the database answers). Unhealthy once that second has passed, or when the file is
-    # missing or unreadable; `unhealthy` shows interval x retries = 3 x 30 s = 90 s after the deadline at the latest, for any MEMORY_LEASE_SECONDS.
+    # writes it every turn, the claim of a job rewrites it with the deadline of the first renewal and every lease renewal (every lease/3) renews it, all only while the
+    # database answers). Unhealthy once that second has passed, or when the file is missing or unreadable; `unhealthy` shows interval x retries = 3 x 30 s = 90 s after
+    # the deadline at the latest, for any MEMORY_LEASE_SECONDS and any MEMORY_WORKER_DB_BACKOFF_MAX (a test drives the whole loop and probes every 30 s).
     healthcheck:
       test: [CMD, python, -c, "import sys, time; sys.exit(0 if time.time() < float(open('/tmp/kairos-worker-heartbeat').read()) else 1)"]
       interval: 30s

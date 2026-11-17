@@ -135,7 +135,7 @@ class Worker:
         if self.last_store_ok is None or self.clock()-self.last_store_ok > STORE_OK_MAX_AGE:
             return False
         if allowance is None:
-            allowance = getattr(self.settings, 'worker_db_backoff_max', DEFAULT_BACKOFF_MAX)
+            allowance = max(IDLE_SECONDS, getattr(self.settings, 'worker_db_backoff_max', DEFAULT_BACKOFF_MAX))
         try:
             with open(self.heartbeat_file, 'w', encoding='utf-8') as handle:
                 handle.write(f'{self.wall()+allowance+HEARTBEAT_MARGIN:.3f}' + chr(10))
@@ -275,13 +275,24 @@ class Worker:
         started, outcome = time.monotonic(), 'failed'
         written = False  # the write of the outcome landed (also when the heartbeat had marked the lease lost and `_landed` proved it): the metric then says what really happened
         lease = [self.clock()+self.settings.lease_seconds]  # when this worker's own clock says the lease runs out; moved by every renewal that works
+        period = self.settings.lease_seconds/3
+        self.beat(period)  # the claim just worked (`_store` advanced `last_store_ok`): from here the next beat is the first renewal, due in lease/3, not the (shorter) wait of a loop turn
+        cap = getattr(self.settings, 'worker_db_backoff_max', DEFAULT_BACKOFF_MAX)
+        def retry_wait(misses):
+            """Wait before repeating a renewal that failed: the wait of a claim (growing, jittered, at most MEMORY_WORKER_DB_BACKOFF_MAX), and never past the lease this worker's clock keeps.
+            Once that lease has run out the period is back (the database refuses a lease that ran out anyway: `renew_lease` only renews a live one)."""
+            left = lease[0]-self.clock()
+            return period if left <= 0 else min(period, backoff_delay(misses, cap, self.rng), left)
         async def heartbeat():
+            wait, misses = period, 0
             while True:
-                await self._heartbeat_wait(max(0.1, self.settings.lease_seconds/3))
+                await self._heartbeat_wait(max(0.1, wait))
+                wait = period
                 try:
                     beat = self.clock()
                     renewed = await self._store('heartbeat', self.store.renew_lease, job['id'], job['fence'], self.settings.lease_seconds)
-                    self.beat(self.settings.lease_seconds/3)  # the renewal worked (`_store` advanced `last_store_ok`): a job that takes long is a worker that lives; the next beat is due in lease/3
+                    misses = 0
+                    self.beat(period)  # the renewal worked (`_store` advanced `last_store_ok`): a job that takes long is a worker that lives; the next beat is due in lease/3
                     if renewed:
                         lease[0] = beat+self.settings.lease_seconds
                     else:
@@ -289,10 +300,14 @@ class Worker:
                         lost.set()
                         return
                 except StoreUnavailable:
-                    continue  # logged by `_store`: the lease is what the database says, so the next beat tries again; the job is lost only when it says so
+                    misses += 1
+                    wait = retry_wait(misses)
+                    continue  # logged by `_store`: the lease is what the database says, so it is asked again after a short wait; the job is lost only when it says so
                 except Exception as exc:
-                    if is_store_transient(exc):  # the database answered with an error worth repeating: the next beat tries again while the lease lives
+                    if is_store_transient(exc):  # the database answered with an error worth repeating: asked again after a short wait while the lease lives
                         observability.log_failure('store_retry', exc, 'warning', reason='heartbeat')
+                        misses += 1
+                        wait = retry_wait(misses)
                         continue
                     observability.log_failure('heartbeat_failed', exc, 'warning', destination=destination)
                     lost.set()
@@ -399,6 +414,7 @@ class Worker:
                     observability.log_failure('store_unavailable' if unavailable else 'worker_loop_error', exc, 'warning' if unavailable else 'error',
                                               reason='loop', count=self.store_failures)
             if self.store_failures:
+                self.beat()  # a job that ended with its renewals working may leave the last beat older than this wait: the deadline covers the wait that follows (a database that is down gives no beat)
                 await self._wait(backoff_delay(self.store_failures, cap, self.rng))
             elif not worked:
                 await self._wait(IDLE_SECONDS)

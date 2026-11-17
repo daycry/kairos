@@ -61,13 +61,24 @@ class LimitTests(unittest.TestCase):
             self.assertTrue(default == 0 or default <= 1, f'{name}: cpus default {default} may not start on a host with one CPU')
 
     def test_memory_api_has_room_for_its_largest_answers(self):
-        """One answer of 200 observations of ~300 KB is a 60 MB JSON and ~200 MB of peak (tracemalloc); the base is ~100 MB and the pool serves 10 requests at once."""
+        """One answer of 200 observations of ~300 KB (`context` repeats the content) is a ~120 MB JSON and a ~360 MB peak while it is rendered (tracemalloc); the base is
+        ~100 MB. The pool does not bound the answers held in memory (the connection is released before the answer is built), so the floor is a count of answers, not the pool."""
         text = CONFIGURATION.read_text(encoding='utf-8')
         row = next(l for l in text.splitlines() if l.startswith('| `MEMORY_API_MEM_LIMIT`'))
         default, vps = [c.strip().strip('`') for c in row.split('|')[2:4]]
         self.assertEqual(default, '2g')
-        self.assertGreaterEqual(mebibytes(LIMIT.match(self.services['memory-api']['mem_limit'])['default']), 100+9*200, 'nine answers of the largest size at once on top of the base (ten at once is the pool, and its extreme)')
-        self.assertGreaterEqual(mebibytes(vps), 1024, 'at least four answers of the largest size at once')
+        base, peak, held = 100, 360, 120
+        self.assertGreaterEqual(mebibytes(LIMIT.match(self.services['memory-api']['mem_limit'])['default']), base+peak+13*held, 'one answer rendering and 13 held at once (~14)')
+        self.assertGreaterEqual(mebibytes(vps), base+peak+4*held, 'one answer rendering and 4 held at once (~5)')
+        section = text.split('**Memoria de `memory-api`.**', 1)[1].split(chr(10)+chr(10), 1)[0]
+        self.assertIn('no acota', section, 'the pool does not bound the answers in memory')
+        self.assertNotIn('puede bajar con él', section, 'the false advice: a smaller pool does not allow a smaller limit')
+
+    def test_the_documentation_says_that_the_limits_are_caps_and_not_reservations_and_what_to_do_in_four_gigabytes(self):
+        text = CONFIGURATION.read_text(encoding='utf-8')
+        section = text.split('**Los límites son topes, no reservas.**', 1)[1].split(chr(10)+chr(10), 1)[0]
+        self.assertIn('swap', section)
+        self.assertIn('4,25 GB', section)
 
     def test_the_vps_column_asks_for_no_more_cpus_than_the_vps_has_and_memory_mcp_gets_a_whole_one(self):
         rows = {m['name']: m['vps'].strip().strip('`') for m in (re.match(r'\| `(?P<name>MEMORY_[A-Z]+_CPUS)` \| `[^`]*` \| (?P<vps>[^|]*)\|', l) for l in CONFIGURATION.read_text(encoding='utf-8').splitlines()) if m}
@@ -133,16 +144,28 @@ class LoggingAndHostsTests(unittest.TestCase):
         self.assertIn('host-gateway', text)
         self.assertIn('extra_hosts', text)
 
-    def test_the_documentation_does_not_recommend_ollama_on_every_interface(self):
-        """An Ollama without authentication on 0.0.0.0 is reachable from every container of a network that is not internal, and `/api/pull` and `/api/delete`
-        would skip the allow list of the proxy: the manual says to listen on the gateway of the `egress` network (or to filter by its subnet) instead."""
+    def test_the_documentation_does_not_claim_that_listening_on_a_gateway_protects_ollama(self):
+        """An Ollama without authentication is reachable from every bridge network through the INPUT chain of the host, whatever host IP it listens on (`host-gateway` is the
+        gateway of docker0, not of `egress`, and DOCKER-USER only filters FORWARD): `/api/pull` and `/api/delete` would skip the allow list of the proxy. The manual must give
+        the INPUT rule (iptables and ufw) that admits only loopback and the subnet of `egress`, how to read that subnet and that it must be persisted and re-applied."""
         text = OPERATIONS.read_text(encoding='utf-8')
-        section = text.split('**Linux (el VPS).**', 1)[1].split(chr(10) + chr(10), 1)[0]
+        section = text.split('**Linux (el VPS).**', 1)[1].split(chr(10)+chr(10), 1)[0]
         self.assertNotIn('OLLAMA_HOST=0.0.0.0', section)
-        self.assertIn('docker network inspect', section)
-        self.assertIn("(index .IPAM.Config 0).Gateway", section)
-        self.assertIn('egress', section)
+        self.assertNotIn('Haz que escuche solo en la IP de la pasarela', section)
+        self.assertNotIn('pasarela de `egress` (la que usa `host-gateway`)', section)
+        self.assertIn('`INPUT`', section)
+        self.assertIn('DOCKER-USER', section)
+        self.assertIn('FORWARD', section)
+        self.assertIn('iptables -I INPUT', section)
+        self.assertIn('--dport 11434', section)
+        self.assertIn('ufw allow from', section)
+        self.assertIn('ufw deny 11434', section)
+        self.assertIn('docker network inspect <proyecto>_egress', section)
+        self.assertIn("(index .IPAM.Config 0).Subnet", section)
+        self.assertIn('netfilter-persistent', section)
+        self.assertIn('otra subred', section)
         self.assertIn('/api/pull', section)
+        self.assertIn('/api/delete', section)
 
 
 class WebHealthcheckTests(unittest.TestCase):
