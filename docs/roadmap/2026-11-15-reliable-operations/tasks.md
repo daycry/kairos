@@ -48,7 +48,7 @@ test-plan: n/a (sin UI)
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 9 | 9 | 100% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 6 | 6 | 100% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 4 | 4 | 100% | 0 / 7.2h | 1.06 / 1.0h | 0 / 0.2h | 0 / 240 k |
-| Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 0 | 7 | 0% | 0 / 19.8h | 0 / 2.6h | 0 / 0.7h | 0 / 660 k |
+| Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 4 | 7 | 57.1% | 0 / 19.8h | 0.27 / 2.6h | 0 / 0.7h | 0 / 660 k |
 | Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 0 | 7 | 0% | 0 / 34.2h | 0 / 4.6h | 0 / 1.1h | 0 / 1140 k |
 | Fase 11 — Sonda de ida y vuelta (C-06) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 0 | 7 | 0% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **53** | **98** | **54.1%** | **0 / 412.8h** | **4.98 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **57** | **98** | **58.2%** | **0 / 412.8h** | **5.25 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1685,38 +1685,42 @@ test-plan: n/a (sin UI)
 ### T-54 — `mem_limit` y `cpus` configurables en todos los servicios
 
 - **Descripción**: Declarar `mem_limit` y `cpus` en todos los servicios con variables `MEMORY_<SERVICIO>_MEM_LIMIT`/`_CPUS` y valores por defecto documentados para 32 GB locales y un VPS pequeño. Aviso: la instalación desplegada lo recoge solo en su próximo `up`. Fuente: CA-20; O-05; R-06.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: `memory-backup` ya no sale a Internet salvo que el destino sea `rclone:` (se añade con un fichero Compose aparte) y todos los servicios llevan límites de memoria y CPU configurables (`MEMORY_<SERVICIO>_MEM_LIMIT`/`_CPUS`).
+- **Cerrada**: 2026-11-17
+- **Estado**: completado
 - **Tiempo humano**: est. 2.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.33h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.33h (estimado) · real 0.09h (medido)
 - **Supervisión**: est. 0.08h (≈25 % IA) · real —
 - **Previsión IA**: 92 k in / 8 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
 - **Tipo**: devops
-- **Archivos**: `docker-compose.yml`, `server/memory_platform/tests/test_compose_limits.py`, `docs/configuration.md`
+- **Archivos**: `docker-compose.yml`, `server/memory_platform/tests/test_compose_limits.py`, `docs/configuration.md`, `docker-compose.backup-rclone.yml`, `server/memory_platform/Dockerfile`, `server/memory_platform/tests/test_backup_service.py`, `scripts/tests/test_ci_workflow.py`, `docs/operations.md`
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_compose_limits|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Todos los servicios de `docker-compose.yml` declaran `mem_limit` y `cpus` configurables por variable (prueba sobre el YAML y `docker compose -p kairos-ops-cfg config` en local)
-- [ ] `docs/configuration.md` documenta los valores por defecto para 32 GB locales y para un VPS pequeño
-- [ ] `memory-postgres` y `memory-worker` no quedan con un límite que los mate durante el relleno (valor justificado en `Notas`)
+- [x] Todos los servicios de `docker-compose.yml` declaran `mem_limit` y `cpus` configurables por variable (prueba sobre el YAML y `docker compose -p kairos-ops-cfg config` en local)
+- [x] `docs/configuration.md` documenta los valores por defecto para 32 GB locales y para un VPS pequeño
+- [x] `memory-postgres` y `memory-worker` no quedan con un límite que los mate durante el relleno (valor justificado en `Notas`)
 
 **Subtareas**
-- [ ] Escribir primero la prueba sobre el YAML (rojo)
-- [ ] Añadir límites y variables
-- [ ] Documentar
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero la prueba sobre el YAML (rojo)
+- [x] Añadir límites y variables
+- [x] Documentar
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Deuda Minor de la revisión de la Fase 7 (intento 1, n.º 10): `memory-backup` no debe tener la red `egress` con destino `dir:` (p. ej. override o servicio aparte para `rclone:`), con prueba sobre `compose config`. Patrón: `docker-compose.yml:154` (`mem_limit` en `memory-mcp`) y `tests/test_deploy_isolation.py:43-48` (lectura del compose). R-08: no tocar `ollama-proxy/default.conf.template` (lo monta `docker-compose.yml:48`).
+**Notas** (2026-11-17): RED: `test_compose_limits` (7 pruebas) falló con `FAILED (failures=4, errors=3)` (sin `mem_limit`/`cpus`, sin override rclone, `memory-backup` con `egress`) · 2026-11-17. Valores por defecto (32 GB locales; el VPS pequeño, 4 GB y 2 vCPU, en `docs/configuration.md`): ollama 256m/1, memory-postgres 4g/4, memory-migrate 512m/1, memory-bootstrap 256m/0.5, memory-files 128m/0.5, memory-api 1g/2, memory-mcp 1g/1 (el `1g` que ya existía, ahora configurable), memory-worker 1g/2, memory-web 256m/0.5, memory-admin 1g/2, memory-backup 1g/1. Justificación de postgres y worker (estimada, no medida en contenedor): PostgreSQL construye los HNSW en serie con `maintenance_work_mem` 256 MB más 128 MB de búferes, sesiones del pool y caché de páginas, unos 1,5 GB de trabajo, por eso 4g (1536m en un VPS); el worker retiene los vectores de los 200 fragmentos máximos (768 flotantes) varias veces, unas decenas de MB, y `1g` es un margen holgado (512m en un VPS); una prueba exige ≥ 2048 MB para postgres y ≥ 1024 MB para el worker por defecto. Deuda de egress (revisión de la Fase 7, n.º 10): `memory-backup` queda solo en `memory-data`; `docker-compose.backup-rclone.yml` (nuevo, solo `networks: [egress]` para `memory-backup`) lo añade con `-f docker-compose.yml -f docker-compose.backup-rclone.yml`; pruebas sobre el YAML de ambos ficheros (`BackupEgressTests`) y `docker compose config` con los dos ficheros muestra `egress` y `memory-data`. Se actualizó `test_backup_service` (esperaba `egress`) y `scripts/tests/test_ci_workflow.py::ComposeLimitsTests` (esperaba `mem_limit: 1g` literal; ahora acepta la variable con su valor por defecto); el `Dockerfile` copia el override a la etapa de pruebas. `docker compose -p kairos-ops-cfg --profile memory --profile memory-admin --profile backup config` OK (límites en bytes). Ensayo de despliegue sin cambios (`test_deploy_isolation`, `test_deploy` OK). Verificación: la orden `docker build … --target test` completa se ejecuta en T-59; aquí las pruebas se ejecutaron en la imagen de pruebas ya construida (`kairos-test:i3p8f2`) montando los ficheros cambiados: `test_compose_limits` + `test_backup_service` 13 OK; `test_ci_workflow` 45 OK. `usage-meter`: 0,09 h (medido).
+
+**Notas del plan**: Deuda Minor de la revisión de la Fase 7 (intento 1, n.º 10): `memory-backup` no debe tener la red `egress` con destino `dir:` (p. ej. override o servicio aparte para `rclone:`), con prueba sobre `compose config`. Patrón: `docker-compose.yml:154` (`mem_limit` en `memory-mcp`) y `tests/test_deploy_isolation.py:43-48` (lectura del compose). R-08: no tocar `ollama-proxy/default.conf.template` (lo monta `docker-compose.yml:48`).
 
 ### T-55 — Rotación de logs en `ollama` y `memory-postgres` y `extra_hosts`
 
 - **Descripción**: Hacer que `ollama` y `memory-postgres` hereden la rotación `json-file` (`max-size`, `max-file`) de `x-process` y añadir `extra_hosts: ["host.docker.internal:host-gateway"]` al servicio `ollama` (el VPS es Linux). Fuente: CA-22, CA-25; O-05, O-06.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: `ollama`, `memory-postgres` y `memory-files` rotan sus logs como el resto de servicios y el proxy `ollama` resuelve `host.docker.internal` también en Linux (el VPS).
+- **Cerrada**: 2026-11-17
+- **Estado**: completado
 - **Tiempo humano**: est. 1.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real 0.03h (medido)
 - **Supervisión**: est. 0.05h (≈25 % IA) · real —
 - **Previsión IA**: 55 k in / 5 k out tok · ⚠️ verificar €
 - **Dependencias**: T-54
@@ -1726,53 +1730,58 @@ test-plan: n/a (sin UI)
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_compose_limits|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Todos los servicios rotan logs con `json-file`, `max-size` y `max-file` (prueba sobre el YAML)
-- [ ] `ollama` declara `extra_hosts: ["host.docker.internal:host-gateway"]` y `docs/operations.md` explica el caso Linux
-- [ ] `ollama-proxy/default.conf.template` sin cambios (`git diff --stat` lo confirma)
+- [x] Todos los servicios rotan logs con `json-file`, `max-size` y `max-file` (prueba sobre el YAML)
+- [x] `ollama` declara `extra_hosts: ["host.docker.internal:host-gateway"]` y `docs/operations.md` explica el caso Linux
+- [x] `ollama-proxy/default.conf.template` sin cambios (`git diff --stat` lo confirma)
 
 **Subtareas**
-- [ ] Escribir primero la prueba (rojo)
-- [ ] Aplicar `x-process`/`logging` a los dos servicios
-- [ ] Añadir `extra_hosts` y la nota de Linux
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero la prueba (rojo)
+- [x] Aplicar `x-process`/`logging` a los dos servicios
+- [x] Añadir `extra_hosts` y la nota de Linux
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `docker-compose.yml:36-38` (`x-process`), `:41-85` (servicios sin rotación), `:45` (`OLLAMA_UPSTREAM` con `host.docker.internal`).
+**Notas** (2026-11-17): RED: `LoggingAndHostsTests` (4 pruebas) falló con `FAILED (failures=3, errors=1)` (sin `logging`/`extra_hosts`, sin la explicación en `docs/operations.md`) · 2026-11-17. La rotación sale de un ancla nueva `x-logging` que reutiliza `x-process`; también cubre `memory-files`, que tampoco tenía rotación. `ollama-proxy/default.conf.template` sin cambios: `git diff --stat main -- ollama-proxy` vacío. Verificación: la orden `docker build … --target test` completa se ejecuta en T-59; aquí las pruebas se ejecutaron en la imagen de pruebas ya construida (`kairos-test:i3p8f2`) montando los ficheros cambiados: `test_compose_limits` 11 OK al cerrar la tarea; `docker compose config -q` OK. `usage-meter`: 0,03 h (medido).
+
+**Notas del plan**: Patrón: `docker-compose.yml:36-38` (`x-process`), `:41-85` (servicios sin rotación), `:45` (`OLLAMA_UPSTREAM` con `host.docker.internal`).
 
 ### T-56 — Latido del worker y healthcheck de `memory-worker`
 
 - **Descripción**: El bucle del worker escribe `/tmp/kairos-worker-heartbeat` en cada vuelta (solo si `last_store_ok` es reciente: R-01) y `memory-worker` declara un healthcheck por antigüedad del fichero; con el bucle parado, el contenedor pasa a `unhealthy` en ≤ `interval × retries`. Fuente: CA-21; O-05; R-01.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: `memory-worker` pasa a `unhealthy` si su bucle se para o no alcanza la base durante unos minutos (latido en `/tmp/kairos-worker-heartbeat`, healthcheck cada 30 s).
+- **Estado**: en-progreso
 - **Tiempo humano**: est. 3h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.10h (medido)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 110 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: T-54
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/worker.py`, `docker-compose.yml`, `server/memory_platform/tests/test_worker_heartbeat.py`
+- **Archivos**: `server/memory_platform/worker.py`, `docker-compose.yml`, `server/memory_platform/tests/test_worker_heartbeat.py`, `docs/operations.md`
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_worker_heartbeat|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Prueba unitaria con reloj inyectado: el latido avanza en cada vuelta sana y no avanza si la base lleva caída más que el umbral
-- [ ] `memory-worker` declara healthcheck por antigüedad de `/tmp/kairos-worker-heartbeat` (fichero en el `tmpfs` existente) con `interval × retries` documentados
+- [x] Prueba unitaria con reloj inyectado: el latido avanza en cada vuelta sana y no avanza si la base lleva caída más que el umbral
+- [x] `memory-worker` declara healthcheck por antigüedad de `/tmp/kairos-worker-heartbeat` (fichero en el `tmpfs` existente) con `interval × retries` documentados
 - [ ] El caso real de `unhealthy` con el bucle detenido se ejercita en el ensayo de la Fase 10
 
 **Subtareas**
-- [ ] Escribir primero la prueba del latido (rojo)
-- [ ] Escribir el latido en el bucle (usa `last_store_ok` de la Fase 2)
-- [ ] Añadir el healthcheck al compose
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero la prueba del latido (rojo)
+- [x] Escribir el latido en el bucle (usa `last_store_ok` de la Fase 2)
+- [x] Añadir el healthcheck al compose
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `worker.py:178-184` (`run`), `docker-compose.yml:32-33` (`tmpfs` y sistema de ficheros de solo lectura) y `:170-194` (servicios sin healthcheck). Aprendizaje 2: reloj inyectado.
+**Notas** (2026-11-17): Estado `en-progreso` solo por el último criterio (el lint no admite `completado` con un criterio sin marcar): el código, las pruebas y el healthcheck están hechos; el caso real de `unhealthy` es de T-64 (Fase 10) y al cumplirse se marca `[x]` y `completado` con `Cerrada`. RED: `test_worker_heartbeat` falló con `ImportError: cannot import name 'HEARTBEAT_FILE' from 'memory_platform.worker'` · 2026-11-17. `Worker.beat()` escribe el fichero una vez por vuelta de `run` y en cada renovación de concesión que funciona (un trabajo largo no se ve parado), solo si `clock() - last_store_ok` ≤ máx(120 s, lease/3 + 60 s); un error de escritura se registra una vez (`heartbeat_file_failed`) y no para el worker; `serve()` pasa `HEARTBEAT_FILE`. Healthcheck: fichero con menos de 180 s, `interval` 30 s × `retries` 3 = 90 s, `timeout` 5 s, `start_period` 60 s; `unhealthy` ≤ 270 s tras parar el bucle (documentado en `docs/operations.md` y en un comentario del compose). Pruebas con reloj inyectado: avanza en cada vuelta sana, se congela con la base caída más que el umbral, vuelve al recuperarse, umbral con lease larga, fichero no escribible, sin fichero, renovación de una concesión larga, y el healthcheck del compose. Sigue abierto el ejercicio real de `unhealthy` con el bucle detenido: es del ensayo de la Fase 10 (T-64) por diseño. Verificación: la orden `docker build … --target test` completa se ejecuta en T-59; aquí las pruebas se ejecutaron en la imagen de pruebas ya construida (`kairos-test:i3p8f2`) montando los ficheros cambiados: `test_worker_heartbeat` 10 OK, más `test_worker_db_down.BackoffTests`/`LoopTests` sin regresión. `usage-meter`: 0,10 h (medido).
+
+**Notas del plan**: Patrón: `worker.py:178-184` (`run`), `docker-compose.yml:32-33` (`tmpfs` y sistema de ficheros de solo lectura) y `:170-194` (servicios sin healthcheck). Aprendizaje 2: reloj inyectado.
 
 ### T-57 — Healthcheck de `memory-web`
 
 - **Descripción**: Añadir healthcheck a `memory-web` con `GET /health/live` del proxy nginx. Fuente: CA-21; O-05.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: `memory-web` tiene healthcheck (consulta `/health/live` del propio proxy), por lo que `docker compose ps` ya muestra si el portal responde.
+- **Cerrada**: 2026-11-17
+- **Estado**: completado
 - **Tiempo humano**: est. 1.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real 0.02h (medido)
 - **Supervisión**: est. 0.05h (≈25 % IA) · real —
 - **Previsión IA**: 55 k in / 5 k out tok · ⚠️ verificar €
 - **Dependencias**: T-54
@@ -1782,39 +1791,44 @@ test-plan: n/a (sin UI)
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_compose_limits|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] `memory-web` declara healthcheck contra `/health/live` y la prueba sobre el YAML lo comprueba
-- [ ] `web/nginx.conf` no cambia (la ruta ya existe en `:44`)
+- [x] `memory-web` declara healthcheck contra `/health/live` y la prueba sobre el YAML lo comprueba
+- [x] `web/nginx.conf` no cambia (la ruta ya existe en `:44`)
 
 **Subtareas**
-- [ ] Escribir primero la prueba (rojo)
-- [ ] Añadir el healthcheck
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero la prueba (rojo)
+- [x] Añadir el healthcheck
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `web/nginx.conf:44` (`location = /health/live`) y `docker-compose.yml:170-194`.
+**Notas** (2026-11-17): RED: `WebHealthcheckTests` falló con `ERROR` (`memory-web` sin clave `healthcheck`) · 2026-11-17. Healthcheck `wget -qO- -T 3 http://127.0.0.1:8080/health/live` (la imagen nginx lleva `wget`, comprobado con `docker run --rm --network=none --entrypoint sh kairos-web:latest`), `interval` 15 s, `timeout` 5 s, `retries` 6, como `memory-api`/`memory-mcp`. `web/nginx.conf` sin cambios (`git diff --stat main -- web/nginx.conf` vacío). Verificación: la orden `docker build … --target test` completa se ejecuta en T-59; aquí las pruebas se ejecutaron en la imagen de pruebas ya construida (`kairos-test:i3p8f2`) montando los ficheros cambiados: `test_compose_limits` 13 OK. `usage-meter`: 0,02 h (medido).
+
+**Notas del plan**: Patrón: `web/nginx.conf:44` (`location = /health/live`) y `docker-compose.yml:170-194`.
 
 ### T-58 — Documentar límites, healthchecks, rotación y `extra_hosts`
 
 - **Descripción**: Completar `docs/configuration.md` y `docs/operations.md` con límites por servicio, healthchecks y el caso Linux de `host.docker.internal`. Fuente: CA-20, CA-21, CA-22, CA-25 (documentación).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Los manuales de configuración y de operación listan los límites por servicio, los healthchecks, la rotación de logs y el caso Linux de `host.docker.internal`.
+- **Cerrada**: 2026-11-17
+- **Estado**: completado
 - **Tiempo humano**: est. 1h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real 0.03h (medido)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 37 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: T-56, T-57, T-55
 - **Tipo**: docs
-- **Archivos**: `docs/configuration.md`, `docs/operations.md`
+- **Archivos**: `docs/configuration.md`, `docs/operations.md`, `server/memory_platform/tests/test_compose_limits.py`
 - **Cubre (tests)**: —
 - **Verificación**: lectura: `docs/configuration.md` lista las variables `MEMORY_*_MEM_LIMIT`/`_CPUS` por servicio con valores por defecto
 
 **Criterios de aceptación**
-- [ ] Variables y valores iguales a `docker-compose.yml`
+- [x] Variables y valores iguales a `docker-compose.yml`
 
 **Subtareas**
-- [ ] Actualizar los dos manuales
-- [ ] `usage-meter start/close` de la tarea
+- [x] Actualizar los dos manuales
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Estilo: tablas de `docs/configuration.md`.
+**Notas** (2026-11-17): TDD n/a: documentación (la prueba `DocumentedHealthchecksTests` se añadió con la tabla para que los dos manuales no se separen del compose). `docs/configuration.md`: sección «Límites de memoria y CPU de los servicios» (22 variables con el valor por defecto del compose y la propuesta para un VPS pequeño, más «Relleno» que justifica postgres y worker) y la nota de `docker-compose.backup-rclone.yml`; `docs/operations.md`: «Rotación de logs y `host.docker.internal` en Linux», «Healthchecks de los servicios» (tabla con `interval`, `timeout`, `retries` y `interval × retries`), latido del worker y red de salida de `memory-backup`. Pruebas: `test_the_documentation_lists_every_variable_with_the_default_of_the_compose_file`, `DocumentedHealthchecksTests` y `test_the_documentation_explains_the_choice`. Verificación: la orden `docker build … --target test` completa se ejecuta en T-59; aquí las pruebas se ejecutaron en la imagen de pruebas ya construida (`kairos-test:i3p8f2`) montando los ficheros cambiados: `test_compose_limits` 15 OK. `usage-meter`: 0,03 h (medido).
+
+**Notas del plan**: Estilo: tablas de `docs/configuration.md`.
 
 ### T-59 — Cierre de fase: suite completa y subida del mínimo
 
