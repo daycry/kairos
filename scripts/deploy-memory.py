@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+import errno
 import hashlib
 import http.cookiejar
 import json
@@ -24,6 +25,15 @@ import urllib.error
 import urllib.request
 import uuid
 
+try:  # the operating-system lock of the deployment (DeployLock): one of them exists on every platform this script runs on
+    import fcntl
+except ImportError:
+    fcntl = None
+try:
+    import msvcrt
+except ImportError:
+    msvcrt = None
+
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PROJECT = 'knowledge-graphs'
 DEFAULT_API_PORT, DEFAULT_WEB_PORT = 8790, 5173
@@ -36,8 +46,8 @@ VERIFY_NAME_PROJECT = 24  # the longest project text in a verify container name:
 VERIFY_MAINTENANCE_WORK_MEM = '256MB'  # the restore rebuilds the vector indexes: the 64 MB default makes a big one slow enough to exhaust the plazo
 BACKUP_TIMEOUT_MAX_SECONDS = 86400  # a timeout is a bound: 0 or "no limit" would let a stuck copy hang the deployment
 EXIT_LOCKED, EXIT_NO_PREVIOUS_IMAGES, EXIT_ALREADY_AT_PREVIOUS = 3, 4, 5  # exit codes of `deployment_locked`, `no_previous_images` and `already_at_previous` (documented in docs/operations.md)
-LOCK_GRACE_SECONDS = 30  # a lock file that cannot be read and is younger than this may be one that is still being written: --break-lock leaves it
-LOCK_FILE = 'deployment.lock'  # in the private directory of the project: created exclusively by the deployment that runs, removed when it ends (T-61, CA-23)
+LOCK_OFFSET = 1 << 30  # Windows: the byte that is locked lies far beyond the content, because a locked region cannot be read by other processes (a refusal reads the owner)
+LOCK_FILE = 'deployment.lock'  # in the private directory of the project: held with an operating-system lock by the deployment that runs, emptied (never deleted) when it ends (T-61, CA-23)
 ISOLATED_PRIVATE_FILES = ('memory-platform.env', 'compose.override.yml', 'deployment-status.json', 'deployment-status.tmp', LOCK_FILE)
 VOLUMES = (DEFAULT_PROJECT + '_memory-postgres-data', DEFAULT_PROJECT + '_memory-backups')
 SERVICES = ('memory-api', 'memory-worker', 'memory-mcp', 'memory-web')
@@ -50,7 +60,10 @@ SPY_QUERY = f"import urllib.request;print(urllib.request.urlopen('http://127.0.0
 IMAGE_NAMES = ('api', 'worker', 'mcp', 'web', 'operator')  # what a deployment tags and a rollback restores; never `postgres`: the server of the data directory is not rolled back (T-62, CA-24)
 ROLLBACK_SERVICES = {'api': 'memory-api', 'worker': 'memory-worker', 'mcp': 'memory-mcp', 'web': 'memory-web'}  # the containers a rollback recreates
 TAGS_KEPT = 2  # the tagged images of the releases before the current one that are kept per image; the older tags are removed
-TAG_MARK = re.compile(r'^[A-Za-z0-9_.]+-(\d{8}T\d{6}Z)$')  # `<version>-<mark>` of a tag this script made
+TAG_MARK = re.compile(r'[A-Za-z0-9_][A-Za-z0-9_.]*-([0-9]{8}T[0-9]{6}Z)')  # `<version>-<mark>` of a tag this script made (`fullmatch`; the first character is the one Docker allows)
+TAG_VERSION = re.compile(r'[A-Za-z0-9_][A-Za-z0-9_.]*')  # the version part of such a tag; with `-<mark>` the whole tag fits Docker's `[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}`
+TAG_MAX_LENGTH = 128
+IMAGE_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9:_.-]{0,200}')  # an image id read from deployment-status.json: data on disk is never passed to docker as anything else (an option, a space)
 PHASES = ('engine', 'configuration', 'build', 'database', 'inspect', 'backup',
           'migrate', 'bootstrap', 'backfill', 'start', 'verify')
 ROLLBACK_PHASES = ('engine', 'configuration', 'rollback', 'verify')  # `--rollback`: no backup, no migrate, no bootstrap, no backfill
@@ -66,56 +79,37 @@ class NoPreviousImages(DeploymentError):
 
 
 class AlreadyAtPrevious(DeploymentError):
-    """`already_at_previous` (CA-24, fix1): the images `--rollback` would go back to are the ones every service already has in `:latest`; nothing was touched and nothing is reported as rolled back."""
+    """`already_at_previous` (CA-24, fix1, fix2): the images `--rollback` would go back to are the ones the CONTAINERS of the four services already run (not `:latest`); nothing was touched and nothing is reported as rolled back."""
     code = 'already_at_previous'
 
 
 def release_version(root):
-    """The version the tags carry: the one of the components (`client/package.json`), made safe for a Docker tag; `unversioned` without it."""
+    """The version the tags carry: the one of the components (`client/package.json`), made safe for a Docker tag (`[A-Za-z0-9_][A-Za-z0-9_.]*`, at most 40 characters: with `-<mark>` it always
+    fits Docker's grammar); `unversioned` without it."""
     try:
         version = json.loads((Path(root) / 'client' / 'package.json').read_text(encoding='utf-8')).get('version')
     except (OSError, ValueError, AttributeError):
         version = None
-    return re.sub(r'[^A-Za-z0-9_.]', '_', version)[:40] if isinstance(version, str) and version else 'unversioned'
+    if not (isinstance(version, str) and version):
+        return 'unversioned'
+    return re.sub(r'[^A-Za-z0-9_.]', '_', version)[:40].lstrip('.') or 'unversioned'
+
+
+def tag_version(candidate, fallback, mark):
+    """`candidate` (a version read from a report) if `<candidate>-<mark>` is a tag Docker accepts, else `fallback` (the version of the code)."""
+    if isinstance(candidate, str) and TAG_VERSION.fullmatch(candidate) and len(candidate) + 1 + len(mark) <= TAG_MAX_LENGTH:
+        return candidate
+    return fallback
 
 
 class DeploymentLocked(DeploymentError):
-    """`deployment_locked` (CA-23): another deployment of the project holds the lock, or a lock is left that only `--break-lock` removes. `owner` is what the lock file says (may be empty)."""
+    """`deployment_locked` (CA-23): another deployment of the project holds the operating-system lock, the lock cannot be taken (any error of the system), or the file says another host holds it and
+    only `--break-lock` removes it. `owner` is what the lock file says (may be empty)."""
     code = 'deployment_locked'
 
     def __init__(self, message, owner=None):
         super().__init__(message)
         self.owner = owner or {}
-
-
-def pid_alive(pid):
-    """Whether a process with this PID exists on this machine. `os.kill(pid, 0)` is the POSIX probe; on Windows it would TERMINATE the process, so the process table is asked instead."""
-    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
-        return False
-    if os.name == 'nt':
-        import ctypes
-        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
-        kernel.OpenProcess.restype = ctypes.c_void_p
-        kernel.OpenProcess.argtypes = (ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong)
-        kernel.GetExitCodeProcess.argtypes = (ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong))
-        kernel.CloseHandle.argtypes = (ctypes.c_void_p,)
-        handle = kernel.OpenProcess(0x1000, 0, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
-        if not handle:
-            return ctypes.get_last_error() == 5  # access denied: it exists
-        try:
-            code = ctypes.c_ulong()
-            return bool(kernel.GetExitCodeProcess(handle, ctypes.byref(code))) and code.value == 259  # STILL_ACTIVE
-        finally:
-            kernel.CloseHandle(handle)
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    except OSError:
-        return False
-    return True
 
 
 def process_stamp(pid):
@@ -154,13 +148,15 @@ def process_stamp(pid):
 
 
 class DeployLock:
-    """One deployment at a time per project (CA-23): `deployment.lock` in the private directory, created exclusively (`O_EXCL`) with the PID, host, start time, a token and the `stamp`.
+    """One deployment at a time per project (CA-23): an OPERATING-SYSTEM lock on `deployment.lock` in the private directory of the project, held by an open file for the whole deployment
+    (`fcntl.flock` on POSIX, `msvcrt.locking` on Windows, a byte far beyond the content so that the file stays readable). The system frees it when the process ends, however it ends
+    (a SIGKILL, a power cut and a restart included), so a lock that can be taken has no live owner on this host by definition: nothing is renamed, linked back, compared or broken, and
+    there is no window between two owners (fix2, review of phase 10). The file is never deleted by a deployment: deleting it would open exactly that window.
 
-    A lock that exists makes `acquire` raise `DeploymentLocked` and run nothing. If its owner is on this host and dead, the message says so; it is still not removed: only
-    `break_lock` does it, and never for an owner that is alive here. A lock of another host or one that cannot be read cannot be checked: `break_lock` removes it (an unreadable
-    one only after LOCK_GRACE_SECONDS: a deployment may still be writing it). The owner is the PID AND its `stamp` (`process_stamp`): a PID that another process holds now is dead
-    for this purpose. Breaking is atomic: the lock is renamed to a name of its own and removed only if it still is the one that was read; otherwise it is put back (fix1).
-    The lock is removed by `release` only while the file still carries this deployment's token (one that somebody else took over is not ours to delete).
+    The JSON in it (PID, host, start, project, `stamp` of the process, token) is INFORMATIVE: written after the lock is taken and emptied before it is let go; a refusal shows it. A lock
+    that is held makes `acquire` raise `DeploymentLocked` and run nothing; so does any operating-system error taking it (never a traceback). `--break-lock` is only for a lock the file says
+    belongs to ANOTHER host (a private directory on a shared disk, whose process cannot be checked here): the file is deleted (on POSIX; Windows refuses to delete a file that is open) and
+    the lock is taken on a new one, after checking that the file is still the one that was refused. It never touches the lock of a process of this host.
     """
 
     def __init__(self, directory, project, break_lock=False):
@@ -169,8 +165,10 @@ class DeployLock:
         self.token = uuid.uuid4().hex
         self.held = False
         self.broken = None  # the owner of the lock this one replaced
+        self.descriptor = None
 
     def owner(self):
+        """What the file says about its owner, `{}` if it says nothing usable (missing, empty, unreadable, not JSON, not an object)."""
         try:
             value = json.loads(self.path.read_text(encoding='utf-8'))
         except (OSError, ValueError):
@@ -178,95 +176,121 @@ class DeployLock:
         return value if isinstance(value, dict) else {}
 
     def describe(self, owner):
-        pid, host, started = owner.get('pid'), owner.get('host'), owner.get('started_at')
         if not owner:
-            return 'a lock file exists and cannot be read'
-        return f'started by PID {pid} on {host} at {started}'
+            return 'whose owner the lock file does not say'
+        return f"started by PID {owner.get('pid')} on {owner.get('host')} at {owner.get('started_at')}"
+
+    @staticmethod
+    def _lock_file(descriptor):
+        """Take the operating-system lock without waiting: OSError if somebody holds it (or the system cannot lock this file)."""
+        if fcntl is not None:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        elif msvcrt is not None:
+            os.lseek(descriptor, LOCK_OFFSET, os.SEEK_SET)
+            try:
+                msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+            finally:
+                os.lseek(descriptor, 0, os.SEEK_SET)
+        else:  # pragma: no cover (no platform this script supports)
+            raise OSError('this platform has no file locking')
+
+    @staticmethod
+    def _unlock_file(descriptor):
+        if fcntl is not None:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        elif msvcrt is not None:
+            os.lseek(descriptor, LOCK_OFFSET, os.SEEK_SET)
+            try:
+                msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+            finally:
+                os.lseek(descriptor, 0, os.SEEK_SET)
 
     def acquire(self):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        for attempt in (1, 2):
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise DeploymentLocked(f'the directory of the lock ({self.path.parent}) cannot be made: {exc.strerror or exc}') from None
+        for attempt in (1, 2, 3):
             try:
-                descriptor = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-            except FileExistsError:
+                descriptor = os.open(self.path, os.O_RDWR | os.O_CREAT | getattr(os, 'O_BINARY', 0), 0o600)
+            except OSError as exc:
+                raise DeploymentLocked(f'the lock file {self.path} cannot be opened: {exc.strerror or exc}') from None
+            try:
+                self._lock_file(descriptor)
+            except OSError as exc:
                 owner = self.owner()
-                if attempt == 2 or not self.break_lock or not self.breakable(owner) or not self.take_over(owner):
-                    raise DeploymentLocked(self.refusal(owner), owner) from None
-                self.broken = owner
+                refused = os.fstat(descriptor)
+                os.close(descriptor)
+                if attempt < 3 and self.break_lock and self.foreign(owner) and self.remove_foreign(refused):
+                    self.broken = owner
+                    continue
+                raise DeploymentLocked(self.refusal(owner, exc), owner) from None
+            if not self.is_current(descriptor):  # a `--break-lock` deleted the file between our open and our lock: what we hold is a file nobody sees any more
+                self.close(descriptor)
                 continue
-            with os.fdopen(descriptor, 'w', encoding='utf-8') as handle:
-                json.dump({'pid': os.getpid(), 'host': socket.gethostname(), 'started_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
-                           'project': self.project, 'token': self.token, 'stamp': process_stamp(os.getpid())}, handle)
-            self.held = True
+            try:
+                os.ftruncate(descriptor, 0)
+                os.write(descriptor, json.dumps({'pid': os.getpid(), 'host': socket.gethostname(), 'started_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+                                                 'project': self.project, 'token': self.token, 'stamp': process_stamp(os.getpid())}).encode('utf-8'))
+            except OSError as exc:  # the lock is ours, but a file that cannot say who holds it would lie to the next one: it is not taken
+                self.close(descriptor)
+                raise DeploymentLocked(f'the lock file {self.path} cannot be written: {exc.strerror or exc}') from None
+            self.descriptor, self.held = descriptor, True
             return self
-        raise DeploymentLocked('the lock could not be taken')  # pragma: no cover (the loop always returns or raises)
+        raise DeploymentLocked(f'the lock file {self.path} kept changing while it was taken; try again')
 
-    def take_over(self, owner):
-        """Remove the lock whose content was `owner`, atomically: rename it to a name of its own and check what was renamed. True if it was that lock (or it was already gone);
-        False, with the lock put back, if it was another one (somebody else broke the first and took the lock meanwhile)."""
-        grabbed = self.path.with_name(f'{LOCK_FILE}.{uuid.uuid4().hex}.broken')
+    def is_current(self, descriptor):
         try:
-            os.rename(self.path, grabbed)
-        except FileNotFoundError:
-            return True
-        try:
-            try:
-                value = json.loads(grabbed.read_text(encoding='utf-8'))
-            except (OSError, ValueError):
-                value = {}
-            if value == owner:
-                return True
-            try:
-                os.link(grabbed, self.path)  # the lock that was not the one read: back where it was (fails if a newer one is there: that one wins)
-            except OSError:
-                pass
-            return False
-        finally:
-            grabbed.unlink(missing_ok=True)
-
-    def local(self, owner):
-        return bool(owner) and owner.get('host') == socket.gethostname() and isinstance(owner.get('pid'), int)
-
-    def running(self, owner):
-        """The owner is a process of this host that is alive AND is the one that took the lock (same `stamp`; a lock without one, made by an earlier version, is judged by the PID)."""
-        if not (self.local(owner) and pid_alive(owner['pid'])):
-            return False
-        stamp = owner.get('stamp')
-        return not (isinstance(stamp, str) and process_stamp(owner['pid']) not in (None, stamp))
-
-    def recent_unreadable(self, owner):
-        if owner:
-            return False
-        try:
-            return time.time() - self.path.stat().st_mtime < LOCK_GRACE_SECONDS
+            return os.path.samestat(os.fstat(descriptor), os.stat(self.path))
         except OSError:
             return False
 
-    def breakable(self, owner):
-        return not self.running(owner) and not self.recent_unreadable(owner)
+    def close(self, descriptor):
+        try:
+            self._unlock_file(descriptor)
+        except OSError:
+            pass
+        finally:
+            os.close(descriptor)
 
-    def refusal(self, owner):
+    def foreign(self, owner):
+        """The file says its owner is on another host (a PID of another machine means nothing here)."""
+        return isinstance(owner.get('host'), str) and bool(owner['host']) and owner['host'] != socket.gethostname()
+
+    def remove_foreign(self, refused):
+        """Delete the lock file of another host, only if it still is the file that was refused (a `--break-lock` that got there first has already replaced it: that one wins)."""
+        try:
+            if not os.path.samestat(refused, os.stat(self.path)):
+                return True  # somebody replaced it already: try again on the new one
+            self.path.unlink()
+        except FileNotFoundError:
+            return True
+        except OSError:
+            return False  # Windows: a file that another process has open cannot be deleted
+        return True
+
+    def refusal(self, owner, error):
         head = f'the project {self.project} is locked by a deployment {self.describe(owner)} (lock file {self.path}); no phase was run.'
-        if self.local(owner):
-            if self.running(owner):
-                return head + (' That deployment is still running here' + ('; --break-lock does not break the lock of a process that is alive: wait for it to end. '
-                               f"If PID {owner['pid']} is not a deployment (a lock of an older version, after a restart), delete the lock file by hand." if self.break_lock else '.'))
-            return head + f" The owner process (PID {owner['pid']}) is not running: if that deployment was killed, check the state of the services and remove the lock with --break-lock."
-        if owner:
-            return head + ' That host is not this one, so its process cannot be checked here; if it is gone, remove the lock with --break-lock.'
-        if self.recent_unreadable(owner):
-            return head + f' It was written a moment ago (less than {LOCK_GRACE_SECONDS} s): a deployment may still be writing it; try again in a moment.'
-        return head + ' If no deployment is running, remove the lock with --break-lock.'
+        contention = os.name == 'nt' or getattr(error, 'errno', None) in (errno.EAGAIN, errno.EACCES, errno.EWOULDBLOCK)
+        if not contention:
+            return f'the project {self.project} cannot be locked: the operating system refused the lock on {self.path} ({getattr(error, "strerror", None) or error}); no phase was run.'
+        if self.foreign(owner):
+            return head + ' That host is not this one, so its process cannot be checked here; if you are sure it is gone, remove the lock with --break-lock (it deletes the lock file).'
+        if owner and owner.get('host') == socket.gethostname():
+            return head + ' That deployment is still running here (the operating system holds the lock until its process ends): wait for it to end. --break-lock does not apply to a process of this host.'
+        return head + ' A deployment is holding it (it may be writing its information this moment): try again in a moment; --break-lock does not apply when the owner is not known to be on another host.'
 
     def release(self):
+        """Let the lock go: the information is emptied first (the file is never deleted: that would open a window between two owners), then the system lock is dropped and the file closed."""
         if not self.held:
             return
         self.held = False
-        if self.owner().get('token') == self.token:
-            try:
-                self.path.unlink()
-            except FileNotFoundError:
-                pass
+        descriptor, self.descriptor = self.descriptor, None
+        try:
+            os.ftruncate(descriptor, 0)
+        except OSError:
+            pass
+        self.close(descriptor)
 
 
 def validate_isolation(project, api_port, web_port):
@@ -560,55 +584,86 @@ class Deployment:
         found = [(match.group(1), tag) for tag in listed.split() for match in [TAG_MARK.match(tag)] if match]
         return [tag for _, tag in sorted(found, reverse=True)]
 
-    def image_to_tag(self, name, status):
-        """The id of the image that is IN USE for `name`, or None. A service is in use by its CONTAINER (`previous_images`, read in `apply` before anything changes): `:latest` may already be
-        the release of a deployment that failed after its build and never ran (fix1, review of phase 10). A service without a container is not tagged (a first installation, or one that
-        never had it). `operator` has no long-running container (`memory-admin` runs one command and goes): its `:latest` is used only if the last deployment ended well (or there is no
-        record), otherwise it is not tagged, and a rollback leaves it where it is (the operator of the newer release works on the migrated database)."""
+    def image_to_tag(self, name, status, good_ids):
+        """The id of the image to tag for `name`, or None: THE IMAGES OF THE LAST DEPLOYMENT THAT ENDED WELL (fix2, review of phase 10), never what is running or in `:latest` by now (a deployment
+        that failed has already replaced both). With a record (`images.good`, written when a deployment ends `complete` or `rolled_back`) that is its id, if the image still exists. Without
+        one (an installation made before the record existed, or a first deployment) the images in use are the good ones only if the last status says so (none, `complete`, `rolled_back`):
+        a service is then what its CONTAINER runs (`previous_images`, read in `apply` before anything changes; one without a container is not tagged), `operator` (no container: `memory-admin`
+        runs one command and goes) its `:latest`. After a failed status without a record nothing can be judged: None."""
+        if good_ids:
+            image_id = good_ids.get(name)
+            if isinstance(image_id, str) and IMAGE_ID.fullmatch(image_id):
+                return self.probe(['docker', 'image', 'inspect', '--format', '{{.Id}}', image_id])
+            return None
+        if status not in (None, 'complete', 'rolled_back'):
+            return None
         service = ROLLBACK_SERVICES.get(name)
         if service:
             served = (self.report.get('previous_images') or {}).get(service)
-            return served if isinstance(served, str) and served else None
-        if status in (None, 'complete', 'rolled_back'):
-            return self.probe(['docker', 'image', 'inspect', '--format', '{{.Id}}', self.image(name)])
-        return None
+            return served if isinstance(served, str) and IMAGE_ID.fullmatch(served) else None
+        return self.probe(['docker', 'image', 'inspect', '--format', '{{.Id}}', self.image(name)])
 
     def tag_previous_images(self):
-        """T-62 (CA-24, O-06): before the build replaces `:latest`, the images in use are tagged `<repository>:<version>-<mark>` so that `--rollback` has something to go back to.
+        """T-62 (CA-24, O-06): before the build replaces `:latest`, the images of the LAST GOOD RELEASE are tagged `<repository>:<version>-<mark>` so that `--rollback` has something to go back to.
 
-        The images in use are those of the containers (`image_to_tag`), not `:latest`. The tags of the TAGS_KEPT newest marks stay per image and the older ones are removed (only the tag:
-        an image a container uses is never deleted). An image that is the same as the newest tag is not tagged again (a deployment that stopped and is retried does not use up the kept
-        tags on one release). The version in the tag is the one of the deployment that BUILT that image when the record of the last deployment says so (`current` and `current_versions`);
-        an image that cannot be traced to it gets the version of the code that tags it, which may be newer than the image (the mark is the reliable order). The report records `previous`
-        (the tags of this deployment), `kept`, and, after the build, `current` (the image ids now in `:latest`) and `current_versions`. `current` is NOT tagged: it gets its tag
-        when the next deployment tags it as `previous`.
+        The only source of truth is `images.good` of the report (ids and versions of the last deployment that ended `complete` or `rolled_back`), see `image_to_tag`; a deployment that fails
+        never promotes it and a retry of one finds the tag already made (an image that already has a tag, whichever its age, is not tagged again: retries do not use up the kept tags).
+        The TAGS_KEPT newest marks stay per image, plus the tag that is `previous` (never pruned: it is the target of the rollback); the others are removed (only the tag: an image a container uses
+        is never deleted). The version in a new tag is the one recorded for that image if `<version>-<mark>` is a tag Docker accepts, else the one of the code that tags it (the mark is the reliable
+        order). Without a record and after a failed status nothing can be judged: nothing is tagged and the tags already recorded stay the target. The report records `previous`, `kept`, `good`
+        (what was tagged: the same release, by id) and, after the build, `current` (the image ids now in `:latest`) and `current_versions`; `current` is promoted to `good` only when the deployment
+        ends well.
         """
         version, mark = release_version(self.root), datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
         status = self.load_status().get('status')
         recorded = self.report.get('images') if isinstance(self.report.get('images'), dict) else {}
-        built_ids, built_versions = recorded.get('current'), recorded.get('current_versions')
-        built_ids, built_versions = built_ids if isinstance(built_ids, dict) else {}, built_versions if isinstance(built_versions, dict) else {}
-        previous, kept = {}, {}
+        good = recorded.get('good') if isinstance(recorded.get('good'), dict) else {}
+        good_ids, good_versions = (good.get(key) if isinstance(good.get(key), dict) else {} for key in ('ids', 'versions'))
+        built_ids, built_versions = (recorded.get(key) if isinstance(recorded.get(key), dict) else {} for key in ('current', 'current_versions'))
+        if not good_ids and status not in (None, 'complete', 'rolled_back'):
+            carried, held = (recorded.get(key) if isinstance(recorded.get(key), dict) else {} for key in ('previous', 'kept'))
+            self.report['images'] = {'version': version, 'mark': mark, 'previous': dict(carried), 'kept': dict(held), 'current': {}, 'current_versions': {}}
+            return
+        previous, kept, promoted = {}, {}, {'ids': {}, 'versions': {}}
         for name in IMAGE_NAMES:
-            image_id = self.image_to_tag(name, status)
+            image_id = self.image_to_tag(name, status, good_ids)
             if not image_id:
-                continue  # a first deployment, or an installation that predates this image: nothing to go back to
-            tag_version = built_versions.get(name) if built_ids.get(name) == image_id else None
-            if not (isinstance(tag_version, str) and re.fullmatch(r'[A-Za-z0-9_.]+', tag_version)):
-                tag_version = version
-            newest = (self.tags_of(name) or [None])[0]
-            if newest and self.probe(['docker', 'image', 'inspect', '--format', '{{.Id}}', f'{self.image_repo(name)}:{newest}']) == image_id:
-                previous[name] = f'{self.image_repo(name)}:{newest}'
+                continue  # a first deployment, an installation that predates this image, or an image that is gone: nothing to go back to for it
+            repository = self.image_repo(name)
+            existing = next((tag for tag in self.tags_of(name) if self.probe(['docker', 'image', 'inspect', '--format', '{{.Id}}', f'{repository}:{tag}']) == image_id), None)
+            if existing:
+                previous[name], used = f'{repository}:{existing}', existing.rsplit('-', 1)[0]
             else:
-                previous[name] = f'{self.image_repo(name)}:{tag_version}-{mark}'
+                traced = good_versions.get(name) if good_ids else (built_versions.get(name) if built_ids.get(name) == image_id else None)
+                used = tag_version(traced, version, mark)
+                previous[name] = f'{repository}:{used}-{mark}'
                 self.run(['docker', 'tag', image_id, previous[name]])
+            promoted['ids'][name], promoted['versions'][name] = image_id, used
             kept[name] = []
             for number, tag in enumerate(self.tags_of(name)):
-                if number < TAGS_KEPT:
-                    kept[name].append(f'{self.image_repo(name)}:{tag}')
+                if number < TAGS_KEPT or f'{repository}:{tag}' == previous[name]:
+                    kept[name].append(f'{repository}:{tag}')
                 else:
-                    self.quietly(['docker', 'image', 'rm', f'{self.image_repo(name)}:{tag}'])
-        self.report['images'] = {'version': version, 'mark': mark, 'previous': previous, 'kept': kept, 'current': {}, 'current_versions': {}}
+                    self.quietly(['docker', 'image', 'rm', f'{repository}:{tag}'])
+        self.report['images'] = {'version': version, 'mark': mark, 'previous': previous, 'kept': kept, 'current': {}, 'current_versions': {}, **({'good': promoted} if promoted['ids'] else {})}
+
+    def served_images(self, services):
+        """The image id each container of `services` runs (`service -> id`); a service without a container is not in it."""
+        served = {}
+        for service in services:
+            ids = self.run(['docker', 'ps', '-a', '--filter', 'label=com.docker.compose.project=' + self.project,
+                            '--filter', 'label=com.docker.compose.service=' + service, '--format', '{{.ID}}']).splitlines()
+            if len(ids) > 1:
+                raise DeploymentError('Multiple containers own the same service; resolve ownership before deployment')
+            if ids:
+                served[service] = self.run(['docker', 'inspect', '--format', '{{.Image}}', ids[0]])
+        return served
+
+    def promote_images(self, current, versions):
+        """A deployment (or a rollback) ended well: the images that are in `:latest` now are the last good release, the only target of the next rollback and the next tagging."""
+        images = self.report.setdefault('images', {'previous': {}})
+        images['current'], images['current_versions'] = dict(current), dict(versions)
+        images['good'] = {'ids': dict(current), 'versions': dict(versions)}
 
     def record_current_images(self):
         images = self.report.setdefault('images', {'previous': {}})
@@ -794,7 +849,7 @@ class Deployment:
         for name, tag in previous.items():
             if name not in IMAGE_NAMES:
                 problems.append(f'unknown image {str(name)[:40]!r}')
-            elif not (isinstance(tag, str) and re.fullmatch(re.escape(self.image_repo(name)) + r':[A-Za-z0-9_.]+-\d{8}T\d{6}Z', tag)):
+            elif not (isinstance(tag, str) and re.fullmatch(re.escape(self.image_repo(name)) + r':[A-Za-z0-9_][A-Za-z0-9_.]{0,110}-[0-9]{8}T[0-9]{6}Z', tag)):
                 problems.append(f'{name}: {str(tag)[:80]!r}')
         return problems
 
@@ -822,14 +877,18 @@ class Deployment:
         gone = [previous[name] for name, image_id in target.items() if not image_id]
         if gone:
             raise NoPreviousImages('the recorded images are no longer here: ' + ', '.join(gone) + '; no service was changed')
-        running = {name: self.probe(['docker', 'image', 'inspect', '--format', '{{.Id}}', self.image(name)]) for name in previous}
-        if running == target:  # what a rollback would put in :latest is already there: it would only report a rollback that did not happen (fix1)
-            raise AlreadyAtPrevious('the images of the previous deployment (' + ', '.join(previous.values()) + ') are already the ones in use: there is nothing to go back to; no service was changed')
+        services = [ROLLBACK_SERVICES[name] for name in ROLLBACK_SERVICES if name in previous]
+        served = self.served_images(services)  # what the CONTAINERS run: `:latest` may be a build that failed (never served) or a rollback that was interrupted after its `docker tag`
+        wanted = {ROLLBACK_SERVICES[name]: target[name] for name in ROLLBACK_SERVICES if name in previous}
+        latest = {name: self.probe(['docker', 'image', 'inspect', '--format', '{{.Id}}', self.image(name)]) for name in previous}
+        if (served == wanted) if wanted else (latest == target):  # the services already run the previous images: a rollback would only report one that did not happen (fix1, fix2)
+            raise AlreadyAtPrevious('the containers already run the images of the previous deployment (' + ', '.join(previous.values()) + '): there is nothing to go back to; no service was changed. '
+                                    'If a service is stopped, start it again (docker compose ... up -d --no-build); the next --apply builds again')
+        running = {name: served.get(ROLLBACK_SERVICES[name]) if name in ROLLBACK_SERVICES else latest[name] for name in previous}
         before = self.long_operator('content-manifest')
         self.report['rollback'] = {'from': running, 'to': dict(previous), 'migrated': False}
         for name, tag in previous.items():
             self.run(['docker', 'tag', tag, self.image(name)])
-        services = [ROLLBACK_SERVICES[name] for name in ROLLBACK_SERVICES if name in previous]
         if services:
             self.run(self.compose + ['up', '-d', '--no-deps', '--no-build', '--wait', '--wait-timeout', '90', *services])
         self.step('verify')
@@ -841,8 +900,13 @@ class Deployment:
             self.report['roundtrip'] = self.run_roundtrip()
         if self.embed_stub:
             self.report['model_calls'] = self.check_no_language_model()
-        self.report['images']['current'] = {name: self.probe(['docker', 'image', 'inspect', '--format', '{{.Id}}', self.image(name)]) for name in previous}
-        self.report['images']['current_versions'] = {name: tag.rsplit(':', 1)[1].rsplit('-', 1)[0] for name, tag in previous.items()}
+        current = {name: image_id for name in IMAGE_NAMES for image_id in [self.probe(['docker', 'image', 'inspect', '--format', '{{.Id}}', self.image(name)])] if image_id}
+        earlier = self.report['images'] if isinstance(self.report.get('images'), dict) else {}
+        earlier_ids, earlier_versions = (earlier.get(key) if isinstance(earlier.get(key), dict) else {} for key in ('current', 'current_versions'))
+        mark = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+        versions = {name: previous[name].rsplit(':', 1)[1].rsplit('-', 1)[0] if name in previous else tag_version(earlier_versions.get(name) if earlier_ids.get(name) == image_id else None, release_version(self.root), mark)
+                    for name, image_id in current.items()}
+        self.promote_images(current, versions)  # the release it went back to is the last good one again
         self.report.update(status='rolled_back', content_sha256=final['sha256'], documents=len(final['documents']), projects=len(final['projects']))
         self.save_report()
         print('Kairos rolled back to the images ' + ', '.join(previous.values()) + '; nothing was migrated. ' + verified_message(self.report['verification']) + ' Report: '
@@ -866,14 +930,7 @@ class Deployment:
                 continue
             observed = decode_json(self.run(['docker', 'network', 'inspect', '--format', '{{json .}}', desired['name']]))
             self.report['networks'].append(check_network(desired, observed))
-        previous = {}
-        for service in SERVICES:
-            ids = self.run(['docker', 'ps', '-a', '--filter', 'label=com.docker.compose.project='+self.project,
-                            '--filter', 'label=com.docker.compose.service='+service, '--format', '{{.ID}}']).splitlines()
-            if len(ids) > 1:
-                raise DeploymentError('Multiple containers own the same service; resolve ownership before deployment')
-            if ids:
-                previous[service] = self.run(['docker', 'inspect', '--format', '{{.Image}}', ids[0]])
+        previous = self.served_images(SERVICES)
         self.report['previous_images'] = previous
         self.step('build')
         self.tag_previous_images()
@@ -937,6 +994,7 @@ class Deployment:
             self.report['roundtrip'] = self.run_roundtrip()
         if self.embed_stub:
             self.report['model_calls'] = self.check_no_language_model()
+        self.promote_images(self.report['images']['current'], self.report['images']['current_versions'])  # ended well: these are the images the next rollback goes back to
         self.report.update(status='complete', content_sha256=final['sha256'],
                            documents=len(final['documents']), projects=len(final['projects']))
         self.save_report()
@@ -1282,7 +1340,7 @@ def main(argv=None, root=ROOT):
                         help='Go back to the images tagged by the previous deployment (kairos-*:<version>-<mark>) WITHOUT migrating; no_previous_images if there are none, already_at_previous if they are the ones in use. '
                              'Not for --fresh, --stop-services-before-migrate or --verify-backup')
     parser.add_argument('--break-lock', action='store_true',
-                        help='Remove the lock file of a deployment whose process is gone (deployment_locked); it never breaks the lock of a process that is still running here')
+                        help='Only for a lock that the file says belongs to ANOTHER host (a private directory on a shared disk): delete it and take the lock (deployment_locked). A lock whose process died on this host needs no flag: the operating system freed it; one of a process that is alive here is never broken')
     args = parser.parse_args(argv)
     if args.apply and args.dry_run:
         parser.error('--dry-run and --apply exclude each other')
