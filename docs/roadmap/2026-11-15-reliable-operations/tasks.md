@@ -1881,9 +1881,7 @@ test-plan: n/a (sin UI)
 - [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
 - [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas** (2026-11-17): Cerrada en el intento 4 (ciclo 1: intentos 1-3 con A+B+C+D, A+B+C+D y A+B+C; al 3.º quedaba un Important de documentación y el orquestador abrió el ciclo 2 con la delegación del usuario, «Las preguntas toma la mejor decisión»; intento 4: A+C). Resumen en `review.md`. `scope-check.py --base main` exit 0; suite 1241 en verde tras fix2 (`MEMORY_TEST_RESULT` en T-59). Excepciones declaradas a los criterios marcados: dos mutantes del latido sobreviven (sin tope de la concesión en el reintento, `worker.py:285`; sin latido antes de la espera por fallo, `worker.py:417`) → deuda en T-64; usage-meter no medido (horas estimadas, mismo patrón aceptado en T-42, T-48 y T-59). Los registros por intento están en las secciones «Revisión de dos lentes» de `tasks.md`. Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
-
----
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (4) — notas de tareas cerradas de las fases 1 a 9», T-60).
 
 ## Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04)
 
@@ -3078,18 +3076,9 @@ Lentes: A+C en un solo revisor (re-evalúan lo corregido en fix3). Diff `ce3b035
 
 ## Revisión de dos lentes — intento 1: Fase 10 (T-61 a T-65) (T-61, T-62, T-63, T-64, T-65)
 
-Lentes: A+B+C+D (D por `review-lens-select` sobre `worker.py`; C añadida por el orquestador: el diff de `deploy-memory.py` gestiona un bloqueo con PID y etiquetas de imagen leídas de un JSON que acaban en `docker`). Diff `29936df..0c9bc44`. `scope-check.py --base main` exit 0. Scripts del anfitrión 174 OK. Lente A: todos los criterios de T-56 y T-61..T-65 ✓ con evidencia (ensayo real: `unhealthy` 78,2 s tras el plazo, dentro de la cota estricta). Lente D: sin hallazgos (una tarea por trabajo, 0 tareas pendientes tras cancelar, cliente HTTP cerrado). 1 Important y 10 Minor. Decisión del orquestador: fix1 corrige el Important y los Minor baratos (n.º 2-10); n.º 11 se cierra con T-66.
+Archivada en `execution-history.md` (sección «Compactación 2026-11-17 (5) — revisión de la fase 10, intento 1»). Resumen: lentes A+B+C+D; 1 Important (etiquetado desde `:latest`) y 10 Minor; n.º 1-8 y 10 corregidos en fix1 (`1b46eb4`, `508f209`), n.º 9 descartado (rebatido), n.º 11 deuda → T-66.
 
-| # | Grado | Gap | Tarea | Corrección | Evidencia |
-|---|---|---|---|---|---|
-| 1 | Important | Se etiqueta la imagen de `:latest`, no la que sirven los contenedores: tras un despliegue que falla después del build, el reintento etiqueta la v2 nunca servida como «anterior» y `--rollback` va a v2 (y lo informa como `rolled_back` aunque destino = origen); un segundo fallo poda la etiqueta de v1 | T-62, T-63 | pendiente (fix1: etiquetar desde las imágenes en ejecución, `previous_images`; `--rollback` falla con un código propio si el destino es la imagen actual) | Lente B n.º 1, reproducido con el doble de Docker (`repro_retry.py`); `deploy-memory.py:229-234,477,752` |
-| 2 | Minor | `--rollback` usa sin validar las etiquetas y claves de `images.previous` (otra imagen cualquiera; reetiqueta `kairos-postgres`, contra CA-24) | T-63 | pendiente (fix1: exigir `<image_repo>:<versión>-<marca>` y claves de `ROLLBACK_SERVICES`) | Lente C n.º 1 (CWE-20/345); `deploy-memory.py:399,692-708` |
-| 3 | Minor | Carrera de dos `--break-lock` sobre un bloqueo caducado (los dos quedan con el bloqueo) y bloqueo vacío a medio escribir tratado como rompible | T-61 | pendiente (fix1: romper de forma atómica comprobando el contenido leído; vacío reciente no se rompe) | Lente C n.º 2 y Lente B n.º 2 (CWE-367), reproducidos (`race.py`, `repro_lock.py`); `deploy-memory.py:126-153` |
-| 4 | Minor | Reutilización del PID tras reiniciar: un bloqueo de este anfitrión cuyo PID muerto lo tiene ahora otro proceso no se puede romper nunca y el mensaje manda parar un proceso ajeno | T-61 | pendiente (fix1: distinguir el arranque, p. ej. `boot_id`/hora de inicio del proceso, y documentar el borrado manual) | Lente B n.º 3; `deploy-memory.py:146-152`, `operations.md:120` |
-| 5 | Minor | El ensayo da por buena la cota de CA-21 con 10 s de margen no aprobado | T-64 | pendiente (fix1: comparación estricta; latencia de medida aparte) | Lente A n.º 2; `rehearse-reliable-operations.py:58,365` |
-| 6 | Minor | `current` guarda ids de `:latest`, no etiquetas, frente al criterio «etiquetas anterior y actual» | T-62 | pendiente (fix1: registrar la etiqueta actual o enmendar el criterio con nota) | Lente A n.º 3; `deploy-memory.py:508-513` |
-| 7 | Minor | El ítem (19) de Coordinación omite `status: rolled_back`, `--stage rollback` y el cambio de `--stage all` (`rehearsal_ok`) | T-62..T-64 | pendiente (fix1) | Lente A n.º 4; `improvement-plan.md:246` |
-| 8 | Minor | El catálogo de eventos del worker no incluye `job_cancelled` y el párrafo de la concesión perdida omite el error no transitorio del latido | T-64 | pendiente (fix1) | Lente A n.º 5; `operations.md:313,403`, `worker.py:322-324` |
-| 9 | Minor | `compute()` trata cualquier destino distinto de `embed` como extracción (antes un destino desconocido fallaba) | T-64 | pendiente (fix1: destino desconocido → error explícito) | Lente A (fuera de lente); `worker.py:347-363` |
-| 10 | Minor | Las etiquetas llevan la versión del código NUEVO sobre la imagen ANTERIOR (`kairos-api:0.4.0-<marca>` puede ser v0.3.0) | T-62 | pendiente (fix1: versión de la imagen etiquetada o documentarlo) | Lente B (fuera de lente) |
-| 11 | Minor | La Verificación con `docker build --target test` de T-56 y T-61..T-63 se sustituyó por ejecuciones dirigidas; el recuento de la suite queda para T-66 | T-56, T-61..T-63 | deuda → T-66 (suite completa) | Lente A n.º 1; `execution-history.md:856-868` |
+
+## Revisión de dos lentes — intento 2: Fase 10 tras fix1 (T-61, T-62, T-63, T-64, T-65)
+
+Pendiente de revisión; sin veredicto.
