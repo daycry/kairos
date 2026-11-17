@@ -28,14 +28,17 @@ x-memory-environment: &memory-environment
   MEMORY_FUSION_VALIDATED_BONUS: ${MEMORY_FUSION_VALIDATED_BONUS:-0.0001}
   MEMORY_FUSION_WEIGHTS: ${MEMORY_FUSION_WEIGHTS:-}
 
+# json-file rotation of every service (T-55): 3 files of 10 MB each, so no container fills the disk with its log.
+x-logging: &logging
+  driver: json-file
+  options: {max-size: 10m, max-file: '3'}
+
 x-process: &process
   read_only: true
   tmpfs: [/tmp]
   cap_drop: [ALL]
   security_opt: [no-new-privileges:true]
-  logging:
-    driver: json-file
-    options: {max-size: 10m, max-file: '3'}
+  logging: *logging
 
 services:
   ollama:
@@ -48,6 +51,9 @@ services:
       OLLAMA_ALLOW_CHAT: ${OLLAMA_ALLOW_CHAT:-0}
       NGINX_ENTRYPOINT_QUIET_LOGS: '1'
     volumes: ['./ollama-proxy/default.conf.template:/etc/nginx/templates/default.conf.template:ro']
+    # The VPS is Linux, where `host.docker.internal` does not exist unless it is declared: `host-gateway` makes it the host's address (Docker Desktop already has it).
+    extra_hosts: ['host.docker.internal:host-gateway']
+    logging: *logging
     networks:
       inference: {gw_priority: 0}
       egress: {gw_priority: 100}
@@ -79,6 +85,7 @@ services:
       POSTGRES_USER: memory
       POSTGRES_PASSWORD_FILE: /run/secrets/memory_postgres
     secrets: [memory_postgres]
+    logging: *logging
     volumes: [memory-postgres-data:/var/lib/postgresql/data]
     networks: [memory-data]
     healthcheck:
@@ -132,6 +139,7 @@ services:
     cap_add: [CHOWN, FOWNER, DAC_OVERRIDE]
     security_opt: [no-new-privileges:true]
     entrypoint: [python, -m, memory_platform.initialize]
+    logging: *logging
     volumes: [memory-backups:/backups]
 
   memory-api:

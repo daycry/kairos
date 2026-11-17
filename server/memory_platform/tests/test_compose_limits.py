@@ -76,3 +76,28 @@ class BackupEgressTests(unittest.TestCase):
     def test_the_documentation_explains_the_choice(self):
         for path in (CONFIGURATION, OPERATIONS):
             self.assertIn('docker-compose.backup-rclone.yml', path.read_text(encoding='utf-8'), path.name)
+
+
+class LoggingAndHostsTests(unittest.TestCase):
+    def setUp(self):
+        self.services = compose()['services']
+
+    def test_every_service_rotates_its_logs(self):
+        for name, service in self.services.items():
+            logging = service.get('logging')
+            self.assertIsNotNone(logging, f'{name} has no logging')
+            self.assertEqual(logging['driver'], 'json-file', name)
+            self.assertTrue(re.fullmatch(r'\d+[kmg]', str(logging['options'].get('max-size'))), f'{name}: no max-size')
+            self.assertTrue(str(logging['options'].get('max-file', '')).isdigit(), f'{name}: no max-file')
+
+    def test_ollama_reaches_host_docker_internal_on_linux_too(self):
+        self.assertEqual(self.services['ollama']['extra_hosts'], ['host.docker.internal:host-gateway'])
+        self.assertIn('host.docker.internal', self.services['ollama']['environment']['OLLAMA_UPSTREAM'], 'the default upstream is the one that name resolves')
+
+    def test_only_ollama_gets_extra_hosts(self):
+        self.assertEqual([n for n, s in self.services.items() if 'extra_hosts' in s], ['ollama'])
+
+    def test_the_documentation_explains_the_linux_case(self):
+        text = OPERATIONS.read_text(encoding='utf-8')
+        self.assertIn('host-gateway', text)
+        self.assertIn('extra_hosts', text)

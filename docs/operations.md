@@ -398,6 +398,12 @@ El MCP interno (`memory-api:8790/mcp/`) está en desuso desde la 0.4.0 y se reti
 3. **Localiza a los rezagados.** El evento `mcp_legacy_used` del log de `memory-api` (campos `method`, `status`, `request_id`) marca cada llamada al MCP interno. Si no aparece ninguna durante un periodo representativo, pon `MEMORY_MOUNT_MCP=0` en `.env` y recrea `memory-api`: `/mcp` pasa a responder 404 en el servidor.
 4. **Volver atrás.** `MEMORY_MOUNT_MCP=1` (valor por defecto) vuelve a montarlo. Para que `5173/mcp/` vuelva a servirlo hay que restaurar la ruta de `web/nginx.conf` y reconstruir `memory-web`.
 
+## Rotación de logs y `host.docker.internal` en Linux
+
+Todos los servicios del Compose (también `ollama`, `memory-postgres` y `memory-files`) rotan sus logs con el controlador `json-file`: tres ficheros de 10 MB por contenedor (`max-size: 10m`, `max-file: '3'`), de modo que ningún contenedor llena el disco con su log. Una instalación ya desplegada lo recoge solo en su próximo `up`; no cambia nada antes.
+
+**Linux (el VPS).** El proxy `ollama` llega al Ollama del anfitrión por el nombre `host.docker.internal` (`OLLAMA_UPSTREAM`). Docker Desktop (Windows, macOS) lo resuelve solo; en Linux ese nombre no existe, y por eso el servicio declara `extra_hosts: ["host.docker.internal:host-gateway"]`, que lo convierte en la dirección del anfitrión. Con Ollama en el anfitrión de Linux, este debe escuchar en una interfaz que alcance el puente de Docker (por ejemplo `OLLAMA_HOST=0.0.0.0:11434` restringido por cortafuegos), no solo en `127.0.0.1`. `ollama-proxy/default.conf.template` no cambia. Si `OLLAMA_UPSTREAM` apunta a otro servidor, `extra_hosts` es inocuo.
+
 ## Servidor sin modelo de lenguaje y proxy de Ollama
 
 El servidor arranca y pasa su suite sin ningún modelo de lenguaje: extrae en el cliente, no en el servidor. `MEMORY_EXTRACT_ENABLED`, `MEMORY_CORPUS_ANSWER` y `MEMORY_LLM_MODEL` están descritos en [configuración](configuration.md#servidor-sin-modelo-de-lenguaje). La suite lo comprueba: se ejecuta sin `MEMORY_LLM_MODEL`, con un espía de loopback que responde 500 a `/api/chat` y cuenta las llamadas (`llm_chat_calls` en el recibo `MEMORY_TEST_RESULT`, que debe ser 0), y `test_no_llm` ingiere un resumen con `generate: true`, lo indexa y rechaza `corpus_answer` con el espía vigilando.
