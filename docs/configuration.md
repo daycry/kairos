@@ -103,7 +103,7 @@ Las siguientes variables las interpreta `server/memory_platform/config.py`. Para
 
 ### Copia externa programada (`memory-backup`)
 
-Servicio opcional del perfil `backup`: `docker compose --profile backup up -d memory-backup` (una instalación ya desplegada lo recoge solo en su próximo `up`; nada cambia hasta entonces). Ejecuta `admin backup-cycle --loop`: copia cifrada, verificación, subida a `MEMORY_BACKUP_DESTINATION`, lectura del sha256 en el destino y retención local (`MEMORY_BACKUP_KEEP`) y remota (`MEMORY_BACKUP_REMOTE_KEEP`) cada `MEMORY_BACKUP_INTERVAL`. Sin puertos publicados; usa la red de la base y la de salida (`egress`).
+Servicio opcional del perfil `backup`: `docker compose --profile backup up -d memory-backup` (una instalación ya desplegada lo recoge solo en su próximo `up`; nada cambia hasta entonces). Ejecuta `admin backup-cycle --loop`: copia cifrada, verificación, subida a `MEMORY_BACKUP_DESTINATION`, lectura del sha256 en el destino y retención local (`MEMORY_BACKUP_KEEP`) y remota (`MEMORY_BACKUP_REMOTE_KEEP`) cada `MEMORY_BACKUP_INTERVAL`. Sin puertos publicados; usa solo la red de la base (con un destino `dir:` no tiene salida a Internet). Un destino `rclone:` necesita la red de salida (`egress`): se añade con `docker-compose.backup-rclone.yml` (ver abajo).
 
 | Variable de `.env` | Predeterminado | Uso |
 |---|---|---|
@@ -112,11 +112,44 @@ Servicio opcional del perfil `backup`: `docker compose --profile backup up -d me
 | `MEMORY_BACKUP_CONFIG_DIR` | `./backup-config` | Directorio del anfitrión que se monta de solo lectura en `/config`: `recipients.txt` (claves **públicas** `age`) y, con un destino `rclone:`, `rclone.conf` (los remotos y sus credenciales son del operador; nunca van al repositorio) |
 | `MEMORY_BACKUP_OFFSITE_DIR` | `./offsite` | Directorio del anfitrión que se monta en `/offsite` para un destino `dir:/offsite` |
 
+**Destino `rclone:` y red de salida.** `memory-backup` solo está en la red interna de la base: con `MEMORY_BACKUP_DESTINATION=dir:/offsite` no necesita nada más y no puede abrir conexiones a Internet. Con un destino `rclone:<remoto>:<ruta>` hace falta la red `egress`, y el Compose la añade solo a ese servicio con un fichero aparte: `docker compose -f docker-compose.yml -f docker-compose.backup-rclone.yml --profile backup up -d memory-backup`. Sin ese fichero un destino `rclone:` falla con `backup_offsite_failed` (el servicio no llega al remoto). Una instalación ya desplegada lo recoge solo en su próximo `up`.
+
 **`rclone.conf`: propietario y permisos.** Contiene las credenciales del remoto: que lo lea el usuario del contenedor (uid `10001`) y nadie más. En el anfitrión: `chown 10001:10001 backup-config backup-config/rclone.conf && chmod 0500 backup-config && chmod 0400 backup-config/rclone.conf` (o `0600` en el fichero; también vale un grupo dedicado con gid `10001`). **Nunca `chmod 644` ni `666`** para «que funcione»: abre las credenciales a cualquier usuario del anfitrión. El directorio se monta de solo lectura (`:ro`); por eso los backends **OAuth** (Google Drive, Dropbox, OneDrive…), que renuevan su token reescribiendo `rclone.conf`, no pueden hacerlo: el token caduca y el ciclo falla con `backup_offsite_failed`. Usa un backend con credenciales estáticas (S3 compatible, SFTP, B2, WebDAV…) o renueva el token tú (`rclone config reconnect` en el anfitrión) y copia el fichero; quitar `:ro` es una decisión consciente del operador, no el valor por defecto.
 
 La clave privada `age` no se monta en ningún servicio ni está en la imagen: el servicio cifra para las claves públicas y no puede descifrar. Un destino inaccesible se registra como `backup_offsite_failed` (solo el tipo de destino, nunca rutas ni credenciales), pone a 0 la métrica `kairos_backup_offsite_success` (junto con `kairos_backup_offsite_last_run_timestamp_seconds` se escribe en `kairos-offsite.prom` dentro del volumen de copias para un colector de ficheros de texto; `memory-api` no las expone), no borra ninguna copia local y el ciclo siguiente vuelve a enviar lo que falte; cualquier otro fallo del ciclo (base caída, `pg_dump`, cifrado, verificación local) pone también la métrica a 0 y, en el bucle, registra `backup_cycle_failed`. Solo se envían copias cifradas (una en claro del directorio local se omite y se avisa con `backup_offsite_plain_skipped`) y el destino debe ser exclusivo de una instalación. Comandos y restauración: [operaciones](operations.md).
 
 Los presupuestos de respuestas generadas se definen en `AnswerLimits`, en `corpus_answers.py`: no son variables `.env` ni un límite económico por organización. Sus unidades, límites de conversación, estados inciertos y ausencia de reenvío automático están en [consultas de corpus](corpus-generated-answers.md).
+
+## Límites de memoria y CPU de los servicios
+
+Todos los servicios del Compose declaran `mem_limit` y `cpus`, y cada uno tiene sus dos variables de `.env`: `MEMORY_<SERVICIO>_MEM_LIMIT` (un tamaño como `512m` o `2g`) y `MEMORY_<SERVICIO>_CPUS` (un decimal, como `0.5`). Los valores por defecto son los de un equipo local de 32 GB; la columna de la derecha propone valores para un VPS pequeño (4 GB de memoria, 2 vCPU). Una instalación ya desplegada recoge los límites solo en su próximo `up`; un contenedor que supera su `mem_limit` lo mata Docker y `restart: unless-stopped` lo reinicia.
+
+| Variable | Predeterminado (32 GB locales) | VPS pequeño (4 GB, 2 vCPU) | Servicio y motivo |
+|---|---|---|---|
+| `MEMORY_OLLAMA_MEM_LIMIT` | `256m` | `128m` | `ollama`: el proxy de lista de permitidos (nginx), sin estado |
+| `MEMORY_OLLAMA_CPUS` | `1` | `0.5` | Ídem |
+| `MEMORY_POSTGRES_MEM_LIMIT` | `4g` | `1536m` | `memory-postgres`: ver «Relleno» abajo |
+| `MEMORY_POSTGRES_CPUS` | `4` | `1.5` | Ídem |
+| `MEMORY_MIGRATE_MEM_LIMIT` | `512m` | `384m` | `memory-migrate`: cliente de la migración; la memoria de los índices es del servidor de la base |
+| `MEMORY_MIGRATE_CPUS` | `1` | `1` | Ídem |
+| `MEMORY_BOOTSTRAP_MEM_LIMIT` | `256m` | `128m` | `memory-bootstrap`: alta inicial de proyectos y claves |
+| `MEMORY_BOOTSTRAP_CPUS` | `0.5` | `0.5` | Ídem |
+| `MEMORY_FILES_MEM_LIMIT` | `128m` | `64m` | `memory-files`: solo ajusta propietarios del volumen de copias |
+| `MEMORY_FILES_CPUS` | `0.5` | `0.25` | Ídem |
+| `MEMORY_API_MEM_LIMIT` | `1g` | `512m` | `memory-api`: la API HTTP y el MCP interno en desuso |
+| `MEMORY_API_CPUS` | `2` | `1` | Ídem |
+| `MEMORY_MCP_MEM_LIMIT` | `1g` | `512m` | `memory-mcp`: una respuesta de hasta 64 MiB se mantiene unas cinco veces (ver [kairos-mcp](#kairos-mcp)); por debajo de 512m una llamada grande puede matarlo |
+| `MEMORY_MCP_CPUS` | `1` | `0.5` | Ídem |
+| `MEMORY_WORKER_MEM_LIMIT` | `1g` | `512m` | `memory-worker`: ver «Relleno» abajo |
+| `MEMORY_WORKER_CPUS` | `2` | `1` | Ídem |
+| `MEMORY_WEB_MEM_LIMIT` | `256m` | `128m` | `memory-web`: nginx con el portal y el manual |
+| `MEMORY_WEB_CPUS` | `0.5` | `0.5` | Ídem |
+| `MEMORY_ADMIN_MEM_LIMIT` | `1g` | `512m` | `memory-admin`: copias, restauraciones y mantenimiento (`admin …`) |
+| `MEMORY_ADMIN_CPUS` | `2` | `1` | Ídem |
+| `MEMORY_BACKUP_MEM_LIMIT` | `1g` | `512m` | `memory-backup` (perfil `backup`): cifrado y subida de la copia |
+| `MEMORY_BACKUP_CPUS` | `1` | `0.5` | Ídem |
+
+**Relleno (`memory-postgres` y `memory-worker`).** Un límite que mate estos dos durante el relleno de vectores lo repetiría sin fin (el trabajo vuelve a la cola al caducar la concesión). PostgreSQL construye los índices HNSW con `maintenance_work_mem` (256 MB por defecto, `MEMORY_MIGRATION_MAINTENANCE_WORK_MEM`) en serie, y a eso se suman sus búferes compartidos (128 MB), las sesiones del pool y la caché de páginas del propio contenedor: unos 1,5 GB de trabajo, por eso `4g` en un equipo local y `1536m` como mínimo recomendado en un VPS. El worker conserva los vectores de los 200 fragmentos como máximo de un recurso (768 flotantes cada uno) varias veces mientras arma el recibo, unas decenas de MB, más el texto del recurso; `1g` deja un margen holgado y `512m` sigue siendo suficiente. Si subes `MEMORY_MIGRATION_MAINTENANCE_WORK_MEM` o `MEMORY_CHUNK_MAX`, sube también estos dos límites.
 
 ## kairos-mcp
 
@@ -130,7 +163,7 @@ El servicio `memory-mcp` del Compose (imagen `kairos-mcp`, puerto `8791` en una 
 | `KAIROS_MAX_BODY_BYTES` | `262144` bytes | Tamaño máximo de cuerpo de una petición MCP; iguálalo a `MEMORY_MAX_BODY_BYTES` |
 | `KAIROS_VALIDATION_THREADS` | `1` | Validaciones de argumentos grandes (más de 1000 valores) de herramientas MCP que corren a la vez, cada una en un hilo fuera del event loop (de 1 a 64); las entradas pequeñas se validan en línea y no esperan, y una grande que espera su turno más de 5 s (constante, no configurable) recibe `Memory service temporarily unavailable` |
 
-El contenedor `memory-mcp` lleva `mem_limit: 1g` en el Compose: una respuesta de `/v1` de decenas de MB (hasta 64 MiB; el servidor produce unos 52 MB como máximo) se mantiene unas cinco veces en memoria mientras se une, se interpreta y se recorta, y el límite acota el daño de varias llamadas grandes simultáneas (el contenedor se reinicia solo, `restart: unless-stopped`). Ajusta `mem_limit` si subes los límites de cuerpo y de respuesta del servidor.
+El contenedor `memory-mcp` lleva `mem_limit: 1g` por defecto en el Compose (`MEMORY_MCP_MEM_LIMIT`, ver [límites de los servicios](#límites-de-memoria-y-cpu-de-los-servicios)): una respuesta de `/v1` de decenas de MB (hasta 64 MiB; el servidor produce unos 52 MB como máximo) se mantiene unas cinco veces en memoria mientras se une, se interpreta y se recorta, y el límite acota el daño de varias llamadas grandes simultáneas (el contenedor se reinicia solo, `restart: unless-stopped`). Ajusta `MEMORY_MCP_MEM_LIMIT` si subes los límites de cuerpo y de respuesta del servidor.
 
 El resto de lo que ve un cliente (credencial, dato no fiable, errores y topes de salida) está en [Integración](integration.md#conectar-con-kairos-mcp).
 

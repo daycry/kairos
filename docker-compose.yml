@@ -40,6 +40,8 @@ x-process: &process
 services:
   ollama:
     image: nginx@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2
+    mem_limit: ${MEMORY_OLLAMA_MEM_LIMIT:-256m}
+    cpus: ${MEMORY_OLLAMA_CPUS:-1}
     restart: unless-stopped
     environment:
       OLLAMA_UPSTREAM: ${OLLAMA_UPSTREAM:-host.docker.internal:11434}
@@ -67,6 +69,8 @@ services:
 
   memory-postgres:
     image: kairos-postgres:latest
+    mem_limit: ${MEMORY_POSTGRES_MEM_LIMIT:-4g}
+    cpus: ${MEMORY_POSTGRES_CPUS:-4}
     build: {context: ., dockerfile: server/memory_platform/Dockerfile, target: postgres-pgvector}
     profiles: [memory]
     restart: unless-stopped
@@ -87,6 +91,8 @@ services:
   memory-migrate:
     <<: *process
     image: kairos-api:latest
+    mem_limit: ${MEMORY_MIGRATE_MEM_LIMIT:-512m}
+    cpus: ${MEMORY_MIGRATE_CPUS:-1}
     build: {context: ., dockerfile: server/memory_platform/Dockerfile, target: api}
     profiles: [memory]
     restart: 'no'
@@ -101,6 +107,8 @@ services:
   memory-bootstrap:
     <<: *process
     image: kairos-api:latest
+    mem_limit: ${MEMORY_BOOTSTRAP_MEM_LIMIT:-256m}
+    cpus: ${MEMORY_BOOTSTRAP_CPUS:-0.5}
     profiles: [memory-bootstrap]
     restart: 'no'
     environment: *memory-environment
@@ -113,6 +121,8 @@ services:
 
   memory-files:
     image: kairos-api:latest
+    mem_limit: ${MEMORY_FILES_MEM_LIMIT:-128m}
+    cpus: ${MEMORY_FILES_CPUS:-0.5}
     profiles: [memory-admin]
     restart: 'no'
     user: '0:0'
@@ -127,6 +137,8 @@ services:
   memory-api:
     <<: *process
     image: kairos-api:latest
+    mem_limit: ${MEMORY_API_MEM_LIMIT:-1g}
+    cpus: ${MEMORY_API_CPUS:-2}
     build: {context: ., dockerfile: server/memory_platform/Dockerfile, target: api}
     profiles: [memory]
     restart: unless-stopped
@@ -148,10 +160,11 @@ services:
   memory-mcp:
     <<: *process
     image: kairos-mcp:latest
+    mem_limit: ${MEMORY_MCP_MEM_LIMIT:-1g}  # one answer of up to 64 MiB is held about five times over while it is cut; see docs/configuration.md
+    cpus: ${MEMORY_MCP_CPUS:-1}
     build: {context: ./mcp, dockerfile: Dockerfile}
     profiles: [memory]
     restart: unless-stopped
-    mem_limit: 1g  # one answer of up to 64 MiB is held about five times over while it is cut; see docs/configuration.md
     environment:
       KAIROS_API_URL: http://memory-api:8790
       KAIROS_API_TIMEOUT: ${KAIROS_API_TIMEOUT:-30}
@@ -170,6 +183,8 @@ services:
   memory-worker:
     <<: *process
     image: kairos-worker:latest
+    mem_limit: ${MEMORY_WORKER_MEM_LIMIT:-1g}
+    cpus: ${MEMORY_WORKER_CPUS:-2}
     build: {context: ., dockerfile: server/memory_platform/Dockerfile, target: worker}
     profiles: [memory]
     restart: unless-stopped
@@ -183,6 +198,8 @@ services:
   memory-web:
     <<: *process
     image: kairos-web:latest
+    mem_limit: ${MEMORY_WEB_MEM_LIMIT:-256m}
+    cpus: ${MEMORY_WEB_CPUS:-0.5}
     build: {context: ., dockerfile: web/Dockerfile, target: final}
     profiles: [memory]
     restart: unless-stopped
@@ -196,6 +213,8 @@ services:
   memory-admin:
     <<: *process
     image: kairos-operator:latest
+    mem_limit: ${MEMORY_ADMIN_MEM_LIMIT:-1g}
+    cpus: ${MEMORY_ADMIN_CPUS:-2}
     build: {context: ., dockerfile: server/memory_platform/Dockerfile, target: operator}
     profiles: [memory-admin]
     environment: *memory-environment
@@ -212,6 +231,8 @@ services:
   memory-backup:
     <<: *process
     image: kairos-operator:latest
+    mem_limit: ${MEMORY_BACKUP_MEM_LIMIT:-1g}
+    cpus: ${MEMORY_BACKUP_CPUS:-1}
     build: {context: ., dockerfile: server/memory_platform/Dockerfile, target: operator}
     profiles: [backup]
     restart: unless-stopped
@@ -232,7 +253,7 @@ services:
       - memory-backups:/backups
       - ${MEMORY_BACKUP_CONFIG_DIR:-./backup-config}:/config:ro
       - ${MEMORY_BACKUP_OFFSITE_DIR:-./offsite}:/offsite
-    networks: [memory-data, egress]
+    networks: [memory-data]  # `dir:` needs no outside: docker-compose.backup-rclone.yml adds `egress` for an `rclone:` destination (T-54)
     init: true
     stop_grace_period: 60s
 

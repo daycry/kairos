@@ -65,8 +65,8 @@ class BackupServiceTests(unittest.TestCase):
         self.assertEqual(environment['MEMORY_BACKUP_KEEP'], '${MEMORY_BACKUP_KEEP:-7}')
         self.assertEqual(environment['MEMORY_DSN_FILE'], '/run/secrets/memory_dsn')
 
-    def test_it_reaches_the_database_and_the_outside_and_mounts_only_the_copies_the_public_recipients_and_the_destination(self):
-        self.assertEqual(sorted(self.service['networks']), ['egress', 'memory-data'])
+    def test_it_reaches_only_the_database_and_mounts_only_the_copies_the_public_recipients_and_the_destination(self):
+        self.assertEqual(sorted(self.service['networks']), ['memory-data'], 'no way out by default: docker-compose.backup-rclone.yml adds `egress` for an `rclone:` destination (T-54)')
         targets = sorted(re.search(r':(/\w+)(?::\w+)?$', v).group(1) for v in self.service['volumes'])
         self.assertEqual(targets, ['/backups', '/config', '/offsite'])
         config_mount = next(v for v in self.service['volumes'] if ':/config' in v)

@@ -696,7 +696,7 @@ class ComposeLimitsTests(unittest.TestCase):
         compose = (WORKFLOW.parents[2] / 'docker-compose.yml').read_text(encoding='utf-8')
         block = re.search(r'^  memory-mcp:\n((?:    .*\n|\s*\n)+)', compose, re.M)
         self.assertIsNotNone(block)
-        self.assertRegex(block.group(1), r'(?m)^    mem_limit: \d+[mg]\b')
+        self.assertRegex(block.group(1), r'(?m)^    mem_limit: (\d+[mg]|\$\{MEMORY_MCP_MEM_LIMIT:-\d+[mg]\})')  # configurable since T-54, always with a default
 
 
 if __name__ == '__main__':
