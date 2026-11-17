@@ -1916,11 +1916,7 @@ test-plan: n/a (sin UI)
 - [x] Añadir `--break-lock`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (3) — notas de T-56 y de las tareas T-61 a T-64», T-61).
-- fix1 (revisión fase 10): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (6) — notas fix1 de la revisión de la fase 10 (T-61 a T-65)», T-61).
-- fix2 (revisión fase 10): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (9) — notas fix2 de la revisión de la fase 10 (T-61 a T-65)», T-61).
-- fix3 (revisión fase 10, ciclo 2): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (11) — notas fix3 de la revisión de la fase 10 (T-61 a T-65)», T-61).
-- fix4 (revisión fase 10, ciclo 2): gaps 2, 3, 4, 8 y 9 (y 5 y 6 en la prosa). RED con las pruebas nuevas contra `scripts/deploy-memory.py` de HEAD (fix3) en `kairos-test:i3p10` (Linux): `test_deploy_lock` 41 fallos (subcasos) en 6 pruebas y `test_deploy_rollback` 16 fallos + 12 errores · 2026-11-17 (el aviso de un fichero de otro equipo decía `did not end` y «killed or machine lost»; 30 casos con ESC/OSC/C1/RLO en pid, host y hora salían crudos por stderr y en el informe y 5 en un rechazo; un enlace duro plantado como bloqueo se tomaba y su destino quedaba vacío al liberarlo; con un `fstat` de punto de reanálisis, segundo nombre o no regular el script escribía igual; una segunda señal durante el guardado, los avisos o la liberación del bloqueo salía de `main` con traceback (8); los `compose run` no llevaban `--name` (4+1)). Diseño (clase, no casos): (9) `_open` abre sin seguir enlaces (`O_NOFOLLOW`; en Windows `create_without_following`: `CreateFileW` por ctypes con OPEN_ALWAYS y `FILE_FLAG_OPEN_REPARSE_POINT`, que abre el enlace mismo y nunca crea ni trunca su destino) y exige del `fstat` del DESCRIPTOR `S_ISREG`, `st_nlink == 1` y sin punto de reanálisis, o `deployment_locked` sin escribir ni vaciar; (8) `printable` (todo lo no imprimible escapado, 80 caracteres) para todo lo que sale del fichero, en stderr y en el informe (`owner_fields`); (4) `DeployLock.leftover_warning`: de este equipo (o sin dueño) `did not end`; de otro `may still be running` con «no estaba bloqueado en este equipo» y la advertencia del disco compartido; (2) `ignoring_signals` (SIG_IGN a SIGTERM, SIGHUP y SIGINT, y restaurar) en `settle` (el manejador único de fallo e interrupción, con un `except` exterior para la ventana previa), en `reap`, en la liberación del bloqueo y en el aviso de `no_previous_images`; `put_back.disarm()` desarma `stop` antes de liberar; el código es el de la primera causa; (3) `inspect`, `migrate`, `bootstrap`, `backfill-chunks` y `memory-files` con `--name kairos-deploy-<orden>-<id>` y `reap` (`unreaped_containers` y aviso «may still be running» si docker no contesta). Límite: este Windows no tiene privilegio de enlaces simbólicos; el camino `CreateFileW` se prueba con un doble (`windows_kernel` espiado: flags y disposición, real en el anfitrión) y la comprobación del descriptor con un doble de `fstat` (punto de reanálisis, segundo nombre, no regular); el enlace duro sí es real en el anfitrión y en Linux. Evidencia final: `kairos-test:i3p10` `test_deploy_lock` 34 OK (1 omitida), anfitrión Windows 34 OK (2 omitidas) · 2026-11-17.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (12) — notas de T-61 a T-65 hasta fix4», T-61).
 
 ### T-62 — Etiquetas locales `kairos-*:<versión>-<marca>` y registro en `deployment-status.json`
 
@@ -1951,11 +1947,7 @@ test-plan: n/a (sin UI)
 - [x] Retirada de etiquetas antiguas
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (3) — notas de T-56 y de las tareas T-61 a T-64», T-62).
-- fix1 (revisión fase 10): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (6) — notas fix1 de la revisión de la fase 10 (T-61 a T-65)», T-62).
-- fix2 (revisión fase 10): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (9) — notas fix2 de la revisión de la fase 10 (T-61 a T-65)», T-62).
-- fix3 (revisión fase 10, ciclo 2): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (11) — notas fix3 de la revisión de la fase 10 (T-61 a T-65)», T-62).
-- fix4 (revisión fase 10, ciclo 2): gaps 1, 2 y 3. RED contra HEAD (fix3): `LegacyInstallationTests` (5) 2 fallos + 12 errores (sin `images.good` y con un `complete` antiguo o sin informe, una parada en `configuration` o en el segundo `docker tag` perdía la versión que corría: tras un reintento fallido tras `start` `--rollback` salía con 4 con los contenedores en la build fallida) y `ExplorationTests.test_fix4_legacy…` (60 secuencias × 8, semilla 9, modo `legacy` de `explore4.py`: paradas en `configuration`, a mitad del etiquetado, alrededor del guardado de `in_progress` y dentro del etiquetado y la verificación de un retroceso) con problemas en HEAD · 2026-11-17. Diseño: `Deployment.record_running_release` en `apply`, tras el bloqueo y la comprobación del motor (que no escribe nada: `test_denied_engine…` lo fija) y antes de `configuration`: sin `images.good` y con un último estado fiable (sin informe, `complete`, `rolled_back`) registra como bueno por id lo que ejecutan los contenedores (más `:latest` de `operator`: la regla de `image_to_tag`) y lo guarda atómico como `in_progress`; con un último estado que no es fiable y sin registro no inventa nada: aviso en `warnings` y stderr; un proyecto que no ejecuta nada no guarda nada. Desviación dicha: «antes de cualquier fase» es antes de `configuration` y de toda fase que toque algo, pero después de la comprobación del motor. Con el modelo de la exploración: una parada que no llegó a producirse (`done`) cuenta como despliegue bueno, y `NoPreviousImages` con contenedores y `:latest` ya en `good` no es problema. Con (2) y (3) en T-61. Evidencia final: `test_deploy_rollback` 71 OK en `kairos-test:i3p10` y en el anfitrión; `test_deploy_isolation` 35 OK; `test_deploy` 28 OK (`test_a_long_command…` ahora exige nombre en todas las órdenes) · 2026-11-17.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (12) — notas de T-61 a T-65 hasta fix4», T-62).
 
 ### T-63 — `--rollback` sin migrar
 
@@ -1984,11 +1976,7 @@ test-plan: n/a (sin UI)
 - [x] Documentar
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (3) — notas de T-56 y de las tareas T-61 a T-64», T-63).
-- fix1 (revisión fase 10): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (6) — notas fix1 de la revisión de la fase 10 (T-61 a T-65)», T-63).
-- fix2 (revisión fase 10): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (9) — notas fix2 de la revisión de la fase 10 (T-61 a T-65)», T-63).
-- fix3 (revisión fase 10, ciclo 2): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (11) — notas fix3 de la revisión de la fase 10 (T-61 a T-65)», T-63).
-- fix4 (revisión fase 10, ciclo 2): gap 1 (mensajes). `NoPreviousImages` de `--rollback` dice por qué (`no_previous_reason`: la versión que corre ya figura como buena y nada la ha etiquetado, o no hay ninguna versión registrada como buena y el script no inventa ninguna) y el mensaje de una interrupción solo promete `--rollback still goes back to it` si hay una etiqueta registrada (`rollback_note`; sin ella dice `--rollback cannot go back`); RED en `LegacyInstallationTests.test_without_a_record…` (3 errores contra HEAD) · 2026-11-17.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (12) — notas de T-61 a T-65 hasta fix4», T-63).
 
 ### T-64 — Ensayo aislado de retroceso y de latido `unhealthy`
 
@@ -2020,10 +2008,7 @@ test-plan: n/a (sin UI)
 - [x] Retirar el proyecto
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (3) — notas de T-56 y de las tareas T-61 a T-64», T-64).
-- fix1 (revisión fase 10): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (6) — notas fix1 de la revisión de la fase 10 (T-61 a T-65)», T-64).
-- fix2 (revisión fase 10): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (9) — notas fix2 de la revisión de la fase 10 (T-61 a T-65)», T-64).
-- fix3 (revisión fase 10, ciclo 2): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (11) — notas fix3 de la revisión de la fase 10 (T-61 a T-65)», T-64).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (12) — notas de T-61 a T-65 hasta fix4», T-64).
 
 ### T-65 — Documentar bloqueo y retroceso
 
@@ -2048,11 +2033,7 @@ test-plan: n/a (sin UI)
 - [x] Actualizar `docs/operations.md`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas** (2026-11-17): RED: `test_deploy_rollback.DocumentationTests` contra el `docs/operations.md` anterior falló con `AssertionError: 'deployment_locked' not found in '# Operación y recuperación…'` · 2026-11-17. Secciones nuevas en «Desplegar»: «Un despliegue a la vez (`deployment_locked`, `--break-lock`)» (bloqueo, código de salida 3, PID muerto, qué rompe y qué no `--break-lock`), «Etiquetas locales de las imágenes» (`kairos-<imagen>:<versión>-<marca>`, dos conservadas, registro `images`) y «Retroceso de un despliegue (`--rollback`)» (T-63; código de salida 4, `no_previous_images`, imágenes y no datos), más el párrafo de la concesión perdida y la medición del ensayo (T-64). La prueba comprueba contra el script los códigos, el fichero de bloqueo, las opciones, las fases del retroceso, las imágenes, las dos etiquetas conservadas y los códigos de salida. Verificación (lectura + prueba): `memory_platform.tests.test_deploy_rollback memory_platform.tests.test_deploy memory_platform.tests.test_deploy_isolation memory_platform.tests.test_deploy_lock memory_platform.tests.test_worker_heartbeat memory_platform.tests.test_compose_limits` → `Ran 136 tests ... OK`. Estilo: secciones de despliegue de `docs/operations.md:128-201`.
-- fix1 (revisión fase 10): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (6) — notas fix1 de la revisión de la fase 10 (T-61 a T-65)», T-65).
-- fix2 (revisión fase 10): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (9) — notas fix2 de la revisión de la fase 10 (T-61 a T-65)», T-65).
-- fix3 (revisión fase 10, ciclo 2): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (11) — notas fix3 de la revisión de la fase 10 (T-61 a T-65)», T-65).
-- fix4 (revisión fase 10, ciclo 2): gaps 5, 6 y 7. RED: `DocumentationTests` contra HEAD falló con `AssertionError: 'may still be running' not found` (manual) y `test_fix4_the_docstring_and_the_plan_do_not_say_that_break_lock_removes_a_lock` (docstring de `DeploymentLocked` y ítem (19) del plan decían que `--break-lock` retira un bloqueo) · 2026-11-17. `docs/operations.md`: el aviso de otro equipo (`may still be running`, `puede no propagarse`), el fichero normal de un solo nombre y la creación sin seguir enlaces, los datos del fichero escapados, la señal retenida, los contenedores con nombre y `unreaped_containers`, el registro de la versión que corre al empezar y el motivo exacto de `no_previous_images`; gap 7, decisión: `interrupted` se guarda en cualquier fase salvo `engine` (igual que `failed`: en `engine` aún no se ha tocado nada y el informe anterior queda), y el manual lo dice así. Ítem (19) de `improvement-plan.md` sin contradicción (`--break-lock` solo nombra la toma de un bloqueo libre de otro equipo); nota de CA-23 (`spec.md`) actualizada y nota de enmienda de fix3/fix4 bajo el criterio 2 de T-61, sin reescribir los criterios aprobados · 2026-11-17.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (12) — notas de T-61 a T-65 hasta fix4», T-65).
 
 ### T-66 — Cierre de fase: suite completa y subida del mínimo
 
@@ -3114,4 +3095,13 @@ Archivada en `execution-history.md` (sección «Compactación 2026-11-17 (10) �
 
 ## Revisión de dos lentes — intento 5: Fase 10 tras fix4 (T-61, T-62, T-63, T-65)
 
-Pendiente de revisión; sin veredicto.
+Lentes: B; A+C (diff `af7df9b..64f3861`, fix4). 133 OK en el anfitrión (2 omitidas); legacy 2×300×8 sin problemas atribuibles a fix4; `reap` con docker colgado vuelve a los 120 s; OneDrive y montajes de Docker Desktop dan `nlink` 1. Intento 4: n.º 1-6, 8 y 9 ✓; n.º 7 parcial. Sin Critical ni Important: **fase cerrada en el intento 5** (segundo del ciclo 2). Minor, todos corregidos en el cierre (fix5):
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Minor | Sin registro y con servicios sin contenedor, `good` parcial: `--rollback` informa éxito con esos servicios en la build fallida y la marca `good` | T-62, T-63 | corregido (fix5) | Lente B n.º 3 (`rb4/legacy5.py`) |
+| 2 | Minor | Señal entre el fin de `settle`/`apply` y `disarm()`: escapa de `main` sin liberar | T-61 | corregido (fix5) | Lente B n.º 1 (`rb4/signals5.py`) |
+| 3 | Minor | Señal antes del SIG_IGN de `ignoring_signals` cancela el `reap` sin aviso | T-61 | corregido (fix5) | Lente B n.º 2 |
+| 4 | Minor | Manual: en `engine` ya se guardó `in_progress` | T-65 | corregido (fix5) | Lente A n.º A-1 |
+| 5 | Minor | Ítem (19): «antes de cualquier fase» frente a «tras `engine`» | T-65 | corregido (fix5) | Lente A n.º A-2 |
+| 6 | Minor | `status` del estado sin escapar en stderr y `warnings` | T-62, T-63 | corregido (fix5) | Lente C n.º C-1 (CWE-150) |
