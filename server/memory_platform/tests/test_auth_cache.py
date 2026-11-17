@@ -435,6 +435,7 @@ class EveryTransactionTests(unittest.TestCase):
         ('store_auth.py', 'migrate'): 'schema', ('store_auth.py', 'bootstrap_user'): 'creates the first actor', ('store_jobs.py', 'stored_item_vector'): 'worker, no actor',
         ('store_jobs.py', 'job_outcome'): 'worker, keyed by fence', ('store_jobs.py', 'claim_job'): 'worker', ('store_jobs.py', 'renew_lease'): 'worker', ('store_jobs.py', 'complete_job'): 'worker, keyed by fence',
         ('store_jobs.py', 'fail_job'): 'worker, keyed by fence', ('store_pool.py', 'ready_probe'): 'health probe, no actor',
+        ('probe.py', 'admin_actor'): 'operator command (admin probe-provision): the administrator the command acts as', ('probe.py', 'provision'): 'operator command: makes the probe project and key', ('probe.py', 'valid_key'): 'operator command: reads its own key row',
     }
 
     def test_every_transaction_resolves_permissions_or_is_on_the_reviewed_list(self):
@@ -460,7 +461,8 @@ class EveryTransactionTests(unittest.TestCase):
         # the cached helpers are the only readers that DECIDE access; the others take FOR SHARE locks (a lock must hit the database) or build the actor dict of a credential just proven
         readers = re.compile(r'FROM\s+memory\.(project_grants|api_keys)\b', re.I)
         allowed = {('store_auth.py', '_load_active'), ('store_auth.py', '_require'), ('store_auth.py', 'list_users'), ('store_auth.py', 'list_keys'), ('store_auth.py', 'revoke_key'),
-                   ('store_auth.py', 'list_projects'), ('auth.py', '_actor'), ('auth.py', 'authenticate_bearer')}
+                   ('store_auth.py', 'list_projects'), ('auth.py', '_actor'), ('auth.py', 'authenticate_bearer'),
+                   ('probe.py', 'provision'), ('probe.py', 'valid_key')}  # the probe provisioning is an operator command: it reads api_keys to reuse or rotate its own key
         found = set()
         for path in sorted(PACKAGE.glob('*.py')):
             for node in ast.walk(ast.parse(path.read_text(encoding='utf-8'))):

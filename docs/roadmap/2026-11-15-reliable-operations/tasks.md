@@ -2114,7 +2114,7 @@ test-plan: n/a (sin UI)
 - **Previsión IA**: 110 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/admin.py`, `server/memory_platform/tests/test_probe_provisioning.py`, `server/memory_platform/probe.py` (fichero nuevo: el aprovisionamiento y, en T-69, la sonda; `admin.py` queda con el cableado), `docs/roadmap/2026-11-15-reliable-operations/improvement-plan.md` (ítem (20) de Coordinación)
+- **Archivos**: `server/memory_platform/admin.py`, `server/memory_platform/tests/test_probe_provisioning.py`, `server/memory_platform/probe.py` (fichero nuevo: el aprovisionamiento y, en T-69, la sonda; `admin.py` queda con el cableado), `docs/roadmap/2026-11-15-reliable-operations/improvement-plan.md` (ítem (20) de Coordinación), `server/memory_platform/tests/test_auth_cache.py` (las tres funciones de `probe.py` entran en las listas revisadas de operaciones de operador; las halló la suite completa)
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_probe_provisioning|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
