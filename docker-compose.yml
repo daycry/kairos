@@ -225,6 +225,11 @@ services:
       memory-api: {condition: service_healthy}
       memory-mcp: {condition: service_healthy}
     tmpfs: ['/tmp:uid=101,gid=101,mode=1777']
+    healthcheck:
+      test: [CMD-SHELL, 'wget -qO- -T 3 http://127.0.0.1:8080/health/live >/dev/null']  # the proxy's own route (web/nginx.conf), not a call to memory-api
+      interval: 15s
+      timeout: 5s
+      retries: 6
 
   memory-admin:
     <<: *process

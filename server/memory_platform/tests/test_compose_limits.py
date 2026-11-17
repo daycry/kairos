@@ -101,3 +101,18 @@ class LoggingAndHostsTests(unittest.TestCase):
         text = OPERATIONS.read_text(encoding='utf-8')
         self.assertIn('host-gateway', text)
         self.assertIn('extra_hosts', text)
+
+
+class WebHealthcheckTests(unittest.TestCase):
+    def test_memory_web_asks_the_proxy_for_its_own_live_route(self):
+        check = compose()['services']['memory-web']['healthcheck']
+        command = ' '.join(check['test'])
+        self.assertIn('http://127.0.0.1:8080/health/live', command)
+        self.assertTrue(check['test'][0] == 'CMD-SHELL' or check['test'][0] == 'CMD')
+        for key in ('interval', 'timeout', 'retries'):
+            self.assertIn(key, check)
+
+    def test_the_route_is_served_by_the_existing_proxy_configuration(self):
+        nginx = (ROOT / 'web/nginx.conf').read_text(encoding='utf-8')
+        self.assertIn('location = /health/live { access_log off; return 200', nginx)
+        self.assertRegex(nginx, r'listen 8080;')
