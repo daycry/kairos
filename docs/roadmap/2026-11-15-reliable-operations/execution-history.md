@@ -1019,3 +1019,25 @@ SHA-256: `8010de6be35fc9d7516f1881dc04775e99e6415e63014e82d9d4f774611d330b`.
 SHA-256: `9421b36bbe8cff77b60fb44c49ff575d5f818eb01d5295908270093d60f4fff1`.
 
 - fix2 (revisión fase 10): `docs/operations.md` reescrito donde el código cambió: bloqueo del sistema operativo (qué es, qué libera, `--break-lock` solo de otro equipo y su advertencia), etiquetado desde `images.good` y clave `good`, `already_at_previous` contra los contenedores y retroceso repetible (ejemplo corregido), cota de `unhealthy` con la duración de las sondas. `DocumentationTests` comprueba además `images.good`, `flock`, `msvcrt.locking`, `State.Health.Log`, `failed_probe_seconds`, la ayuda de `--break-lock` y que cuatro frases de las promesas antiguas ya no están. RED: `DocumentationTests` contra el manual de la imagen de prueba anterior falló con `AssertionError: 'already_at_previous' not found in '# Operación y recuperación…'` · 2026-11-17. Verde en `kairos-test:i3p10` con `docs/operations.md` montado.
+
+## Compactación 2026-11-17 (10) — revisión de la fase 10, intento 4
+
+Veredicto del intento 4, escrito directamente aquí para mantener `tasks.md` por debajo del límite de lectura.
+
+### Revisión de dos lentes — intento 4: Fase 10 tras fix3 — ciclo 2, abierto con OK del usuario: «Las preguntas toma la mejor decisión» (T-61, T-62, T-63, T-64, T-65)
+
+SHA-256: `0df51a5dfd020900ee47ceb981fa0c2129436c362066895b488e1e3ff6e91cd3`.
+
+Lentes: B; A+C en un solo revisor. Diff `d64876d..0c70641` (fix3). `test_deploy_rollback`+`test_deploy_lock` 87 OK (2 omitidas en Windows); `ledger-lint` 0 incoherencias; `scope-check` exit 0; SHA-256 de la compactación (9) 5/5. Veredicto: n.º 1-9 del intento 3 cerrados (A+C, con prueba en `kairos-test:i3p10` de enlace simbólico, ids y `TAG_MARK`). Lente B: con registro `images.good`, 2×300 secuencias de 8 pasos con fallos, `kill` y Ctrl-C en cada fase → 0 problemas; directorio/FIFO/enlace como bloqueo → `deployment_locked`. 1 Important y 9 Minor. Decisión del orquestador: fix4 (segundo intento del ciclo 2) corrige todo.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | Instalación sin `images.good` (sin informe o `complete` antiguo, el estado real del proyecto instalado): una interrupción o fallo en `configuration` o a mitad del etiquetado guarda `interrupted`/`failed` sin `good` ni `previous`; desde ahí la versión en marcha nunca se considera buena, y tras un reintento fallido `--rollback` sale con 4 con los contenedores en la build fallida; el mensaje de `:1483` promete lo contrario | T-62, T-63 | pendiente (fix4: fijar `good` desde los contenedores en marcha al empezar, antes de cualquier fase, cuando no hay registro y el último estado es fiable) | Lente B n.º 1 (`rb4/legacy.py`, 401 casos en `explore4.py … legacy`); `deploy-memory.py:649,674-677,699,1477-1480` |
+| 2 | Minor | Una señal durante el manejador de fallo o fuera del `try` del de interrupción escapa de `main` (traceback, exit 1) | T-61, T-62 | pendiente (fix4) | Lente B n.º 2 (`rb4/signals2.py`, Linux); `deploy-memory.py:1461-1487` |
+| 3 | Minor | SIGTERM durante `migrate`/`backfill-chunks` mata el CLI de `compose run` pero no su contenedor; se registra «No later phase was run» y un reintento puede lanzar un segundo `migrate` | T-61, T-62 | pendiente (fix4: nombre propio y `reap`, o esperar/documentar) | Lente B n.º 3 (lectura); `deploy-memory.py:580-586,1034,1048` |
+| 4 | Minor | En un disco compartido sin `flock` propagado, el JSON de un despliegue vivo de otro equipo se anuncia como «did not end … killed or machine lost» | T-61 | pendiente (fix4: mensaje sin esa certeza) | Lente B n.º 4 (`rb4/lockkinds.py`); `deploy-memory.py:297-299,1452-1455` |
+| 5 | Minor | El ítem (19) se contradice sobre `--break-lock`; el docstring de `DeploymentLocked` está desfasado | T-61, T-65 | pendiente (fix4) | Lente A n.º A-1; `improvement-plan.md:246`, `deploy-memory.py:118` |
+| 6 | Minor | Sin nota de enmienda de fix3 bajo el criterio 2 de T-61 y la de CA-23 sigue diciendo que `--break-lock` es necesario para otro equipo | T-61 | pendiente (fix4) | Lente A n.º A-2; `tasks.md:1909`, `spec.md:212` |
+| 7 | Minor | El manual promete `status: interrupted` también en la fase `engine`, donde no se guarda | T-65 | pendiente (fix4) | Lente A n.º A-3; `operations.md:122`, `deploy-memory.py:1478-1479` |
+| 8 | Minor | Inyección de terminal: pid, host y `started_at` del fichero de bloqueo salen sin escapar por stderr | T-61 | pendiente (fix4) | Lente C n.º C-1 (CWE-150, `c_inject.py`); `deploy-memory.py:199,1445,1451,1454` |
+| 9 | Minor | `O_NOFOLLOW` no cubre un enlace duro (sin `st_nlink==1`/`S_ISREG`): tomar y liberar vacía el fichero enlazado; en Windows, entre `lstat` y `os.open` un enlace plantado crea un fichero vacío en su destino | T-61 | pendiente (fix4) | Lente C n.º C-2 (CWE-59, `c_linux.py` en `kairos-test:i3p10`), Lente B (fuera de lente); `deploy-memory.py:242,288,334` |

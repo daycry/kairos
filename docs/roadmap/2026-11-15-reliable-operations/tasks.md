@@ -3101,3 +3101,8 @@ Archivada en `execution-history.md` (sección «Compactación 2026-11-17 (7) —
 
 Archivada en `execution-history.md` (sección «Compactación 2026-11-17 (8) — revisión de la fase 10, intento 3»). Resumen: lentes B y A+C; 2 Important (`:latest` desfasado tras `already_at_previous`; despliegue interrumpido sin registro de etiquetas) y 7 Minor (bloqueo: ventana tras `is_current`, TOCTOU de `remove_foreign`, `O_NOFOLLOW`; validación de ids y `TAG_MARK`; aviso de despliegue interrumpido; CA-21 como enmienda). Ciclo 2 abierto por el orquestador con la delegación del usuario («Las preguntas toma la mejor decisión»); fix3 corrige todo.
 
+
+## Revisión de dos lentes — intento 4: Fase 10 tras fix3 — ciclo 2, abierto con OK del usuario: «Las preguntas toma la mejor decisión» (T-61, T-62, T-63, T-64, T-65)
+
+Archivada en `execution-history.md` (sección «Compactación 2026-11-17 (10) — revisión de la fase 10, intento 4»). Resumen: lentes B y A+C; 1 Important (instalación sin `images.good`: una interrupción o fallo temprano pierde la referencia a la versión buena) y 8 Minor (señales en los manejadores, `migrate` huérfano, mensajes y notas de `--break-lock`, `interrupted` en `engine`, escapes de terminal, enlace duro); fix4 corrige todo.
+
