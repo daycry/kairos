@@ -24,7 +24,9 @@ Stage `rollback` (closing of C-04: CA-24 and the rehearsal case of CA-21) runs o
                        an observation by search
   5. worker_unhealthy  the loop of `memory-worker` is stopped (SIGSTOP of its process: the container keeps running and its healthcheck keeps running), and the container must turn
                        `unhealthy` within the AMENDED bound of CA-21: the deadline the heartbeat file holds (the last beat) + `interval x retries` of the container's own healthcheck
-                       (plus a stated slack for the daemon's probe scheduling); it is then resumed and must be healthy again
+                       + the durations of the probes (Docker waits `interval` AFTER a probe ends, so each probe adds its own duration: the last good one and the failing ones), all
+                       read from `State.Health.Log` together with the instant of the transition (the end of the probe that made it `unhealthy`), not from the clock of the poll;
+                       it is then resumed and must be healthy again
 
 and ends with `rollback_ok`, with the measurements under `rollback` and `worker_unhealthy`. It never touches `knowledge-graphs-*`, the Ollama of the host or any other project: the whole run is the
 project given with --project-name (`kairos-ops-<name>`) and the resources the restore rehearsal names by exact name (the tagged images and the faulty ones included, removed by exact
@@ -56,7 +58,7 @@ ROLLBACK_IMAGES = ('api', 'worker', 'mcp', 'web', 'operator')  # the images a de
 FAULTY_SERVICES = ('api', 'worker')  # recreated on the "faulty release" image before the rollback
 FAULTY_LABEL = 'com.kairos.rehearsal=faulty-release'
 HEALTH_SLACK_SECONDS = 10  # only the margin of the WAIT, so that a late `unhealthy` can still be measured and reported; the verdict (`within_bound`) is strict and never uses it
-POLL_PAUSE_SECONDS = 3  # the pause between two polls of the health: the latency of the measurement, reported apart
+POLL_PAUSE_SECONDS = 3  # the pause between two polls of the health: it lengthens the wait only; the instant that counts is the one `State.Health.Log` holds, reported apart
 UNHEALTHY_EXTRA_SECONDS, RECOVER_SECONDS, HEALTHY_SECONDS = 240, 240, 300
 FINGERPRINT_CODE = '''
 import json, time
@@ -74,6 +76,46 @@ with store.transaction() as connection:
     everything = time.monotonic() - started
 print(json.dumps({'rows': rows, 'table_bytes': size, 'embeddings_seconds': round(embeddings, 2), 'all_tables_seconds': round(everything, 2), 'tables': len(tables)}))
 '''
+
+
+def health_time(text):
+    """An instant of `State.Health.Log` (RFC 3339 with nanoseconds, written by the daemon) as seconds since the epoch; ValueError if it cannot be read."""
+    match = re.fullmatch(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})', text) if isinstance(text, str) else None
+    if not match:
+        raise ValueError(f'not an RFC 3339 instant: {text!r}')
+    base, fraction, zone = match.groups()
+    return datetime.fromisoformat(f"{base}.{(fraction or '')[:6].ljust(6, '0')}{'+00:00' if zone == 'Z' else zone}").timestamp()
+
+
+def unhealthy_verdict(log, deadline, interval, retries):
+    """CA-21 (amended), from the probes of the daemon (`State.Health.Log`, chronological): when the container turned `unhealthy` and the bound that follows from how Docker schedules probes.
+
+    A container turns `unhealthy` at the END of the `retries`-th consecutive failing probe (an exit code other than 0, a timeout included). The last good probe P0 started no later than the deadline D
+    (it still passed), the next one starts `interval` after P0 ENDS (Docker resets its timer when a probe finishes), and so on: the transition is at most
+    D + duration(P0) + interval x retries + the sum of the durations of the `retries` failing probes. Every duration is read from the log, so a slow probe lengthens the bound by exactly its
+    own length; nothing here is a margin. A probe still running (no end) is ignored; without a good probe in the log its duration is unknown and reported as None (taken as 0)."""
+    probes = []
+    for entry in log if isinstance(log, list) else []:
+        try:
+            start, end, code = health_time(entry['Start']), health_time(entry['End']), int(entry['ExitCode'])
+        except (KeyError, TypeError, ValueError, OverflowError, OSError):
+            continue  # a probe that is still running has no end; a time that cannot be read is not evidence
+        if end >= start:
+            probes.append((start, end, code))
+    first = len(probes)
+    while first and probes[first - 1][2] != 0:
+        first -= 1
+    failing = probes[first:]
+    if len(failing) < retries:
+        raise RehearsalError(f'the health log of the worker holds {len(failing)} failing probe(s) in a row and the healthcheck allows {retries}: it does not show the transition to unhealthy')
+    counted = failing[:retries]
+    good = probes[first - 1] if first else None
+    durations = [round(end - start, 3) for start, end, _ in counted]
+    good_seconds = round(good[1] - good[0], 3) if good else None
+    unhealthy_at = counted[-1][1]
+    bound = deadline + interval * retries + (good_seconds or 0.0) + sum(durations)
+    return {'unhealthy_at': unhealthy_at, 'bound': bound, 'late_by': unhealthy_at - bound, 'within_bound': unhealthy_at <= bound, 'failed_probe_seconds': durations,
+            'last_ok_probe_seconds': good_seconds, 'transition_source': 'State.Health.Log'}
 
 
 def load(name, filename):
@@ -332,16 +374,20 @@ class OperationsRehearsal(restore_module.Rehearsal):
     def health(self, service):
         return self.run(['docker', 'inspect', '-f', '{{.State.Health.Status}}', self.container_of(service)]).strip()
 
+    def health_log(self, container):
+        return self.json(self.run(['docker', 'inspect', '-f', '{{json .State.Health.Log}}', container]).strip())
+
     def container_now(self, container):
         return float(self.run(['docker', 'exec', container, 'python', '-c', 'import time;print(time.time())']).strip())
 
     def worker_unhealthy(self):
-        """CA-21 (amended): with the loop stopped the container turns `unhealthy` within the deadline the heartbeat file holds + `interval x retries`. Times are the container's own clock,
-        the same one the healthcheck compares the deadline with."""
+        """CA-21 (amended): with the loop stopped the container turns `unhealthy` within the deadline the heartbeat file holds + `interval x retries` + the durations of the probes (`unhealthy_verdict`).
+        The deadline and the stop are read on the container's clock, the one the healthcheck compares the deadline with; the transition and the probes come from `State.Health.Log`, written by the daemon
+        on the same machine (the same kernel clock), so the poll that notices it, which is later by up to its pause plus the time of the command, does not enter the verdict."""
         self.step('worker_unhealthy')
         container = self.container_of('memory-worker')
         check = self.json(self.run(['docker', 'inspect', '-f', '{{json .Config.Healthcheck}}', container]).strip())
-        interval, retries = check['Interval'] / 1e9, int(check['Retries'])
+        interval, retries, timeout = check['Interval'] / 1e9, int(check['Retries']), check.get('Timeout', 0) / 1e9
         self.wait_for('the worker healthy before its loop is stopped', lambda: self.health('memory-worker') == 'healthy', HEALTHY_SECONDS, pause=5)
         stopped = False
         try:
@@ -349,16 +395,19 @@ class OperationsRehearsal(restore_module.Rehearsal):
             stopped = True
             stopped_at = self.container_now(container)
             deadline = float(self.run(['docker', 'exec', container, 'python', '-c', "print(open('/tmp/kairos-worker-heartbeat').read().strip())"]).strip())  # frozen: the last beat
-            bound = deadline + interval * retries
-            unhealthy_at = self.wait_for('memory-worker turning unhealthy with its loop stopped', lambda: self.container_now(container) if self.health('memory-worker') == 'unhealthy' else None,
-                                         max(bound - stopped_at, 0) + HEALTH_SLACK_SECONDS + UNHEALTHY_EXTRA_SECONDS, pause=POLL_PAUSE_SECONDS)
+            ceiling = deadline + interval * retries + (retries + 1) * timeout  # the longest the bound can be (probes that all time out): only for how long to WAIT
+            self.wait_for('memory-worker turning unhealthy with its loop stopped', lambda: self.health('memory-worker') == 'unhealthy',
+                          max(ceiling - stopped_at, 0) + HEALTH_SLACK_SECONDS + UNHEALTHY_EXTRA_SECONDS, pause=POLL_PAUSE_SECONDS)
+            verdict = unhealthy_verdict(self.health_log(container), deadline, interval, retries)
+            unhealthy_at, bound = verdict['unhealthy_at'], verdict['bound']
             result = {'loop_stopped': 'SIGSTOP of the process of memory-worker (the container and its healthcheck keep running)', 'interval_seconds': interval, 'retries': retries,
                       'deadline_after_stop_seconds': round(deadline - stopped_at, 1), 'bound_after_stop_seconds': round(bound - stopped_at, 1),
                       'unhealthy_after_stop_seconds': round(unhealthy_at - stopped_at, 1), 'unhealthy_after_deadline_seconds': round(unhealthy_at - deadline, 1),
-                      'late_by_seconds': round(unhealthy_at - bound, 1), 'measurement_pause_seconds': POLL_PAUSE_SECONDS, 'within_bound': unhealthy_at <= bound}
+                      'late_by_seconds': round(verdict['late_by'], 1), 'failed_probe_seconds': verdict['failed_probe_seconds'], 'last_ok_probe_seconds': verdict['last_ok_probe_seconds'],
+                      'transition_source': verdict['transition_source'], 'measurement_pause_seconds': POLL_PAUSE_SECONDS, 'within_bound': verdict['within_bound']}
             self.report['worker_unhealthy'] = result
             if not result['within_bound']:
-                raise RehearsalError('memory-worker turned unhealthy later than the deadline of its last beat + interval x retries: ' + json.dumps(result, sort_keys=True))
+                raise RehearsalError('memory-worker turned unhealthy later than the deadline of its last beat + interval x retries + the durations of the probes: ' + json.dumps(result, sort_keys=True))
         finally:
             if stopped:
                 self.run(['docker', 'kill', '--signal', 'SIGCONT', container], check=False)

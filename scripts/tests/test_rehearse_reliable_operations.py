@@ -9,6 +9,7 @@ health of `memory-worker` on a simulated clock: the tags must exist, the faulty 
 with the same content, the worker must turn `unhealthy` within the deadline of its last beat + `interval x retries` and be healthy again once resumed, and the cleanup removes every tag.
 """
 import importlib.util
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import re
@@ -230,6 +231,12 @@ PROJECT = 'kairos-ops-c'
 TAG = '0.4.0-20261103T100000Z'
 
 
+def stamp(epoch):
+    """An instant as the daemon prints it: RFC 3339 with nanoseconds."""
+    moment = datetime.fromtimestamp(epoch, timezone.utc)
+    return moment.strftime('%Y-%m-%dT%H:%M:%S.') + f'{moment.microsecond:06d}123Z'
+
+
 def previous_tags(project=PROJECT):
     return {name: f'rehearsal-{project}-{name}:{TAG}' for name in NAMES}
 
@@ -257,6 +264,21 @@ class FakeStack:
         self.running = {'memory-api-container': 'sha256:new-api', 'memory-worker-container': 'sha256:new-worker'}
         self.stopped_at = self.resumed_at = None
         self.signals = []
+
+    def transition_at(self):
+        """The simulated instant (on `now`'s clock) of the transition to `unhealthy`: the end of the third failing probe."""
+        return self.stopped_at + self.faults.get('deadline_offset', 100) + self.faults.get('unhealthy_after_deadline', 75)
+
+    def health_log(self):
+        """`State.Health.Log` as the daemon writes it: the last good probe and the failing ones, each `interval` after the end of the one before, ending at the transition."""
+        duration, interval = self.faults.get('probe_seconds', 1.0), 30.0
+        if self.faults.get('log'):
+            return self.faults['log']
+        end, entries = self.EPOCH + self.transition_at(), []
+        for code in (1, 1, 1, 0):
+            entries.insert(0, {'Start': stamp(end - duration), 'End': stamp(end), 'ExitCode': code, 'Output': ''})
+            end -= duration + interval
+        return entries
 
     def advance(self, seconds):
         self.now += seconds
@@ -310,6 +332,8 @@ class FakeStack:
                 return 0, self.running[command[-1]] + chr(10), ''
             if '{{.State.Health.Status}}' in command:
                 return 0, self.health() + chr(10), ''
+            if '{{json .State.Health.Log}}' in command:
+                return 0, json.dumps(self.health_log()), ''
             if '{{json .Config.Healthcheck}}' in command:
                 return 0, json.dumps({'Test': ['CMD'], 'Interval': 30_000_000_000, 'Timeout': 5_000_000_000, 'Retries': 3}), ''
         if command[:2] == ['docker', 'exec']:
@@ -426,7 +450,7 @@ class RollbackStageTests(unittest.TestCase):
         self.assertTrue(measured['within_bound'] and measured['recovered'])
         self.assertEqual((measured['interval_seconds'], measured['retries']), (30.0, 3), 'the bound uses the healthcheck the container really has')
         self.assertEqual(measured['deadline_after_stop_seconds'], 100.0)
-        self.assertEqual(measured['bound_after_stop_seconds'], 190.0, 'deadline of the last beat + 30 x 3')
+        self.assertEqual(measured['bound_after_stop_seconds'], 194.0, 'deadline of the last beat + 30 x 3 + the durations of the probes (1 s: the last good one and the three failing ones)')
         self.assertGreaterEqual(measured['unhealthy_after_stop_seconds'], 175.0)
         self.assertLessEqual(measured['unhealthy_after_deadline_seconds'], 90)
         self.assertEqual(stack.signals, [('SIGSTOP', 'memory-worker-container'), ('SIGCONT', 'memory-worker-container')])
@@ -442,7 +466,7 @@ class RollbackStageTests(unittest.TestCase):
                 self.assertEqual(stack.signals[-1], ('SIGCONT', 'memory-worker-container'))
 
     def test_fix1_the_bound_is_strict_the_margin_of_the_wait_never_approves_a_late_unhealthy(self):
-        """Fix1 (review of phase 10, gap 5): 195 s after the stop is 5 s past the bound of 190 s; the 10 s that the wait allows to still measure it are not part of the verdict."""
+        """Fix1 (review of phase 10, gap 5): 195 s after the stop is 1 s past the bound of 194 s; the 10 s that the wait allows to still measure it are not part of the verdict."""
         rehearsal, stack = self.rehearsal(unhealthy_after_deadline=95)
         with self.assertRaises(ops.RehearsalError) as raised:
             rehearsal.worker_unhealthy()
@@ -459,6 +483,74 @@ class RollbackStageTests(unittest.TestCase):
         self.assertLessEqual(measured['late_by_seconds'], 0)
         self.assertEqual(measured['measurement_pause_seconds'], 3, 'the latency of the measurement is reported apart: the poll that detects it waits this long')
         self.assertLessEqual(measured['unhealthy_after_stop_seconds'], measured['bound_after_stop_seconds'])
+
+    def test_fix2_the_verdict_takes_the_instant_of_the_transition_from_the_health_log_not_the_clock_of_the_poll(self):
+        """Fix2 (gap 7): the poll runs every few seconds and its answer comes later still; the instant that counts is the end of the probe that made the container unhealthy."""
+        rehearsal, stack = self.rehearsal(unhealthy_after_deadline=93)
+        rehearsal.worker_unhealthy()
+        measured = rehearsal.report['worker_unhealthy']
+        self.assertEqual(measured['unhealthy_after_stop_seconds'], 193.0, 'the transition of the log, not a multiple of the poll pause')
+        self.assertEqual(measured['unhealthy_after_deadline_seconds'], 93.0)
+        self.assertTrue(measured['within_bound'])
+        self.assertEqual(measured['failed_probe_seconds'], [1.0, 1.0, 1.0])
+        self.assertEqual(measured['last_ok_probe_seconds'], 1.0)
+        self.assertEqual(measured['transition_source'], 'State.Health.Log')
+
+    def test_fix2_probes_that_take_time_widen_the_bound_by_exactly_their_duration(self):
+        """Docker waits `interval` AFTER a probe ends: each probe adds its own duration to the time. 4 probes of 10 s make the bound 90 + 40 = 130 s after the deadline."""
+        rehearsal, stack = self.rehearsal(probe_seconds=10.0, unhealthy_after_deadline=120)
+        rehearsal.worker_unhealthy()
+        measured = rehearsal.report['worker_unhealthy']
+        self.assertTrue(measured['within_bound'], 'the old bound (deadline + 90 s) would have called this late')
+        self.assertEqual(measured['bound_after_stop_seconds'], 100.0 + 90.0 + 40.0)
+        rehearsal, stack = self.rehearsal(probe_seconds=10.0, unhealthy_after_deadline=131)
+        with self.assertRaises(ops.RehearsalError):
+            rehearsal.worker_unhealthy()
+        self.assertEqual(rehearsal.report['worker_unhealthy']['late_by_seconds'], 1.0)
+
+    def test_fix2_the_bound_is_deduced_exactly_inside_just_outside_and_with_a_log_that_cannot_prove_it(self):
+        interval, retries, deadline = 30.0, 3, 1000.0
+        base = 1_000_000.0
+
+        def log(*probes):  # (start, duration, exit code)
+            return [{'Start': stamp(base + start), 'End': stamp(base + start + duration), 'ExitCode': code, 'Output': ''} for start, duration, code in probes]
+
+        def verdict(entries):
+            return ops.unhealthy_verdict(entries, base + deadline, interval, retries)
+        # the last good probe took 2 s, the failing ones 1, 4 and 3 s: bound = deadline + 90 + 2 + (1 + 4 + 3)
+        bound = deadline + 90 + 2 + 8
+        inside = log((960, 2, 0), (962 + 30, 1, 1), (993 + 30, 4, 1), (1027 + 30, 3, 1))
+        result = verdict(inside)
+        self.assertEqual((result['unhealthy_at'], result['bound'], result['within_bound']), (base + 1060, base + bound, True))
+        self.assertEqual(result['failed_probe_seconds'], [1.0, 4.0, 3.0])
+        edge = log((960, 2, 0), (992, 1, 1), (1023, 4, 1), (1057 + 40, 3, 1))
+        self.assertEqual(verdict(edge)['unhealthy_at'], base + 1100)
+        self.assertTrue(verdict(edge)['within_bound'], 'exactly on the bound is inside')
+        outside = log((960, 2, 0), (992, 1, 1), (1023, 4, 1), (1057 + 40.5, 3, 1))
+        self.assertFalse(verdict(outside)['within_bound'])
+        self.assertAlmostEqual(verdict(outside)['late_by'], 0.5, places=3)
+        with self.assertRaises(ops.RehearsalError):  # fewer failing probes than retries: the log does not show the transition
+            verdict(log((960, 2, 0), (992, 1, 1), (1023, 4, 1)))
+        with self.assertRaises(ops.RehearsalError):
+            verdict([])
+        self.assertEqual(verdict(log((992, 1, 1), (1023, 4, 1), (1057, 3, 1), (1090, 3, 1)))['last_ok_probe_seconds'], None, 'no good probe in the log: reported, not invented')
+        slow = log((960, 2, 0), (992, 1, 1), (1023, 4, 1), (1057, 3, 1), (1090, 3, 1))  # a fourth failing probe after the transition does not move it
+        self.assertEqual(verdict(slow)['unhealthy_at'], base + 1060)
+
+    def test_fix2_a_timeout_of_a_probe_counts_as_a_failure_and_a_probe_still_running_is_ignored(self):
+        interval, retries, base = 30.0, 3, 1_000_000.0
+        entries = [{'Start': stamp(base + 960), 'End': stamp(base + 962), 'ExitCode': 0},
+                   {'Start': stamp(base + 992), 'End': stamp(base + 997), 'ExitCode': -1},
+                   {'Start': stamp(base + 1027), 'End': stamp(base + 1032), 'ExitCode': 1},
+                   {'Start': stamp(base + 1062), 'End': stamp(base + 1067), 'ExitCode': 1},
+                   {'Start': stamp(base + 1097), 'End': '0001-01-01T00:00:00Z', 'ExitCode': 0}]
+        result = ops.unhealthy_verdict(entries, base + 1000, interval, retries)
+        self.assertEqual(result['unhealthy_at'], base + 1067)
+        self.assertEqual(result['failed_probe_seconds'], [5.0, 5.0, 5.0])
+
+    def test_fix2_a_time_the_daemon_wrote_that_cannot_be_read_fails_the_rehearsal_with_a_message(self):
+        with self.assertRaises(ops.RehearsalError):
+            ops.unhealthy_verdict([{'Start': 'yesterday', 'End': 'today', 'ExitCode': 1}] * 4, 0.0, 30.0, 3)
 
     def test_a_worker_that_does_not_recover_once_resumed_fails_the_rehearsal(self):
         rehearsal, stack = self.rehearsal(stays_unhealthy=True)
