@@ -1602,7 +1602,7 @@ test-plan: n/a (sin UI)
 - **Previsión IA**: 55 k in / 5 k out tok · ⚠️ verificar €
 - **Dependencias**: T-50
 - **Tipo**: test
-- **Archivos**: `docs/roadmap/2026-11-15-reliable-operations/review.md`, `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `README.md`, `docs/operations.md` (mínimo de la suite: 1203; añadidos), `docs/roadmap/2026-11-12-three-components/retro.md` y `docs/roadmap/CALIBRATION.md` (retro de la Iniciativa 2 commiteada en esta rama antes de la Fase 1, que `scope-check --base origin/main` ve; añadidos)
+- **Archivos**: `docs/roadmap/2026-11-15-reliable-operations/review.md`, `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `README.md`, `docs/operations.md` (mínimo de la suite: 1203; añadidos), `docs/roadmap/2026-11-12-three-components/retro.md` y `docs/roadmap/CALIBRATION.md` (retro de la Iniciativa 2 commiteada en esta rama antes de la Fase 1, que `scope-check --base origin/main` ve; añadidos), `server/memory_platform/tests/test_worker.py` (prueba con 0,1 s de holgura que falló de forma intermitente en la CI del PR #4)
 - **Cubre (tests)**: —
 - **Verificación**:
   - `python3 "$SHAREDKIT/scope-check.py" docs/roadmap/2026-11-15-reliable-operations` → exit 0
