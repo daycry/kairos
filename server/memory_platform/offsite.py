@@ -151,8 +151,9 @@ class RcloneDestination:
     def put(self, source, name):
         """`rclone copyto` of the open file `source` through its descriptor, inherited by rclone (`pass_fds`) and read as `/proc/self/fd/<n>`: rclone never opens the path the copy could have been
         swapped at, and since it reopens the same inode it can retry (`rcat` on stdin could not rewind, which cancelled `--retries`). `--copy-links` is what lets rclone 1.60 read that link
-        as a file; it only applies to this source, which is our own descriptor."""
-        self.run('copyto', '--copy-links', f'/proc/self/fd/{source.fileno()}', self.target(name), timeout=RCLONE_TIMEOUT_SECONDS, pass_fds=(source.fileno(),))
+        as a file (here it only changes how this source is read). `--ignore-times` always transfers: without it rclone skips a remote file of the same size and modtime, so a manifest
+        damaged in place at the destination would never be replaced."""
+        self.run('copyto', '--copy-links', '--ignore-times', f'/proc/self/fd/{source.fileno()}', self.target(name), timeout=RCLONE_TIMEOUT_SECONDS, pass_fds=(source.fileno(),))
 
     def fetch(self, name, directory):
         target = Path(directory) / name
@@ -315,7 +316,7 @@ def upload(destination, directory, current, remote_keep, recipients_file, now):
 
     Returns {uploaded, skipped, skipped_plain}. `current` was verified by the caller. An older copy that no longer verifies locally is skipped (and said so), never sent; a plain copy is
     never sent (`skipped_plain`). A copy already at the destination is left alone only when its remote manifest parses and records the sha256 and size of the local copy; otherwise copy and
-    manifest are sent again. A copy that differs at the destination raises `backup_checksum_mismatch` with its manifest NOT sent and nothing deleted.
+    manifest are sent again. A copy that differs at the destination raises `backup_checksum_mismatch` with its manifest NOT sent and the bad copy deleted from the destination (when the destination allows it).
     """
     remote = destination.names()
     uploaded, skipped = [], []
@@ -344,7 +345,7 @@ def upload(destination, directory, current, remote_keep, recipients_file, now):
                     destination.delete(name)  # a copy rewritten in place leaves the bad bytes at the destination until the next cycle: not there, a copy without manifest is only resent
                 except OffsiteError:
                     pass  # the mismatch is the error that is reported; the next cycle sends it again over it
-                raise BackupError('backup_checksum_mismatch', f'The copy {name} differs at the {destination.kind} destination from its manifest; its manifest was not sent and nothing was deleted')
+                raise BackupError('backup_checksum_mismatch', f'The copy {name} differs at the {destination.kind} destination from its manifest; its manifest was not sent and the bad copy was deleted there when possible')
             try:
                 handle = open_manifest(manifest_path(path), name, manifest)
             except BackupError as error:  # the copy is up without its manifest: it is not complete there and the next cycle sends it again

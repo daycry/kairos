@@ -767,5 +767,6 @@ class OffsiteFailureTests(unittest.TestCase):
         self.assertEqual(passed[1], (source.fileno(),), 'the descriptor that was checked is the one the child inherits; rclone never opens the path of the copy')
         self.assertEqual(calls[1][-2:], [f'/proc/self/fd/{source.fileno()}', 'vault:folder/kairos-cycle-20261120T000000000000Z.dump'])
         self.assertIn('--retries', calls[1], 'copyto reopens the descriptor, so the retries of rclone are back (rcat on stdin could not rewind)')
+        self.assertIn('--ignore-times', calls[1], 'a remote file of the same size and modtime is replaced, so a manifest damaged in place is sent again')
         self.assertEqual(passed[0], ())
         self.assertEqual(offsite.RcloneDestination('vault:').target('x'), 'vault:x')
