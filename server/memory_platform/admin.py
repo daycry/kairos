@@ -10,10 +10,23 @@ import subprocess
 import tempfile
 import hashlib
 
+from . import observability
+from .backup import BackupError, check_keep, create_backup, encrypted_name, encryption_plan, manifest_path, prune_backups, table_fingerprints, terminate_as_exit, verify_backup
 from .chunking import chunk_text, embedding_text
-from .config import Settings
+from .config import (Settings, backup_destination, backup_interval_seconds, backup_keep, backup_recipients_file, backup_remote_keep, backup_require_encryption, retention_windows)
+from .offsite import CycleError, parse_destination, record_failure, run_cycle, run_loop
 from .store import Store
 from .store_vectors import CURRENT_RESOURCE
+
+LOOP_CYCLES = None  # `backup-cycle --loop` runs for ever; a test sets a number
+# The direct connections of `admin` (and the service file `pg_dump`/`pg_restore` read) of a service that lives for ever (`backup-cycle --loop`): a half-open connection must fail instead of
+# hanging the cycle. NO statement_timeout: a dump or a prune is a long query on purpose. Whatever the operator put in the DSN wins. 10 s to connect; a dead peer is noticed after 30 + 3 * 10 s idle.
+CONNECTION_GUARDS = {'connect_timeout': '10', 'keepalives': '1', 'keepalives_idle': '30', 'keepalives_interval': '10', 'keepalives_count': '3', 'tcp_user_timeout': '60000'}
+
+
+def guarded_dsn(dsn):
+    from psycopg.conninfo import conninfo_to_dict, make_conninfo
+    return make_conninfo(**dict(CONNECTION_GUARDS, **conninfo_to_dict(dsn)))
 
 
 
@@ -22,15 +35,8 @@ from .store_vectors import CURRENT_RESOURCE
 
 def store_fingerprints(store):
     """Include provenance, grants, jobs, versions and tombstones in restore QA."""
-    from psycopg import sql
-    result = {}
     with store.transaction() as connection:
-        tables = connection.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='memory' ORDER BY table_name").fetchall()
-        for row in tables:
-            values = connection.execute(sql.SQL('SELECT to_jsonb(t) AS value FROM memory.{} t').format(sql.Identifier(row['table_name']))).fetchall()
-            encoded = sorted(json.dumps(v['value'], sort_keys=True, ensure_ascii=False, default=str) for v in values)
-            result[row['table_name']] = {'rows': len(encoded), 'sha256': hashlib.sha256('\n'.join(encoded).encode('utf-8')).hexdigest()}
-    return result
+        return table_fingerprints(connection)
 
 
 @contextmanager
@@ -237,6 +243,92 @@ def backfill_chunks(store, model, *, batch=200, max_jobs=None, project=None, ret
     return {'enqueued': enqueued, 'derived': derived, 'failed': failed, 'pending': pending, 'remaining': remaining, 'batches': batches, 'embedding_filled': filled, 'stale_marked': stale}
 
 
+# Retention (decision P-03): what `prune-tables` may delete, per table. `%(cutoff)s` is the instant that the window ends at (rows OLDER than it go; a row exactly at it stays).
+# Nothing here is a migration, and every statement takes its values as parameters. Rows are walked in ascending key order with a cursor (`id > after`, `after` starting at the
+# second element), so a batch never looks again at what an earlier one already deleted.
+#   login_attempts  attempts older than the window.
+#   web_sessions    sessions that EXPIRED or were REVOKED longer ago than the window; a live session (not expired, not revoked) is never touched.
+#   audit_events    audit rows older than the window.
+#   jobs            only `failed` jobs, last scheduled (created_at and available_at) before the window, that NO client can still reach (the MCP/REST contract stays as it is):
+#                   no receipt in `projection_receipts` (the receipt references it and says the work was done), not cited by the receipt of any kept `events` row
+#                   (`event_status` and the idempotent `ingest_event` read it), and not a job of the CURRENT version of its document or item (`document_status` lists those and
+#                   `backfill-chunks` reads them). What goes is the orphan: a job of a past version, of a resource that no longer exists, cited by no kept event.
+#   events          the capture journal: only when its window is set explicitly.
+JOBS_PREDICATE = ("t.state = 'failed' AND t.created_at < %(cutoff)s AND t.available_at < %(cutoff)s "
+                  "AND NOT EXISTS (SELECT 1 FROM memory.projection_receipts r WHERE r.job_id = t.id) "
+                  "AND NOT EXISTS (SELECT 1 FROM memory.events e, jsonb_array_elements_text(CASE WHEN jsonb_typeof(e.receipt->'jobs') = 'array' THEN e.receipt->'jobs' ELSE '[]'::jsonb END) AS cited(job_id) WHERE cited.job_id = t.id) "
+                  "AND NOT EXISTS (SELECT 1 FROM memory.documents d WHERE t.resource_type = 'document' AND d.project_id = t.project_id AND d.id = t.item_id AND d.version = t.version) "
+                  "AND NOT EXISTS (SELECT 1 FROM memory.memory_items i WHERE t.resource_type <> 'document' AND i.project_id = t.project_id AND i.id = t.item_id AND i.version = t.version)")
+RETENTION_TABLES = {
+    'login_attempts': ('t.happened_at < %(cutoff)s', 0),
+    'web_sessions': ('(t.expires_at < %(cutoff)s OR (t.revoked_at IS NOT NULL AND t.revoked_at < %(cutoff)s))', ''),
+    'audit_events': ('t.happened_at < %(cutoff)s', 0),
+    'events': ('t.created_at < %(cutoff)s', ''),  # before `jobs`: a job cited only by an event this run removes can go in the same run
+    'jobs': (JOBS_PREDICATE, ''),
+}
+PRUNE_BATCH_MAX = 5000
+PRUNE_AUDIT_ACTION = 'retention_prune'
+
+
+def prune_tables(store, windows, *, batch=1000, dry_run=False, tables=None, now=None):
+    """Delete the rows the retention `windows` ({table: days or None}) select, `batch` rows per transaction; with `dry_run` only count them, in a READ ONLY transaction.
+
+    One `now` for the whole run (the database clock unless given) fixes every cutoff, so a run ends: rows inserted meanwhile are newer than any cutoff. Each batch is its own
+    transaction (a failure rolls back that batch alone and leaves every earlier one committed), rows are claimed in ascending key order after a cursor with FOR UPDATE SKIP LOCKED
+    (two runs at the same time share the work and never delete a row twice; a table is done when a batch removes fewer rows than `batch`) and a second run finds nothing to do.
+    A table without a window (`events` by default) is reported and left alone. A real run ends by writing ONE `audit_events` row (action `retention_prune`, resource_id = JSON of
+    the days and rows deleted per table), after `audit_events` was pruned so the run cannot erase its own trace; it is written even when the run failed half way (`complete: false`).
+    Returns {status, dry_run, batch, now, tables: {table: {window_days, cutoff, would_delete, deleted, batches}}}."""
+    from datetime import timedelta
+    if isinstance(batch, bool) or not isinstance(batch, int) or not 1 <= batch <= PRUNE_BATCH_MAX:
+        raise ValueError(f'batch must be an integer between 1 and {PRUNE_BATCH_MAX}')
+    selected = list(RETENTION_TABLES) if tables is None else list(tables)
+    if any(table not in RETENTION_TABLES for table in selected) or any(table not in windows for table in RETENTION_TABLES):
+        raise ValueError('prune-tables knows the tables ' + ', '.join(RETENTION_TABLES) + ' and needs a window (or None) for each')
+    if now is None:
+        with store.transaction() as connection:
+            now = connection.execute('SELECT clock_timestamp() AS now').fetchone()['now']
+    report = {}
+    complete = False
+    try:
+        for table in selected:
+            days = windows[table]
+            entry = {'window_days': days, 'would_delete': 0, 'deleted': 0, 'batches': 0}
+            report[table] = entry
+            if days is None:
+                entry['skipped'] = 'no_window'
+                continue
+            cutoff = now - timedelta(days=days)
+            entry['cutoff'] = cutoff.isoformat()
+            predicate, after = RETENTION_TABLES[table]
+            if dry_run:
+                with store.transaction() as connection:
+                    connection.execute('SET TRANSACTION READ ONLY')
+                    entry['would_delete'] = connection.execute(f'SELECT count(*) AS n FROM memory.{table} t WHERE {predicate}', {'cutoff': cutoff}).fetchone()['n']
+                continue
+            statement = (f'WITH gone AS (DELETE FROM memory.{table} WHERE id IN (SELECT t.id FROM memory.{table} t WHERE {predicate} AND t.id > %(after)s '
+                         f'ORDER BY t.id LIMIT %(batch)s FOR UPDATE SKIP LOCKED) RETURNING id) SELECT count(*) AS n, max(id) AS last FROM gone')
+            while True:
+                with store.transaction() as connection:
+                    result = connection.execute(statement, {'cutoff': cutoff, 'batch': batch, 'after': after}).fetchone()
+                removed = result['n']
+                if removed:
+                    entry['deleted'] += removed
+                    entry['batches'] += 1
+                    after = result['last']
+                if removed < batch:
+                    break
+        complete = True
+    finally:
+        if not dry_run:
+            summary = {table: {'days': info['window_days'], 'deleted': info['deleted']} for table, info in report.items() if info['window_days'] is not None}
+            if not complete:
+                summary['complete'] = False
+            with store.transaction() as connection:
+                connection.execute('INSERT INTO memory.audit_events(action,resource_id) VALUES(%s,%s)', (PRUNE_AUDIT_ACTION, json.dumps(summary, sort_keys=True, separators=(',', ':'))))
+    return {'status': 'dry_run' if dry_run else 'pruned', 'dry_run': dry_run, 'batch': batch, 'now': now.isoformat(), 'tables': report}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Manage only the isolated memory platform database')
     commands = parser.add_subparsers(dest='command', required=True)
@@ -250,16 +342,77 @@ def main(argv=None):
     backfill.add_argument('--max-jobs', type=int, default=None, help='Stop after queueing this many jobs; run again to continue')
     backfill.add_argument('--project', default=None, help='Only this project id')
     backfill.add_argument('--retry-failed', action='store_true', help='Also queue again the jobs that already failed (otherwise they are only counted)')
+    prune = commands.add_parser('prune-tables', help='Delete old rows of the tables that only grow, in batches, by the MEMORY_RETENTION_*_DAYS windows (P-03)')
+    prune.add_argument('--dry-run', action='store_true', help='Only report what each table would lose; nothing is written')
+    prune.add_argument('--batch', type=int, default=1000, help=f'Rows deleted per transaction (1..{PRUNE_BATCH_MAX})')
+    prune.add_argument('--table', action='append', choices=sorted(RETENTION_TABLES), help='Only this table (repeatable); default: every table that has a window')
     commands.add_parser('inspect')
     commands.add_parser('content-manifest')
-    backup = commands.add_parser('backup')
+    backup = commands.add_parser('backup', help='pg_dump to a new file with its manifest <file>.json (sha256, bytes, schema version, time, counts)')
     backup.add_argument('--output', required=True)
+    backup.add_argument('--prune', action='store_true', help='After the copy, delete the older verified copies of this tool beyond the --keep newest (never anything else)')
+    backup.add_argument('--keep', default=None, help='With --prune: copies to keep, 1 or more (default MEMORY_BACKUP_KEEP, 7)')
+    cycle = commands.add_parser('backup-cycle', help='A copy, encrypted, verified, sent to MEMORY_BACKUP_DESTINATION (dir: or rclone:) and verified there, with the retention of both places (--loop: every MEMORY_BACKUP_INTERVAL)')
+    cycle.add_argument('--output-dir', default='/backups', help='Where the local copies are written and kept (default /backups, the volume of the service)')
+    cycle.add_argument('--loop', action='store_true', help='Repeat the cycle every MEMORY_BACKUP_INTERVAL (default 24h); a failed cycle is reported and the next one retries')
+    cycle.add_argument('--prune-tables', action='store_true', help='At the end of each cycle also run prune-tables with the MEMORY_RETENTION_*_DAYS windows')
+    verify = commands.add_parser('verify-backup', help='Recompute the sha256 of a copy and compare it with its manifest (never decrypts)')
+    verify.add_argument('--backup', required=True)
+    verify.add_argument('--manifest', default=None, help='The manifest of the ENCRYPTED copy (<copy>.age.json) when --backup is its decrypted dump: its sha256 is compared with content_sha256')
     restore = commands.add_parser('restore-check')
     restore.add_argument('--backup', required=True)
     restore.add_argument('--target-dsn-file', required=True)
+    restore.add_argument('--from-manifest', nargs='?', const='auto', default=None, metavar='MANIFEST',
+                         help='Verify the copy against <backup>.json (or against MANIFEST, the manifest of the ciphertext, when --backup is its decrypted dump) and compare the restored tables with the counts recorded there (one snapshot with the dump) instead of with the live database, which is then never read')
     args = parser.parse_args(argv)
-    settings = Settings.from_env()
-    store = Store(settings.dsn, project_maps=settings.project_maps, embedding_enabled=True)
+    if args.command == 'prune-tables':
+        if not 1 <= args.batch <= PRUNE_BATCH_MAX:
+            parser.error(f'--batch must be an integer between 1 and {PRUNE_BATCH_MAX}')
+        try:
+            windows = retention_windows()
+        except ValueError as error:
+            parser.error(str(error))  # a clear message and nothing touched
+    if args.command == 'backup-cycle':  # every setting is validated before a copy exists
+        try:
+            def setting(read, code):
+                try:
+                    return read()
+                except ValueError as error:
+                    raise BackupError(code, str(error)) from None
+            destination = parse_destination(backup_destination())
+            remote_keep, keep = setting(backup_remote_keep, 'backup_keep_invalid'), setting(backup_keep, 'backup_keep_invalid')
+            interval = setting(backup_interval_seconds, 'backup_config_invalid')
+            require_encryption = setting(backup_require_encryption, 'backup_config_invalid')
+            recipients_file = backup_recipients_file()
+            if encryption_plan(recipients_file, require_encryption) is None:  # whatever MEMORY_BACKUP_REQUIRE_ENCRYPTION says: an external copy is never sent in the clear
+                raise BackupError('backup_encryption_required', 'backup-cycle sends the copies to an external destination and only sends encrypted ones: set MEMORY_BACKUP_RECIPIENTS_FILE (public recipients); nothing was written or sent')
+        except BackupError as error:
+            record_failure(Path(args.output_dir).resolve())  # a restarting service must not leave the metric of its last good cycle at 1
+            raise SystemExit(f'{error.code}: {error}') from None
+        if args.prune_tables:
+            try:
+                windows = retention_windows()
+            except ValueError as error:
+                record_failure(Path(args.output_dir).resolve())  # the same refusal at start as the settings above: the metric of the last good cycle is not left at 1
+                parser.error(str(error))
+    if args.command == 'verify-backup':  # needs no database: it reads the copy and its manifest
+        try:
+            manifest = verify_backup(Path(args.backup), backup_recipients_file(), args.manifest)
+        except BackupError as error:
+            raise SystemExit(f'{error.code}: {error}') from None
+        content = manifest['verified'] == 'content'  # a decrypted dump: what was checked is the content, not the ciphertext
+        print(json.dumps({'status': 'verified', 'verified': manifest['verified'], 'path': str(Path(args.backup).resolve()),
+                          'bytes': manifest['content_bytes' if content else 'bytes'], 'sha256': manifest['content_sha256' if content else 'sha256'],
+                          'encrypted': manifest['encrypted'], 'schema_version': manifest['schema_version'], 'created_at': manifest['created_at']}, sort_keys=True))
+        return
+    try:
+        settings = Settings.from_env()
+        dsn = guarded_dsn(settings.dsn)
+        store = Store(dsn, project_maps=settings.project_maps, embedding_enabled=True)
+    except Exception:
+        if args.command == 'backup-cycle':  # a setting of the environment that is invalid (MEMORY_MAX_ATTEMPTS=0): nothing ran, and the metric of the last good cycle must not stay at 1
+            record_failure(Path(args.output_dir).resolve())
+        raise
     if args.command == 'migrate':
         store.migrate()
         print(json.dumps({'status': 'migrated'}))
@@ -268,6 +421,8 @@ def main(argv=None):
             print(json.dumps({'status': 'skipped', 'reason': 'embeddings_disabled', 'enqueued': 0}))
         else:
             print(json.dumps(dict(backfill_chunks(store, settings.embedding_model, batch=args.batch, max_jobs=args.max_jobs, project=args.project, retry_failed=args.retry_failed), status='backfilled'), sort_keys=True))
+    elif args.command == 'prune-tables':
+        print(json.dumps(prune_tables(store, windows, batch=args.batch, dry_run=args.dry_run, tables=args.table), sort_keys=True))
     elif args.command == 'bootstrap':
         if not args.password_file:
             parser.error('--password-file or MEMORY_BOOTSTRAP_PASSWORD_FILE is required')
@@ -285,13 +440,88 @@ def main(argv=None):
         print(json.dumps(content_manifest(store), sort_keys=True, default=str))
     elif args.command == 'backup':
         output = Path(args.output).resolve()
-        if output.exists():
-            parser.error('Backup destination already exists; choose a new filename')
-        output.parent.mkdir(parents=True, exist_ok=True)
-        with pg_environment(settings.dsn) as environment:
-            subprocess.run(['pg_dump', '--dbname=service=memory', '--format=custom', '--no-owner', '--file', str(output)], env=environment, check=True, capture_output=True)
-        output.chmod(0o600)
-        print(json.dumps({'status': 'backed_up', 'path': str(output), 'bytes': output.stat().st_size}))
+        try:
+            keep = None
+            if args.keep is not None and not args.prune:
+                raise BackupError('backup_keep_invalid', '--keep only applies with --prune')
+            if args.prune:  # validated before anything is written or deleted
+                if args.keep is None:
+                    try:
+                        keep = backup_keep()
+                    except ValueError as error:
+                        raise BackupError('backup_keep_invalid', str(error)) from None
+                else:
+                    if not args.keep.strip().isascii() or not args.keep.strip().isdigit():
+                        raise BackupError('backup_keep_invalid', '--keep must be a whole number of 1 or more')
+                    keep = check_keep(int(args.keep))
+            # Before any file exists: a copy that must be encrypted and cannot be fails here, in the clear it is never written.
+            recipients_file = backup_recipients_file()
+            try:
+                require_encryption = backup_require_encryption()
+            except ValueError as error:  # a typo in the requirement fails closed, with a code a script can test
+                raise BackupError('backup_config_invalid', str(error)) from None
+            recipients = encryption_plan(recipients_file, require_encryption)
+            output = encrypted_name(output, recipients)
+            plain = output.with_name(output.name[:-4]) if output.name.endswith('.age') else output  # the name is taken in either form
+            if any(os.path.lexists(name) or os.path.lexists(manifest_path(name)) for name in (plain, plain.with_name(plain.name + '.age'))):
+                parser.error('Backup destination already exists; choose a new filename')
+            with pg_environment(dsn) as environment:
+                report = create_backup(store, output, environment=environment, recipients=recipients)
+                if keep is not None:
+                    try:
+                        report['prune'] = prune_backups(output.parent, keep, protect=output)
+                    except (BackupError, OSError) as error:  # the copy exists and is valid: its report is printed whatever stopped the prune
+                        code = error.code if isinstance(error, BackupError) else 'backup_prune_failed'
+                        print(json.dumps(dict(report, prune={'status': 'failed', 'code': code}), sort_keys=True))
+                        raise BackupError(code, str(error) if isinstance(error, BackupError) else f'the prune failed ({type(error).__name__})') from None
+                print(json.dumps(report, sort_keys=True))
+        except BackupError as error:
+            raise SystemExit(f'{error.code}: {error}') from None
+    elif args.command == 'backup-cycle':
+        observability.configure_logging()  # `backup_offsite_failed` goes to stderr as one JSON line
+        output_dir = Path(args.output_dir).resolve()
+
+        def one_cycle():
+            try:
+                return cycle_body()
+            except Exception as error:  # a failure before `run_cycle` took over (the recipients, the service file): the metric of the cycle says so too
+                if not getattr(error, 'offsite_recorded', False):
+                    record_failure(output_dir)
+                raise
+
+        def cycle_body():
+            recipients = encryption_plan(recipients_file, require_encryption)  # each cycle: a rotated recipients file is picked up
+            if recipients is None:
+                raise BackupError('backup_encryption_required', 'backup-cycle only sends encrypted copies and MEMORY_BACKUP_RECIPIENTS_FILE lists no recipients')
+            tables = {}
+
+            def end_with_tables():
+                if args.prune_tables:
+                    try:
+                        tables['prune_tables'] = {'status': prune_tables(store, windows)['status']}
+                    except Exception as error:  # the copy is made: what stopped the retention of the tables is a field of its report
+                        tables['prune_tables'] = {'status': 'failed', 'error': type(error).__name__}
+            with pg_environment(dsn) as environment:
+                try:
+                    report = run_cycle(lambda output: create_backup(store, encrypted_name(output, recipients), environment=environment, recipients=recipients),
+                                       output_dir, destination, keep=keep, remote_keep=remote_keep, recipients_file=recipients_file)
+                except CycleError as error:
+                    end_with_tables()
+                    error.report.update(tables)
+                    raise
+            end_with_tables()
+            return dict(report, **tables)
+        try:
+            if args.loop:
+                with terminate_as_exit():
+                    run_loop(one_cycle, interval, cycles=LOOP_CYCLES)
+            else:
+                print(json.dumps(one_cycle(), sort_keys=True))
+        except CycleError as error:
+            print(json.dumps(error.report, sort_keys=True))
+            raise SystemExit(f'{error.code}: {error}') from None
+        except BackupError as error:
+            raise SystemExit(f'{error.code}: {error}') from None
     elif args.command == 'restore-check':
         target = Path(args.target_dsn_file).read_text(encoding='utf-8').strip()
         if target == settings.dsn:
@@ -300,15 +530,27 @@ def main(argv=None):
         source_info, target_info = conninfo_to_dict(settings.dsn), conninfo_to_dict(target)
         if target == settings.dsn or not target_info.get('dbname', '').startswith('memory_restore') or (target_info.get('dbname') == source_info.get('dbname') and target_info.get('host') == source_info.get('host')):
             parser.error('Restore target must be a separate, freshly created memory_restore* database')
-        restored = Store(target)
+        restored = Store(guarded_dsn(target))
         with restored.transaction() as connection:
             if connection.execute("SELECT 1 FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema') LIMIT 1").fetchone():
                 parser.error('Restore target must be empty; no cleanup or overwrite is performed')
-        before = store_fingerprints(store)
-        with pg_environment(target) as environment:
+        if args.from_manifest:
+            try:
+                manifest = verify_backup(Path(args.backup), manifest_file=None if args.from_manifest == 'auto' else args.from_manifest)
+                if manifest['encrypted'] and manifest['verified'] != 'content':
+                    raise BackupError('backup_encrypted', 'This copy is encrypted: decrypt it with the private key (which is not on this host) and restore the plain dump')
+            except BackupError as error:
+                raise SystemExit(f'{error.code}: {error}') from None
+            before = manifest['fingerprints']
+        else:
+            before = store_fingerprints(store)
+        with pg_environment(guarded_dsn(target)) as environment:
             subprocess.run(['pg_restore', '--dbname=service=memory', '--no-owner', '--no-acl', '--exit-on-error', str(Path(args.backup).resolve())], env=environment, check=True, capture_output=True)
         after = store_fingerprints(restored)
         if before != after:
+            if args.from_manifest:
+                differing = sorted(table for table in set(before) | set(after) if before.get(table) != after.get(table))
+                raise SystemExit('backup_restore_mismatch: the restored tables differ from the manifest of the copy: ' + ', '.join(differing))
             raise RuntimeError('Restore data fingerprints differ; inspect the isolated restored database')
         print(json.dumps({'status': 'restored_and_content_verified', 'tables': after}, sort_keys=True))
 

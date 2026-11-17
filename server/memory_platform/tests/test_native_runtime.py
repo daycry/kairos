@@ -67,16 +67,19 @@ class NativeRuntimeTests(unittest.TestCase):
     def test_retired_pending_job_is_failed_without_provider_execution(self):
         store = Store('unused')
         connection = Mock()
-        selected = iter([{'id': 'owned-retired-job', 'destination': 'retired-adapter'}, None])
+        waiting = iter([{'id': 'owned-retired-job', 'destination': 'retired-adapter'}, None])
         def execute(query, parameters=None):
             result = Mock()
             if query.startswith('SELECT * FROM memory.jobs'):
-                result.fetchone.return_value = next(selected)
+                # A claim reads two sets in order (schema version 12): the waiting jobs hold the retired job once, the expired leases hold nothing.
+                result.fetchone.return_value = next(waiting) if "state IN ('pending','unknown')" in query else None
             return result
         connection.execute.side_effect = execute
         store.transaction = lambda: nullcontext(connection)
         self.assertIsNone(store.claim_job('fixture-worker'))
-        updates = [call for call in connection.execute.call_args_list if call.args[0].startswith('UPDATE memory.jobs')]
+        sweeps = [call for call in connection.execute.call_args_list if 'attempts_exhausted' in call.args[0]]
+        self.assertEqual(len(sweeps), 1)  # the one statement that fails every poisoned job (it only takes `extract`/`embed`, so this row is left to the retired-destination path)
+        updates = [call for call in connection.execute.call_args_list if call.args[0].startswith('UPDATE memory.jobs') and 'attempts_exhausted' not in call.args[0]]
         self.assertEqual(len(updates), 1)
         self.assertIn('destination_retired', updates[0].args[0])
         self.assertEqual(updates[0].args[1], ('owned-retired-job',))

@@ -5,7 +5,28 @@ from pathlib import Path
 from .config import migration_maintenance_work_mem
 from .auth import SCOPES, hash_password, token_hash
 from .errors import Conflict, Forbidden, MemoryError, NotFound, Unauthorized
+from .auth_scope import _cached, _identity, invalidate_auth
 from .store_common import as_dict, canonical, new_id, clean
+
+
+def _load_active(c, actor):
+    if not actor or not actor.get('id'):
+        raise Unauthorized()
+    row = c.execute('SELECT * FROM memory.actors WHERE id=%s AND NOT disabled', (actor['id'],)).fetchone()
+    if not row:
+        raise Unauthorized()
+    kind = actor.get('credential_type')
+    if kind == 'bearer':
+        key = c.execute('SELECT * FROM memory.api_keys WHERE id=%s AND actor_id=%s AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>clock_timestamp())', (actor.get('key_id'), actor['id'])).fetchone()
+        if not key:
+            raise Unauthorized()
+        return row, key
+    if kind == 'session':
+        if not c.execute('SELECT 1 FROM memory.web_sessions WHERE id=%s AND actor_id=%s AND revoked_at IS NULL AND expires_at>clock_timestamp()', (actor.get('session_id'), actor['id'])).fetchone():
+            raise Unauthorized()
+    elif kind != 'bootstrap':
+        raise Unauthorized()
+    return row, None
 
 
 class AuthMixin:
@@ -31,26 +52,13 @@ class AuthMixin:
             if c.execute('SELECT 1 FROM memory.actors LIMIT 1').fetchone():
                 raise Conflict('Bootstrap has already been completed')
             row = c.execute('INSERT INTO memory.actors(id,username,password_hash,is_admin) VALUES(%s,%s,%s,true) RETURNING id,username,is_admin', (new_id(), username, hashed)).fetchone()
+            invalidate_auth(c)
         return dict(row, scopes=sorted(SCOPES), project_ids=[], credential_type='bootstrap')
 
     def _active(self, c, actor):
         if not actor or not actor.get('id'):
             raise Unauthorized()
-        row = c.execute('SELECT * FROM memory.actors WHERE id=%s AND NOT disabled', (actor['id'],)).fetchone()
-        if not row:
-            raise Unauthorized()
-        kind = actor.get('credential_type')
-        if kind == 'bearer':
-            key = c.execute('SELECT * FROM memory.api_keys WHERE id=%s AND actor_id=%s AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>clock_timestamp())', (actor.get('key_id'), actor['id'])).fetchone()
-            if not key:
-                raise Unauthorized()
-            return row, key
-        if kind == 'session':
-            if not c.execute('SELECT 1 FROM memory.web_sessions WHERE id=%s AND actor_id=%s AND revoked_at IS NULL AND expires_at>clock_timestamp()', (actor.get('session_id'), actor['id'])).fetchone():
-                raise Unauthorized()
-        elif kind != 'bootstrap':
-            raise Unauthorized()
-        return row, None
+        return _cached(c, ('active',) + _identity(actor), lambda: _load_active(c, actor))
 
     def _global_admin(self, c, actor):
         row, key = self._active(c, actor)
@@ -62,10 +70,10 @@ class AuthMixin:
         if key and project_id not in key['project_ids']:
             raise NotFound()
         if row['is_admin'] and not key:
-            if not c.execute('SELECT 1 FROM memory.projects WHERE id=%s', (project_id,)).fetchone():
+            if not _cached(c, ('exists', project_id), lambda: c.execute('SELECT 1 FROM memory.projects WHERE id=%s', (project_id,)).fetchone() is not None):
                 raise NotFound()
             return
-        grants = {r['permission'] for r in c.execute('SELECT permission FROM memory.project_grants WHERE actor_id=%s AND project_id=%s', (actor['id'], project_id)).fetchall()}
+        grants = set(_cached(c, ('grants', actor['id'], project_id), lambda: frozenset(r['permission'] for r in c.execute('SELECT permission FROM memory.project_grants WHERE actor_id=%s AND project_id=%s', (actor['id'], project_id)).fetchall())))
         # A key issued by the bootstrap actor is bounded by its explicit scope/project list.
         if row['is_admin'] and key:
             grants = set(SCOPES)
@@ -115,6 +123,7 @@ class AuthMixin:
                 raise Conflict('Project already exists')
             policy = {'capture_mode': 'off', 'temporal_projection': False}
             c.execute('INSERT INTO memory.projects(id,title,policy,mapping) VALUES(%s,%s,%s::jsonb,%s::jsonb)', (p['id'], p['title'], canonical(policy), '{}'))
+            invalidate_auth(c)
             self._audit(c, actor, 'project.created', p['id'])
         return dict(id=p['id'], title=p['title'], **policy)
 
@@ -143,6 +152,7 @@ class AuthMixin:
         with self.transaction() as c:
             self._require(c, actor, project_id, 'admin')
             c.execute('UPDATE memory.projects SET policy=%s::jsonb WHERE id=%s', (canonical(policy), project_id))
+            invalidate_auth(c)
             self._audit(c, actor, 'policy.updated', project_id)
         return policy
 
@@ -170,6 +180,7 @@ class AuthMixin:
             for project in data['project_ids']:
                 for scope in data['scopes']:
                     c.execute('INSERT INTO memory.project_grants VALUES(%s,%s,%s) ON CONFLICT DO NOTHING', (aid, project, scope))
+            invalidate_auth(c)
             self._audit(c, actor, 'user.created', resource_id=aid)
         return {'id': aid, 'username': data['username'], 'project_ids': data['project_ids'], 'scopes': data['scopes']}
 
@@ -188,6 +199,7 @@ class AuthMixin:
         with self.transaction() as c:
             self._delegate(c, actor, data['project_ids'], data['scopes'])
             c.execute('INSERT INTO memory.api_keys(id,actor_id,name,token_hash,prefix,project_ids,scopes) VALUES(%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb)', (kid, actor['id'], data['name'], token_hash(token), token[:10], canonical(data['project_ids']), canonical(data['scopes'])))
+            invalidate_auth(c)
             self._audit(c, actor, 'key.created', resource_id=kid)
         return {'id': kid, 'name': data['name'], 'token': token, 'key': token, 'project_ids': data['project_ids'], 'scopes': data['scopes']}
 
@@ -218,5 +230,6 @@ class AuthMixin:
             for project in row['project_ids']:
                 self._require(c, actor, project, 'admin')
             c.execute('UPDATE memory.api_keys SET revoked_at=clock_timestamp() WHERE id=%s', (key_id,))
+            invalidate_auth(c)
             self._audit(c, actor, 'key.revoked', resource_id=key_id)
         return {'id': key_id, 'revoked': True}

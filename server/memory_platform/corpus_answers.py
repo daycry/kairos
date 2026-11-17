@@ -11,6 +11,7 @@ import json
 import re
 
 from .agent_store import AgentStore, integer, text
+from .auth_scope import invalidate_auth
 from .errors import Conflict, MemoryError, NotFound
 from .privacy import has_sensitive
 from .providers import ProviderError, request_json
@@ -137,6 +138,7 @@ class CorpusAnswers:
         if actor.get('session_id') and actor.get('credential_type') == 'session':
             c.execute('SELECT id FROM memory.web_sessions WHERE id=%s FOR SHARE', (actor['session_id'],)).fetchall()
         c.execute('SELECT permission FROM memory.project_grants WHERE actor_id=%s AND project_id=%s FOR SHARE', (actor['id'], project)).fetchall()
+        invalidate_auth(c)  # the check that follows the locks must read the rows the locks protect, not what an earlier check of this transaction saw
         self.store._require(c, actor, project, 'read')
         self.store._require(c, actor, project, 'write')
 

@@ -1,12 +1,23 @@
 """Store mixin: job queue, leases and receipts."""
 
 from .chunking import embedding_text
+from .auth_scope import invalidate_auth
 from .config import CHUNK_MAX_LIMIT
 from .errors import MemoryError, NotFound
 from .privacy import has_sensitive, sanitize_payload
 from .store_common import canonical, digest, clean
 
+CHUNK_INSERT_BATCH = 50  # fragments per `executemany` of `complete_job` (each one is its own wait, so its own client-side plazo)
+DEFAULT_MAX_ATTEMPTS = 3  # the cap of `claim_job` when nobody told the store otherwise; the worker passes MEMORY_MAX_ATTEMPTS (`store.max_attempts`)
 LEGACY_EMBED_CHARS = 8000  # what a receipt without `chunks` (a previous worker) embedded: the first 8,000 characters
+# The two places a claim can take a job from, each read in claim order through its own partial index (schema version 12) with ONE row locked at most. They are two
+# statements, not one with an `OR`: with the `OR` the planner cannot return the rows in index order, so every claim read and sorted the whole backlog (measured with
+# 10,000 finished jobs and 50,000 waiting ones: 111 ms and a sequential scan against 0.08 ms for the first statement here and 0.2 ms for the second).
+CLAIM_ORDER = 'ORDER BY priority,available_at,created_at,id FOR UPDATE SKIP LOCKED LIMIT 1'
+CLAIM_WAITING = "SELECT * FROM memory.jobs WHERE state IN ('pending','unknown') AND available_at<=clock_timestamp() "+CLAIM_ORDER  # index memory_jobs_claim
+CLAIM_EXPIRED = "SELECT * FROM memory.jobs WHERE state='running' AND lease_until<clock_timestamp() "+CLAIM_ORDER  # index memory_jobs_running_lease
+# Every poisoned job (its lease expired, every attempt it was allowed has been charged), failed by ONE statement for the whole set; parameter: the attempts allowed.
+FAIL_EXHAUSTED = "UPDATE memory.jobs SET state='failed',error_code='attempts_exhausted',lease_until=NULL WHERE id IN (SELECT id FROM memory.jobs WHERE state='running' AND lease_until<clock_timestamp() AND attempts>=%s AND destination IN ('extract','embed') FOR UPDATE SKIP LOCKED) AND state='running'"
 
 
 def vector_literal(values):
@@ -64,11 +75,36 @@ def stored_item_vector(store,project_id,item_id,resource_type,version,canonical_
         return list(row['vector']) if row and any(row['vector']) else None
 
 
+def next_claimable(c):
+    """The job a claim would take now, locked by this transaction (None when there is none): the first of the waiting jobs and the first of the expired leases in
+    claim order (priority, available_at, created_at, id), the earlier of the two when both exist; exactly what one ordered query over both sets returns.
+
+    Both probes lock their row (SKIP LOCKED: one that another transaction holds is left to it), so when both find one the loser stays locked until this transaction
+    ends (milliseconds): another worker takes the next job instead of it, and nothing is lost or taken twice. A module function, not a Store method: `store_surface.json` does not change."""
+    waiting=c.execute(CLAIM_WAITING).fetchone()
+    expired=c.execute(CLAIM_EXPIRED).fetchone()
+    if not (waiting and expired):
+        return waiting or expired
+    for field in ('priority','available_at','created_at'):
+        if waiting[field]!=expired[field]:
+            return waiting if waiting[field]<expired[field] else expired
+    # `id` is ordered by the collation of the database, not by Python: the database says which comes first.
+    return waiting if c.execute('SELECT %s::text < %s::text AS first',(waiting['id'],expired['id'])).fetchone()['first'] else expired
+
+
+def job_outcome(store,job_id,fence):
+    """`{state, error_code}` of the job as the database has it for exactly this fence (None when another claim has taken it over): the worker asks it after a write
+    whose answer was lost, to tell a write that landed from one that did not. A module function, not a Store method: `store_surface.json` does not change."""
+    with store.transaction() as c:
+        return c.execute('SELECT state,error_code FROM memory.jobs WHERE id=%s AND fence=%s',(job_id,fence)).fetchone()
+
+
 class JobsMixin:
     def retry_job(self,actor,job_id):
         with self.transaction() as c:
             self._active(c,actor)
             row=c.execute('SELECT * FROM memory.jobs WHERE id=%s FOR UPDATE',(job_id,)).fetchone()
+            invalidate_auth(c)  # the row lock may have waited for a revocation: the check below reads the database again (CWE-367)
             if not row:
                 raise NotFound()
             self._require(c,actor,row['project_id'],'write')
@@ -87,13 +123,27 @@ class JobsMixin:
         return result
 
     def claim_job(self,worker_id,lease_seconds=120):
+        # `store.max_attempts` is set by the worker (MEMORY_MAX_ATTEMPTS) and is not a parameter: the signature of the store is frozen (store_surface.json).
+        max_attempts=getattr(self,'max_attempts',None)
+        if max_attempts is None:  # only "nobody said": a 0 is not turned into the default (MEMORY_MAX_ATTEMPTS is validated to be 1 or more in config.py)
+            max_attempts=DEFAULT_MAX_ATTEMPTS
         with self.transaction() as c:
+            # Every poisoned job (its lease expired, every attempt it was allowed has been charged) is failed by ONE statement for the whole set, before the choice
+            # of the job to claim: the rows are locked by this transaction (SKIP LOCKED: one that another transaction holds is left to it), so nothing sits between the
+            # judgement and the write, and the cost does not grow with how many are ahead in the queue. Retired destinations keep their own code below.
+            c.execute(FAIL_EXHAUSTED,(max_attempts,))
             while True:
-                row=c.execute("SELECT * FROM memory.jobs WHERE (state IN ('pending','unknown') AND available_at<=clock_timestamp()) OR (state='running' AND lease_until<clock_timestamp()) ORDER BY priority,available_at,created_at,id FOR UPDATE SKIP LOCKED LIMIT 1").fetchone()
+                row=next_claimable(c)
                 if not row:
                     return None
                 if row['destination'] not in {'extract','embed'}:
                     c.execute("UPDATE memory.jobs SET state='failed',error_code='destination_retired',lease_until=NULL WHERE id=%s",(row['id'],))
+                    continue
+                if row['state']=='running' and row['attempts']>=max_attempts:
+                    # Safety net for a lease that expired BETWEEN the statement above and this choice (microseconds): the same judgement, on the row this transaction
+                    # holds locked, instead of claiming it one more time. `retry_job` brings it back. `unknown` and `pending` jobs are not touched: reconciliation and
+                    # the retry of a failed job keep their semantics.
+                    c.execute("UPDATE memory.jobs SET state='failed',error_code='attempts_exhausted',lease_until=NULL WHERE id=%s AND state='running' AND attempts>=%s",(row['id'],max_attempts))
                     continue
                 table='memory.documents' if row['resource_type']=='document' else 'memory.memory_items'
                 extra=',NULL::text AS superseded_by' if row['resource_type']=='document' else ',superseded_by'
@@ -168,9 +218,13 @@ class JobsMixin:
                 c.execute('UPDATE memory.embeddings SET chunked=true WHERE project_id=%s AND item_id=%s AND resource_type=%s AND version<%s AND NOT chunked',(row['project_id'],row['item_id'],row['resource_type'],row['version']))
                 # Fragments of this version are replaced as a set; those of older versions of the item are derived data nobody can read any more.
                 c.execute('DELETE FROM memory.embedding_chunks WHERE project_id=%s AND item_id=%s AND resource_type=%s AND model=%s AND version<=%s',(row['project_id'],row['item_id'],row['resource_type'],model,row['version']))
+                chunk_values=[(row['project_id'],row['item_id'],row['resource_type'],row['version'],row['canonical_hash'],model,ordinal,start,end,vector_literal(values)) for ordinal,start,end,values in fragments]
                 with c.cursor() as cursor:
-                    cursor.executemany('INSERT INTO memory.embedding_chunks(project_id,item_id,resource_type,version,canonical_hash,model,ordinal,char_start,char_end,embedding) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::vector)',
-                        [(row['project_id'],row['item_id'],row['resource_type'],row['version'],row['canonical_hash'],model,ordinal,start,end,vector_literal(values)) for ordinal,start,end,values in fragments])
+                    # Batches, not one `executemany`: psycopg sends all of it in ONE pipeline wait, and the client-side plazo of a pooled connection is per wait (`store_pool.GuardedConnection`):
+                    # hundreds of fragments could outlast it with a healthy database, be read as an outage and be repeated at every claim. Same rows, same transaction, one plazo per batch.
+                    for first in range(0,len(chunk_values),CHUNK_INSERT_BATCH):
+                        cursor.executemany('INSERT INTO memory.embedding_chunks(project_id,item_id,resource_type,version,canonical_hash,model,ordinal,char_start,char_end,embedding) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::vector)',
+                            chunk_values[first:first+CHUNK_INSERT_BATCH])
                 receipt={'model':model,'dimensions':len(vector),'hash':digest(vector),'status':'verified','verified':True}
                 if incoming.get('chunks') is not None:
                     receipt['chunks']=len(fragments)

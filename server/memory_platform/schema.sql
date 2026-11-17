@@ -16,7 +16,15 @@ CREATE TABLE IF NOT EXISTS memory.item_versions(project_id text NOT NULL, item_i
 CREATE TABLE IF NOT EXISTS memory.documents(project_id text NOT NULL REFERENCES memory.projects(id), id text NOT NULL, version integer NOT NULL, canonical_hash text NOT NULL, body jsonb NOT NULL, deleted boolean NOT NULL DEFAULT false, PRIMARY KEY(project_id,id));
 CREATE TABLE IF NOT EXISTS memory.document_versions(project_id text NOT NULL, document_id text NOT NULL, version integer NOT NULL, canonical_hash text NOT NULL, body jsonb NOT NULL, PRIMARY KEY(project_id,document_id,version));
 CREATE TABLE IF NOT EXISTS memory.jobs(id text PRIMARY KEY, project_id text NOT NULL REFERENCES memory.projects(id), item_id text NOT NULL, version integer NOT NULL, canonical_hash text NOT NULL, resource_type text NOT NULL, destination text NOT NULL, operation text NOT NULL, state text NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','running','succeeded','failed','unknown')), attempts integer NOT NULL DEFAULT 0, available_at timestamptz NOT NULL DEFAULT clock_timestamp(), lease_until timestamptz, worker_id text, fence bigint NOT NULL DEFAULT 0, error_code text, created_at timestamptz NOT NULL DEFAULT clock_timestamp(), UNIQUE(project_id,item_id,version,resource_type,destination,operation));
-CREATE INDEX IF NOT EXISTS memory_job_queue ON memory.jobs(state,available_at);
+-- Guarded like every later section: `CREATE INDEX IF NOT EXISTS` takes SHARE on `memory.jobs` even when the index exists, so a repeated `admin migrate` would block the writers of jobs.
+DO $jobqueue$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'memory' AND indexname = 'memory_job_queue') THEN
+        RETURN;
+    END IF;
+    CREATE INDEX IF NOT EXISTS memory_job_queue ON memory.jobs(state,available_at);
+END
+$jobqueue$;
 CREATE TABLE IF NOT EXISTS memory.projection_receipts(job_id text PRIMARY KEY REFERENCES memory.jobs(id), project_id text NOT NULL, item_id text NOT NULL, version integer NOT NULL, canonical_hash text NOT NULL, destination text NOT NULL, receipt jsonb NOT NULL, recorded_at timestamptz NOT NULL DEFAULT clock_timestamp());
 INSERT INTO memory.schema_versions(version) VALUES (1) ON CONFLICT DO NOTHING;
 ALTER TABLE memory.memory_items ADD COLUMN IF NOT EXISTS parent_item_id text;
@@ -226,3 +234,26 @@ BEGIN
     INSERT INTO memory.schema_versions(version) VALUES (11) ON CONFLICT DO NOTHING;
 END
 $failedjobs$;
+
+-- queue-indexes (schema version 12)
+-- Two partial indexes so that `claim_job` reads the live part of the queue, not the table: `memory_jobs_claim` holds the jobs that wait
+-- (`pending`, `unknown`) in the exact order of the claim (priority, available_at, created_at, id) and `memory_jobs_running_lease` holds the `running`
+-- ones by `lease_until`, for the expired leases. The terminal rows (`succeeded`, `failed`), the great majority of a long-lived queue, are in neither.
+-- Additive: no row, column or existing index is touched (`memory_job_queue` stays) and a previous release ignores them. They are not built with
+-- CONCURRENTLY on purpose: `Store.migrate()` runs ALL of schema.sql in ONE transaction, where it is not allowed (as for version 11). The first run therefore takes
+-- SHARE on `memory.jobs` (writes to jobs wait, reads do not) while the two partial indexes are built, until the COMMIT of the whole migration; `lock_timeout` makes
+-- it fail whole, and repeatable, instead of waiting for ever. The block is skipped once version 12 is registered and both indexes exist, so a repeated
+-- `admin migrate` takes no lock on `memory.jobs`. Window measured and mitigation: docs/operations.md.
+SET LOCAL lock_timeout = '5s';
+DO $queueindexes$
+BEGIN
+    IF EXISTS (SELECT 1 FROM memory.schema_versions WHERE version = 12)
+       AND to_regclass('memory.memory_jobs_claim') IS NOT NULL
+       AND to_regclass('memory.memory_jobs_running_lease') IS NOT NULL THEN
+        RETURN;
+    END IF;
+    CREATE INDEX IF NOT EXISTS memory_jobs_claim ON memory.jobs(priority, available_at, created_at, id) WHERE state IN ('pending','unknown');
+    CREATE INDEX IF NOT EXISTS memory_jobs_running_lease ON memory.jobs(lease_until) WHERE state = 'running';
+    INSERT INTO memory.schema_versions(version) VALUES (12) ON CONFLICT (version) DO NOTHING;
+END
+$queueindexes$;

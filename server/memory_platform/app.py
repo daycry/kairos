@@ -1,18 +1,22 @@
 """Private memory HTTP boundary. App construction never migrates or contacts providers."""
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager
 import time
 import uuid
 from fastapi import FastAPI, Request, Depends, Query
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from psycopg import errors as pg_errors
 from . import models as m
 from . import observability
 from . import schemas
 from .auth import Auth
 from .config import Settings
-from .errors import MemoryError, Unauthorized, Forbidden
+from .errors import MemoryError, StoreBusy, Unauthorized, Forbidden, public_store_failure
 from .store import Store
+from .store_pool import attach_pool, close_pool, ready_probe
 
 COOKIE = 'memory_session'
 # Headers a reverse proxy adds: a request that carries any of them did not come from inside the internal network.
@@ -76,14 +80,27 @@ def mount_label(request):
 def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity_duration=25.0, activity_poll_interval=2.0):
     settings = settings or Settings.from_env()
     schemas.load_all()  # fail here, not on the first observation, when a schema file is missing or broken
+    owned_pool = store is None  # the pool of a store the app built is the app's to close; a store handed in (tests) keeps whatever it has
     if store is None:
         store = Store(settings.dsn, settings.project_maps, embedding_enabled=getattr(settings, 'embed_enabled', True))
         store.extraction_enabled = getattr(settings, 'extract_enabled', False)
+        attach_pool(store, settings, 'api')
     auth = auth or Auth(store, settings.allowed_origins, settings.session_ttl)
     if retrieval is None:
         from .retrieval import Retrieval
         retrieval = Retrieval(store, settings)
     app = FastAPI(title='Kairos', docs_url=None, redoc_url=None)
+    if owned_pool:
+        previous_lifespan = app.router.lifespan_context
+
+        @asynccontextmanager
+        async def lifespan(application):
+            try:
+                async with previous_lifespan(application):
+                    yield
+            finally:
+                await asyncio.to_thread(close_pool, store)  # connections are closed on shutdown, also when the app failed to start
+        app.router.lifespan_context = lifespan
     app.state.store, app.state.auth, app.state.retrieval = store, auth, retrieval
     app.state.settings = settings
     app.add_middleware(BodyLimit, maximum=settings.max_body_bytes)
@@ -121,6 +138,15 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
     async def domain_error(request, exc):
         return error(request, exc.code, exc.message, exc.status_code)
 
+    async def store_failure(request, exc):
+        # A plazo of the database, not an outage: the pool had no connection within MEMORY_POOL_TIMEOUT (`store_busy`) or PostgreSQL cancelled the statement at its
+        # statement_timeout (`store_timeout`). Fixed messages, the type of the failure in the log and never its text.
+        code, message = public_store_failure(exc)
+        observability.log_failure(code, exc, 'warning', request_id=getattr(request.state, 'request_id', None))
+        return error(request, code, message, 503)
+    app.add_exception_handler(StoreBusy, store_failure)
+    app.add_exception_handler(pg_errors.QueryCanceled, store_failure)
+
     @app.exception_handler(RequestValidationError)
     async def invalid(request, exc):
         return error(request, 'invalid_request', 'Request does not match the API contract', 422)
@@ -149,9 +175,10 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
 
     @app.get('/health/ready', operation_id='memory_readiness')
     def ready():
+        # Short plazos of its own (`ready_probe`): the healthcheck client gives up at 3 s. A pool whose every connection is in use (after it handed out one before) is a busy service, not a dead database: ready; one that never did is not ready.
         try:
-            with store.transaction() as c:
-                c.execute('SELECT version FROM memory.schema_versions LIMIT 1')
+            if ready_probe(store) == 'saturated':
+                observability.log_event('readiness_pool_saturated', 'warning')
         except Exception as exc:
             observability.log_failure('readiness_failed', exc, 'warning')
             raise MemoryError('not_ready', 'Database migration is unavailable', 503)

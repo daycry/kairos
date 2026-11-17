@@ -172,31 +172,49 @@ class IsolatedDeploymentTests(unittest.TestCase):
             self.assertIn('needs its own', str(raised.exception))
             self.assertFalse(any('config' in command for command in commands))
 
-    def migrate_run(self, backfill_answer=None, fail_stop=False, **changes):
+    def migrate_run(self, backfill_answer=None, fail_stop=False, fail_when=None, verify_answer=None, restore_answer=None, expect_failure=False, project='kairos-rehearsal', **changes):
         """Run the isolated apply() with a fake runner; returns (instance, ordered compose/operator commands)."""
         with workspace() as root:
             secrets = self.secrets(root)
-            own = root / '.private' / 'rehearsal-kairos-rehearsal'
+            own = root / '.private' / ('rehearsal-' + project)
             own.mkdir(parents=True)
             (own / 'memory-platform.env').write_text('MEMORY_SECRETS_DIR=' + secrets.as_posix() + '\n', encoding='utf-8')
-            instance = deploy.Deployment(arguments(secret_dir=str(secrets), project_name='kairos-rehearsal', api_port=18790, web_port=15173, **changes), root)
+            instance = deploy.Deployment(arguments(secret_dir=str(secrets), project_name=project, api_port=18790, web_port=15173, **changes), root)
             commands = []
+            self.timeouts = []  # the timeout of each call of `commands`, in step
+            self.extra_envs = []  # the extra environment of each call (where a secret may travel), in step
             answers = {'inspect': '{"tables":{"actors":1}}', 'content-manifest': '{"sha256":"s","documents":[],"projects":[]}',
-                       'backup': '{"status":"backed_up"}', 'migrate': '{"status":"migrated"}',
+                       'backup': '{"status":"backed_up","path":"/backups/kairos-before-20261116T090000000000Z.dump","bytes":1}', 'migrate': '{"status":"migrated"}',
+                       'verify-backup': verify_answer or '{"status":"verified","encrypted":false,"bytes":1}',
                        'backfill-chunks': backfill_answer or '{"status":"backfilled","enqueued":7,"remaining":0,"batches":1,"embedding_filled":0}'}
 
             def run(command, **kwargs):
                 commands.append(command)
+                self.timeouts.append(kwargs.get('timeout'))
+                self.extra_envs.append(kwargs.get('extra_env'))
                 if fail_stop and 'stop' in command:
                     raise RuntimeError('stop failed')
+                if fail_when and fail_when(command):
+                    raise deploy.DeploymentError('simulated failure')
+                if any('restore-check' in part for part in command):
+                    return restore_answer or '{"status":"restored_and_content_verified","tables":{"actors":{"rows":1,"sha256":"a"}}}'
                 if command[-3:] == ['config', '--format', 'json']:
                     return json.dumps({'secrets': {'memory_postgres': {'file': str(secrets / 'postgres_password')}}, 'volumes': {str(i): {'name': n} for i, n in enumerate(instance.volumes)}})
-                if 'memory-admin' in command and command[-1] in answers or 'backup' in command:
+                if 'memory-admin' in command and command[-1] in answers or 'backup' in command or 'verify-backup' in command:
                     return answers[next(part for part in command if part in answers)]
                 return ''
-            with patch.object(instance, 'run', side_effect=run), patch.object(deploy, 'verify_runtime', return_value={}), contextlib.redirect_stdout(io.StringIO()):
+            sleeps = []
+
+            def sleep_guard(seconds):
+                sleeps.append(seconds)
+                if len(sleeps) > 200:
+                    raise AssertionError('a wait that never ends')
+            with patch.object(instance, 'run', side_effect=run), patch.object(deploy, 'verify_runtime', return_value={}), patch.object(deploy.time, 'sleep', side_effect=sleep_guard), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                 if fail_stop:
                     with self.assertRaises(RuntimeError):
+                        instance.apply()
+                elif fail_when or expect_failure:
+                    with self.assertRaises(deploy.DeploymentError):
                         instance.apply()
                 else:
                     instance.apply()
@@ -249,6 +267,7 @@ class IsolatedDeploymentTests(unittest.TestCase):
     def test_migrate_phase_has_its_own_long_timeout_recorded_in_the_report(self):
         with workspace() as root:
             instance, secrets = self.isolated(root)
+            instance.verify_backup = False  # this test is about the migrate timeout; the verify phase has its own tests
             timeouts = {}
             answers = {'inspect': '{"tables":{"actors":1}}', 'content-manifest': '{"sha256":"s","documents":[],"projects":[]}',
                        'backup': '{"status":"backed_up"}', 'migrate': '{"status":"migrated"}',
@@ -269,3 +288,261 @@ class IsolatedDeploymentTests(unittest.TestCase):
             self.assertEqual(instance.report['migrate_timeout_seconds'], deploy.MIGRATE_TIMEOUT_SECONDS)
             saved = json.loads((instance.private / 'deployment-status.json').read_text(encoding='utf-8'))
             self.assertEqual(saved['migrate_timeout_seconds'], deploy.MIGRATE_TIMEOUT_SECONDS)
+
+
+def label(command):
+    """What a recorded command of the apply() double is, for the order assertions of the verify phase."""
+    if 'run' in command and 'memory-admin' in command[command.index('run'):]:
+        return 'operator:' + command[-1] if command[-1] in ('migrate', 'inspect', 'content-manifest') else 'operator:' + next((p for p in command if p in ('backup', 'verify-backup', 'backfill-chunks', 'bootstrap')), '?')
+    if command[:3] == ['docker', 'network', 'create']:
+        return 'network-create'
+    if command[:3] == ['docker', 'network', 'rm']:
+        return 'network-rm'
+    if command[:3] == ['docker', 'run', '--detach']:
+        return 'database-start'
+    if command[:2] == ['docker', 'exec'] and 'pg_isready' in command:
+        return 'database-ready'
+    if command[:2] == ['docker', 'exec'] and 'psql' in command:
+        return 'create-database'
+    if command[:3] == ['docker', 'run', '--rm'] and '--entrypoint' in command:
+        return 'restore'
+    if command[:3] == ['docker', 'rm', '--force']:
+        return 'remove:' + command[-1].split('-')[2]
+    return 'other'
+
+
+class VerifyBackupPhaseTests(unittest.TestCase):
+    """O-02 / CA-05: the copy made before `migrate` is restored in an ephemeral, isolated PostgreSQL and compared with its manifest; a difference stops the deployment before `migrate`."""
+
+    def run_phases(self, **changes):
+        helper = IsolatedDeploymentTests('migrate_run')
+        instance, commands = helper.migrate_run(**changes)
+        return instance, commands, [label(command) for command in commands]
+
+    def positions(self, labels, *wanted):
+        found = []
+        for name in wanted:
+            found.append(next(n for n, value in enumerate(labels) if value == name or value.startswith(name)))
+        return found
+
+    def test_the_sequence_is_copy_verify_ephemeral_restore_compare_remove_then_migrate(self):
+        instance, commands, labels = self.run_phases()
+        order = self.positions(labels, 'operator:backup', 'operator:verify-backup', 'network-create', 'database-start', 'database-ready', 'create-database', 'restore', 'remove:op', 'remove:pg', 'network-rm', 'operator:migrate')
+        self.assertEqual(order, sorted(order))
+        self.assertEqual(len(set(order)), len(order))
+        report = instance.report['verify_backup']
+        self.assertEqual((report['status'], report['cleanup']), ('verified', 'complete'))
+        self.assertRegex(report['database'], r'^memory_restore_[0-9a-f]{12}$')
+        self.assertGreaterEqual(report['duration_seconds'], 0)
+        self.assertEqual(report['tables'], 1)
+        self.assertEqual(instance.report['phases'][instance.report['phases'].index('backup') + 1:instance.report['phases'].index('backup') + 3], ['verify_backup', 'migrate'])
+
+    def test_the_ephemeral_resources_are_isolated_named_apart_and_never_the_projects(self):
+        instance, commands, labels = self.run_phases(backup_timeout=7200)
+        verify = [command for command, name in zip(commands, labels) if name in ('network-create', 'database-start', 'database-ready', 'create-database', 'restore') or name.startswith('remove:') or name == 'network-rm']
+        joined = '\n'.join(' '.join(command) for command in verify)
+        self.assertNotIn('knowledge-graphs', joined)
+        self.assertNotIn('--publish', joined)
+        self.assertNotIn(' -p ', joined)
+        self.assertNotIn('compose', joined)
+        network = commands[labels.index('network-create')]
+        self.assertIn('--internal', network)
+        start = commands[labels.index('database-start')]
+        self.assertEqual(start[start.index('--network') + 1], network[-1])
+        self.assertEqual(start[-3], 'rehearsal-kairos-rehearsal-postgres:latest')  # then its server options
+        self.assertIn('no-new-privileges:true', start)
+        restore = commands[labels.index('restore')]
+        self.assertEqual(restore[restore.index('--network') + 1], network[-1])
+        self.assertIn(f'{instance.volumes[1]}:/backups:ro', restore)  # the project's backups, read only
+        self.assertIn('rehearsal-kairos-rehearsal-operator:latest', restore)
+        self.assertIn('--from-manifest', restore[-1])
+        self.assertIn(f"TARGET_HOST={start[start.index('--name') + 1]}", restore)
+        self.assertIn(f"TARGET_DATABASE={instance.report['verify_backup']['database']}", restore)
+        self.assertIn('TARGET_PASSWORD', restore)  # the name only: the value goes through the environment of the process
+        self.assertIn('MEMORY_DSN=postgresql://unused@127.0.0.1:1/unused', restore)  # the live database is not even named
+        for name in (start[start.index('--name') + 1], restore[restore.index('--name') + 1], network[-1]):
+            self.assertRegex(name, r'^kairos-verify-(pg-|op-)?kairos-rehearsal-[0-9a-f]{12}$')  # the project is in the name (CA-05)
+        for command in (network, start, restore):
+            self.assertIn('com.kairos.project=kairos-rehearsal', command)
+
+    def test_a_long_project_name_keeps_every_ephemeral_name_within_a_hostname_and_the_labels_keep_the_whole_project(self):
+        project = 'kairos-rehearsal-of-a-long-project-name'  # 39 characters: `kairos-verify-pg-<project>-<mark>` would be 69
+        self.assertGreaterEqual(len(project), 39)
+        instance, commands = IsolatedDeploymentTests('migrate_run').migrate_run(project=project)
+        labels = [label(command) for command in commands]
+        network, start, restore = (commands[labels.index(name)] for name in ('network-create', 'database-start', 'restore'))
+        names = [network[-1], start[start.index('--name') + 1], restore[restore.index('--name') + 1]]
+        for name in names:
+            self.assertLessEqual(len(name), 63, name)
+            self.assertRegex(name, r'^kairos-verify-(pg-|op-)?kairos-rehearsa-[0-9a-f]{8}-[0-9a-f]{12}$')
+        self.assertIn(f"TARGET_HOST={names[1]}", restore)
+        for command in (network, start, restore):
+            self.assertIn('com.kairos.project=' + project, command)
+        self.assertEqual(deploy.verify_name_part('short'), 'short')
+        self.assertNotEqual(deploy.verify_name_part('x' * 40 + 'a'), deploy.verify_name_part('x' * 40 + 'b'), 'two projects that share a start do not share a name')
+        self.assertEqual(instance.report['verify_backup']['cleanup'], 'complete')
+
+    def test_the_ephemeral_postgres_has_a_password_of_this_run_that_never_travels_in_an_argument_or_the_report(self):
+        helper = IsolatedDeploymentTests('migrate_run')
+        instance, commands = helper.migrate_run()
+        labels = [label(command) for command in commands]
+        envs = dict(zip(labels, helper.extra_envs))
+        password = envs['database-start']['POSTGRES_PASSWORD']
+        self.assertGreaterEqual(len(password), 24)
+        self.assertEqual((envs['create-database']['PGPASSWORD'], envs['restore']['TARGET_PASSWORD']), (password, password))
+        joined = chr(10).join(' '.join(command) for command in commands)
+        self.assertNotIn(password, joined)
+        self.assertNotIn(password, json.dumps(instance.report))
+        self.assertNotIn('trust', joined.lower(), 'no HOST_AUTH_METHOD=trust any more')
+        start = commands[labels.index('database-start')]
+        self.assertEqual(start[start.index('POSTGRES_PASSWORD') - 1:start.index('POSTGRES_PASSWORD') + 1], ['-e', 'POSTGRES_PASSWORD'])  # the name alone: docker takes the value from the environment
+        again = IsolatedDeploymentTests('migrate_run')
+        _, other = again.migrate_run()
+        self.assertNotEqual(dict(zip([label(c) for c in other], again.extra_envs))['database-start']['POSTGRES_PASSWORD'], password, 'a password per run')
+
+    def test_the_ephemeral_postgres_runs_unprivileged_without_capabilities_and_with_enough_memory_to_index(self):
+        instance, commands, labels = self.run_phases()
+        start = commands[labels.index('database-start')]
+        for pair in (['--cap-drop', 'ALL'], ['--user', 'postgres'], ['--security-opt', 'no-new-privileges:true']):
+            self.assertEqual(start[start.index(pair[0]):start.index(pair[0]) + 2], pair, pair)
+        self.assertIn('--init', start)
+        image = start.index('rehearsal-kairos-rehearsal-postgres:latest')
+        self.assertEqual(start[image + 1:], ['-c', 'maintenance_work_mem=256MB'])
+        self.assertIn('--init', commands[labels.index('restore')])  # python is not PID 1 there either: SIGTERM reaches it
+
+    def test_a_removal_of_something_that_is_not_there_is_not_a_failure_in_either_wording_of_docker(self):
+        with workspace() as root:
+            instance = deploy.Deployment(arguments(project_name='kairos-rehearsal', api_port=18790, web_port=15173), root)
+            for details, expected in (('Error response from daemon: No such container: x', True), ('Error response from daemon: network x not found', True), ('permission denied', False)):
+                done = SimpleNamespace(returncode=1, stdout='', stderr=details)
+                with patch.object(deploy.subprocess, 'run', return_value=done):
+                    self.assertIs(instance.quietly(['docker', 'network', 'rm', 'x']), expected, details)
+
+    def test_the_operator_service_runs_under_an_init_process_so_that_python_is_not_pid_1(self):
+        text = COMPOSE.read_text(encoding='utf-8')
+        block = text.split('  memory-admin:' + chr(10), 1)[1].split(chr(10) + 'networks:', 1)[0]
+        self.assertRegex(block, r'(?m)^    init: true')
+
+    def test_the_verify_and_restore_commands_get_the_backup_timeout(self):
+        helper = IsolatedDeploymentTests('migrate_run')
+        instance, commands = helper.migrate_run(backup_timeout=7200)
+        by_label = {label(command): timeout for command, timeout in zip(commands, helper.timeouts)}
+        self.assertEqual((by_label['operator:verify-backup'], by_label['restore']), (7200, 7200))
+        verify = next(command for command in commands if label(command) == 'operator:verify-backup')
+        self.assertIn('--name', verify)
+
+    def test_a_difference_stops_the_deployment_before_migrate_and_everything_ephemeral_is_removed(self):
+        instance, commands, labels = self.run_phases(fail_when=lambda command: label(command) == 'restore')
+        self.assertNotIn('operator:migrate', labels)
+        self.assertFalse(any(name in ('operator:backfill-chunks', 'operator:bootstrap') for name in labels))
+        for name in ('remove:op', 'remove:pg', 'network-rm'):
+            self.assertIn(name, labels)
+        report = instance.report
+        self.assertEqual(report['verify_backup']['status'], 'failed')
+        self.assertIn('duration_seconds', report['verify_backup'])
+        self.assertEqual(report['verify_backup']['cleanup'], 'complete')
+        self.assertNotIn('migrate', report['phases'])
+
+    def test_whichever_step_fails_the_containers_and_the_network_are_removed_and_migrate_never_runs(self):
+        for step in ('network-create', 'database-start', 'create-database', 'restore'):
+            with self.subTest(step=step):
+                instance, commands, labels = self.run_phases(fail_when=lambda command, step=step: label(command) == step)
+                self.assertNotIn('operator:migrate', labels)
+                created = {'network-create': (), 'database-start': ('network-rm', 'remove:pg'), 'create-database': ('network-rm', 'remove:pg'),
+                           'restore': ('remove:op', 'remove:pg', 'network-rm')}[step]
+                for name in ('remove:op', 'remove:pg', 'network-rm'):
+                    if name in created:
+                        self.assertIn(name, labels, step)
+                    else:
+                        self.assertNotIn(name, labels, step + ': what was never created is not removed')
+                self.assertEqual(instance.report['verify_backup']['status'], 'failed')
+                self.assertEqual(instance.report['verify_backup'].get('cleanup'), 'complete', step)
+
+    def test_an_ephemeral_database_that_never_answers_is_a_failure_after_the_wait_and_is_removed(self):
+        ticks = iter(range(0, 10000, 40))
+        with patch.object(deploy.time, 'monotonic', side_effect=lambda: next(ticks)):
+            instance, commands, labels = self.run_phases(fail_when=lambda command: label(command) == 'database-ready')
+        self.assertNotIn('operator:migrate', labels)
+        self.assertNotIn('restore', labels)
+        self.assertIn('network-rm', labels)
+        self.assertEqual(instance.report['verify_backup']['status'], 'failed')
+
+    def test_a_failing_cleanup_does_not_hide_the_real_error_and_is_reported(self):
+        instance, commands, labels = self.run_phases(fail_when=lambda command: label(command) in ('restore', 'network-rm'))
+        self.assertEqual(instance.report['verify_backup']['status'], 'failed')
+        self.assertTrue(instance.report['verify_backup']['cleanup'].startswith('incomplete: remove kairos-verify-'))
+        self.assertNotIn('operator:migrate', labels)
+        self.assertNotIn('command_failure', instance.report, 'a clean-up failure is not the failure of the deployment')
+
+    def test_an_encrypted_copy_is_checked_without_decrypting_and_nothing_is_started(self):
+        instance, commands, labels = self.run_phases(verify_answer='{"status":"verified","encrypted":true}')
+        self.assertFalse([name for name in labels if name in ('network-create', 'database-start', 'restore')])
+        self.assertEqual(instance.report['verify_backup']['status'], 'integrity_only')
+        self.assertEqual(instance.report['verify_backup']['restore'], 'skipped')
+        self.assertIn('operator:migrate', labels)
+
+    def test_an_answer_that_is_not_a_verified_restore_is_a_failure_too(self):
+        instance, commands, labels = self.run_phases(restore_answer='{"status":"restored","tables":{}}', expect_failure=True)
+        self.assertNotIn('operator:migrate', labels)
+        self.assertEqual(instance.report['verify_backup']['status'], 'failed')
+        self.assertIn('network-rm', labels)
+
+    def test_a_verify_answer_that_is_not_verified_stops_before_anything_is_started(self):
+        instance, commands, labels = self.run_phases(verify_answer='{"status":"unverified","encrypted":false}', expect_failure=True)
+        self.assertFalse([name for name in labels if name in ('network-create', 'database-start', 'restore')])
+        self.assertNotIn('operator:migrate', labels)
+        self.assertEqual(instance.report['verify_backup']['status'], 'failed')
+
+    def test_a_copy_that_does_not_verify_stops_before_anything_is_started(self):
+        instance, commands, labels = self.run_phases(fail_when=lambda command: label(command) == 'operator:verify-backup')
+        self.assertFalse([name for name in labels if name in ('network-create', 'database-start', 'restore')])
+        self.assertNotIn('operator:migrate', labels)
+        self.assertEqual(instance.report['verify_backup']['status'], 'failed')
+
+    def test_it_can_be_switched_off_and_the_default_depends_on_the_project(self):
+        instance, commands, labels = self.run_phases(verify_backup=False)
+        self.assertNotIn('verify_backup', instance.report)
+        self.assertNotIn('operator:verify-backup', labels)
+        self.assertNotIn('verify_backup', instance.report['phases'])
+        self.assertIn('operator:migrate', labels)
+        with workspace() as root:
+            self.assertIs(deploy.Deployment(arguments(), root).verify_backup, False)  # the installed project: opt-in
+            self.assertIs(deploy.Deployment(arguments(verify_backup=True), root).verify_backup, True)
+            self.assertIs(deploy.Deployment(arguments(project_name='kairos-rehearsal', api_port=18790, web_port=15173), root).verify_backup, True)  # a rehearsal: on
+            self.assertIs(deploy.Deployment(arguments(project_name='kairos-rehearsal', api_port=18790, web_port=15173, verify_backup=False), root).verify_backup, False)
+
+    def test_the_plan_lists_the_phase_between_backup_and_migrate_only_when_it_will_run(self):
+        base = ['--project-name', 'kairos-rehearsal', '--api-port', '18790', '--web-port', '15173']
+        for argv, expected in ((base, True), (base + ['--no-verify-backup'], False), (['--verify-backup'], True), ([], False)):
+            with patch.object(deploy.subprocess, 'run'), contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(deploy.main(argv), 0)
+            plan = json.loads(output.getvalue())
+            self.assertEqual(plan['verify_backup'], expected, argv)
+            self.assertEqual('verify_backup' in plan['phases'], expected, argv)
+            if expected:
+                phases = plan['phases']
+                self.assertEqual(phases[phases.index('backup') + 1:phases.index('backup') + 3], ['verify_backup', 'migrate'])
+
+    def test_a_fresh_installation_has_no_previous_copy_and_nothing_to_verify(self):
+        with workspace() as root:
+            instance, secrets = IsolatedDeploymentTests('migrate_run').isolated(root)
+            instance.args.fresh = True
+            commands = []
+
+            def run(command, **kwargs):
+                commands.append(command)
+                if command[-3:] == ['config', '--format', 'json']:
+                    return json.dumps({'secrets': {'memory_postgres': {'file': str(secrets / 'postgres_password')}}, 'volumes': {str(i): {'name': n} for i, n in enumerate(instance.volumes)}})
+                if command[-1] == 'inspect':
+                    return '{"tables":{}}'
+                if command[-1] == 'content-manifest':
+                    return '{"sha256":"s","documents":[],"projects":[]}'
+                if command[-1] in ('migrate', 'bootstrap'):
+                    return '{"status":"ok"}'
+                if command[-1] == 'backfill-chunks':
+                    return '{"status":"backfilled","enqueued":0,"remaining":0,"batches":0,"embedding_filled":0}'
+                return ''
+            with patch.object(instance, 'run', side_effect=run), patch.object(deploy, 'verify_runtime', return_value={}), contextlib.redirect_stdout(io.StringIO()):
+                instance.apply()
+            self.assertNotIn('verify_backup', instance.report)
+            self.assertFalse([label(command) for command in commands if label(command) in ('network-create', 'database-start', 'operator:verify-backup')])

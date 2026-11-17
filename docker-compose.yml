@@ -203,6 +203,38 @@ services:
     entrypoint: [python, -m, memory_platform.admin]
     volumes: [memory-backups:/backups]
     networks: [memory-data]
+    init: true  # python must not be PID 1: as PID 1 it ignores SIGTERM unless it installed a handler, and `docker stop` would then SIGKILL a copy half written
+
+  # Scheduled external copy (C-01, P-02), opt-in: `docker compose --profile backup up -d memory-backup` (the installed project picks it up only at its next `up`).
+  # `backup-cycle` makes an encrypted copy, verifies it, sends it to MEMORY_BACKUP_DESTINATION (dir:/offsite/... or rclone:<remote>:<path>), reads it back there and applies
+  # the retention of both places, every MEMORY_BACKUP_INTERVAL. It encrypts for the PUBLIC recipients of /config/recipients.txt and cannot decrypt: no service mounts a private key.
+  # ${MEMORY_BACKUP_CONFIG_DIR}: recipients.txt (public) and rclone.conf (the operator's remotes); ${MEMORY_BACKUP_OFFSITE_DIR}: the mounted directory of a `dir:` destination.
+  memory-backup:
+    <<: *process
+    image: kairos-operator:latest
+    build: {context: ., dockerfile: server/memory_platform/Dockerfile, target: operator}
+    profiles: [backup]
+    restart: unless-stopped
+    environment:
+      <<: *memory-environment
+      MEMORY_BACKUP_DESTINATION: ${MEMORY_BACKUP_DESTINATION:-}
+      MEMORY_BACKUP_INTERVAL: ${MEMORY_BACKUP_INTERVAL:-24h}
+      MEMORY_BACKUP_REMOTE_KEEP: ${MEMORY_BACKUP_REMOTE_KEEP:-30}
+      MEMORY_BACKUP_KEEP: ${MEMORY_BACKUP_KEEP:-7}
+      MEMORY_BACKUP_REQUIRE_ENCRYPTION: ${MEMORY_BACKUP_REQUIRE_ENCRYPTION:-1}
+      MEMORY_BACKUP_RECIPIENTS_FILE: /config/recipients.txt
+      RCLONE_CONFIG: /config/rclone.conf
+      HOME: /tmp
+    secrets: [memory_dsn]
+    entrypoint: [python, -m, memory_platform.admin]
+    command: [backup-cycle, --loop]
+    volumes:
+      - memory-backups:/backups
+      - ${MEMORY_BACKUP_CONFIG_DIR:-./backup-config}:/config:ro
+      - ${MEMORY_BACKUP_OFFSITE_DIR:-./offsite}:/offsite
+    networks: [memory-data, egress]
+    init: true
+    stop_grace_period: 60s
 
 networks:
   memory-data: {internal: true}

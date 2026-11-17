@@ -1,23 +1,16 @@
 """Additive pgvector migration (schema version 8) over a database in the previous version."""
 import hashlib
 import os
-from pathlib import Path
 import unittest
 import uuid
 from unittest.mock import patch
 
 from memory_platform.admin import content_manifest
 from memory_platform.store import Store
+from memory_platform.tests.schema_history import SCHEMA_V5
+from memory_platform.tests.test_migrations_additive import additive_violations, catalog_snapshot
 
-SCHEMA = Path(__file__).parents[1] / 'schema.sql'
 MODEL = 'nomic-embed-text'
-
-
-def previous_schema():
-    """schema.sql up to and including the last version before pgvector (5)."""
-    text = SCHEMA.read_text(encoding='utf-8')
-    marker = 'INSERT INTO memory.schema_versions(version) VALUES (5) ON CONFLICT DO NOTHING;'
-    return text[:text.index(marker) + len(marker)]
 
 
 def unit(seed, size):
@@ -55,7 +48,7 @@ class PgvectorMigrationTests(unittest.TestCase):
         from memory_platform.corpus_answers import migrate_corpus_answers
         from memory_platform.extended_store import migrate_extended_schema
         with self.psycopg.connect(dsn) as c:
-            c.execute(previous_schema())
+            c.execute(SCHEMA_V5)  # the last release before pgvector, frozen (schema_history.py)
             # The previous release also registered versions 5, 6 and 7 through these domain migrations.
             migrate_agent_schema(c)
             migrate_extended_schema(c)
@@ -92,7 +85,8 @@ class PgvectorMigrationTests(unittest.TestCase):
             for _, dims, length, filled, embedded in rows:
                 self.assertEqual((dims, filled, embedded), (length, True, length))
             versions = {row[0] for row in c.execute('SELECT version FROM memory.schema_versions').fetchall()}
-            self.assertEqual(versions, set(range(1, 12)), 'versions 1..11 exactly: the new version must not collide with the 6 and 7 of the domain migrations')
+            self.assertEqual(versions, set(range(1, max(versions) + 1)), 'versions 1..N with no gap: the new version must not collide with the 6 and 7 of the domain migrations')
+            self.assertGreaterEqual(max(versions), 11)
             indexes = [row[0] for row in c.execute("SELECT indexdef FROM pg_indexes WHERE schemaname='memory' AND tablename='embeddings'").fetchall()]
             self.assertTrue(any('USING hnsw' in definition and 'vector_cosine_ops' in definition and MODEL in definition and 'dims = 768' in definition for definition in indexes), indexes)
         self.assertEqual(self.vector_hashes(self.admin_dsn), before_hashes)
@@ -132,11 +126,17 @@ class PgvectorMigrationTests(unittest.TestCase):
             self.assertIsNone(c.execute('SELECT 1 FROM memory.schema_versions WHERE version=8').fetchone())
         self.assertEqual(self.vector_hashes(limited), before)
 
-    def test_new_schema_text_is_additive_only(self):
-        import re
-        text = SCHEMA.read_text(encoding='utf-8')
-        section = text[text.index('VALUES (5) ON CONFLICT DO NOTHING;'):]
-        self.assertNotRegex(section, re.compile(r'\b(DROP|TRUNCATE|DELETE)\b|ALTER\s+.*\s+TYPE', re.I))
+    def test_the_migration_over_the_previous_version_only_adds(self):
+        """Catalog before and after (it used to be a regular expression over the text of schema.sql): nothing disappears or changes type."""
+        self.seed_previous_version(self.admin_dsn)
+        with self.psycopg.connect(self.admin_dsn) as c:
+            before = catalog_snapshot(c)
+        Store(self.admin_dsn).migrate()
+        with self.psycopg.connect(self.admin_dsn) as c:
+            after = catalog_snapshot(c)
+        self.assertEqual(additive_violations(before, after), [])
+        self.assertTrue({('embeddings', 'embedding'), ('embeddings', 'dims')} <= set(after['columns']) - set(before['columns']))
+        self.assertIn('vector', after['extensions'] - before['extensions'])
 
     def test_vector_index_setting_is_parsed_strictly(self):
         from memory_platform.config import vector_indexes

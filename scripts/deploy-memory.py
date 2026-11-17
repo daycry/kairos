@@ -13,6 +13,7 @@ import json
 import os
 import re
 from pathlib import Path
+import secrets
 import subprocess
 import sys
 import tempfile
@@ -25,6 +26,13 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PROJECT = 'knowledge-graphs'
 DEFAULT_API_PORT, DEFAULT_WEB_PORT = 8790, 5173
 MIGRATE_TIMEOUT_SECONDS = 3600  # the first pgvector migration rewrites and indexes embeddings; the default 120 s would abort it
+BACKUP_TIMEOUT_SECONDS = 3600  # O-03: `content-manifest`, `backup` and `verify-backup` read or dump the whole database; the default 120 s of `operator()` aborts a large one
+VERIFY_WAIT_SECONDS = 90  # the ephemeral PostgreSQL of `--verify-backup` must accept connections within this
+VERIFY_LABEL = 'com.kairos.verify-backup'
+VERIFY_PROJECT_LABEL = 'com.kairos.project'
+VERIFY_NAME_PROJECT = 24  # the longest project text in a verify container name: `kairos-verify-pg-<project>-<mark>` is a hostname and must stay within 63 characters
+VERIFY_MAINTENANCE_WORK_MEM = '256MB'  # the restore rebuilds the vector indexes: the 64 MB default makes a big one slow enough to exhaust the plazo
+BACKUP_TIMEOUT_MAX_SECONDS = 86400  # a timeout is a bound: 0 or "no limit" would let a stuck copy hang the deployment
 ISOLATED_PRIVATE_FILES = ('memory-platform.env', 'compose.override.yml', 'deployment-status.json', 'deployment-status.tmp')
 VOLUMES = (DEFAULT_PROJECT + '_memory-postgres-data', DEFAULT_PROJECT + '_memory-backups')
 SERVICES = ('memory-api', 'memory-worker', 'memory-mcp', 'memory-web')
@@ -58,6 +66,22 @@ def validate_isolation(project, api_port, web_port):
     ports = (api_port, web_port)
     if len(set(ports)) != 2 or any(not 1024 <= port <= 65535 or port in (DEFAULT_API_PORT, DEFAULT_WEB_PORT) for port in ports):
         raise DeploymentError('An isolated rehearsal needs two distinct ports in 1024-65535, not ' + f'{DEFAULT_API_PORT} or {DEFAULT_WEB_PORT}')
+
+
+def check_backup_timeout(value):
+    """`--backup-timeout` in seconds: None is the default; otherwise a whole number between 1 and a day (never 0 or unbounded)."""
+    if value is None:
+        return BACKUP_TIMEOUT_SECONDS
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= BACKUP_TIMEOUT_MAX_SECONDS:
+        raise DeploymentError(f'--backup-timeout must be a whole number of seconds between 1 and {BACKUP_TIMEOUT_MAX_SECONDS}')
+    return value
+
+
+def verify_name_part(project):
+    """The project as it appears in the names of the ephemeral verification objects: whole if short, else its start plus a short hash of the whole (names stay unique per project)."""
+    if len(project) <= VERIFY_NAME_PROJECT:
+        return project
+    return project[:VERIFY_NAME_PROJECT - 9] + '-' + hashlib.sha256(project.encode('utf-8')).hexdigest()[:8]
 
 
 def isolated_image(project, name):
@@ -124,6 +148,7 @@ services:
     image: {image('web')}
     ports: !override ['127.0.0.1:{web_port}:8080']
   memory-admin: {{image: {image('operator')}}}
+  memory-backup: {{image: {image('operator')}}}
 {stub}networks:
   inference: {{name: {project}_inference}}
   webui: {{name: {project}_webui}}
@@ -213,6 +238,9 @@ class Deployment:
             raise DeploymentError('--embed-stub and --roundtrip are only for an isolated --project-name: the installed project keeps its own embedding provider')
         if self.roundtrip and not self.embed_stub:
             raise DeploymentError('--roundtrip needs --embed-stub: the rehearsal must prove that no language model was asked for')
+        self.backup_timeout = check_backup_timeout(getattr(args, 'backup_timeout', None))
+        requested = getattr(args, 'verify_backup', None)
+        self.verify_backup = self.isolated if requested is None else bool(requested)  # on by default in a rehearsal, opt-in for the installed project
         self.volumes = project_volumes(self.project)
         self.private = safe_path(root / '.private' / ('rehearsal-' + self.project) if self.isolated else root / '.private')
         if self.isolated:
@@ -233,9 +261,11 @@ class Deployment:
         self.phase = 'engine'
         self.secret_values = []
 
-    def run(self, command, timeout=120):
+    def run(self, command, timeout=120, extra_env=None):
+        """Run `command`; `extra_env` adds variables to ITS environment only (a secret that a `-e NAME` of docker takes from there, never from the argument list)."""
+        environment = self.environment if not extra_env else dict(os.environ if self.environment is None else self.environment, **extra_env)
         try:
-            result = subprocess.run(command, cwd=self.root, capture_output=True, env=self.environment,
+            result = subprocess.run(command, cwd=self.root, capture_output=True, env=environment,
                                     text=True, encoding='utf-8', errors='replace', timeout=timeout)
         except (OSError, subprocess.TimeoutExpired):
             raise DeploymentError('Command unavailable or timed out; verify its actual state before retrying') from None
@@ -254,8 +284,115 @@ class Deployment:
         self.report['phases'].append(name)
         print(f'Kairos: {name}', flush=True)
 
-    def operator(self, *args, timeout=120):
-        return decode_json(self.run(self.compose + ['run', '--rm', '--no-deps', '-T', 'memory-admin', *args], timeout=timeout))
+    def operator(self, *args, timeout=120, name=None):
+        """One `memory-admin` command. A command with a `name` runs in a container of that name, which is stopped and removed if the command fails or times out: the client that
+        `subprocess` kills at the timeout is not the container, and a dump that kept running would leave a copy half written (the SIGTERM of `docker stop` makes the dump clean up)."""
+        command = self.compose + ['run', '--rm', '--no-deps', '-T'] + (['--name', name] if name else []) + ['memory-admin', *args]
+        try:
+            return decode_json(self.run(command, timeout=timeout))
+        except BaseException:
+            if name:
+                self.reap(name)
+            raise
+
+    def reap(self, name):
+        """Stop (SIGTERM first, so the command removes what it had half written) and remove the container `name`; nothing here may hide the error that is propagating."""
+        for command, wait in ((['docker', 'stop', '--time', '20', name], 60), (['docker', 'rm', '--force', '--volumes', name], 60)):
+            try:
+                subprocess.run(command, capture_output=True, env=self.environment, timeout=wait)
+            except Exception:
+                pass
+        self.report.setdefault('reaped_containers', []).append(name)
+
+    def image(self, name):
+        """The image of a service of this project: the rehearsal's own tag, or the one docker-compose.yml fixes for the installed project."""
+        return isolated_image(self.project, name) if self.isolated else f'kairos-{name}:latest'
+
+    def quietly(self, command, timeout=60):
+        """Run a clean-up or probe command: True if it succeeded (or what it removes was not there), False if not; a failure never becomes `command_failure` of the report nor replaces the error being raised."""
+        kept = self.report.get('command_failure')
+        try:
+            self.run(command, timeout=timeout)
+            return True
+        except DeploymentError:
+            details = (self.report.get('command_failure') or {}).get('details', '').lower()
+            return 'no such' in details or 'not found' in details  # removing what is not there is not a failure
+        finally:
+            if kept is None:
+                self.report.pop('command_failure', None)
+            else:
+                self.report['command_failure'] = kept
+
+    def verify_backup_phase(self, copy):
+        """CA-05 (O-02): the copy just made is checked and, if it is not encrypted, restored into an EPHEMERAL PostgreSQL before `migrate`.
+
+        The sha256 against the manifest first (`verify-backup`). Then, on a network of its own (internal: no route out, no published port), a container of the project's postgres image
+        with a database `memory_restore_<mark>`, where a throw-away operator container restores the copy (read-only mount of the project's backups volume) and compares the tables
+        with the manifest (`restore-check --from-manifest`: the live database is not read, let alone written). Whatever was created is removed, and the report keeps the result and
+        the duration. An encrypted copy is verified without decrypting (its key is never on this host) and reported as `integrity_only`.
+        Nothing here uses the project's own database. Names and labels carry the project and the mark (`kairos-verify-<project>-<mark>`).
+
+        The ephemeral PostgreSQL holds the restored data in the clear, so it gets a password drawn for this run (given to docker through the environment, never in an argument or
+        in the report), no capability, no privilege escalation and the unprivileged `postgres` user; its only door is the internal network.
+        """
+        started = time.monotonic()
+        mark = uuid.uuid4().hex[:12]
+        result = self.report['verify_backup'] = {'status': 'running', 'backup': copy.get('path')}
+        tag = f'{verify_name_part(self.project)}-{mark}'  # the labels carry the whole project; only the names (a hostname among them) are shortened
+        net, database_container, restore_container = f'kairos-verify-{tag}', f'kairos-verify-pg-{tag}', f'kairos-verify-op-{tag}'
+        database = 'memory_restore_' + mark
+        labels = ['--label', f'{VERIFY_LABEL}={mark}', '--label', f'{VERIFY_PROJECT_LABEL}={self.project}']
+        password = secrets.token_urlsafe(24)
+        self.secret_values.append(password)
+        secret_env = {'POSTGRES_PASSWORD': password, 'PGPASSWORD': password, 'TARGET_PASSWORD': password}
+        created = []  # (name, remover) of everything this phase created, in order: only that is removed and only that can be reported as left over
+        try:
+            integrity = self.long_operator('verify-backup', '--backup', copy['path'])
+            if integrity.get('status') != 'verified':
+                raise DeploymentError('The copy was not verified against its manifest')
+            if integrity.get('encrypted'):
+                result.update(status='integrity_only', restore='skipped', reason='encrypted copy: it is verified without decrypting; its private key is never on this host')
+                return
+            result['database'] = database
+            self.run(['docker', 'network', 'create', '--internal', *labels, net])
+            created.append((net, ['docker', 'network', 'rm', net]))
+            created.append((database_container, ['docker', 'rm', '--force', '--volumes', database_container]))  # registered first: a start that failed half way may have made it
+            self.run(['docker', 'run', '--detach', '--name', database_container, '--network', net, *labels, '--init', '--user', 'postgres', '--cap-drop', 'ALL',
+                      '--security-opt', 'no-new-privileges:true', '-e', 'POSTGRES_PASSWORD', self.image('postgres'), '-c', f'maintenance_work_mem={VERIFY_MAINTENANCE_WORK_MEM}'],
+                     timeout=120, extra_env=secret_env)
+            deadline = time.monotonic() + VERIFY_WAIT_SECONDS
+            while not self.quietly(['docker', 'exec', database_container, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres'], timeout=15):
+                if time.monotonic() > deadline:
+                    raise DeploymentError(f'The ephemeral PostgreSQL did not accept connections in {VERIFY_WAIT_SECONDS} s')
+                time.sleep(2)
+            self.run(['docker', 'exec', '-e', 'PGPASSWORD', database_container, 'psql', '-h', '127.0.0.1', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', f'CREATE DATABASE {database}'],
+                     extra_env=secret_env)
+            created.append((restore_container, ['docker', 'rm', '--force', '--volumes', restore_container]))
+            command = ['docker', 'run', '--rm', '--name', restore_container, '--network', net, *labels, '--init', '--entrypoint', 'sh', '-v', f'{self.volumes[1]}:/backups:ro',
+                       '-e', 'MEMORY_DSN=postgresql://unused@127.0.0.1:1/unused', '-e', f'TARGET_HOST={database_container}', '-e', f'TARGET_DATABASE={database}', '-e', 'TARGET_PASSWORD',
+                       '-e', 'BACKUP=' + copy['path'], self.image('operator'), '-c',
+                       'printf "postgresql://postgres:%s@%s:5432/%s" "$TARGET_PASSWORD" "$TARGET_HOST" "$TARGET_DATABASE" > /tmp/target.dsn '
+                       '&& exec python -m memory_platform.admin restore-check --backup "$BACKUP" --target-dsn-file /tmp/target.dsn --from-manifest']
+            restored = decode_json(self.run(command, timeout=self.backup_timeout, extra_env=secret_env))
+            if restored.get('status') != 'restored_and_content_verified':
+                raise DeploymentError('The copy did not restore to the content its manifest records')
+            result.update(status='verified', tables=len(restored.get('tables', {})))
+        except BaseException:
+            result['status'] = 'failed'
+            raise
+        finally:
+            result['duration_seconds'] = round(time.monotonic() - started, 2)
+            if created:
+                gone = [(name, self.quietly(command)) for name, command in reversed(created)]  # the container that uses the network goes before the network
+                result['cleanup'] = 'complete' if all(ok for name, ok in gone) else 'incomplete: remove ' + ', '.join(name for name, ok in gone if not ok) + ' by hand'
+                if not all(ok for name, ok in gone):
+                    print('WARNING: ' + result['cleanup'], file=sys.stderr)
+            elif result.get('database'):
+                result['cleanup'] = 'complete'  # nothing had been created yet, so nothing is left
+
+    def long_operator(self, verb, *args):
+        """A command that reads or dumps the whole database: the `--backup-timeout`, in a container that is reaped on failure."""
+        return self.operator(verb, *args, timeout=self.backup_timeout, name=f'kairos-deploy-{verb}-{uuid.uuid4().hex[:10]}')
 
     def spy_report(self):
         report = decode_json(self.run(self.compose + ['exec', '-T', STUB_SERVICE, 'python', '-c', SPY_QUERY]))
@@ -373,11 +510,16 @@ class Deployment:
         existing = counts.get('actors', 0) > 0
         if not existing and not self.args.fresh:
             raise DeploymentError('Expected the existing database; refusing to bootstrap an empty replacement')
-        before = self.operator('content-manifest') if existing else None
+        self.report['backup_timeout_seconds'] = self.backup_timeout
+        before = self.long_operator('content-manifest') if existing else None
         self.step('backup')
         if existing:
             stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
-            self.report['backup'] = self.operator('backup', '--output', f'/backups/kairos-before-{stamp}.dump')
+            self.report['backup'] = self.long_operator('backup', '--output', f'/backups/kairos-before-{stamp}.dump')
+            if self.verify_backup:
+                self.step('verify_backup')
+                self.verify_backup_phase(self.report['backup'])
+                print(f"PASS verify-backup: {self.report['verify_backup']['status']} in {self.report['verify_backup']['duration_seconds']} s", flush=True)
         self.step('migrate')
         if getattr(self.args, 'stop_services_before_migrate', False):
             # Opt-in: the migration holds ACCESS EXCLUSIVE locks until its COMMIT (docs/operations.md); the services of the
@@ -391,7 +533,7 @@ class Deployment:
         self.step('bootstrap')
         if not existing:
             self.operator('bootstrap')
-        after = self.operator('content-manifest')
+        after = self.long_operator('content-manifest')
         if before:
             compare_content(before, after)
         # Decision P-07: fragments for the existing content are queued at deployment. Only `embed` jobs are inserted (no content table is
@@ -407,7 +549,7 @@ class Deployment:
         self.run(self.compose + ['up', '-d', '--no-deps', '--wait', '--wait-timeout', '90',
                                  *((STUB_SERVICE,) if self.embed_stub else ()), 'ollama', *SERVICES])
         self.step('verify')
-        final = self.operator('content-manifest')
+        final = self.long_operator('content-manifest')
         if before:
             compare_content(before, final)
         self.report['verification'] = verify_runtime(final, self.secret_dir,
@@ -751,6 +893,12 @@ def main(argv=None):
                         help='Isolated rehearsal only: a simulated embedding provider instead of the Ollama of the host; it also counts any language-model call (must be 0)')
     parser.add_argument('--roundtrip', action='store_true',
                         help='Isolated rehearsal only (needs --embed-stub): the CLI writes an observation through memory-web -> kairos-mcp -> /v1 and finds it by search')
+    parser.add_argument('--backup-timeout', type=int, default=None,
+                        help=f'Seconds the content-manifest, backup and verify-backup commands may take (1..{BACKUP_TIMEOUT_MAX_SECONDS}, default {BACKUP_TIMEOUT_SECONDS}); '
+                             'the container of a command that exceeds it is stopped and removed')
+    parser.add_argument('--verify-backup', action=argparse.BooleanOptionalAction, default=None,
+                        help='Restore the copy made before migrating into an ephemeral, isolated PostgreSQL and compare it with its manifest; migrate does not run if it differs. '
+                             'Default: on for an isolated --project-name, off for the installed project')
     parser.add_argument('--stop-services-before-migrate', action='store_true',
                         help='Stop memory-api and memory-worker before the migrate phase (they are started again by the start phase); default: leave them running')
     args = parser.parse_args(argv)
@@ -759,15 +907,17 @@ def main(argv=None):
     if not args.apply:
         try:
             validate_isolation(args.project_name, args.api_port, args.web_port)
+            check_backup_timeout(args.backup_timeout)
             if (args.embed_stub or args.roundtrip) and args.project_name == DEFAULT_PROJECT:
                 raise DeploymentError('--embed-stub and --roundtrip are only for an isolated --project-name')
             if args.roundtrip and not args.embed_stub:
                 raise DeploymentError('--roundtrip needs --embed-stub')
         except DeploymentError as exc:
             parser.error(str(exc))
-        phases = PHASES + (('roundtrip',) if args.roundtrip else ())
+        verifying = args.verify_backup if args.verify_backup is not None else args.project_name != DEFAULT_PROJECT
+        phases = PHASES[:PHASES.index('backup') + 1] + (('verify_backup',) if verifying else ()) + PHASES[PHASES.index('backup') + 1:] + (('roundtrip',) if args.roundtrip else ())
         print(json.dumps({'mode': 'dry-run', 'phases': phases, 'services': SERVICES + ((STUB_SERVICE,) if args.embed_stub else ()), 'fresh': args.fresh, 'project': args.project_name,
-                          'volumes': project_volumes(args.project_name), 'models': 'simulated embedding provider; no language model' if args.embed_stub else 'preserve configuration',
+                          'backup_timeout_seconds': check_backup_timeout(args.backup_timeout), 'verify_backup': verifying, 'volumes': project_volumes(args.project_name), 'models': 'simulated embedding provider; no language model' if args.embed_stub else 'preserve configuration',
                           'data_removed': False}, indent=2))
         return 0
     try:

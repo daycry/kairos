@@ -79,6 +79,20 @@ class RefusalTests(unittest.IsolatedAsyncioTestCase):
             fail(status, body)
         self.assertEqual(str(caught.exception), 'Semantic query exceeded its time budget')
 
+    async def test_a_503_for_a_plazo_of_the_store_keeps_its_fixed_message(self):
+        # Initiative 3 (C-03): the API answers `store_busy` (the pool had no connection within MEMORY_POOL_TIMEOUT) and `store_timeout` (the database cancelled the statement at its
+        # statement_timeout) as 503 domain refusals with a fixed message; like `semantic_deadline_exceeded` they are shown as they come, and nothing of the driver can be in them.
+        from kairos_mcp.client import fail
+        from kairos_mcp.errors import ToolError
+        for code, message in (('store_busy', 'The store is busy; retry shortly'), ('store_timeout', 'The store took too long to answer; retry shortly')):
+            refusal = {'error': {'code': code, 'message': message}, 'request_id': 'x'}
+            with self.subTest(code=code), StubApi({('GET', '/v1/projects'): (503, refusal)}) as stub:
+                status, body = await self.call(stub)
+                self.assertEqual(status, 503)
+                with self.assertRaises(ToolError) as caught:
+                    fail(status, body)
+                self.assertEqual(str(caught.exception), message)
+
     async def test_a_deadline_that_passes_is_the_generic_message_and_does_not_wait_for_the_upstream(self):
         import threading
         from kairos_mcp.errors import UNAVAILABLE, ToolError

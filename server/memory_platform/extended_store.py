@@ -6,6 +6,7 @@ import uuid
 from pydantic import ValidationError
 
 from . import models, schemas
+from .auth_scope import invalidate_auth
 from .agent_store import apply_fields, fields, integer, invalid, revision, text, visible_state
 from .errors import Conflict, Forbidden, MemoryError
 from .store import canonical, clean, digest
@@ -59,7 +60,9 @@ class ExtendedStore:
         if actor.get('credential_type') == 'session':
             c.execute('SELECT id FROM memory.web_sessions WHERE id=%s FOR SHARE', (actor.get('session_id'),)).fetchall()
         c.execute('SELECT permission FROM memory.project_grants WHERE actor_id=%s AND project_id=%s ORDER BY permission FOR SHARE', (actor['id'], project)).fetchall()
-        # A revocation between the first check and lock acquisition must fail.
+        # A revocation between the first check and lock acquisition must fail: the second check reads the rows again (the permission cache of the transaction is emptied first,
+        # or it would answer with what the first check saw, before the locks).
+        invalidate_auth(c)
         self.store._require(c, actor, project, permission)
 
     def observation_add(self, actor, event):

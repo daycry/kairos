@@ -7,7 +7,7 @@ from uuid import UUID
 from pydantic import Field
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from .errors import MemoryError, Unauthorized
+from .errors import MemoryError, Unauthorized, public_store_failure
 from .observability import enforce_logging, log_event, log_failure
 from . import models as m
 from .agent_tools import untrusted
@@ -52,8 +52,9 @@ def create_mcp(retrieval, allowed_origins=(), store=None, settings=None):
         except MemoryError as exc:
             raise ValueError(exc.message) from None
         except Exception as exc:
-            log_failure('mcp_tool_failed', exc, 'error')
-            raise ValueError('Memory service temporarily unavailable') from None
+            failure = public_store_failure(exc)  # a plazo of the database (`store_busy`, `store_timeout`) says so, with its fixed message; anything else stays generic
+            log_failure('mcp_tool_failed', exc, 'warning' if failure else 'error')
+            raise ValueError(failure[1] if failure else 'Memory service temporarily unavailable') from None
 
     async def stored(method, *args, **kwargs):
         # Never block the MCP event loop on database work. Store remains the

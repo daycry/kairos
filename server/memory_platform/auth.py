@@ -6,6 +6,7 @@ import secrets
 from datetime import datetime, timezone
 
 from .errors import Forbidden, MemoryError, NotFound, Unauthorized
+from .auth_scope import invalidate_auth
 
 SCOPES = frozenset({'read', 'write', 'publish', 'validate', 'admin'})
 
@@ -87,12 +88,14 @@ class Auth:
         session, csrf, sid = secrets.token_urlsafe(48), secrets.token_urlsafe(32), secrets.token_hex(16)
         with self.store.transaction() as c:
             saved = c.execute("INSERT INTO memory.web_sessions(id,actor_id,token_hash,csrf_hash,expires_at) VALUES(%s,%s,%s,%s,clock_timestamp()+(%s * interval '1 second')) RETURNING expires_at", (sid, row['id'], token_hash(session), token_hash(csrf), self.session_ttl)).fetchone()
+            invalidate_auth(c)
             actor = self._actor(c, row, 'session', sid)
         return {'actor': actor, 'session_token': session, 'csrf_token': csrf, 'expires_at': saved['expires_at'].isoformat()}
 
     def logout(self, token):
         with self.store.transaction() as c:
             c.execute('UPDATE memory.web_sessions SET revoked_at=clock_timestamp() WHERE token_hash=%s', (token_hash(token),))
+            invalidate_auth(c)
 
     def refresh_csrf(self,actor):
         if actor.get('credential_type')!='session':
@@ -101,6 +104,7 @@ class Auth:
         with self.store.transaction() as c:
             self.store._active(c,actor)
             c.execute('UPDATE memory.web_sessions SET csrf_hash=%s WHERE id=%s',(token_hash(token),actor['session_id']))
+            invalidate_auth(c)
         return token
 
     def require_csrf(self, actor, token, origin):

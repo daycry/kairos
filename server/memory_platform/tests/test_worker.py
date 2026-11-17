@@ -209,16 +209,17 @@ class ChunkedEmbeddingWorkerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_the_extra_call_for_other_dimensions_fits_inside_the_job_deadline(self):
         """The deadline plans n+1 inputs plus the single-text call: both calls together may exceed the batch time of n+1 inputs."""
-        self.settings = Settings('unused', lease_seconds=5, embedding_worker_timeout=0.25, embedding_batch_timeout=0.25, embedding_job_timeout_max=0.25)
+        # Timings leave 0.8 s of slack for chunking on a loaded CI runner (0.1 s was flaky in CI).
+        self.settings = Settings('unused', lease_seconds=5, embedding_worker_timeout=1.0, embedding_batch_timeout=1.0, embedding_job_timeout_max=1.0)
         self.stored.return_value = [9.0, 9.0, 9.0]
         async def embed_many(texts, query=False):
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(0.6)
             return {'embeddings': [[1.0, 0.5] for _ in texts], 'model': 'm', 'verified': True}
         async def embed(text, query=False):
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(0.6)
             return {'embedding': [1.0, 0.5], 'model': 'm', 'verified': True}
         with patch('memory_platform.worker.JOB_DEADLINE_MARGIN', 0):
-            await self.worker(embed_many, embed=embed).run_once()  # 0.4 s in total, over the 0.25 s of the n+1 inputs
+            await self.worker(embed_many, embed=embed).run_once()  # 1.2 s in total, over the 1.0 s of the n+1 inputs, inside the 2.0 s deadline
         self.store.fail_job.assert_not_called()
         self.store.complete_job.assert_called_once()
 
