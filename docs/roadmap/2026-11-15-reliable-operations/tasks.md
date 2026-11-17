@@ -3111,3 +3111,7 @@ Archivada en `execution-history.md` (sección «Compactación 2026-11-17 (8) —
 
 Archivada en `execution-history.md` (sección «Compactación 2026-11-17 (10) — revisión de la fase 10, intento 4»). Resumen: lentes B y A+C; 1 Important (instalación sin `images.good`: una interrupción o fallo temprano pierde la referencia a la versión buena) y 8 Minor (señales en los manejadores, `migrate` huérfano, mensajes y notas de `--break-lock`, `interrupted` en `engine`, escapes de terminal, enlace duro); fix4 corrige todo.
 
+
+## Revisión de dos lentes — intento 5: Fase 10 tras fix4 (T-61, T-62, T-63, T-65)
+
+Pendiente de revisión; sin veredicto.
