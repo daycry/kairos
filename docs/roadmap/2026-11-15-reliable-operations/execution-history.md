@@ -1168,3 +1168,31 @@ SHA-256: `fc7ed268959f79bc760840b05b7aaaf9fee2484b3da4c1a8b612f7e782e648a9`.
 SHA-256: `d76b3803b7b35c90aab4a73d726b6e2df7d6aa55e763ce93815235743eec9b89`.
 
 **Notas** (2026-11-17): Cerrada en el intento 5 (ciclo 1: intentos 1-3 con A+B+C+D, B + A+C y B + A+C; al 3.º quedaban 2 Important y el orquestador abrió el ciclo 2 con la delegación del usuario, «Las preguntas toma la mejor decisión»; intentos 4 y 5: B + A+C). Correcciones: fix1 `1b46eb4`, `508f209`; fix2 `c0764e5` a `16e2b51`; fix3 `4e27e42` a `0c70641`; fix4 `9555f47` a `64f3861`; fix5 (Minor del cierre) `1136f43`. Tablas de los intentos 1-4 en `execution-history.md` (compactaciones 5, 7, 8 y 10, con SHA-256); la del 5 sigue en este ledger. Resumen en `review.md`. Suite 1360 en verde tras fix5 (T-66); `scope-check.py --base main` exit 0. Mutantes: cada corrección se registró con RED de comportamiento sobre el código anterior (Notas de T-61..T-65, archivadas en las compactaciones 11 y 12) y la Lente B reprodujo cada hallazgo con el doble de Docker o en `kairos-test:i3p10` antes y después; los dos mutantes del latido de la fase 9 se matan en T-64. Excepción declarada al segundo criterio: no se mutó en memoria cada control nuevo uno por uno; la evidencia es el RED por corrección y las exploraciones aleatorias de la Lente B (600 secuencias de 8 pasos con `images.good` y 600 sin él, sin problemas al cierre). usage-meter no medido (horas estimadas). Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+
+## Compactación 2026-11-17 (13, bis) — notas fix5 de la revisión de la fase 10 (T-61 a T-65)
+
+Líneas de Notas con la corrección fix5 (cierre de la revisión de la fase 10), movidas tal cual desde `tasks.md`.
+
+### T-61 — notas fix5
+
+SHA-256: `0fd8b45d9a23f158af881a77dfad424f4d524f4ac7a8ad0e37223cd697a33849`.
+
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (12) — notas de T-61 a T-65 hasta fix4», T-61). fix5 (cierre revisión fase 10, n.º 2 y 3): RED `Fix5Tests.test_gap2_*` (un SIGTERM al llamar a `disarm()` escapaba de `main` con el bloqueo tomado: `PermissionError` al borrar el directorio, fichero del bloqueo aún bloqueado) y `test_gap3_*` (el SIGINT pendiente al poner SIG_IGN daba 130 y no se ejecutaba `docker stop/rm`; con Ctrl-C justo antes de `ignoring_signals`, `calls == []`). Corrección: `disarm()` se repite si una señal lo corta (el código sigue siendo el de la causa) y el bloqueo se libera siempre; `ignoring_signals` guarda el manejador con `getsignal`, pone SIG_IGN dentro del `try` y retiene la señal que llega mientras lo pone; `reap` se repite si una señal lo corta antes del SIG_IGN (parar y retirar son idempotentes y no duplica `reaped_containers`). Verde: 8 `Fix5Tests`.
+
+### T-62 — notas fix5
+
+SHA-256: `3ed48f2e8657a90657ab1a3df00d6f6e88af74ee1180bfa03a89cc3976ddf6b0`.
+
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (12) — notas de T-61 a T-65 hasta fix4», T-62). fix5 (cierre revisión fase 10, n.º 1 y 6): RED `Fix5Tests.test_gap1_an_installation_*` (`api y worker` o sin contenedor registraban `good` con solo `{api, worker, operator}` u `{operator}`) y `test_gap6_*` (ESC y U+202E del `status` del fichero en stderr y en `warnings`). Corrección: `record_running_release` no registra nada si falta el contenedor de algún servicio de retroceso (un aviso lo dice; sin contenedores, tampoco `operator` solo), `tag_previous_images` no etiqueta una versión derivada de los contenedores a la que le falta un servicio, y `status` pasa por `printable` en el aviso y en `no_previous_reason`. `test_a_service_without_a_container_is_not_tagged` pasa a `..._makes_the_release_incomplete_and_nothing_is_tagged` (antes exigía el reparto parcial). Verde.
+
+### T-63 — notas fix5
+
+SHA-256: `118a3cae4b0afa155fd7f4b13653eb6a5e238ebb1478b02126f4817f1eb974d6`.
+
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (12) — notas de T-61 a T-65 hasta fix4», T-63). fix5 (cierre revisión fase 10, n.º 1): RED `test_gap1_a_rollback_whose_recorded_images_leave_a_service_out_*` (con `previous` sin `api`, `mcp` o `web` salía 0 con ese servicio en la build fallida) y `test_gap1_only_the_images_that_are_in_the_destination_*` (`good` recibía `operator` de la build). Corrección: `--rollback` termina con `no_previous_images` (código 4, nada tocado) si las etiquetas dejan fuera algún servicio, y `promote_images` solo recibe las imágenes de `previous`. Las dos variantes de `legacy5.py` (`api+worker`, sin contenedor) terminan en 4 y el siguiente despliegue fallido no etiqueta la build como buena. Verde.
+
+### T-65 — notas fix5
+
+SHA-256: `6e2415c884606d38f49dcdc8001fb5b494ab564c7c2618920be428993155c4bf`.
+
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (12) — notas de T-61 a T-65 hasta fix4», T-65). fix5 (cierre revisión fase 10, n.º 4 y 5): RED `DocumentationTests.test_fix5_the_manual_and_the_plan_*` (el manual decía que en `engine` el informe anterior se queda como estaba, y el ítem (19) que la versión que corre se registra «antes de cualquier fase»). Corrección: el manual dice que `engine` solo guarda el `in_progress` del registro de la versión que corre (el código no cambia), el plan dice «tras la comprobación del motor y antes de la fase `configuration`», y el manual explica que sin el contenedor de algún servicio no se registra nada y que `--rollback` con etiquetas incompletas termina con `no_previous_images`. Verde.
