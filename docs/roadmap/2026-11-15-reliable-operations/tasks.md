@@ -50,13 +50,13 @@ test-plan: n/a (sin UI)
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 4 | 4 | 100% | 0 / 7.2h | 1.06 / 1.0h | 0 / 0.2h | 0 / 240 k |
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 7 | 7 | 100% | 0 / 19.8h | 0.27 / 2.6h | 0 / 0.7h | 0 / 660 k |
 | Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 7 | 7 | 100.0% | 0 / 34.2h | 5.48 / 4.6h | 0 / 1.1h | 0 / 1140 k |
-| Fase 11 — Sonda de ida y vuelta (C-06) | 4 | 6 | 66.7% | 0 / 23.4h | 2.15 / 3.1h | 0 / 0.8h | 0 / 780 k |
+| Fase 11 — Sonda de ida y vuelta (C-06) | 5 | 6 | 83.3% | 0 / 23.4h | 2.45 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 0 | 7 | 0% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 0 | 6 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **71** | **98** | **72.4%** | **0 / 412.8h** | **12.88 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **72** | **98** | **73.5%** | **0 / 412.8h** | **13.18 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2218,31 +2218,31 @@ test-plan: n/a (sin UI)
 ### T-72 — Cierre de fase: suite completa y subida del mínimo
 
 - **Descripción**: Ejecuta la suite completa del servidor, anota el recuento `MEMORY_TEST_RESULT` y sube `KAIROS_MIN_TESTS` y `MIN_FLOOR` al número observado (la suite solo crece).  Fuente: Puerta de fase; CA-38 (suite con 0 fallos y 0 omitidos).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: la suite del servidor pasa de 1360 a 1408 pruebas y la CI exige ese mínimo.
+- **Estado**: completado
 - **Tiempo humano**: est. 1.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real 0.3h (estimado)
 - **Supervisión**: est. 0.05h (≈25 % IA) · real —
 - **Previsión IA**: 55 k in / 5 k out tok · ⚠️ verificar €
 - **Dependencias**: T-71
 - **Tipo**: test
-- **Archivos**: `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `docs/operations.md`
+- **Archivos**: `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `docs/operations.md`, `README.md`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
   - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
 
 **Criterios de aceptación**
-- [ ] `MEMORY_TEST_RESULT` con 0 fallos, 0 errores, 0 omitidos y `tests` ≥ 764 (≥ el recuento del cierre anterior)
-- [ ] `KAIROS_MIN_TESTS` en `.github/workflows/ci.yml` y `MIN_FLOOR` en `scripts/tests/test_ci_workflow.py` igualan el recuento observado, y la tabla de `docs/operations.md` lo repite
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas`
+- [x] `MEMORY_TEST_RESULT` con 0 fallos, 0 errores, 0 omitidos y `tests` ≥ 764 (≥ el recuento del cierre anterior)
+- [x] `KAIROS_MIN_TESTS` en `.github/workflows/ci.yml` y `MIN_FLOOR` en `scripts/tests/test_ci_workflow.py` igualan el recuento observado, y la tabla de `docs/operations.md` lo repite
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas`
 
 **Subtareas**
-- [ ] Ejecutar la suite completa (primer plano, un solo Docker a la vez) y anotar el recuento
-- [ ] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Ejecutar la suite completa (primer plano, un solo Docker a la vez) y anotar el recuento
+- [x] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Cierra la fase: no se abre la revisión adversarial con la suite en rojo.
+**Notas** (2026-11-18): Suite completa sobre `1ebdf63` (`kairos-test:i3p11f`): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1408}`. Un build anterior sobre `1aa6b65` dio 1404 con 2 fallos (`test_auth_cache.EveryTransactionTests`: `probe.py` fuera de las listas revisadas de lecturas de permisos); corregido en `b7115da` (comandos de operador con su motivo). `KAIROS_MIN_TESTS` y `MIN_FLOOR` 1408 con su historia; tabla de `docs/operations.md` y `README.md:252` igual; `test_ci_workflow.py` OK. Excepción declarada: usage-meter no medido (horas estimadas, mismo patrón que T-66). Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Cierra la fase: no se abre la revisión adversarial con la suite en rojo.
 
 ### T-73 — Revisión adversarial de la fase (dos lentes)
 
