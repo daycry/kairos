@@ -454,8 +454,47 @@ class Fix4Tests(unittest.TestCase):
                     deploy.DeployLock(directory, 'p').acquire()
                 self.assertEqual(path.read_text(encoding='utf-8'), 'KEEP')
 
-    @unittest.skipUnless(os.name == 'nt', 'the Windows way of creating the file')
-    def test_on_windows_the_file_is_created_without_following_a_reparse_point(self):
+    def test_the_windows_creation_asks_for_the_link_itself_and_never_truncates(self):
+        """Gap 9 on any platform (the Windows test below needs Windows): `create_without_following` calls `CreateFileW` with OPEN_ALWAYS and `FILE_FLAG_OPEN_REPARSE_POINT` and turns the
+        handle into a descriptor; an invalid handle is an error and a failed conversion closes the handle. `kernel32` and `msvcrt` are doubles here."""
+        calls, closed = [], []
+
+        class Kernel:
+            def __init__(self, handle):
+                self.handle = handle
+
+            def CreateFileW(self, *arguments):
+                calls.append(arguments)
+                return self.handle
+
+            def CloseHandle(self, handle):
+                closed.append(handle)
+
+        class Msvcrt:
+            def __init__(self, fail=False):
+                self.fail = fail
+
+            def open_osfhandle(self, handle, flags):
+                if self.fail:
+                    raise OSError('no descriptor')
+                return ('fd', handle, flags)
+        path = Path(tempfile.gettempdir(), 'kairos-not-created.lock')
+        with patch.object(deploy, 'windows_kernel', return_value=Kernel(1234)), patch.dict(sys.modules, {'msvcrt': Msvcrt()}):
+            self.assertEqual(deploy.create_without_following(path), ('fd', 1234, 0))
+        self.assertEqual(calls[0][0], str(path))
+        self.assertTrue(calls[0][5] & 0x00200000, 'FILE_FLAG_OPEN_REPARSE_POINT')
+        self.assertEqual(calls[0][4], 4, 'OPEN_ALWAYS: it never truncates')
+        with patch.object(deploy, 'windows_kernel', return_value=Kernel(1234)), patch.dict(sys.modules, {'msvcrt': Msvcrt(fail=True)}), self.assertRaises(OSError):
+            deploy.create_without_following(path)
+        self.assertEqual(closed, [1234], 'the handle is closed when it cannot become a descriptor')
+        import ctypes
+        with patch.object(deploy, 'windows_kernel', return_value=Kernel(ctypes.c_void_p(-1).value)), patch.dict(sys.modules, {'msvcrt': Msvcrt()}), patch.object(ctypes, 'get_last_error', create=True, return_value=5), patch.object(ctypes, 'WinError', create=True, side_effect=lambda code: OSError(code, 'denied')), self.assertRaises(OSError):
+            deploy.create_without_following(path)
+        self.assertFalse(path.exists(), 'only the double was called')
+        if os.name == 'nt':  # and the real call, on the platform that has it (a test of its own would be a skip on Linux, where the suite gate asks for 0 skipped)
+            self.windows_real_creation()
+
+    def windows_real_creation(self):
         """A link planted between the `lstat` and the creation must not create or truncate its target: the file is created with `CreateFileW` and `FILE_FLAG_OPEN_REPARSE_POINT` (and
         OPEN_ALWAYS), which opens the link itself if there is one. The call is recorded here; a real link needs a privilege this account does not have."""
         calls = []

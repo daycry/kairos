@@ -154,3 +154,22 @@ Cada fase cierra con su revisión adversarial. El detalle de cada intento está 
 | 3 | Important (seguridad, CWE-306) | La alternativa `0.0.0.0` abría `[::]:11434`, fuera de las reglas IPv4 | Corregido en fix3 (ciclo 2) |
 | 3 | Minor | Trabajo con la concesión perdida sin latido; dos mutantes vivos del latido | Deuda → T-64 |
 | 4 | Minor | Volver a aplicar la regla por IP de `ollama` tras recrearlo | Corregido en el cierre |
+
+## Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (T-61 a T-67)
+
+- **Fecha**: 2026-11-17
+- **Lentes**: intento 1, A, B, C y D (C añadida por el orquestador: bloqueo con PID y etiquetas leídas de un JSON que acaban en `docker`; D por `worker.py`); intentos 2 a 5, B y A+C en un solo revisor. Ciclo 2 desde el intento 4, con la delegación del usuario.
+- **Veredicto**: cerrada en el intento 5 sin hallazgos Critical ni Important abiertos; los Minor del cierre, corregidos en fix5.
+- **Evidencia**: suite del servidor 1360 tests, 0 fallos, errores y omitidos (tras convertir en portable la única prueba solo de Windows); `KAIROS_MIN_TESTS` y `MIN_FLOOR` 1360; scripts del anfitrión 181 OK; `scope-check.py --base main` exit 0; contrato MCP, `ollama-proxy/default.conf.template` y `web/nginx.conf` sin cambios; ensayo aislado `kairos-ops-d` etapa `rollback` con salida 0, `unhealthy` 78,2 s tras el plazo del último latido y listados de `knowledge-graphs-*` idénticos; exploraciones aleatorias de la Lente B con el doble de Docker (600 secuencias de 8 pasos con registro y 600 sin él, con fallos, `kill` y Ctrl-C en cada fase) sin problemas al cierre.
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Important | Se etiquetaba `:latest` y no la imagen en servicio: tras un fallo y un reintento, `--rollback` iba a una versión nunca servida | Corregido en fix1 y, por clase, en fix2 |
+| 1 | Minor | Etiquetas de `images.previous` sin validar, carrera de `--break-lock`, reutilización de PID, margen de 10 s del ensayo, ítem (19), catálogo de eventos, versión de la etiqueta | Corregidos en fix1 (destino desconocido del worker: rebatido) |
+| 2 | Important | `already_at_previous` comparaba con `:latest`; un fallo en `start`/`verify` y su reintento etiquetaban la versión fallida como anterior | Corregidos en fix2: «anterior» = último despliegue bueno (`images.good`) |
+| 2 | Minor | Ventana del bloqueo por renombrado, Windows, JSON no objeto, gramática de tags, veredicto del ensayo, `.broken` huérfano | Corregidos en fix2: bloqueo del sistema operativo; cota del ensayo con `State.Health.Log` |
+| 3 | Important | `:latest` desfasado tras `already_at_previous`; despliegue interrumpido sin registro de etiquetas | Corregidos en fix3 (ciclo 2): retroceso completo = contenedores y `:latest`; `in_progress` duradero |
+| 3 | Minor | Ventanas del bloqueo, `O_NOFOLLOW`, ids `sha256:`, `TAG_MARK`, aviso de despliegue interrumpido, CA-21 como enmienda | Corregidos en fix3 |
+| 4 | Important | Instalación sin `images.good`: una interrupción temprana perdía la referencia a la versión buena | Corregido en fix4 (registro desde los contenedores antes de `configuration`) |
+| 4 | Minor | Señales en los manejadores, `migrate` huérfano, mensajes de otro equipo, notas de `--break-lock`, escapes de terminal, enlace duro | Corregidos en fix4 |
+| 5 | Minor | `good` parcial sin contenedores, dos ventanas de señales, manual e ítem (19) en `engine`, `status` sin escapar | Corregidos en fix5 |
