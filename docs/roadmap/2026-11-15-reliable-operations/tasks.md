@@ -3129,3 +3129,7 @@ Lentes: A+B+C+D (C por `docker-compose.yml`, `docker-compose.backup-rclone.yml`,
 | 9 | Minor | T-59.3 marcado sin JSON de usage-meter | T-59 | deuda aceptada (mismo patrón aceptado en T-42 y T-48; horas estimadas) | Lente A n.º 2 |
 | 10 | Minor | Las pruebas leen el YAML en bruto y no `docker compose config` (CA-20/22/25) | T-54, T-55 | pendiente (fix1: pegar en Notas la salida de `docker compose -p kairos-ops-cfg config` con y sin el override; la imagen de pruebas no tiene Docker) | Lente A n.º 4; la Lente B lo ejecutó con 1.5, 1.5g y 2g |
 | 11 | Minor | `memory-files` sin `networks:` cae en la red `default` | — | fuera de alcance (anterior a este diff; no lo reabre) | Lente C (fuera de lente) |
+
+## Revisión de dos lentes — intento 2: Fase 9 tras fix1 (T-54, T-55, T-56, T-59)
+
+Pendiente de revisión; sin veredicto.
