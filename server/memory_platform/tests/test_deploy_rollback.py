@@ -20,6 +20,7 @@ COMPOSE = Path(__file__).parents[3] / 'docker-compose.yml'
 PROJECT = 'kairos-ops-rb'
 VERSION = '0.4.0'
 NAMES = ('api', 'worker', 'mcp', 'web', 'operator')
+SERVICE_OF = {'api': 'memory-api', 'worker': 'memory-worker', 'mcp': 'memory-mcp', 'web': 'memory-web'}
 MANIFEST = '{"sha256":"s","documents":[],"projects":[]}'
 
 
@@ -30,17 +31,29 @@ def repo(name):
 class Docker:
     """The commands of a deployment answered from a table of images (`ref -> id`): `image inspect`, `tag`, `image ls`, `image rm` and the build, which gives every `:latest` a new id."""
 
-    def __init__(self, secrets, volumes, images=None, manifests=None):
+    def __init__(self, secrets, volumes, images=None, manifests=None, served=None):
         self.images = dict(images or {})
         self.commands, self.secrets, self.volumes = [], secrets, volumes
         self.builds = 0
         self.manifests = list(manifests or [])
+        # The image each container runs (`service -> id`): by default the ids in `:latest` of an installation that is up. A build changes `:latest`, never the containers.
+        self.served = dict(served) if served is not None else {svc: self.images[f'{repo(name)}:latest'] for name, svc in SERVICE_OF.items() if f'{repo(name)}:latest' in self.images}
 
     def resolve(self, ref):
         return self.images.get(ref) or next((value for key, value in self.images.items() if value == ref), None)
 
     def __call__(self, command, **kwargs):
         self.commands.append(list(command))
+        if command[:2] == ['docker', 'ps']:
+            service = next(part.rsplit('=', 1)[1] for part in command if part.startswith('label=com.docker.compose.service='))
+            return f'cid-{service}' if service in self.served else ''
+        if command[:2] == ['docker', 'inspect']:
+            return self.served[command[-1][len('cid-'):]]
+        if 'up' in command:  # a service that is (re)created runs what `:latest` is now
+            for name, service in SERVICE_OF.items():
+                if service in command:
+                    self.served[service] = self.images[f'{repo(name)}:latest']
+            return ''
         if command[:3] == ['docker', 'image', 'inspect']:
             found = self.resolve(command[-1])
             if not found:
@@ -79,7 +92,7 @@ class Docker:
 class Harness:
     """An isolated project in a temporary root, with the version of the components and the double of Docker."""
 
-    def __init__(self, images=None, status=None, manifests=None, **changes):
+    def __init__(self, images=None, status=None, manifests=None, served=None, **changes):
         self.workspace = workspace()
         self.root = self.workspace.__enter__()
         (self.root / 'client').mkdir()
@@ -96,8 +109,33 @@ class Harness:
             (self.private / 'deployment-status.json').write_text(json.dumps(status), encoding='utf-8')
         values = dict(apply=True, fresh=False, secret_dir=str(self.secrets), verify_key_file=None, project_name=PROJECT, api_port=18790, web_port=15173, verify_backup=False)
         values.update(changes)
-        self.instance = deploy.Deployment(SimpleNamespace(**values), self.root)
-        self.docker = Docker(self.secrets, self.instance.volumes, images, manifests)
+        self.args = SimpleNamespace(**values)
+        self.instance = deploy.Deployment(self.args, self.root)
+        self.docker = Docker(self.secrets, self.instance.volumes, images, manifests, served)
+
+    def again(self):
+        """A new run of the script on the same project: a new `Deployment`, the same Docker and the same status file."""
+        self.instance = deploy.Deployment(self.args, self.root)
+        return self
+
+    def apply_failing_at(self, verb):
+        """An `apply` that stops when the operator command `verb` runs, leaving the status file as `main` does (`failed`)."""
+        real = self.docker
+
+        def failing(command, **kwargs):
+            if 'memory-admin' in command and verb in command:
+                real.commands.append(list(command))
+                raise deploy.DeploymentError('Command failed during migrate.')
+            return real(command, **kwargs)
+        with self.patches(), patch.object(self.instance, 'run', side_effect=failing):
+            try:
+                self.instance.apply()
+            except deploy.DeploymentError:
+                pass
+            else:
+                raise AssertionError('the deployment was meant to stop')
+        self.instance.report.update(status='failed', failed_phase=self.instance.phase)
+        self.instance.save_report()
 
     def __enter__(self):
         return self
@@ -211,6 +249,81 @@ class TaggingTests(unittest.TestCase):
             self.assertEqual(harness.instance.report['images'], record)
 
 
+class RetryTests(unittest.TestCase):
+    """Fix1 of the review of phase 10 (gap 1): the tags are made from the images the CONTAINERS run, not from `:latest`, which a deployment that fails after its build has already replaced."""
+
+    def test_the_tags_are_made_from_the_images_the_containers_run_and_not_from_latest(self):
+        table = in_use('built-but-never-served')
+        served = {svc: f'sha256:served-{name}' for name, svc in SERVICE_OF.items()}
+        table.update({f'{repo(name)}:v1-image': f'sha256:served-{name}' for name in SERVICE_OF})
+        with Harness(table, served=served) as harness:
+            commands = harness.apply()
+            tags = [c[3] for c in commands if c[:2] == ['docker', 'tag']]
+            for name in SERVICE_OF:
+                tag = next(key for key in tags if key.startswith(repo(name) + ':0.4.0-'))
+                self.assertEqual(harness.docker.images[tag], f'sha256:served-{name}')
+            self.assertNotIn('sha256:built-but-never-served-api', [harness.docker.images[key] for key in tags])
+
+    def test_a_deployment_that_fails_after_the_build_and_is_retried_still_rolls_back_to_the_release_that_ran(self):
+        with Harness(in_use('v1')) as harness:
+            harness.apply_failing_at('migrate')
+            first = harness.status()['images']['previous']
+            self.assertEqual({harness.docker.images[tag] for name, tag in first.items() if name in SERVICE_OF}, {f'sha256:v1-{name}' for name in SERVICE_OF})
+            self.assertEqual(harness.docker.images[f'{repo("api")}:latest'], 'sha256:build1-api', 'the build replaced :latest and the containers did not move')
+            harness.again().apply_failing_at('migrate')
+            harness.again().apply_failing_at('migrate')  # a third attempt must not use up the kept tags on a release that never ran
+            for name in SERVICE_OF:
+                self.assertEqual(harness.docker.images[first[name]], f'sha256:v1-{name}', 'the tag of the release that ran still holds it')
+            self.assertEqual(harness.status()['images']['previous']['api'], first['api'])
+            harness.again().apply()
+            self.assertEqual(harness.status()['images']['previous']['api'], first['api'], 'v1 is still what the rollback goes back to')
+            harness.again().rollback()
+            self.assertEqual({harness.docker.images[f'{repo(name)}:latest'] for name in SERVICE_OF}, {f'sha256:v1-{name}' for name in SERVICE_OF})
+            self.assertEqual(harness.status()['status'], 'rolled_back')
+
+    def test_the_operator_image_has_no_container_so_it_is_tagged_only_when_its_state_is_reliable(self):
+        with Harness(in_use('v1')) as harness:
+            harness.apply()
+            self.assertIn('operator', harness.status()['images']['previous'], 'no earlier status: :latest is what it is')
+        with Harness(in_use('v1')) as harness:
+            harness.apply_failing_at('migrate')
+            harness.again().apply()
+            previous = harness.status()['images']['previous']
+            self.assertNotIn('operator', previous, ':latest of the operator image may already be the release that never ran: it is not tagged')
+            self.assertEqual(set(previous), set(SERVICE_OF))
+
+    def test_a_service_without_a_container_is_not_tagged(self):
+        served = {'memory-api': 'sha256:v1-api'}
+        with Harness(in_use('v1'), served=served) as harness:
+            harness.apply()
+            self.assertEqual(set(harness.status()['images']['previous']) - {'operator'}, {'api'})
+
+
+class VersionOfTheTagTests(unittest.TestCase):
+    def test_the_tag_carries_the_version_that_built_the_image_when_the_record_says_so(self):
+        record = {'version': '0.3.0', 'mark': '20261101T100000Z', 'previous': {}, 'kept': {}, 'current': {name: f'sha256:running-{name}' for name in NAMES},
+                  'current_versions': {name: '0.3.0' for name in NAMES}}
+        with Harness(in_use('running'), {'status': 'complete', 'images': record}) as harness:
+            harness.apply()
+            for name in NAMES:
+                self.assertRegex(harness.status()['images']['previous'][name], r':0\.3\.0-\d{8}T\d{6}Z$', 'the image is traced to the deployment that built it')
+            self.assertEqual(harness.status()['images']['current_versions'], {name: VERSION for name in NAMES})
+
+    def test_an_image_that_cannot_be_traced_gets_the_version_of_the_code_that_tags_it(self):
+        record = {'version': '0.3.0', 'previous': {}, 'kept': {}, 'current': {name: f'sha256:something-else-{name}' for name in NAMES}, 'current_versions': {name: '0.3.0' for name in NAMES}}
+        with Harness(in_use('running'), {'status': 'complete', 'images': record}) as harness:
+            harness.apply()
+            self.assertRegex(harness.status()['images']['previous']['api'], r':0\.4\.0-\d{8}T\d{6}Z$')
+
+    def test_after_a_rollback_the_versions_come_from_the_tags_it_went_back_to(self):
+        table, status = after_two_deployments()
+        status['images']['previous'] = {name: f'{repo(name)}:0.3.1-20261103T100000Z' for name in NAMES}
+        table = {key.replace('0.4.0-', '0.3.1-'): value for key, value in table.items()}
+        with Harness(table, status) as harness:
+            harness.rollback()
+            self.assertEqual(harness.status()['images']['current_versions'], {name: '0.3.1' for name in NAMES})
+
+
 class NamesTests(unittest.TestCase):
     def test_the_tags_of_an_isolated_project_never_coincide_with_the_installed_ones(self):
         with workspace() as root:
@@ -301,6 +414,44 @@ class RollbackTests(unittest.TestCase):
                 harness.instance.rollback()
             self.assertIn('Canonical content changed', str(raised.exception))
 
+    def test_fix1_a_recorded_tag_that_is_not_one_of_ours_is_refused_before_anything_is_touched(self):
+        """Fix1 (gap 2, CWE-20/345): the status file is data on disk: keys and tags are checked against `<repository of that image>:<version>-<mark>` before any docker command."""
+        good = f'{repo("api")}:0.4.0-20261103T100000Z'
+        cases = {'postgres is never retagged': {'postgres': f'{repo("postgres")}:0.4.0-20261103T100000Z'},
+                 'an unknown service': {'nginx': good},
+                 'another repository': {'api': 'alpine:3.20'},
+                 'the repository of another image': {'api': f'{repo("worker")}:0.4.0-20261103T100000Z'},
+                 'latest is not a release tag': {'api': f'{repo("api")}:latest'},
+                 'a tag with an extra part': {'api': good + '-x'},
+                 'not a string': {'api': 7}}
+        for label, extra in cases.items():
+            table, status = after_two_deployments()
+            status['images']['previous'].update(extra)
+            with self.subTest(label), Harness(table, status) as harness:
+                with harness.patches(), self.assertRaises(deploy.NoPreviousImages):
+                    harness.instance.rollback()
+                self.assertEqual(harness.docker.commands, [], 'no docker command at all')
+
+    def test_fix1_a_rollback_whose_target_is_what_runs_fails_with_already_at_previous_and_touches_nothing(self):
+        """Fix1 (gap 1): the target of the rollback is the image `:latest` already is for every service (the first attempt after a failed deployment, or a second `--rollback`)."""
+        table, status = after_two_deployments()
+        for name in NAMES:
+            table[f'{repo(name)}:latest'] = table[f'{repo(name)}:0.4.0-20261103T100000Z']
+        with Harness(table, status) as harness:
+            before = (harness.private / 'deployment-status.json').read_text(encoding='utf-8')
+            with harness.patches(), self.assertRaises(deploy.AlreadyAtPrevious) as raised:
+                harness.instance.rollback()
+            self.assertEqual(raised.exception.code, 'already_at_previous')
+            self.assertFalse([c for c in harness.docker.commands if c[:2] == ['docker', 'tag'] or 'up' in c or 'content-manifest' in c])
+            self.assertEqual((harness.private / 'deployment-status.json').read_text(encoding='utf-8'), before, 'the status file is left as it was')
+
+    def test_fix1_a_second_rollback_after_a_rollback_is_already_at_previous(self):
+        with self.harness() as harness:
+            harness.rollback()
+            with harness.again().patches(), self.assertRaises(deploy.AlreadyAtPrevious):
+                harness.instance.rollback()
+            self.assertEqual(harness.status()['status'], 'rolled_back')
+
 
 class RollbackCommandLineTests(unittest.TestCase):
     ARGV = ['--apply', '--rollback', '--project-name', PROJECT, '--api-port', '18790', '--web-port', '15173', '--secret-dir', 'unused']
@@ -318,6 +469,13 @@ class RollbackCommandLineTests(unittest.TestCase):
             self.assertEqual(code, 4)
             self.assertIn('no_previous_images', err)
             self.assertEqual((harness.private / 'deployment-status.json').read_text(encoding='utf-8'), before)
+            self.assertFalse((harness.private / 'deployment.lock').exists())
+
+    def test_fix1_already_at_previous_is_its_own_exit_code_and_message(self):
+        with Harness() as harness, patch.object(deploy.Deployment, 'rollback', side_effect=deploy.AlreadyAtPrevious('the images are already the previous ones')):
+            code, out, err = self.run_main(harness.root, self.ARGV)
+            self.assertEqual(code, 5)
+            self.assertIn('already_at_previous', err)
             self.assertFalse((harness.private / 'deployment.lock').exists())
 
     def test_a_rollback_takes_the_deployment_lock(self):
@@ -348,8 +506,8 @@ class DocumentationTests(unittest.TestCase):
 
     def test_the_manual_names_the_codes_flags_phases_tags_and_exit_codes_of_the_script(self):
         text = (Path(__file__).parents[3] / 'docs/operations.md').read_text(encoding='utf-8')
-        for name in (deploy.DeploymentLocked.code, deploy.NoPreviousImages.code, deploy.LOCK_FILE, '--break-lock', '--rollback', 'kairos-<imagen>:<versión>-<marca>', 'images.previous', 'content-manifest', 'lock broken',
-                     f'código de salida **{deploy.EXIT_LOCKED}**', f'código de salida **{deploy.EXIT_NO_PREVIOUS_IMAGES}**'):
+        for name in (deploy.DeploymentLocked.code, deploy.NoPreviousImages.code, deploy.AlreadyAtPrevious.code, deploy.LOCK_FILE, '--break-lock', '--rollback', 'kairos-<imagen>:<versión>-<marca>', 'images.previous', 'content-manifest', 'lock broken',
+                     f'código de salida **{deploy.EXIT_LOCKED}**', f'código de salida **{deploy.EXIT_NO_PREVIOUS_IMAGES}**', f'código de salida **{deploy.EXIT_ALREADY_AT_PREVIOUS}**'):
             self.assertIn(name, text)
         for phase in deploy.ROLLBACK_PHASES:
             self.assertIn(f'`{phase}`', text)
@@ -357,7 +515,7 @@ class DocumentationTests(unittest.TestCase):
             self.assertIn(f'`{image}`', text)
         self.assertEqual(deploy.TAGS_KEPT, 2)
         self.assertIn('**dos**', text)
-        self.assertEqual((deploy.EXIT_LOCKED, deploy.EXIT_NO_PREVIOUS_IMAGES), (3, 4))
+        self.assertEqual((deploy.EXIT_LOCKED, deploy.EXIT_NO_PREVIOUS_IMAGES, deploy.EXIT_ALREADY_AT_PREVIOUS), (3, 4, 5))
 
 
 if __name__ == '__main__':

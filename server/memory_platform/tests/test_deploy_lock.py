@@ -11,6 +11,7 @@ import signal
 import socket
 import subprocess
 import sys
+import time
 import unittest
 from unittest.mock import patch
 
@@ -29,12 +30,15 @@ def private_of(root):
     return root / '.private' / ('rehearsal-' + PROJECT)
 
 
-def write_lock(root, pid=4242, host=None, started=OWNER_TIME, text=None):
-    """A lock as another process left it (written by hand: the format is part of what is pinned)."""
+def write_lock(root, pid=4242, host=None, started=OWNER_TIME, text=None, age=3600, **extra):
+    """A lock as another process left it (written by hand: the format is part of what is pinned), `age` seconds old (a lock written a moment ago may still be being written)."""
     directory = private_of(root)
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / 'deployment.lock'
-    path.write_text(text if text is not None else json.dumps({'pid': pid, 'host': host or socket.gethostname(), 'started_at': started, 'project': PROJECT, 'token': 'other'}), encoding='utf-8')
+    path.write_text(text if text is not None else json.dumps({'pid': pid, 'host': host or socket.gethostname(), 'started_at': started, 'project': PROJECT, 'token': 'other', **extra}), encoding='utf-8')
+    if age:
+        old = time.time() - age
+        os.utime(path, (old, old))
     return path
 
 
@@ -114,6 +118,61 @@ class LockedDeploymentTests(unittest.TestCase):
                 self.assertEqual(code, 0)
                 self.assertFalse(path.exists())
 
+    def test_fix1_an_unreadable_lock_written_a_moment_ago_is_not_broken(self):
+        """Fix1 (review of phase 10, gap 3): an empty file is what a deployment that is still writing its lock looks like; it is only breakable once it is older than the grace period."""
+        for text in ('', 'half a js'):
+            with self.subTest(text=text), workspace() as root:
+                path = write_lock(root, text=text, age=0)
+                with patch.object(deploy.Deployment, 'apply', side_effect=AssertionError('no phase may run')):
+                    code, out, err, run = run_main(root, ARGV + ['--break-lock'])
+                self.assertEqual(code, 3)
+                self.assertIn('moment ago', err)
+                self.assertTrue(path.exists())
+
+    def test_fix1_break_lock_does_not_remove_a_lock_that_changed_after_it_was_read(self):
+        """Fix1 (gap 3, CWE-367): two `--break-lock` that read the same dead owner must not both end up holding the lock: the second finds the first one's new lock and gives up."""
+        with workspace() as root:
+            path = write_lock(root)
+            dead = json.loads(path.read_text(encoding='utf-8'))
+            newer = {'pid': 5151, 'host': socket.gethostname(), 'started_at': OWNER_TIME, 'project': PROJECT, 'token': 'winner'}
+            real = deploy.DeployLock.owner
+
+            def read_then_lose_the_race(lock):
+                value = real(lock)
+                path.write_text(json.dumps(newer), encoding='utf-8')  # the other `--break-lock` took the lock after this one read it
+                return value
+            with patch.object(deploy.DeployLock, 'owner', read_then_lose_the_race), patch.object(deploy, 'pid_alive', return_value=False),                     patch.object(deploy.Deployment, 'apply', side_effect=AssertionError('no phase may run')):
+                code, out, err, run = run_main(root, ARGV + ['--break-lock'])
+            self.assertEqual(dead['token'], 'other')
+            self.assertEqual(code, 3)
+            self.assertEqual(json.loads(path.read_text(encoding='utf-8')), newer, 'the lock of the winner is put back untouched')
+            self.assertEqual([child.name for child in private_of(root).iterdir() if child.name.startswith('deployment.lock')], ['deployment.lock'], 'no file left behind')
+
+    def test_fix1_a_pid_of_another_boot_or_another_process_is_not_the_owner(self):
+        """Fix1 (gap 4): the PID of the owner now belongs to another process (after a restart the numbers start again): the lock records an identifier of the process instance."""
+        with workspace() as root:
+            path = write_lock(root, pid=os.getpid(), stamp='some-other-boot:1')
+            with patch.object(deploy.Deployment, 'apply', side_effect=AssertionError('no phase may run')):
+                code, out, err, run = run_main(root)
+            self.assertEqual(code, 3)
+            self.assertIn('not running', err)
+            self.assertIn('--break-lock', err)
+            with patch.object(deploy.Deployment, 'apply', autospec=True):
+                code, out, err, run = run_main(root, ARGV + ['--break-lock'])
+            self.assertEqual(code, 0, 'a PID that another process holds now does not protect the lock')
+            self.assertFalse(path.exists())
+
+    def test_fix1_the_same_stamp_is_the_live_owner_and_the_message_names_the_manual_way_out(self):
+        with workspace() as root:
+            path = write_lock(root, pid=os.getpid(), stamp=deploy.process_stamp(os.getpid()))
+            with patch.object(deploy.Deployment, 'apply', side_effect=AssertionError('no phase may run')):
+                code, out, err, run = run_main(root, ARGV + ['--break-lock'])
+            self.assertEqual(code, 3)
+            self.assertIn('still running', err)
+            self.assertIn('delete the lock file', err)
+            self.assertNotIn('stop it', err, 'a process that is not ours to stop is never suggested')
+            self.assertTrue(path.exists())
+
     def test_the_dry_run_takes_no_lock_and_writes_nothing(self):
         with workspace() as root:
             code, out, err, run = run_main(root, ['--project-name', PROJECT, '--api-port', '18790', '--web-port', '15173'])
@@ -134,6 +193,7 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertEqual((seen[0]['pid'], seen[0]['host'], seen[0]['project']), (os.getpid(), socket.gethostname(), PROJECT))
             self.assertRegex(seen[0]['started_at'], r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$')
+            self.assertEqual(seen[0]['stamp'], deploy.process_stamp(os.getpid()), 'fix1: the identifier of the process instance (boot + start time) is in the lock')
             self.assertFalse(lock.exists())
 
     def test_a_phase_that_fails_or_an_unexpected_error_releases_the_lock(self):
@@ -198,6 +258,16 @@ class AliveTests(unittest.TestCase):
         self.assertFalse(deploy.pid_alive(child.pid))
         self.assertFalse(deploy.pid_alive(0))
         self.assertFalse(deploy.pid_alive(-3))
+
+    def test_fix1_the_stamp_of_a_process_is_stable_and_absent_for_a_dead_one(self):
+        stamp = deploy.process_stamp(os.getpid())
+        if sys.platform.startswith('linux') or os.name == 'nt':
+            self.assertTrue(stamp)
+        self.assertEqual(stamp, deploy.process_stamp(os.getpid()))
+        child = subprocess.Popen([sys.executable, '-c', 'pass'])
+        child.wait()
+        self.assertIsNone(deploy.process_stamp(child.pid))
+        self.assertIsNone(deploy.process_stamp(0))
 
 
 if __name__ == '__main__':
