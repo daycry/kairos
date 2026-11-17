@@ -1890,7 +1890,7 @@ test-plan: n/a (sin UI)
 ### T-61 — Bloqueo exclusivo de despliegue y `--break-lock`
 
 - **Descripción**: Fichero de bloqueo exclusivo en el directorio privado del proyecto con PID, host y hora; un segundo despliegue termina con `deployment_locked` sin ejecutar fases; un bloqueo con PID muerto se informa y solo se rompe con `--break-lock`. Fuente: CA-23; O-06.
-- **Changelog**: Un segundo despliegue del mismo proyecto termina con `deployment_locked`; el bloqueo es del sistema operativo y cae solo si el proceso muere; `--break-lock` queda para un bloqueo de otro equipo.
+- **Changelog**: Un segundo despliegue del mismo proyecto termina con `deployment_locked`; el bloqueo es del sistema operativo, no sigue enlaces simbólicos, no borra nada y avisa si el despliegue anterior no terminó.
 - **Estado**: completado
 - **Cerrada**: 2026-11-17
 - **Tiempo humano**: est. 3.5h (base) · real —
@@ -1918,11 +1918,12 @@ test-plan: n/a (sin UI)
 **Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (3) — notas de T-56 y de las tareas T-61 a T-64», T-61).
 - fix1 (revisión fase 10): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (6) — notas fix1 de la revisión de la fase 10 (T-61 a T-65)», T-61).
 - fix2 (revisión fase 10): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (9) — notas fix2 de la revisión de la fase 10 (T-61 a T-65)», T-61).
+- fix3 (revisión fase 10, ciclo 2): gaps 3, 4, 5 y 8. RED `test_deploy_lock` (26 pruebas) contra el script de HEAD en `kairos-test:i3p10` (Linux): 10 fallos + 1 error · 2026-11-17 (un enlace simbólico plantado como `deployment.lock` se seguía y su destino quedaba vacío, también colgante; `--break-lock` borraba el fichero que un proceso vivo tenía bloqueado y, con el dueño leído antes de que el nuevo lo vaciara, el de quien acababa de tomarlo; sin aviso si el fichero no estaba vacío; Ctrl-C salía como traceback y SIGTERM como `SystemExit`). Diseño: orden estándar sin ventana: abrir con `O_NOFOLLOW` (Windows: `lstat` antes y fichero abierto contra ruta después) → `flock` → `fstat(fd)` contra `lstat(ruta)` (si no coincide, se descarta y se reabre, hasta 5 veces) → leer lo que dejó el anterior → escribir el JSON propio → comprobar otra vez. DECISIÓN: `--break-lock` ya **no borra ni renombra nada**: borrar un fichero (aunque sea tras tomar `flock`) deja una ventana entre comprobar y borrar, y tomar `flock` sobre un fichero para borrarlo hace innecesario borrarlo; una vez tomado el bloqueo el contenido se sobrescribe. Con un bloqueo libre del que el fichero dice otro equipo se toma siempre y `--break-lock` solo lo nombra (`lock broken`/`lock_broken`); con el bloqueo tomado por un proceso vivo es `deployment_locked` con o sin la opción (para un bloqueo huérfano de un disco de red hay que liberarlo donde está retenido o retirar el fichero a mano: está en `operations.md`). Consecuencia: la rotura forzada de un bloqueo que el sistema aún mantiene ya no existe, a propósito. Aviso (gap 8): si el fichero no estaba vacío al tomarlo, stderr (`did not end`, PID/equipo/inicio) e informe `previous_run_interrupted`. Ctrl-C → exit 130, SIGTERM/SIGHUP → 128 + señal, ambos con informe `interrupted`. Verde: 26 OK en `kairos-test:i3p10`; 24 OK + 2 omitidas en el anfitrión Windows (el enlace simbólico y la sustitución en la ventana no aplican allí). Sin `--no-verify`.
 
 ### T-62 — Etiquetas locales `kairos-*:<versión>-<marca>` y registro en `deployment-status.json`
 
 - **Descripción**: Etiquetar las imágenes locales antes de cada construcción (`kairos-*:<versión>-<marca>`), conservar las dos anteriores y registrar las etiquetas en `deployment-status.json`. Fuente: CA-24; O-06; P-08.
-- **Changelog**: Cada despliegue etiqueta antes de construir las imágenes del último despliegue que terminó bien como `kairos-*:<versión>-<marca>`, conserva las dos últimas y las registra en `deployment-status.json`.
+- **Changelog**: Cada despliegue etiqueta antes de construir las imágenes del último bueno como `kairos-*:<versión>-<marca>` y lo registra de forma duradera en `deployment-status.json`, aunque se interrumpa.
 - **Estado**: completado
 - **Cerrada**: 2026-11-17
 - **Tiempo humano**: est. 4h (base) · real —
@@ -1951,11 +1952,12 @@ test-plan: n/a (sin UI)
 **Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (3) — notas de T-56 y de las tareas T-61 a T-64», T-62).
 - fix1 (revisión fase 10): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (6) — notas fix1 de la revisión de la fase 10 (T-61 a T-65)», T-62).
 - fix2 (revisión fase 10): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (9) — notas fix2 de la revisión de la fase 10 (T-61 a T-65)», T-62).
+- fix3 (revisión fase 10, ciclo 2): gaps 2, 6 y 7. RED `test_deploy_rollback` (61 pruebas, 18 nuevas) contra HEAD en el anfitrión: 18 fallos + 5 errores en las clases nuevas · 2026-11-17 (`InterruptedDeploymentTests`: tras Ctrl-C en `verify` y tras un SIGKILL simulado —un proceso que no llega al `finally`— el `--rollback` iba a v0 en vez de v1; una primera instalación matada dejaba el `operator` de la build interrumpida como destino; `GoodIdTests`: `alpine:3`, `sha256:` con mayúsculas, 63/65 dígitos o salto de línea se pasaban a docker; `TagMarkTests`: `kairos-api:1.0-20261117T000000Z-manual` contaba y la poda borraba etiquetas buenas). Diseño: en cuanto `apply` etiqueta, y antes del build, escribe `deployment-status.json` de forma atómica (fichero temporal escrito entero + `fsync` + `replace` + `fsync` del directorio) con `status: in_progress` e `images` (`previous`, `good`, versiones); `good` solo cambia en `complete`/`rolled_back`; un `in_progress`/`interrupted`/`failed` nunca se toma como bueno (tampoco la primera instalación interrumpida: sin `good` y con ese estado no se etiqueta nada). Ids de `images.good` con `fullmatch` `sha256:[0-9a-f]{64}`; uno inválido se IGNORA con aviso (`warnings` + stderr) y esa imagen no se etiqueta, el resto sí (elegido sobre abortar: un registro dañado no debe impedir el despliegue). `TAG_MARK` anclado (`\A…\Z`) y `fullmatch` en `tags_of`. Exploración aleatoria `ExplorationTests` (semilla 20261117, 24 secuencias de 6 pasos: despliegues bien, fallos en cada fase, SIGKILL, Ctrl-C, retrocesos fallidos o interrumpidos; oráculo: último despliegue bueno con contenedores y `:latest`; el doble conserva por id las imágenes sin etiqueta, como Docker): RED contra HEAD (fallo con 3+ problemas mostrados), verde ahora.
 
 ### T-63 — `--rollback` sin migrar
 
 - **Descripción**: `--rollback` vuelve a las etiquetas registradas sin migrar; sin etiquetas anteriores falla con `no_previous_images` sin tocar servicios. Se apoya en que las migraciones son aditivas. Fuente: CA-24; O-06; P-08.
-- **Changelog**: `deploy-memory.py --apply --rollback` vuelve a las imágenes del despliegue anterior sin migrar ni tocar datos; sin imágenes anteriores falla con `no_previous_images` y no cambia nada.
+- **Changelog**: `--rollback` restaura contenedores y `:latest` de la versión anterior sin migrar, también tras un despliegue interrumpido; sin imágenes anteriores falla con `no_previous_images` y no cambia nada.
 - **Estado**: completado
 - **Cerrada**: 2026-11-17
 - **Tiempo humano**: est. 4.5h (base) · real —
@@ -1982,6 +1984,7 @@ test-plan: n/a (sin UI)
 **Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (3) — notas de T-56 y de las tareas T-61 a T-64», T-63).
 - fix1 (revisión fase 10): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (6) — notas fix1 de la revisión de la fase 10 (T-61 a T-65)», T-63).
 - fix2 (revisión fase 10): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (9) — notas fix2 de la revisión de la fase 10 (T-61 a T-65)», T-63).
+- fix3 (revisión fase 10, ciclo 2): gap 1. RED en `GoodReleaseTests` (HEAD; 1 fallo + 2 errores): `test_fix3_a_rollback_when_the_containers_run_the_target_but_latest_does_not_retags_latest_and_recreates_nothing` salía con `already_at_previous` (exit 5) dejando `:latest` y el operator en la build fallida; el `up -d` del mensaje y del manual la arrancaba. Diseño: estado completo = contenedores Y `:latest` de cada imagen (`operator` incluida) en el destino; `--rollback` restaura lo que falte: re-etiqueta solo los `:latest` que difieren y recrea solo los contenedores que difieren (`rollback.retagged`/`rollback.recreated` en el informe; status `rolled_back`, sin código nuevo); `already_at_previous` (exit 5) solo con ambos en el destino, y entonces `up -d --no-build` arranca el destino. Pruebas: retag sin recrear, `operator` solo, solo `memory-web` recreado, mensaje; `operations.md` actualizado (ya no manda un `up` que arranque una build fallida). Verde: 61 OK en `kairos-test:i3p10` y en el anfitrión (con la exploración).
 
 ### T-64 — Ensayo aislado de retroceso y de latido `unhealthy`
 
@@ -2004,7 +2007,7 @@ test-plan: n/a (sin UI)
 **Criterios de aceptación**
 - [x] Los servicios vuelven a las etiquetas anteriores sin migrar, `content-manifest` es igual y una búsqueda funciona
 - [x] Con el bucle detenido, `memory-worker` pasa a `unhealthy` en ≤ `interval × retries` — Enmienda (revisión de la Fase 9, n.º 1, aprobada por el orquestador): en ≤ plazo del último latido + `interval × retries`
-  - (aclarado en la revisión de la fase 10, fix2, n.º 7: la cota se deduce además de la duración de las sondas, porque Docker espera `interval` después de que cada una termina; véase la nota de CA-21 en `spec.md`.)
+  - (enmienda, revisión de la fase 10, fix3 n.º 9, con la delegación del usuario; antes «aclarado» en fix2 n.º 7: la cota se deduce además de la duración de las sondas, porque Docker espera `interval` después de que cada una termina, y con sondas que agotan su plazo AMPLÍA la cota hasta ~20 s por encima del texto original; véase la enmienda de CA-21 en `spec.md`.)
 - [x] Evidencia anotada en `Notas`; proyecto aislado retirado al terminar
 
 **Subtareas**
@@ -2016,6 +2019,7 @@ test-plan: n/a (sin UI)
 **Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (3) — notas de T-56 y de las tareas T-61 a T-64», T-64).
 - fix1 (revisión fase 10): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (6) — notas fix1 de la revisión de la fase 10 (T-61 a T-65)», T-64).
 - fix2 (revisión fase 10): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (9) — notas fix2 de la revisión de la fase 10 (T-61 a T-65)», T-64).
+- fix3 (revisión fase 10, ciclo 2): gap 9: la nota de CA-21 (`spec.md`) y la de esta tarea pasan de «aclaración» a «enmienda (revisión fase 10, con la delegación del usuario)» y dicen cuánto amplía la cota: hasta ~20 s por encima del texto con sondas que agotan su plazo (`timeout` 5 s × `retries` 6 como cota superior de la suma de duraciones); el criterio original no se reescribe.
 
 ### T-65 — Documentar bloqueo y retroceso
 
@@ -2043,6 +2047,7 @@ test-plan: n/a (sin UI)
 **Notas** (2026-11-17): RED: `test_deploy_rollback.DocumentationTests` contra el `docs/operations.md` anterior falló con `AssertionError: 'deployment_locked' not found in '# Operación y recuperación…'` · 2026-11-17. Secciones nuevas en «Desplegar»: «Un despliegue a la vez (`deployment_locked`, `--break-lock`)» (bloqueo, código de salida 3, PID muerto, qué rompe y qué no `--break-lock`), «Etiquetas locales de las imágenes» (`kairos-<imagen>:<versión>-<marca>`, dos conservadas, registro `images`) y «Retroceso de un despliegue (`--rollback`)» (T-63; código de salida 4, `no_previous_images`, imágenes y no datos), más el párrafo de la concesión perdida y la medición del ensayo (T-64). La prueba comprueba contra el script los códigos, el fichero de bloqueo, las opciones, las fases del retroceso, las imágenes, las dos etiquetas conservadas y los códigos de salida. Verificación (lectura + prueba): `memory_platform.tests.test_deploy_rollback memory_platform.tests.test_deploy memory_platform.tests.test_deploy_isolation memory_platform.tests.test_deploy_lock memory_platform.tests.test_worker_heartbeat memory_platform.tests.test_compose_limits` → `Ran 136 tests ... OK`. Estilo: secciones de despliegue de `docs/operations.md:128-201`.
 - fix1 (revisión fase 10): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (6) — notas fix1 de la revisión de la fase 10 (T-61 a T-65)», T-65).
 - fix2 (revisión fase 10): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (9) — notas fix2 de la revisión de la fase 10 (T-61 a T-65)», T-65).
+- fix3 (revisión fase 10, ciclo 2): `DocumentationTests` (HEAD) falló con `AssertionError: 'in_progress' not found in '# Operación y recuperación…'`. `docs/operations.md` y el ítem (19) de `improvement-plan.md` describen: bloqueo sin seguir enlaces, sin borrar ni renombrar (`--break-lock` incluido), aviso `previous_run_interrupted`, registro duradero (`in_progress`/`interrupted`, ids `sha256:`, poda solo de `<versión>-<marca>` exactas), códigos 130 y 128 + señal, y el estado completo del retroceso. Verde en `kairos-test:i3p10` con el manual montado y en el anfitrión.
 
 ### T-66 — Cierre de fase: suite completa y subida del mínimo
 
