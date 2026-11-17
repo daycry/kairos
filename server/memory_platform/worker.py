@@ -20,8 +20,9 @@ JOB_DEADLINE_MARGIN = 10  # seconds the job may outlive the provider's own deadl
 IDLE_SECONDS = 1.0  # wait between two claims when the queue is empty
 WRITE_RETRY_MAX = 5  # failed writes of one outcome (`complete_job`/`fail_job`) after which the worker stops repeating it, however well the renewal of the lease works
 BACKOFF_FIRST = 1.0  # ceiling of the wait after the first consecutive database failure; it doubles up to MEMORY_WORKER_DB_BACKOFF_MAX
-HEARTBEAT_FILE = '/tmp/kairos-worker-heartbeat'  # written by `Worker.beat` (tmpfs of memory-worker); the Compose healthcheck reads its age (T-56)
-STORE_OK_MAX_AGE = 120.0  # seconds since the last access to the database that worked after which the worker stops writing the heartbeat file (R-01); `Worker.beat` raises it to lease/3+60 for a long lease
+HEARTBEAT_FILE = '/tmp/kairos-worker-heartbeat'  # written by `Worker.beat` (tmpfs of memory-worker): the epoch second by which the next beat is due; the Compose healthcheck compares it with the clock (T-56)
+STORE_OK_MAX_AGE = 120.0  # seconds since the last access to the database that worked after which the worker stops writing the heartbeat file (R-01)
+HEARTBEAT_MARGIN = 60.0  # seconds added to the wait between two beats (a loop wait, or the renewal period lease/3) to get the deadline the file holds
 
 
 class Abandoned(Exception):
@@ -98,10 +99,11 @@ async def embed_receipt(provider, settings, payload, canonical_hash, item_vector
 
 
 class Worker:
-    def __init__(self, store, settings, providers=None, worker_id=None, *, clock=None, rng=None, waiter=None, heartbeat_wait=None, heartbeat_file=None):
+    def __init__(self, store, settings, providers=None, worker_id=None, *, clock=None, rng=None, waiter=None, heartbeat_wait=None, heartbeat_file=None, wall=None):
         """`clock` (monotonic seconds), `rng` (jitter, [0, 1)), `waiter` (the wait between claims; default: ends early when the worker is told to stop)
         and `heartbeat_wait` (the pause of the lease heartbeat) exist so that a test drives time and does not wait for it. `heartbeat_file`: the file `beat`
-        writes (None: none; the service passes HEARTBEAT_FILE)."""
+        writes (None: none; the service passes HEARTBEAT_FILE). `wall` (epoch seconds, default `time.time`; the injected `clock` when there is one and no `wall`)
+        is the reading `beat` turns into the deadline of the file: the healthcheck compares it with the wall clock of the container."""
         self.store, self.settings = store, settings
         self.store.max_attempts = settings.max_attempts  # the cap `claim_job` applies to a job whose lease expired (`attempts_exhausted`); same value as the retry policy below
         self.id = worker_id or socket.gethostname()+':'+str(uuid.uuid4())
@@ -116,23 +118,27 @@ class Worker:
         self.rng = rng or random.random
         self._wait = waiter or self._wait_or_stop
         self._heartbeat_wait = heartbeat_wait or asyncio.sleep
-        self.last_store_ok = self.clock()  # `clock()` of the last access to the database that worked (R-01: an outage must not look healthy)
+        self.wall = wall or (clock if clock else time.time)
+        self.last_store_ok = None  # `clock()` of the last access to the database that worked; None until the first one (R-01: an outage, or a start without database, must not look healthy)
         self.store_failures = 0  # consecutive failures of the database or of the loop; any access that works sets it back to 0
         self.heartbeat_file = heartbeat_file
         self._beat_failed = False
 
-    def beat(self):
-        """Write the heartbeat file (the clock reading) and say whether it was written. It is not written when the last access to the database that worked is
-        older than STORE_OK_MAX_AGE (or lease/3+60 when that is longer: a job's lease renewal is then the only access): a worker that loops over a database
-        it cannot reach must not look healthy (R-01). A file that cannot be written is logged once and never stops the worker."""
+    def beat(self, allowance=None):
+        """Write the heartbeat file: the DEADLINE (epoch seconds) by which the next beat is due, `allowance` + HEARTBEAT_MARGIN seconds from now (default: the longest
+        wait of a loop turn, MEMORY_WORKER_DB_BACKOFF_MAX; a lease renewal passes its period lease/3). It says whether it wrote. It writes nothing before the first access
+        to the database that worked, nor when the last one is older than STORE_OK_MAX_AGE: a worker that loops over a database it cannot reach must not look healthy
+        (R-01), and the deadline it left then simply passes, for any lease. The healthcheck is `unhealthy` once it has passed. A file that cannot be written is logged
+        once and never stops the worker."""
         if not self.heartbeat_file:
             return False
-        now = self.clock()
-        if now-self.last_store_ok > max(STORE_OK_MAX_AGE, self.settings.lease_seconds/3+60):
+        if self.last_store_ok is None or self.clock()-self.last_store_ok > STORE_OK_MAX_AGE:
             return False
+        if allowance is None:
+            allowance = getattr(self.settings, 'worker_db_backoff_max', DEFAULT_BACKOFF_MAX)
         try:
             with open(self.heartbeat_file, 'w', encoding='utf-8') as handle:
-                handle.write(f'{now:.3f}' + chr(10))
+                handle.write(f'{self.wall()+allowance+HEARTBEAT_MARGIN:.3f}' + chr(10))
         except OSError as exc:
             if not self._beat_failed:
                 self._beat_failed = True
@@ -237,7 +243,7 @@ class Worker:
                 try:
                     beat = self.clock()
                     renewed = await self._store('heartbeat', self.store.renew_lease, job['id'], job['fence'], self.settings.lease_seconds)
-                    self.beat()  # the renewal worked (`_store` advanced `last_store_ok`): a job that takes long is a worker that lives
+                    self.beat(self.settings.lease_seconds/3)  # the renewal worked (`_store` advanced `last_store_ok`): a job that takes long is a worker that lives; the next beat is due in lease/3
                 except StoreUnavailable:
                     continue
                 except Exception as exc:
@@ -275,7 +281,7 @@ class Worker:
                 try:
                     beat = self.clock()
                     renewed = await self._store('heartbeat', self.store.renew_lease, job['id'], job['fence'], self.settings.lease_seconds)
-                    self.beat()  # the renewal worked (`_store` advanced `last_store_ok`): a job that takes long is a worker that lives
+                    self.beat(self.settings.lease_seconds/3)  # the renewal worked (`_store` advanced `last_store_ok`): a job that takes long is a worker that lives; the next beat is due in lease/3
                     if renewed:
                         lease[0] = beat+self.settings.lease_seconds
                     else:

@@ -18,6 +18,11 @@ def compose():
     return yaml.safe_load(COMPOSE.read_text(encoding='utf-8'))
 
 
+def mebibytes(size):
+    found = re.fullmatch(r'(\d+(?:\.\d+)?)([mg])', size)
+    return float(found[1])*(1024 if found[2] == 'g' else 1)
+
+
 def prefix(service):
     """`memory-worker` -> `MEMORY_WORKER`; `ollama` -> `MEMORY_OLLAMA`."""
     return 'MEMORY_' + service.removeprefix('memory-').upper()
@@ -48,6 +53,32 @@ class LimitTests(unittest.TestCase):
             return float(found[1])*(1024 if found[2] == 'g' else 1)
         self.assertGreaterEqual(megabytes('memory-postgres'), 2048)
         self.assertGreaterEqual(megabytes('memory-worker'), 1024)
+
+    def test_no_default_cpus_can_stop_the_stack_from_starting_on_a_one_vcpu_host(self):
+        """Docker refuses a container whose `cpus` is above the CPUs of the host (`NanoCPUs > NumCPU`): the defaults are 0 (no quota) or at most 1."""
+        for name, service in self.services.items():
+            default = float(LIMIT.match(str(service['cpus']))['default'])
+            self.assertTrue(default == 0 or default <= 1, f'{name}: cpus default {default} may not start on a host with one CPU')
+
+    def test_memory_api_has_room_for_its_largest_answers(self):
+        """One answer of 200 observations of ~300 KB is a 60 MB JSON and ~200 MB of peak (tracemalloc); the base is ~100 MB and the pool serves 10 requests at once."""
+        text = CONFIGURATION.read_text(encoding='utf-8')
+        row = next(l for l in text.splitlines() if l.startswith('| `MEMORY_API_MEM_LIMIT`'))
+        default, vps = [c.strip().strip('`') for c in row.split('|')[2:4]]
+        self.assertEqual(default, '2g')
+        self.assertGreaterEqual(mebibytes(LIMIT.match(self.services['memory-api']['mem_limit'])['default']), 100+9*200, 'nine answers of the largest size at once on top of the base (ten at once is the pool, and its extreme)')
+        self.assertGreaterEqual(mebibytes(vps), 1024, 'at least four answers of the largest size at once')
+
+    def test_the_vps_column_asks_for_no_more_cpus_than_the_vps_has_and_memory_mcp_gets_a_whole_one(self):
+        rows = {m['name']: m['vps'].strip().strip('`') for m in (re.match(r'\| `(?P<name>MEMORY_[A-Z]+_CPUS)` \| `[^`]*` \| (?P<vps>[^|]*)\|', l) for l in CONFIGURATION.read_text(encoding='utf-8').splitlines()) if m}
+        self.assertEqual(len(rows), 11, 'one per service')
+        for name, value in rows.items():
+            self.assertLessEqual(float(value), 2, f'{name}: the VPS column assumes 2 vCPU')
+        self.assertGreaterEqual(float(rows['MEMORY_MCP_CPUS']), 1, 'memory-mcp reserializes up to 64 MiB in its event loop: half a CPU doubles the stall')
+
+    def test_the_documentation_warns_that_cpus_above_the_host_make_docker_refuse_the_container(self):
+        text = CONFIGURATION.read_text(encoding='utf-8')
+        self.assertRegex(text, r'(?s)`cpus`[^.]*(mayor|superior|por encima)[^.]*(CPU|núcleos)[^.]*(rechaza|no arranca)')
 
     def test_the_documentation_lists_every_variable_with_the_default_of_the_compose_file(self):
         text = CONFIGURATION.read_text(encoding='utf-8')
@@ -101,6 +132,17 @@ class LoggingAndHostsTests(unittest.TestCase):
         text = OPERATIONS.read_text(encoding='utf-8')
         self.assertIn('host-gateway', text)
         self.assertIn('extra_hosts', text)
+
+    def test_the_documentation_does_not_recommend_ollama_on_every_interface(self):
+        """An Ollama without authentication on 0.0.0.0 is reachable from every container of a network that is not internal, and `/api/pull` and `/api/delete`
+        would skip the allow list of the proxy: the manual says to listen on the gateway of the `egress` network (or to filter by its subnet) instead."""
+        text = OPERATIONS.read_text(encoding='utf-8')
+        section = text.split('**Linux (el VPS).**', 1)[1].split(chr(10) + chr(10), 1)[0]
+        self.assertNotIn('OLLAMA_HOST=0.0.0.0', section)
+        self.assertIn('docker network inspect', section)
+        self.assertIn("(index .IPAM.Config 0).Gateway", section)
+        self.assertIn('egress', section)
+        self.assertIn('/api/pull', section)
 
 
 class WebHealthcheckTests(unittest.TestCase):

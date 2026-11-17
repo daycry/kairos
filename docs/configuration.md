@@ -122,34 +122,36 @@ Los presupuestos de respuestas generadas se definen en `AnswerLimits`, en `corpu
 
 ## Límites de memoria y CPU de los servicios
 
-Todos los servicios del Compose declaran `mem_limit` y `cpus`, y cada uno tiene sus dos variables de `.env`: `MEMORY_<SERVICIO>_MEM_LIMIT` (un tamaño como `512m` o `2g`) y `MEMORY_<SERVICIO>_CPUS` (un decimal, como `0.5`). Los valores por defecto son los de un equipo local de 32 GB; la columna de la derecha propone valores para un VPS pequeño (4 GB de memoria, 2 vCPU). Una instalación ya desplegada recoge los límites solo en su próximo `up`; un contenedor que supera su `mem_limit` lo mata Docker y `restart: unless-stopped` lo reinicia.
+Todos los servicios del Compose declaran `mem_limit` y `cpus`, y cada uno tiene sus dos variables de `.env`: `MEMORY_<SERVICIO>_MEM_LIMIT` (un tamaño como `512m` o `2g`) y `MEMORY_<SERVICIO>_CPUS` (un decimal, como `0.5`). Los valores de memoria por defecto son los de un equipo local de 32 GB; la columna de la derecha propone valores para un VPS pequeño (4 GB de memoria, 2 vCPU). Todos los `cpus` valen `0` por defecto (sin cuota de CPU): `docker compose config` no pinta ningún `cpus` y el stack arranca en cualquier máquina, también con una sola vCPU. Un valor de `cpus` por encima del número de CPU del equipo y Docker rechaza el contenedor (`NanoCPUs > NumCPU`): el servicio no arranca; pon cuotas solo si conoces las CPU del anfitrión, y no más que ellas; los de la columna del VPS suponen 2 vCPU. Una instalación ya desplegada recoge los límites solo en su próximo `up`; un contenedor que supera su `mem_limit` lo mata Docker y `restart: unless-stopped` lo reinicia.
 
 | Variable | Predeterminado (32 GB locales) | VPS pequeño (4 GB, 2 vCPU) | Servicio y motivo |
 |---|---|---|---|
 | `MEMORY_OLLAMA_MEM_LIMIT` | `256m` | `128m` | `ollama`: el proxy de lista de permitidos (nginx), sin estado |
-| `MEMORY_OLLAMA_CPUS` | `1` | `0.5` | Ídem |
+| `MEMORY_OLLAMA_CPUS` | `0` | `0.5` | Ídem |
 | `MEMORY_POSTGRES_MEM_LIMIT` | `4g` | `1536m` | `memory-postgres`: ver «Relleno» abajo |
-| `MEMORY_POSTGRES_CPUS` | `4` | `1.5` | Ídem |
+| `MEMORY_POSTGRES_CPUS` | `0` | `1.5` | Ídem |
 | `MEMORY_MIGRATE_MEM_LIMIT` | `512m` | `384m` | `memory-migrate`: cliente de la migración; la memoria de los índices es del servidor de la base |
-| `MEMORY_MIGRATE_CPUS` | `1` | `1` | Ídem |
+| `MEMORY_MIGRATE_CPUS` | `0` | `1` | Ídem |
 | `MEMORY_BOOTSTRAP_MEM_LIMIT` | `256m` | `128m` | `memory-bootstrap`: alta inicial de proyectos y claves |
-| `MEMORY_BOOTSTRAP_CPUS` | `0.5` | `0.5` | Ídem |
+| `MEMORY_BOOTSTRAP_CPUS` | `0` | `0.5` | Ídem |
 | `MEMORY_FILES_MEM_LIMIT` | `128m` | `64m` | `memory-files`: solo ajusta propietarios del volumen de copias |
-| `MEMORY_FILES_CPUS` | `0.5` | `0.25` | Ídem |
-| `MEMORY_API_MEM_LIMIT` | `1g` | `512m` | `memory-api`: la API HTTP y el MCP interno en desuso |
-| `MEMORY_API_CPUS` | `2` | `1` | Ídem |
+| `MEMORY_FILES_CPUS` | `0` | `0.25` | Ídem |
+| `MEMORY_API_MEM_LIMIT` | `2g` | `1g` | `memory-api`: la API HTTP y el MCP interno en desuso; ver «Memoria de `memory-api`» abajo |
+| `MEMORY_API_CPUS` | `0` | `1` | Ídem |
 | `MEMORY_MCP_MEM_LIMIT` | `1g` | `512m` | `memory-mcp`: una respuesta de hasta 64 MiB se mantiene unas cinco veces (ver [kairos-mcp](#kairos-mcp)); por debajo de 512m una llamada grande puede matarlo |
-| `MEMORY_MCP_CPUS` | `1` | `0.5` | Ídem |
+| `MEMORY_MCP_CPUS` | `0` | `1` | Ídem; reserializa en su bucle de eventos respuestas de hasta 64 MiB (1-2 s con un núcleo): con media cuota el bloqueo se duplicaría y retrasaría las demás llamadas |
 | `MEMORY_WORKER_MEM_LIMIT` | `1g` | `512m` | `memory-worker`: ver «Relleno» abajo |
-| `MEMORY_WORKER_CPUS` | `2` | `1` | Ídem |
+| `MEMORY_WORKER_CPUS` | `0` | `1` | Ídem |
 | `MEMORY_WEB_MEM_LIMIT` | `256m` | `128m` | `memory-web`: nginx con el portal y el manual |
-| `MEMORY_WEB_CPUS` | `0.5` | `0.5` | Ídem |
+| `MEMORY_WEB_CPUS` | `0` | `0.5` | Ídem |
 | `MEMORY_ADMIN_MEM_LIMIT` | `1g` | `512m` | `memory-admin`: copias, restauraciones y mantenimiento (`admin …`) |
-| `MEMORY_ADMIN_CPUS` | `2` | `1` | Ídem |
+| `MEMORY_ADMIN_CPUS` | `0` | `1` | Ídem |
 | `MEMORY_BACKUP_MEM_LIMIT` | `1g` | `512m` | `memory-backup` (perfil `backup`): cifrado y subida de la copia |
-| `MEMORY_BACKUP_CPUS` | `1` | `0.5` | Ídem |
+| `MEMORY_BACKUP_CPUS` | `0` | `0.5` | Ídem |
 
 **Relleno (`memory-postgres` y `memory-worker`).** Un límite que mate estos dos durante el relleno de vectores lo repetiría sin fin (el trabajo vuelve a la cola al caducar la concesión). PostgreSQL construye los índices HNSW con `maintenance_work_mem` (256 MB por defecto, `MEMORY_MIGRATION_MAINTENANCE_WORK_MEM`) en serie, y a eso se suman sus búferes compartidos (128 MB), las sesiones del pool y la caché de páginas del propio contenedor: unos 1,5 GB de trabajo, por eso `4g` en un equipo local y `1536m` como mínimo recomendado en un VPS. El worker conserva los vectores de los 200 fragmentos como máximo de un recurso (768 flotantes cada uno) varias veces mientras arma el recibo, unas decenas de MB, más el texto del recurso; `1g` deja un margen holgado y `512m` sigue siendo suficiente. Si subes `MEMORY_MIGRATION_MAINTENANCE_WORK_MEM` o `MEMORY_CHUNK_MAX`, sube también estos dos límites.
+
+**Memoria de `memory-api`.** La respuesta más grande son 200 observaciones de unos 300 KB: un JSON de 60 MB y unos 200 MB de pico por petición (medido con `tracemalloc`). El pool atiende 10 peticiones a la vez y el proceso en reposo ocupa unos 100 MB: `100 + 10 × 200` = 2,1 GB en el peor caso de diez respuestas máximas simultáneas, y por eso `2g` por defecto (cubre nueve a la vez). Un VPS de 4 GB no tiene tanto sitio junto a la base y el worker: `1g` aguanta cuatro respuestas máximas a la vez (`100 + 4 × 200` = 900 MB); por debajo de eso, dos o tres llamadas grandes simultáneas matan el contenedor por falta de memoria. Si bajas el tamaño del pool, el límite puede bajar con él.
 
 Los healthchecks de los servicios, la rotación de logs (`json-file`, 3 × 10 MB) y el caso Linux de `host.docker.internal` están en [operación](operations.md).
 
