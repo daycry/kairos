@@ -346,8 +346,226 @@ class CommandTests(unittest.TestCase):
         self.assertIn('stage', observability.FIELDS)
 
 
-if __name__ == '__main__':
-    unittest.main()
+class ChainTests(IsolatedDatabase, unittest.TestCase):
+    """The probe against the real application over its own database; the worker is the real `Worker` over the deterministic embeddings, run only where a test lets time pass."""
+
+    def setUp(self):
+        self.clock = Clock()
+        self.store = self.make_store()
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.key_file = Path(directory.name) / 'kairos-probe.key'
+        probe.provision(self.store, self.key_file)
+        self.token = self.key_file.read_text(encoding='utf-8').strip()
+        self.settings = settings_for()
+        self.worker = Worker(self.store, self.settings, {'embed': FakeEmbeddings(self.settings)}, worker_id='probe-chain')
+        self.app = self.make_app(self.store)
+        self.client = TestClient(self.app, base_url=ORIGIN, raise_server_exceptions=False)
+        self.client.__enter__()
+        self.addCleanup(self.client.__exit__, None, None, None)
+        self.api = ClientApi(self.client, self.token)
+
+    def drain(self):
+        async def work():
+            while await self.worker.run_once():
+                pass
+        asyncio.run(work())
+
+    def sleep_while_the_worker_runs(self, seconds):
+        self.drain()
+        self.clock.advance(seconds)
+
+    def probe(self, sleep=None, timeout=60.0, api=None):
+        return probe.Probe(api or self.api, timeout=timeout, poll=2.0, clock=self.clock, sleep=sleep or self.clock.sleep).run()
+
+    def rows(self, sql, *parameters, store=None):
+        with (store or self.store).transaction() as c:
+            return c.execute(sql, parameters).fetchall()
+
+    def memories(self):
+        """(active, retired) notes of the probe project."""
+        counts = self.rows("SELECT deleted,count(*) AS n FROM memory.memory_items WHERE project_id=%s GROUP BY deleted", probe.PROBE_PROJECT)
+        by = {row['deleted']: row['n'] for row in counts}
+        return by.get(False, 0), by.get(True, 0)
+
+    def embed_states(self):
+        return [row['state'] for row in self.rows("SELECT state FROM memory.jobs WHERE project_id=%s AND destination='embed' ORDER BY created_at", probe.PROBE_PROJECT)]
+
+    def test_healthy_the_note_goes_through_the_worker_and_is_found_semantically_then_retired(self):
+        report = self.probe(self.sleep_while_the_worker_runs)
+        self.assertEqual((report['status'], report.get('stage')), ('probe_ok', None), report)
+        self.assertEqual(set(report['stages']), set(probe.STAGES))
+        self.assertEqual(self.memories(), (0, 1))  # CA-33: no active memory is left, one retired
+        self.assertEqual(self.embed_states(), ['succeeded'])
+
+    def test_run_after_run_leaves_no_active_memory_and_one_retired_per_run(self):
+        for _ in range(3):
+            self.assertEqual(self.probe(self.sleep_while_the_worker_runs)['status'], 'probe_ok')
+        self.assertEqual(self.memories(), (0, 3))
+
+    def test_with_the_worker_stopped_it_fails_at_index_in_the_budget_and_retires_the_note(self):
+        report = self.probe(self.clock.sleep, timeout=20.0)
+        self.assertEqual((report['status'], report['stage'], report['code'], report['retired']), ('probe_failed', 'index', 'timeout', True), report)
+        self.assertLessEqual(report['stages']['index'], 20.0)
+        self.assertEqual(self.memories(), (0, 1))  # retired even though nothing was ever indexed
+        self.assertEqual(self.embed_states(), ['pending'])  # the worker never ran
+
+    def test_a_note_retired_meanwhile_is_not_found_by_the_search(self):
+        retire = {}
+
+        class Meddling(ClientApi):
+            def call(inner, method, path, body=None, timeout=None):
+                answer = ClientApi.call(inner, method, path, body, timeout)
+                if method == 'GET' and path.endswith('/status') and answer[1] and answer[1].get('complete') and not retire:  # a second client retires the note before the probe searches
+                    note = next(r for r in self.rows("SELECT id,project_id FROM memory.memory_items WHERE project_id=%s AND NOT deleted", probe.PROBE_PROJECT))
+                    retire['status'] = ClientApi.call(inner, 'POST', '/v1/events', {'event_id': str(uuid.uuid4()), 'project_id': probe.PROBE_PROJECT, 'session_id': 's', 'agent_id': 'a',
+                                                       'event_type': 'delete', 'occurred_at': '2026-11-17T10:00:00Z', 'item_id': note['id'], 'version': 2, 'generate': False,
+                                                       'payload': {'title': 'x', 'content': 'x'}})[0]
+                return answer
+        # The meddling happens after the status read that sees the job `succeeded`, so the note is already indexed and live.
+        api = Meddling(self.client, self.token)
+        report = self.probe(self.sleep_while_the_worker_runs, api=api)
+        self.assertEqual(retire.get('status'), 202)
+        self.assertEqual((report['stage'], report['code']), ('search', 'no_result'), report)
+        self.assertIs(report['retired'], False)  # the probe's own retirement found the version taken (409): reported, not hidden
+        self.assertEqual(self.memories(), (0, 1))
+
+    def test_a_revoked_key_fails_at_write_with_nothing_to_retire(self):
+        key_id = self.rows('SELECT id FROM memory.api_keys WHERE revoked_at IS NULL')[0]['id']
+        self.store.revoke_key(self.actor, key_id)
+        report = self.probe()
+        self.assertEqual((report['stage'], report['code'], report['http_status'], report['retired']), ('write', 'unauthorized', 401, None))
+        self.assertEqual(self.memories(), (0, 0))
+
+    def test_a_server_without_embeddings_fails_at_index_with_no_embed_job(self):
+        self.store.embedding_enabled = False  # what MEMORY_EMBED_ENABLED=0 gives the API process
+        report = self.probe()
+        self.assertEqual((report['stage'], report['code']), ('index', 'no_embed_job'), report)
+        self.assertEqual(self.memories(), (0, 1))
+
+
+class CutDatabaseTests(IsolatedDatabase, unittest.TestCase):
+    """The database behind a `FaultProxy` (CA-34): the probe says where it stopped."""
+
+    def setUp(self):
+        self.clock = Clock()
+        direct = self.make_store()
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        key_file = Path(directory.name) / 'kairos-probe.key'
+        probe.provision(direct, key_file)
+        self.direct, self.token = direct, key_file.read_text(encoding='utf-8').strip()
+        self.proxy = FaultProxy().start()
+        self.addCleanup(self.proxy.stop)
+        self.store = Store(self.proxy.dsn(direct.dsn), embedding_enabled=True)
+        attach_pool(self.store, Settings('unused', pool_min=1, pool_max=2, pool_timeout=0.5, connect_timeout=2, statement_timeout_ms=2000), 'api')
+        self.addCleanup(close_pool, self.store)
+        self.client = TestClient(self.make_app(self.store), base_url=ORIGIN, raise_server_exceptions=False)
+        self.client.__enter__()
+        self.addCleanup(self.client.__exit__, None, None, None)
+        self.api = ClientApi(self.client, self.token)
+
+    def active(self):
+        with self.direct.transaction() as c:
+            return c.execute('SELECT count(*) AS n FROM memory.memory_items WHERE project_id=%s AND NOT deleted', (probe.PROBE_PROJECT,)).fetchone()['n']
+
+    def test_a_cut_database_before_the_probe_fails_at_write_and_the_retirement_fails_too(self):
+        self.assertEqual(self.api.call('GET', '/v1/projects')[0], 200)  # warm: the pool holds a connection that dies with the cut
+        self.proxy.cut()
+        report = probe.Probe(self.api, timeout=30.0, poll=1.0, clock=self.clock, sleep=self.clock.sleep).run()
+        self.assertEqual((report['stage'], report['code'], report['http_status']), ('write', 'server_error', 503), report)
+        self.assertIs(report['retired'], False)  # it tried (a 503 may have landed) and the database was still cut
+        self.assertEqual(self.active(), 0)
+
+    def test_a_database_cut_while_it_waits_for_the_index_fails_at_index_and_leaves_the_note_active_and_says_so(self):
+        def cut_then_wait(seconds):
+            self.proxy.cut()
+            self.clock.advance(seconds)
+        report = probe.Probe(self.api, timeout=30.0, poll=1.0, clock=self.clock, sleep=cut_then_wait).run()
+        self.assertEqual((report['stage'], report['code']), ('index', 'server_error'), report)
+        self.assertIs(report['retired'], False)  # reported, not hidden: this is the one case in which a note stays active
+        self.assertEqual(self.active(), 1)
+        self.proxy.restore()
+
+
+class IsolationTests(unittest.TestCase):
+    """CA-33: nothing of the probe points at the installed project's resources or at the host's Ollama."""
+
+    FILES = ('probe.py', 'admin.py', 'observability.py', 'tests/test_probe.py', 'tests/test_probe_provisioning.py')
+    FORBIDDEN = ('knowledge' + '-graphs-', 'knowledge' + '_graphs_', '114' + '34')  # split: this file names them only to forbid them
+
+    def test_no_file_of_the_probe_names_a_resource_of_the_installation_or_the_host_ollama(self):
+        base = ROOT / 'server' / 'memory_platform'
+        for name in self.FILES:
+            text = (base / name).read_text(encoding='utf-8')
+            for forbidden in self.FORBIDDEN:
+                with self.subTest(file=name, forbidden=forbidden):
+                    self.assertNotIn(forbidden, text)
+
+    def test_the_default_url_is_the_service_name_of_the_compose_network_not_a_host_port(self):
+        self.assertEqual(probe.DEFAULT_URL, 'http://memory-api:8790')
+        self.assertNotIn('localhost', probe.DEFAULT_URL)
+
+    def test_the_tests_database_is_not_a_database_of_the_installation(self):
+        dsn = os.getenv('MEMORY_TEST_DSN', '')
+        for forbidden in self.FORBIDDEN:
+            self.assertNotIn(forbidden, dsn)
+
+
+class MutantTests(IsolatedDatabase, unittest.TestCase):
+    """The checks above fail when a control is removed (T-70, second criterion): each mutant is a patched `Probe` and the assertion that must catch it."""
+
+    def setUp(self):
+        self.clock = Clock()
+        self.store = self.make_store()
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        key_file = Path(directory.name) / 'kairos-probe.key'
+        probe.provision(self.store, key_file)
+        self.settings = settings_for()
+        self.worker = Worker(self.store, self.settings, {'embed': FakeEmbeddings(self.settings)}, worker_id='probe-mutant')
+        self.client = TestClient(self.make_app(self.store), base_url=ORIGIN, raise_server_exceptions=False)
+        self.client.__enter__()
+        self.addCleanup(self.client.__exit__, None, None, None)
+        self.api = ClientApi(self.client, key_file.read_text(encoding='utf-8').strip())
+
+    def active(self):
+        with self.store.transaction() as c:
+            return c.execute('SELECT count(*) AS n FROM memory.memory_items WHERE project_id=%s AND NOT deleted', (probe.PROBE_PROJECT,)).fetchone()['n']
+
+    def drain_and_advance(self, seconds):
+        async def work():
+            while await self.worker.run_once():
+                pass
+        asyncio.run(work())
+        self.clock.advance(seconds)
+
+    def test_mutant_without_the_final_retirement_leaves_an_active_memory_which_the_healthy_check_reports(self):
+        with patch.object(probe.Probe, 'retire', lambda self, started, state, versions=(2,): None):
+            report = probe.Probe(self.api, timeout=60.0, poll=2.0, clock=self.clock, sleep=self.drain_and_advance).run()
+        self.assertEqual(report['status'], 'probe_ok')  # the probe itself cannot tell...
+        self.assertEqual(self.active(), 1)  # ...and `ChainTests.test_healthy_*` asserts (0, 1): it would be red
+
+    def test_mutant_without_the_cleanup_after_a_failure_leaves_the_note_the_stopped_worker_check_reports(self):
+        with patch.object(probe.Probe, 'clean_up', lambda self, state, stage: None):
+            report = probe.Probe(self.api, timeout=10.0, poll=2.0, clock=self.clock, sleep=self.clock.sleep).run()
+        self.assertEqual((report['stage'], report.get('retired')), ('index', None))  # `retired` is the field the stopped-worker check asserts to be True
+        self.assertEqual(self.active(), 1)
+
+    def test_mutant_without_the_index_control_passes_with_the_worker_stopped_which_the_stopped_worker_check_reports(self):
+        with patch.object(probe.Probe, 'index', lambda self, started, state: None):
+            report = probe.Probe(self.api, timeout=10.0, poll=2.0, clock=self.clock, sleep=self.clock.sleep).run()
+        self.assertEqual(report['stage'] if report['status'] == 'probe_failed' else 'ok', 'search')  # it only trips later, at a stage that is not `index`
+        self.assertEqual([request for request in self.api.requests if request[1].endswith('/status')], [])
+
+    def test_a_lexical_only_answer_is_not_a_semantic_hit(self):
+        # The embed job ran, but the search layer is told embeddings are off: the lexical layer still finds the note.
+        off = Retrieval(self.store, Settings('unused', request_timeout=30.0, embed_enabled=False), FakeEmbeddings(self.settings))
+        client = TestClient(create_app(settings_for(), store=self.store, auth=Auth(self.store, [ORIGIN]), retrieval=off), base_url=ORIGIN, raise_server_exceptions=False)
+        with client:
+            api = ClientApi(client, self.api.headers['Authorization'][7:])
+            report = probe.Probe(api, timeout=60.0, poll=2.0, clock=self.clock, sleep=self.drain_and_advance).run()
+        self.assertEqual((report['stage'], report['code']), ('search', 'semantic_unavailable'), report)
 
 
 if __name__ == '__main__':

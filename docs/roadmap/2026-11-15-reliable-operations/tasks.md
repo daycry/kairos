@@ -50,13 +50,13 @@ test-plan: n/a (sin UI)
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 4 | 4 | 100% | 0 / 7.2h | 1.06 / 1.0h | 0 / 0.2h | 0 / 240 k |
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 7 | 7 | 100% | 0 / 19.8h | 0.27 / 2.6h | 0 / 0.7h | 0 / 660 k |
 | Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 7 | 7 | 100.0% | 0 / 34.2h | 5.48 / 4.6h | 0 / 1.1h | 0 / 1140 k |
-| Fase 11 — Sonda de ida y vuelta (C-06) | 2 | 6 | 33.3% | 0 / 23.4h | 1.3 / 3.1h | 0 / 0.8h | 0 / 780 k |
+| Fase 11 — Sonda de ida y vuelta (C-06) | 3 | 6 | 50.0% | 0 / 23.4h | 2 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 0 | 7 | 0% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 0 | 6 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **69** | **98** | **70.4%** | **0 / 412.8h** | **12.03 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **70** | **98** | **71.4%** | **0 / 412.8h** | **12.73 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2164,10 +2164,11 @@ test-plan: n/a (sin UI)
 ### T-70 — Pruebas de la sonda con worker real y worker parado
 
 - **Descripción**: Probar la sonda de extremo a extremo con la cadena en proceso: sana, con worker parado, con búsqueda sin resultado, con base cortada, y que ningún test apunta a recursos `knowledge-graphs-*`. Fuente: CA-30, CA-31, CA-33.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: pruebas de la sonda contra el servidor real con el worker real y con el worker parado, con una base cortada, y con mutantes que dejan una prueba en rojo.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 3h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.7h (estimado)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 110 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: T-69
@@ -2177,17 +2178,17 @@ test-plan: n/a (sin UI)
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_probe|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Cuatro escenarios cubiertos: sana, worker parado (`stage=index`), búsqueda sin resultado (`stage=search`) y base cortada con `FaultProxy`
-- [ ] Mutante comprobado: quitar la retirada final o el control de etapa deja una prueba en rojo
-- [ ] Un test recorre los ficheros de la sonda y falla si aparece `knowledge-graphs-` o el puerto 11434
+- [x] Cuatro escenarios cubiertos: sana, worker parado (`stage=index`), búsqueda sin resultado (`stage=search`) y base cortada con `FaultProxy`
+- [x] Mutante comprobado: quitar la retirada final o el control de etapa deja una prueba en rojo
+- [x] Un test recorre los ficheros de la sonda y falla si aparece `knowledge-graphs-` o el puerto 11434
 
 **Subtareas**
-- [ ] Tabla de escenarios
-- [ ] Escribir las pruebas
-- [ ] Aplicar mutantes
-- [ ] `usage-meter start/close` de la tarea
+- [x] Tabla de escenarios
+- [x] Escribir las pruebas
+- [x] Aplicar mutantes
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `tests/chain_harness.py`, `tests/fault_proxy.py` (Fase 1).
+**Notas** (2026-11-18): RED: `ChainTests`, `CutDatabaseTests`, `IsolationTests` y `MutantTests` contra el HEAD fallaron con `ImportError: cannot import name 'probe' from 'memory_platform'` · 2026-11-17. Mutantes de `probe.py` muertos por estas pruebas · 2026-11-18: sin la retirada final → `test_healthy_the_note_goes_through_the_worker_and_is_found_semantically_then_retired` y `test_run_after_run_leaves_no_active_memory_and_one_retired_per_run`; sin `clean_up` → `test_with_the_worker_stopped_it_fails_at_index_in_the_budget_and_retires_the_note` y `test_a_database_cut_while_it_waits_for_the_index_...`; sin el control de `index` → `test_with_the_worker_stopped_...` (la sonda daba por buena una nota sin indexar); escribir fuera de `kairos-probe` (`project_id` ajeno) → 10 fallos. Además, las `MutantTests` fijan en la propia suite que quitar la retirada, la limpieza o el control de `index` es observable. Tabla de escenarios (cabecera de `test_probe.py`): sana (el `Worker` real sobre `FakeEmbeddings` corre mientras la sonda espera; `memories() == (0, 1)`: ningún recuerdo activo, uno retirado, trabajo `embed` `succeeded`), worker parado (`stage=index`, `timeout` ≤ presupuesto, nota retirada y trabajo `pending`), búsqueda sin resultado (otro cliente retira la nota antes de la búsqueda: `stage=search`, `no_result`), base cortada con `FaultProxy` (antes de escribir: `write`/`server_error`/`retired: false`; durante la espera: `index`/`server_error`, y la nota queda activa y se dice), clave revocada (`write`/`unauthorized`/`retired: null`) y servidor sin embeddings (`no_embed_job`). `IsolationTests` recorre `probe.py`, `admin.py`, `observability.py` y las dos pruebas y falla si aparece un recurso `knowledge-graphs-` o el puerto del Ollama del anfitrión (las cadenas se parten en la propia prueba). Cada clase con base usa la suya (`CREATE DATABASE`). Verificación (arnés de la suite, subconjunto): `memory_platform.tests.test_probe` (`ChainTests`, `CutDatabaseTests`, `IsolationTests`, `MutantTests`) → 15 pruebas `ok`, 0 omitidas; suite completa: es de T-72 (orquestador); evidencia de esta tarea: las ejecuciones dirigidas (71 pruebas de test_probe_provisioning, test_probe y test_observability, 0 fallos, 0 omitidas). usage-meter no medido (horas estimadas). Patrón: `tests/chain_harness.py`, `tests/fault_proxy.py` (Fase 1).
 
 ### T-71 — Documentar la sonda
 
