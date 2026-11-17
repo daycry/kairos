@@ -48,7 +48,7 @@ test-plan: n/a (sin UI)
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 9 | 9 | 100% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 6 | 6 | 100% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 4 | 4 | 100% | 0 / 7.2h | 1.06 / 1.0h | 0 / 0.2h | 0 / 240 k |
-| Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 5 | 7 | 71.4% | 0 / 19.8h | 0.27 / 2.6h | 0 / 0.7h | 0 / 660 k |
+| Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 6 | 7 | 85.7% | 0 / 19.8h | 0.27 / 2.6h | 0 / 0.7h | 0 / 660 k |
 | Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 0 | 7 | 0% | 0 / 34.2h | 0 / 4.6h | 0 / 1.1h | 0 / 1140 k |
 | Fase 11 — Sonda de ida y vuelta (C-06) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 0 | 7 | 0% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **58** | **98** | **59.2%** | **0 / 412.8h** | **5.25 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **59** | **98** | **60.2%** | **0 / 412.8h** | **5.25 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1859,10 +1859,10 @@ test-plan: n/a (sin UI)
 ### T-60 — Revisión adversarial de la fase (dos lentes)
 
 - **Descripción**: Revisión adversarial del diff de la fase con dos lentes: A (contrato, seguridad, regresiones, alcance declarado) y B (mutantes: cada control nuevo se quita y su prueba debe fallar). Cuidado: R-06 (límites que matan servicios) y R-08 (ficheros que monta la instalación desplegada). Cada hallazgo se corrige para la clase entera y se anota con intento y evidencia en `review.md`; cada intento abre y cierra `usage-meter`. Fuente: Lección de la retro de la Iniciativa 2: la revisión es partida propia (0,5 × la implementación; 1,0 × en C-03 y C-05).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: revisión adversarial de la fase 9; el healthcheck del worker sigue un plazo que escribe el propio latido, los `cpus` por defecto no impiden arrancar en ningún anfitrión y la guía de Ollama en Linux lo deja al alcance solo del proxy.
+- **Estado**: completado
 - **Tiempo humano**: est. 5.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.73h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.73h (estimado) · real 1.5h (estimado; cuatro intentos de revisión)
 - **Supervisión**: est. 0.18h (≈25 % IA) · real —
 - **Previsión IA**: 202 k in / 18 k out tok · ⚠️ verificar €
 - **Dependencias**: T-59
@@ -1875,18 +1875,18 @@ test-plan: n/a (sin UI)
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
 
 **Criterios de aceptación**
-- [ ] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
-- [ ] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
-- [ ] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
-- [ ] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
+- [x] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
+- [x] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
+- [x] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
+- [x] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
 
 **Subtareas**
-- [ ] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
-- [ ] Lente B: mutantes en memoria sobre cada control nuevo
-- [ ] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
-- [ ] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
+- [x] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
+- [x] Lente B: mutantes en memoria sobre cada control nuevo
+- [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
+- [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas**: Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+**Notas** (2026-11-17): Cerrada en el intento 4 (ciclo 1: intentos 1-3 con A+B+C+D, A+B+C+D y A+B+C; al 3.º quedaba un Important de documentación y el orquestador abrió el ciclo 2 con la delegación del usuario, «Las preguntas toma la mejor decisión»; intento 4: A+C). Resumen en `review.md`. `scope-check.py --base main` exit 0; suite 1241 en verde tras fix2 (`MEMORY_TEST_RESULT` en T-59). Excepciones declaradas a los criterios marcados: dos mutantes del latido sobreviven (sin tope de la concesión en el reintento, `worker.py:285`; sin latido antes de la espera por fallo, `worker.py:417`) → deuda en T-64; usage-meter no medido (horas estimadas, mismo patrón aceptado en T-42, T-48 y T-59). Los registros por intento están en las secciones «Revisión de dos lentes» de `tasks.md`. Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
 
 ---
 
@@ -3052,52 +3052,20 @@ Archivada en `execution-history.md` (sección «Compactación 2026-11-17 — not
 
 ## Revisión de dos lentes — intento 1: Fase 9 (T-54..T-59) (T-54, T-55, T-56, T-57, T-58, T-59)
 
-Lentes: A+B+C+D (C por `docker-compose.yml`, `docker-compose.backup-rclone.yml`, `Dockerfile` y `ci.yml`; D por `worker.py`). Diff `main...f78f58a` (main = 96d5a35). `scope-check.py --base main` exit 0. Veredicto A: criterios de T-54, T-55, T-57, T-58 y T-59.1-2 ✓; T-56.3 aplazado a T-64 legítimo en la forma; T-59.3 ✗ (usage-meter). C: override, healthchecks, COPY del test stage y CI sin hallazgos; D: latido, coste de healthchecks y límites de postgres, worker y backup sin hallazgos. 4 Important y 7 Minor. Decisión del orquestador: fix1 corrige n.º 1-8 y 10; n.º 9 y 11 como se indica.
-
-| # | Grado | Gap | Tarea | Corrección | Evidencia |
-|---|---|---|---|---|---|
-| 1 | Important | El umbral fijo de 180 s del healthcheck no sigue la cadencia del latido: en un trabajo largo solo se late al renovar (cada lease/3), así que con `MEMORY_LEASE_SECONDS=900` un worker sano oscila a `unhealthy`; con la base caída `beat()` sigue escribiendo hasta lease/3+60 s y la promesa de 270 s de `operations.md` no se cumple; CA-21/T-64 piden ≤ interval × retries, que ningún umbral > 0 cumple, y la desviación no se declaró como enmienda | T-56, T-64 | pendiente (fix1: el latido escribe su propio plazo y el healthcheck lo compara; CA-21/T-64 enmendados a «plazo del latido + interval × retries», declarado) | Lente A n.º 1, Lente B n.º 2, Lente D (fuera de lente); `docker-compose.yml:204-211`, `worker.py:131,278`, `spec.md:208` |
-| 2 | Important | Los `cpus` por defecto (4 en postgres, 2 en api, worker y admin) superan las vCPU de un VPS pequeño o de un Docker Desktop con menos CPU: el daemon rechaza `NanoCPUs > NumCPU` y el stack, que antes arrancaba en cualquier máquina, no arranca | T-54 | pendiente (fix1: valores por defecto que no superen 1 CPU o sin cuota, con prueba) | Lente B n.º 1; `docker-compose.yml:79,149,195,238`, `configuration.md:125` |
-| 3 | Important | El caso Linux del manual pide `OLLAMA_HOST=0.0.0.0:11434` en el anfitrión: el Ollama sin autenticación queda al alcance de todo contenedor en una red no interna (memory-api, memory-web en `webui` y cualquier stack unido a esa red), saltándose la lista de permitidos del proxy (`/api/pull`, `/api/delete`…) | T-55, T-58 | pendiente (fix1: escuchar en la IP de la pasarela de `egress` o permitir solo esa subred en el cortafuegos) | Lente C n.º 1 (CWE-306, CWE-1327); `docs/operations.md` (caso Linux) |
-| 4 | Important | `memory-api` estrena tope de memoria (1g; 512m en la columna VPS) sin calcular su respuesta más grande: 200 observaciones de ~300 KB dan un JSON de 60 MB y ~200 MB de pico por petición (medido con tracemalloc); dos o cuatro llamadas grandes a la vez lo matan por OOM | T-54 | pendiente (fix1: valor dimensionado y justificado, con suelo en la prueba) | Lente D n.º 1; `docker-compose.yml:148-149`, `configuration.md:139`, `app.py:299` |
-| 5 | Minor | El arranque cuenta como último acceso a la base que funcionó: un worker que arranca con la base caída late 120 s sin ningún acceso real | T-56 | pendiente (fix1, con el n.º 1) | Lente B n.º 3; `worker.py:119` |
-| 6 | Minor | La búsqueda de claves privadas de T-59 ya no caza una identidad híbrida de age (`…-KEY-PQ-1…`) ni una clave partida en varias líneas | T-59 | pendiente (fix1: aceptar `PQ-` y un tramo mínimo de caracteres bech32 en vez de 58 exactos) | Lente C n.º 2 (CWE-540); `test_backup_encryption.py:26` |
-| 7 | Minor | La columna VPS propone 0.5 CPU para `memory-mcp`, que reserializa en el event loop respuestas de hasta 64 MiB (1-2 s con un núcleo; 2-4 s con media cuota, bloqueando las demás llamadas) | T-54 | pendiente (fix1) | Lente D n.º 2; `configuration.md:142`, `client.py:13-15` |
-| 8 | Minor | `README.md` cambia (1228) sin estar en `Archivos` de T-59; T-59 completada sin «Cerrada»; «tmpfs de solo lectura» en `operations.md` (el de solo lectura es el raíz) | T-59, T-56 | pendiente (fix1) | Lente A n.º 2, 3 y 5 |
-| 9 | Minor | T-59.3 marcado sin JSON de usage-meter | T-59 | deuda aceptada (mismo patrón aceptado en T-42 y T-48; horas estimadas) | Lente A n.º 2 |
-| 10 | Minor | Las pruebas leen el YAML en bruto y no `docker compose config` (CA-20/22/25) | T-54, T-55 | pendiente (fix1: pegar en Notas la salida de `docker compose -p kairos-ops-cfg config` con y sin el override; la imagen de pruebas no tiene Docker) | Lente A n.º 4; la Lente B lo ejecutó con 1.5, 1.5g y 2g |
-| 11 | Minor | `memory-files` sin `networks:` cae en la red `default` | — | fuera de alcance (anterior a este diff; no lo reabre) | Lente C (fuera de lente) |
+Archivada en `execution-history.md` (sección «Compactación 2026-11-17 (2) — revisiones de la fase 9, intentos 1 a 3»); resumen de la fase en `review.md`.
 
 ## Revisión de dos lentes — intento 2: Fase 9 tras fix1 (T-54, T-55, T-56, T-59)
 
-Lentes: A+B+C+D (re-evalúan lo corregido y lo que introduce el fix). Diff `f78f58a..9e12e3f` (fix1 `cc2296e`). Suite 1236, 0 fallos. Veredicto: n.º 2, 4, 5, 6, 7, 8 y 10 del intento 1 cerrados (n.º 6 con un resto Minor); n.º 1 y 3 a medias. `cpus` 0: Compose lo omite y el daemon arranca sin cuota (Lente B, `config` v5.7.0); sin regresión de seguridad porque `main` no tenía cuotas (Lente C). Enmienda de CA-21/T-64 explícita (Lente A). 2 Important y 6 Minor. Decisión del orquestador: fix2 (último intento) corrige todo.
-
-| # | Grado | Gap | Tarea | Corrección | Evidencia |
-|---|---|---|---|---|---|
-| 1 | Important | Resto del n.º 1: el latido del bucle da `backoff_max+60` (120 s) y la primera renovación llega a lease/3; con `MEMORY_LEASE_SECONDS` ≥ ~630 s un worker sano con un trabajo largo pasa a `unhealthy` entre el reclamo y la primera renovación; `operations.md:282` y el comentario de `docker-compose.yml:208` («for any lease») lo niegan; la prueba no lo ve (llama a `run_once` sin el latido del bucle) | T-56 | pendiente (fix2: latido con plazo de renovación al reclamar, prueba del bucle completo) | Lente A A1 y Lente B n.º 1, reproducido en simulación (sondas `FAIL` de 120 a 300 s); `worker.py:270-280,391`, `test_worker_heartbeat.py:120-122` |
-| 2 | Important | Resto del n.º 3: escuchar en la IP de la pasarela de `egress` no restringe el acceso (la cadena INPUT acepta conexiones a cualquier IP del anfitrión desde cualquier puente, y DOCKER-USER solo filtra FORWARD), `host-gateway` resuelve a la pasarela de `docker0` y no a la de `egress` (el proxy daría 502) y la alternativa del cortafuegos no da cadena ni comando | T-55, T-58 | pendiente (fix2: guía con regla concreta en INPUT/ufw que admita solo la subred de `egress`, cómo obtenerla y cuándo repetirla) | Lente C G1 (CWE-306, CWE-1327), Lente A (fuera de lente); `operations.md:407` |
-| 3 | Minor | Con concesión larga, una sola renovación fallida (error transitorio contestado o un corte de un segundo) deja `unhealthy` durante minutos | T-56 | pendiente (fix2: reintento de la renovación con espera corta o documentarlo) | Lente B n.º 2; `worker.py:283-296` |
-| 4 | Minor | Una clave partida a 35 columnas o menos deja menos de 20 caracteres bech32 en la primera línea y escapa al escaneo | T-59 | pendiente (fix2: tramo mínimo menor, sin falsos positivos en el árbol) | Lente C G2 (CWE-540); `test_backup_encryption.py:28` |
-| 5 | Minor | La cuenta de memoria de `memory-api` supone que el pool acota las respuestas en memoria (no lo hace: la conexión se libera antes de construir la respuesta, el render va en el bucle) y la respuesta máxima pesa ~120 MB con pico de ~360 MB; el consejo «si bajas el pool, el límite puede bajar» es falso; el comentario del compose habla de 10 peticiones | T-54 | pendiente (fix2: corregir la cuenta y el consejo; los valores aguantan ~15 y ~6 respuestas máximas a la vez) | Lente D N1 (medido con tracemalloc), Lente B; `configuration.md:154`, `docker-compose.yml:150`, `app.py:299-304` |
-| 6 | Minor | La columna VPS suma ~4,3 GB de topes en servicios de larga duración frente a 4 GB | T-54 | pendiente (fix2: ajustar o explicar que los topes no son reservas) | Lente A (fuera de lente) |
-| 7 | Minor | Las Notas de T-56 siguen describiendo el diseño retirado (umbral de 180 s, ≤ 270 s) sin marca de sustitución | T-56 | pendiente (fix2) | Lente A A2 |
-| 8 | Minor | El RED del n.º 1/5 es un `ImportError` y el del n.º 6 una comprobación directa, no una prueba fallando sobre el código viejo | T-56, T-59 | pendiente (fix2: RED de comportamiento para la prueba nueva del n.º 1) | Lente A (d) |
+Archivada en `execution-history.md` (sección «Compactación 2026-11-17 (2) — revisiones de la fase 9, intentos 1 a 3»); resumen de la fase en `review.md`.
 
 ## Revisión de dos lentes — intento 3: Fase 9 tras fix2 (T-54, T-55, T-56, T-59)
 
-Lentes: A+B+C (D solo tenía un Minor de documentación, que revisa A). Diff `843bcbb..ce3b035` (fix2 `2fd572b`). Suite 1241, 0 fallos. Veredicto: n.º 1-8 del intento 2 cerrados. Lente B: bucle real simulado con 135 combinaciones de concesión, espera y latencia, 0 sondas fallidas; reintento de la renovación sin revivir concesiones ajenas. Lente A: compactación sin pérdidas (SHA-256 recalculados). Lente C: receta principal (escuchar en la pasarela de `docker0` + INPUT con la subred de `egress`) correcta. 1 Important y 8 Minor. Al 3.er intento con un gap Important, decisión del orquestador con la delegación del usuario («Las preguntas toma la mejor decisión»): seguir con un ciclo nuevo acotado; el orquestador corrige el n.º 1 y los Minor de documentación (n.º 2-5) y relanza A+C (intento 4); n.º 6-8 → deuda en T-64.
-
-| # | Grado | Gap | Tarea | Corrección | Evidencia |
-|---|---|---|---|---|---|
-| 1 | Important | La alternativa `OLLAMA_HOST=0.0.0.0` con la regla de `iptables` deja Ollama abierto por IPv6: Go escucha en `[::]` con un comodín y la receta no tiene reglas `ip6tables` (un VPS con IPv6 pública expone `/api/pull` y `/api/delete` sin autenticación) | T-55 | corregido (orquestador, fix3: alternativa retirada con el motivo IPv6; prueba `test_the_documentation_does_not_claim_that_listening_on_a_gateway_protects_ollama` exige `IPv6`, roja sobre el manual anterior: `FAILED (failures=1)`) | Lente C n.º 1 (CWE-306, CWE-1327); `operations.md:407` |
-| 2 | Minor | Admitir la subred de `egress` admite a todo contenedor de esa red: con `docker-compose.backup-rclone.yml` también `memory-backup` llega a Ollama sin la lista del proxy | T-55 | corregido (orquestador, fix3) | Lente C n.º 2, Lente A (fuera de lente) |
-| 3 | Minor | «`<proyecto>` por defecto el del directorio» es falso: el Compose fija `name: knowledge-graphs` | T-55 | corregido (orquestador, fix3) | Lente A N2; `docker-compose.yml:1` |
-| 4 | Minor | La cifra «sin render» (15 y 6) no sale de la fórmula del texto (16 y 7) | T-54 | corregido (orquestador, fix3: 16 y 7, con la cuenta) | Lente A N1; `configuration.md:156` |
-| 5 | Minor | `operations.md:277` dice que una renovación fallida «se reintenta en el siguiente latido», contra el fix2 | T-56 | corregido (orquestador, fix3: espera corta con tope y sin pasar la concesión) | Lente B (fuera de lente) |
-| 6 | Minor | Tras perder la concesión el trabajo sigue hasta su plazo sin latir (no hay cancelación, ni antes ni ahora) y el worker pasa a `unhealthy` | T-56 | deuda → T-64 (ensayo del healthcheck: decidir cancelar el trabajo o documentarlo) | Lente B n.º 1 (simulado); `worker.py:296-313,352` |
-| 7 | Minor | Dos mutantes sobreviven: quitar el tope de la concesión del reintento y el latido antes de la espera por fallo | T-56 | deuda → T-64 (pruebas que los maten) | Lente B n.º 2 y 3; `worker.py:285,417` |
-| 8 | Minor | Sin RED registrado de las pruebas nuevas de n.º 4-6 (fallan sobre el código anterior: comprobado por la Lente A); quedan formas rebuscadas de clave que el escaneo no caza (partida a < 24 columnas, concatenada) | T-54, T-59 | deuda aceptada (comprobado por la lente; riesgo residual sin salida real de `age-keygen` con esas formas) | Lente A N3, Lente C n.º 3 |
+Archivada en `execution-history.md` (sección «Compactación 2026-11-17 (2) — revisiones de la fase 9, intentos 1 a 3»); resumen de la fase en `review.md`.
 
 ## Revisión de dos lentes — intento 4: Fase 9 tras fix3 — ciclo 2, abierto con OK del usuario: «Las preguntas toma la mejor decisión» (T-54, T-55, T-56)
 
-Pendiente de revisión; sin veredicto.
+Lentes: A+C en un solo revisor (re-evalúan lo corregido en fix3). Diff `ce3b035..e71b70d`. Veredicto: n.º 1-5 del intento 3 cerrados; la aserción nueva sale `FAILED (failures=1)` sobre el manual de `ce3b035` y 21 OK sobre el actual; la receta de Linux es segura tal como está escrita (un solo socket IPv4 en la pasarela de `docker0`, orden lo → subred → descarte, `ufw` con aceptar antes de denegar); deuda n.º 6-7 en las Notas de T-64. Sin Critical ni Important: **fase cerrada en el intento 4** (primer intento del ciclo 2), salvo T-56, que espera su criterio de T-64. Suite 1241, 0 fallos (tras fix2; fix3 solo cambia el manual y una aserción, verificados con las pruebas que leen los manuales).
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Minor | La mitigación de fijar la regla a la IP del contenedor `ollama` no pide volver a aplicarla al recrearlo (la IP vieja puede pasar a `memory-backup`) | T-55 | corregido (orquestador, en el cierre) | Lentes A+C N1 (CWE-1327 residual); `operations.md:407` |

@@ -133,3 +133,24 @@ Cada fase cierra con su revisión adversarial. El detalle de cada intento está 
 | 1 | Minor | `rclone rcat` anulaba `--retries` | Corregido: `copyto --copy-links /proc/self/fd/<n>` desde el descriptor verificado |
 | 1 | Minor | El ensayo no exigía trabajos pendientes con la base parada; detalles de `configuration.md` y Coordinación | Corregidos |
 | 2 | Minor | Mensaje «nothing was deleted» tras borrar la copia mala; `copyto` sin `--ignore-times` no reemplaza un manifiesto remoto dañado del mismo tamaño y fecha | Corregidos por el orquestador |
+
+## Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (T-54 a T-60)
+
+- **Fecha**: 2026-11-17
+- **Lentes**: intento 1, A, B, C y D (C por `docker-compose.yml`, el override de rclone, `Dockerfile` y `ci.yml`; D por `worker.py`); intento 2, A, B, C y D; intento 3, A, B y C; intento 4 (ciclo 2, con la delegación del usuario), A y C.
+- **Veredicto**: cerrada en el intento 4 sin hallazgos Critical ni Important abiertos. T-56 sigue en curso hasta que T-64 ejercite el `unhealthy` real.
+- **Evidencia**: suite del servidor 1241 tests, 0 fallos, errores y omitidos; `KAIROS_MIN_TESTS` y `MIN_FLOOR` 1241; `scope-check.py --base main` exit 0; contrato MCP, `ollama-proxy/default.conf.template` y `web/nginx.conf` sin cambios; simulación del bucle real del worker con 135 combinaciones de concesión, espera y latencia sin sondas fallidas (Lente B, intento 3).
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Important | Umbral fijo de 180 s del healthcheck frente al latido por renovación (falso `unhealthy` con concesión larga; cota de CA-21 incumplible) | Corregido: el latido escribe su propio plazo; CA-21 y T-64 enmendados a «plazo del último latido + interval × retries» |
+| 1 | Important | `cpus` por defecto por encima de las vCPU de un VPS pequeño (Docker no crea el contenedor) | Corregido: `cpus` 0 por defecto (sin cuota); cuotas explícitas en la columna VPS |
+| 1 | Important (seguridad, CWE-306) | La guía de Linux pedía `OLLAMA_HOST=0.0.0.0` | Corregido en tres pasos (intentos 1-3): pasarela IPv4 de `docker0` + reglas `INPUT` solo para la subred de `egress`; sin comodín por IPv6 |
+| 1 | Important | Tope de `memory-api` sin dimensionar para su respuesta máxima | Corregido: `2g` por defecto y `1g` en VPS, con la cuenta medida |
+| 1 | Minor | Arranque como acceso correcto, escaneo de claves, CPU de `memory-mcp` en VPS, `README` fuera de alcance, `compose config` sin pegar | Corregidos |
+| 2 | Important | Hueco de latido entre el reclamo y la primera renovación | Corregido en fix2, con prueba del bucle real (RED de comportamiento) |
+| 2 | Important | La guía de Linux con la pasarela de `egress` no restringía el acceso y rompía el proxy | Corregido en fix2 |
+| 2 | Minor | Reintento de la renovación, cuenta de memoria, suma de la columna VPS, Notas de T-56 | Corregidos |
+| 3 | Important (seguridad, CWE-306) | La alternativa `0.0.0.0` abría `[::]:11434`, fuera de las reglas IPv4 | Corregido en fix3 (ciclo 2) |
+| 3 | Minor | Trabajo con la concesión perdida sin latido; dos mutantes vivos del latido | Deuda → T-64 |
+| 4 | Minor | Volver a aplicar la regla por IP de `ollama` tras recrearlo | Corregido en el cierre |
