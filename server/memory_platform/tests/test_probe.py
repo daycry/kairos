@@ -488,6 +488,55 @@ class CutDatabaseTests(IsolatedDatabase, unittest.TestCase):
         self.proxy.restore()
 
 
+class DocumentationTests(unittest.TestCase):
+    """T-71: the manuals say what the code does (names, defaults, stages, codes, exit codes)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.operations = (ROOT / 'docs' / 'operations.md').read_text(encoding='utf-8')
+        cls.configuration = (ROOT / 'docs' / 'configuration.md').read_text(encoding='utf-8')
+        cls.section = cls.operations[cls.operations.index('## Sonda de ida y vuelta'):]
+        cls.section = cls.section[:cls.section.index('\n## ', 5)]
+
+    def test_configuration_lists_every_variable_with_the_default_of_the_code(self):
+        defaults = {'MEMORY_PROBE_TIMEOUT': '`%d`' % probe.DEFAULT_TIMEOUT, 'MEMORY_PROBE_URL': '`%s`' % probe.DEFAULT_URL,
+                    'MEMORY_PROBE_KEY_FILE': '`%s`' % probe.DEFAULT_KEY_FILE, 'MEMORY_PROBE_METRICS_FILE': '`%s`' % probe.DEFAULT_METRICS_FILE}
+        for name, default in defaults.items():
+            row = next((line for line in self.configuration.splitlines() if line.startswith('| `%s`' % name)), None)
+            with self.subTest(name):
+                self.assertIsNotNone(row, name + ' is not in docs/configuration.md')
+                self.assertIn(default, row)
+        self.assertIn('de 1 a %d' % probe.TIMEOUT_RANGE[1], self.configuration)
+        self.assertEqual(probe.TIMEOUT_RANGE[0], 1.0)
+
+    def test_the_manual_names_every_stage_code_variable_option_and_metric(self):
+        for stage in probe.STAGES + (probe.SETUP,):
+            with self.subTest(stage=stage):
+                self.assertIn('`%s`' % stage, self.section)
+        for code in probe.CODES:
+            with self.subTest(code=code):
+                self.assertIn('`%s`' % code, self.section)
+        for name in ('probe_failed', 'probe_ok', 'kairos-probe', 'probe-provision', 'MEMORY_PROBE_TIMEOUT', 'MEMORY_PROBE_URL', 'MEMORY_PROBE_KEY_FILE', 'MEMORY_PROBE_METRICS_FILE',
+                     '--url', '--key-file', '--metrics-file', 'kairos_probe_success', 'kairos_probe_stage_seconds', 'kairos_probe_last_run_timestamp_seconds', 'key_file_unsafe', 'retired'):
+            with self.subTest(name=name):
+                self.assertIn(name, self.section)
+
+    def test_the_manual_agrees_with_the_code_on_the_defaults_scopes_and_exit_codes(self):
+        for value in (probe.DEFAULT_KEY_FILE, probe.DEFAULT_METRICS_FILE, probe.DEFAULT_URL, str(int(probe.DEFAULT_TIMEOUT)) + ' s', '`%s`' % probe.PROBE_POLICY['capture_mode']):
+            with self.subTest(value=value):
+                self.assertIn(value, self.section)
+        self.assertEqual(probe.PROBE_SCOPES, ('read', 'write'))
+        self.assertIn('`read` y `write`', self.section)
+        self.assertIn('sale con **0**', self.section)
+        self.assertIn('sale con **1**', self.section)
+        self.assertEqual(probe.RETIRE_CALL_TIMEOUT, 10.0)
+        self.assertIn('(10 s)', self.section)
+
+    def test_the_log_field_of_the_event_is_documented_and_real(self):
+        self.assertIn('`exc_type`, `stage`', self.operations)
+        self.assertIn('stage', observability.FIELDS)
+
+
 class IsolationTests(unittest.TestCase):
     """CA-33: nothing of the probe points at the installed project's resources or at the host's Ollama."""
 

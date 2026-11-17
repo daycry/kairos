@@ -50,13 +50,13 @@ test-plan: n/a (sin UI)
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 4 | 4 | 100% | 0 / 7.2h | 1.06 / 1.0h | 0 / 0.2h | 0 / 240 k |
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 7 | 7 | 100% | 0 / 19.8h | 0.27 / 2.6h | 0 / 0.7h | 0 / 660 k |
 | Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 7 | 7 | 100.0% | 0 / 34.2h | 5.48 / 4.6h | 0 / 1.1h | 0 / 1140 k |
-| Fase 11 — Sonda de ida y vuelta (C-06) | 3 | 6 | 50.0% | 0 / 23.4h | 2 / 3.1h | 0 / 0.8h | 0 / 780 k |
+| Fase 11 — Sonda de ida y vuelta (C-06) | 4 | 6 | 66.7% | 0 / 23.4h | 2.15 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 0 | 7 | 0% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 0 | 6 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **70** | **98** | **71.4%** | **0 / 412.8h** | **12.73 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **71** | **98** | **72.4%** | **0 / 412.8h** | **12.88 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2193,26 +2193,27 @@ test-plan: n/a (sin UI)
 ### T-71 — Documentar la sonda
 
 - **Descripción**: Documentar `admin probe`, sus etapas, códigos de salida y variables en los manuales. Fuente: CA-30, CA-31 (documentación).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: La guía de operaciones explica `admin probe`: etapas, códigos de salida, `probe_failed`, el aprovisionamiento de `kairos-probe` y las variables `MEMORY_PROBE_*`.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 0.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.07h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.07h (estimado) · real 0.15h (estimado)
 - **Supervisión**: est. 0.02h (≈25 % IA) · real —
 - **Previsión IA**: 18 k in / 2 k out tok · ⚠️ verificar €
 - **Dependencias**: T-70
 - **Tipo**: docs
-- **Archivos**: `docs/operations.md`, `docs/configuration.md`
+- **Archivos**: `docs/operations.md`, `docs/configuration.md`, `server/memory_platform/tests/test_probe.py` (`DocumentationTests`: nombres, valores por defecto, etapas y códigos del manual iguales a los del código)
 - **Cubre (tests)**: —
 - **Verificación**: lectura: `docs/operations.md` describe las etapas, `probe_failed` y el aprovisionamiento de `kairos-probe`; `docs/configuration.md` lista `MEMORY_PROBE_TIMEOUT`
 
 **Criterios de aceptación**
-- [ ] Nombres y defaults iguales al código
+- [x] Nombres y defaults iguales al código
 
 **Subtareas**
-- [ ] Actualizar los manuales
-- [ ] `usage-meter start/close` de la tarea
+- [x] Actualizar los manuales
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Estilo: `docs/operations.md`.
+**Notas** (2026-11-18): RED: `DocumentationTests` contra el HEAD falló con `ImportError` (sin `probe.py`); contra el código nuevo y el manual a medio escribir falló con `AssertionError: '`summary`' not found in ...` y `AssertionError: '`setup`' not found in ...` · 2026-11-17, y pasó al ajustar el manual. `docs/operations.md`: sección «Sonda de ida y vuelta (`admin probe`)» (etapas con sus códigos de fallo, presupuesto `MEMORY_PROBE_TIMEOUT`, resultado y códigos de salida 0 y 1, `retired`, etapa `setup`, métricas en fichero, aprovisionamiento idempotente de `kairos-probe`, qué puede y qué no la clave —404 fuera del alcance, 403 dentro—, variables y qué deja cada ejecución, con el caso de la base cortada) y `stage` en los campos de los logs; `docs/configuration.md`: subsección con `MEMORY_PROBE_TIMEOUT` (`120`), `MEMORY_PROBE_URL`, `MEMORY_PROBE_KEY_FILE` y `MEMORY_PROBE_METRICS_FILE` con los valores por defecto del código. Las cuatro pruebas de `DocumentationTests` comparan los valores del manual con las constantes de `probe.py`. Verificación (lectura + prueba): `memory_platform.tests.test_probe.DocumentationTests` → 4 `ok`; suite completa: es de T-72 (orquestador); evidencia de esta tarea: las ejecuciones dirigidas (71 pruebas de test_probe_provisioning, test_probe y test_observability, 0 fallos, 0 omitidas). usage-meter no medido. Estilo: `docs/operations.md`.
 
 ### T-72 — Cierre de fase: suite completa y subida del mínimo
 

@@ -118,6 +118,17 @@ Servicio opcional del perfil `backup`: `docker compose --profile backup up -d me
 
 La clave privada `age` no se monta en ningún servicio ni está en la imagen: el servicio cifra para las claves públicas y no puede descifrar. Un destino inaccesible se registra como `backup_offsite_failed` (solo el tipo de destino, nunca rutas ni credenciales), pone a 0 la métrica `kairos_backup_offsite_success` (junto con `kairos_backup_offsite_last_run_timestamp_seconds` se escribe en `kairos-offsite.prom` dentro del volumen de copias para un colector de ficheros de texto; `memory-api` no las expone), no borra ninguna copia local y el ciclo siguiente vuelve a enviar lo que falte; cualquier otro fallo del ciclo (base caída, `pg_dump`, cifrado, verificación local) pone también la métrica a 0 y, en el bucle, registra `backup_cycle_failed`. Solo se envían copias cifradas (una en claro del directorio local se omite y se avisa con `backup_offsite_plain_skipped`) y el destino debe ser exclusivo de una instalación. Comandos y restauración: [operaciones](operations.md).
 
+### Sonda de ida y vuelta (`admin probe`)
+
+Las lee `server/memory_platform/probe.py` (no `config.py`): el Compose no las propaga; con otro valor, pásalas al comando con `-e` o con las opciones de la línea de órdenes. Etapas, códigos de salida y aprovisionamiento: `docs/operations.md`, «Sonda de ida y vuelta».
+
+| Variable | Predeterminado | Uso |
+|---|---|---|
+| `MEMORY_PROBE_TIMEOUT` | `120` (segundos, de 1 a 3600) | Presupuesto de todo el recorrido de `admin probe` (escribir, esperar el recibo `embed`, buscar, retirar). Con el worker parado la sonda falla en `index` con `timeout` en ese plazo. Un valor que no es un número o está fuera de rango termina con `probe_failed` en la etapa `setup` (`timeout_invalid`) |
+| `MEMORY_PROBE_URL` | `http://memory-api:8790` | Dónde responde `/v1` visto desde el contenedor de la sonda: `http(s)://host[:puerto]` sin ruta, credenciales ni consulta (`url_invalid`). Opción `--url` |
+| `MEMORY_PROBE_KEY_FILE` | `/backups/kairos-probe.key` | Fichero (permisos 600) con el token de la clave de la sonda, que escribe `probe-provision` y lee `probe`. Opción `--key-file`. La clave nunca va en una variable ni en un argumento |
+| `MEMORY_PROBE_METRICS_FILE` | `/backups/kairos-probe.prom` | Fichero de texto de Prometheus con `kairos_probe_success`, `kairos_probe_stage_seconds{stage}` y `kairos_probe_last_run_timestamp_seconds`. Opción `--metrics-file` (vacío: no se escribe) |
+
 Los presupuestos de respuestas generadas se definen en `AnswerLimits`, en `corpus_answers.py`: no son variables `.env` ni un límite económico por organización. Sus unidades, límites de conversación, estados inciertos y ausencia de reenvío automático están en [consultas de corpus](corpus-generated-answers.md).
 
 ## Límites de memoria y CPU de los servicios
