@@ -116,3 +116,33 @@ class WebHealthcheckTests(unittest.TestCase):
         nginx = (ROOT / 'web/nginx.conf').read_text(encoding='utf-8')
         self.assertIn('location = /health/live { access_log off; return 200', nginx)
         self.assertRegex(nginx, r'listen 8080;')
+
+
+def healthcheck_section():
+    text = OPERATIONS.read_text(encoding='utf-8')
+    return text.split('## Healthchecks de los servicios', 1)[1].split(chr(10) + '## ', 1)[0]
+
+
+class DocumentedHealthchecksTests(unittest.TestCase):
+    def test_the_table_of_docs_operations_repeats_every_healthcheck_of_the_compose_file(self):
+        rows = {m['name']: m['rest'] for m in (re.match(r'\| `(?P<name>[\w-]+)` \|(?P<rest>.*)', line) for line in healthcheck_section().splitlines()) if m}
+        checked = 0
+        for name, service in compose()['services'].items():
+            check = service.get('healthcheck')
+            if not check:
+                continue
+            checked += 1
+            self.assertIn(name, rows, f'docs/operations.md has no row for {name}')
+            cells = [c.strip() for c in rows[name].split('|')]
+            self.assertIn(str(check['interval']).replace('s', ' s'), cells[1:], (name, 'interval'))
+            self.assertIn(str(check['timeout']).replace('s', ' s'), cells[1:], (name, 'timeout'))
+            self.assertIn(str(check['retries']), cells[1:], (name, 'retries'))
+        self.assertEqual(checked, 6, 'ollama, memory-postgres, memory-api, memory-mcp, memory-web and memory-worker')
+
+    def test_the_unhealthy_time_is_interval_times_retries(self):
+        for name, service in compose()['services'].items():
+            check = service.get('healthcheck')
+            if check:
+                seconds = int(check['interval'].rstrip('s'))*check['retries']
+                line = next(l for l in healthcheck_section().splitlines() if l.startswith(f'| `{name}` |'))
+                self.assertIn(f'{seconds} s', line, name)

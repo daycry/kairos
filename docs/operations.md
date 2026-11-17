@@ -406,6 +406,21 @@ Todos los servicios del Compose (también `ollama`, `memory-postgres` y `memory-
 
 **Linux (el VPS).** El proxy `ollama` llega al Ollama del anfitrión por el nombre `host.docker.internal` (`OLLAMA_UPSTREAM`). Docker Desktop (Windows, macOS) lo resuelve solo; en Linux ese nombre no existe, y por eso el servicio declara `extra_hosts: ["host.docker.internal:host-gateway"]`, que lo convierte en la dirección del anfitrión. Con Ollama en el anfitrión de Linux, este debe escuchar en una interfaz que alcance el puente de Docker (por ejemplo `OLLAMA_HOST=0.0.0.0:11434` restringido por cortafuegos), no solo en `127.0.0.1`. `ollama-proxy/default.conf.template` no cambia. Si `OLLAMA_UPSTREAM` apunta a otro servidor, `extra_hosts` es inocuo.
 
+## Healthchecks de los servicios
+
+`docker compose ps` muestra el estado de salud de estos servicios; cada fila es lo que declara `docker-compose.yml`:
+
+| Servicio | Qué comprueba | `interval` | `timeout` | `retries` | `unhealthy` tras |
+|---|---|---|---|---|---|
+| `ollama` | `GET /api/version` del proxy | 10 s | 6 s | 12 | 120 s |
+| `memory-postgres` | `pg_isready` | 5 s | 3 s | 12 | 60 s |
+| `memory-api` | `GET /health/ready` (base incluida) | 15 s | 5 s | 6 | 90 s |
+| `memory-mcp` | `GET /health/live` | 15 s | 5 s | 6 | 90 s |
+| `memory-web` | `GET /health/live` del propio proxy nginx (no llama a `memory-api`) | 15 s | 5 s | 6 | 90 s |
+| `memory-worker` | antigüedad del fichero `/tmp/kairos-worker-heartbeat` (menos de 180 s); `start_period: 60s` | 30 s | 5 s | 3 | 90 s tras 180 s de antigüedad |
+
+«`unhealthy` tras» es `interval × retries`. `memory-web` y `memory-worker` son los dos healthchecks que añadió la iniciativa de operación fiable: una instalación ya desplegada los recoge, igual que los límites de memoria y CPU ([configuración](configuration.md#límites-de-memoria-y-cpu-de-los-servicios)), solo en su próximo `up`. `memory-web` depende de `memory-api` y `memory-mcp` sanos, por lo que un `unhealthy` de la web con ambos sanos apunta al propio nginx. Detalle del latido del worker: ver «El worker sin base de datos y los trabajos agotados».
+
 ## Servidor sin modelo de lenguaje y proxy de Ollama
 
 El servidor arranca y pasa su suite sin ningún modelo de lenguaje: extrae en el cliente, no en el servidor. `MEMORY_EXTRACT_ENABLED`, `MEMORY_CORPUS_ANSWER` y `MEMORY_LLM_MODEL` están descritos en [configuración](configuration.md#servidor-sin-modelo-de-lenguaje). La suite lo comprueba: se ejecuta sin `MEMORY_LLM_MODEL`, con un espía de loopback que responde 500 a `/api/chat` y cuenta las llamadas (`llm_chat_calls` en el recibo `MEMORY_TEST_RESULT`, que debe ser 0), y `test_no_llm` ingiere un resumen con `generate: true`, lo indexa y rechaza `corpus_answer` con el espía vigilando.

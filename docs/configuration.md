@@ -151,6 +151,8 @@ Todos los servicios del Compose declaran `mem_limit` y `cpus`, y cada uno tiene 
 
 **Relleno (`memory-postgres` y `memory-worker`).** Un límite que mate estos dos durante el relleno de vectores lo repetiría sin fin (el trabajo vuelve a la cola al caducar la concesión). PostgreSQL construye los índices HNSW con `maintenance_work_mem` (256 MB por defecto, `MEMORY_MIGRATION_MAINTENANCE_WORK_MEM`) en serie, y a eso se suman sus búferes compartidos (128 MB), las sesiones del pool y la caché de páginas del propio contenedor: unos 1,5 GB de trabajo, por eso `4g` en un equipo local y `1536m` como mínimo recomendado en un VPS. El worker conserva los vectores de los 200 fragmentos como máximo de un recurso (768 flotantes cada uno) varias veces mientras arma el recibo, unas decenas de MB, más el texto del recurso; `1g` deja un margen holgado y `512m` sigue siendo suficiente. Si subes `MEMORY_MIGRATION_MAINTENANCE_WORK_MEM` o `MEMORY_CHUNK_MAX`, sube también estos dos límites.
 
+Los healthchecks de los servicios, la rotación de logs (`json-file`, 3 × 10 MB) y el caso Linux de `host.docker.internal` están en [operación](operations.md).
+
 ## kairos-mcp
 
 El servicio `memory-mcp` del Compose (imagen `kairos-mcp`, puerto `8791` en una red interna compartida solo con `memory-api`) no tiene secretos, DSN ni variables `MEMORY_*`. Su configuración completa son estas variables del entorno del contenedor, que el Compose interpola desde `.env`:
