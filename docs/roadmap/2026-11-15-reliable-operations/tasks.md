@@ -1916,7 +1916,7 @@ test-plan: n/a (sin UI)
 - [x] Añadir `--break-lock`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (12) — notas de T-61 a T-65 hasta fix4», T-61).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (12) — notas de T-61 a T-65 hasta fix4», T-61). fix5 (cierre revisión fase 10, n.º 2 y 3): RED `Fix5Tests.test_gap2_*` (un SIGTERM al llamar a `disarm()` escapaba de `main` con el bloqueo tomado: `PermissionError` al borrar el directorio, fichero del bloqueo aún bloqueado) y `test_gap3_*` (el SIGINT pendiente al poner SIG_IGN daba 130 y no se ejecutaba `docker stop/rm`; con Ctrl-C justo antes de `ignoring_signals`, `calls == []`). Corrección: `disarm()` se repite si una señal lo corta (el código sigue siendo el de la causa) y el bloqueo se libera siempre; `ignoring_signals` guarda el manejador con `getsignal`, pone SIG_IGN dentro del `try` y retiene la señal que llega mientras lo pone; `reap` se repite si una señal lo corta antes del SIG_IGN (parar y retirar son idempotentes y no duplica `reaped_containers`). Verde: 8 `Fix5Tests`.
 
 ### T-62 — Etiquetas locales `kairos-*:<versión>-<marca>` y registro en `deployment-status.json`
 
@@ -1947,7 +1947,7 @@ test-plan: n/a (sin UI)
 - [x] Retirada de etiquetas antiguas
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (12) — notas de T-61 a T-65 hasta fix4», T-62).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (12) — notas de T-61 a T-65 hasta fix4», T-62). fix5 (cierre revisión fase 10, n.º 1 y 6): RED `Fix5Tests.test_gap1_an_installation_*` (`api y worker` o sin contenedor registraban `good` con solo `{api, worker, operator}` u `{operator}`) y `test_gap6_*` (ESC y U+202E del `status` del fichero en stderr y en `warnings`). Corrección: `record_running_release` no registra nada si falta el contenedor de algún servicio de retroceso (un aviso lo dice; sin contenedores, tampoco `operator` solo), `tag_previous_images` no etiqueta una versión derivada de los contenedores a la que le falta un servicio, y `status` pasa por `printable` en el aviso y en `no_previous_reason`. `test_a_service_without_a_container_is_not_tagged` pasa a `..._makes_the_release_incomplete_and_nothing_is_tagged` (antes exigía el reparto parcial). Verde.
 
 ### T-63 — `--rollback` sin migrar
 
@@ -1976,7 +1976,7 @@ test-plan: n/a (sin UI)
 - [x] Documentar
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (12) — notas de T-61 a T-65 hasta fix4», T-63).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (12) — notas de T-61 a T-65 hasta fix4», T-63). fix5 (cierre revisión fase 10, n.º 1): RED `test_gap1_a_rollback_whose_recorded_images_leave_a_service_out_*` (con `previous` sin `api`, `mcp` o `web` salía 0 con ese servicio en la build fallida) y `test_gap1_only_the_images_that_are_in_the_destination_*` (`good` recibía `operator` de la build). Corrección: `--rollback` termina con `no_previous_images` (código 4, nada tocado) si las etiquetas dejan fuera algún servicio, y `promote_images` solo recibe las imágenes de `previous`. Las dos variantes de `legacy5.py` (`api+worker`, sin contenedor) terminan en 4 y el siguiente despliegue fallido no etiqueta la build como buena. Verde.
 
 ### T-64 — Ensayo aislado de retroceso y de latido `unhealthy`
 
@@ -2033,7 +2033,7 @@ test-plan: n/a (sin UI)
 - [x] Actualizar `docs/operations.md`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (12) — notas de T-61 a T-65 hasta fix4», T-65).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (12) — notas de T-61 a T-65 hasta fix4», T-65). fix5 (cierre revisión fase 10, n.º 4 y 5): RED `DocumentationTests.test_fix5_the_manual_and_the_plan_*` (el manual decía que en `engine` el informe anterior se queda como estaba, y el ítem (19) que la versión que corre se registra «antes de cualquier fase»). Corrección: el manual dice que `engine` solo guarda el `in_progress` del registro de la versión que corre (el código no cambia), el plan dice «tras la comprobación del motor y antes de la fase `configuration`», y el manual explica que sin el contenedor de algún servicio no se registra nada y que `--rollback` con etiquetas incompletas termina con `no_previous_images`. Verde.
 
 ### T-66 — Cierre de fase: suite completa y subida del mínimo
 

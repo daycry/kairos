@@ -336,11 +336,11 @@ class RetryTests(unittest.TestCase):
             harness.apply()
             self.assertNotIn('operator', harness.status()['images']['previous'], 'a failed report without a record of a good release: :latest of the operator is not trusted')
 
-    def test_a_service_without_a_container_is_not_tagged(self):
+    def test_a_service_without_a_container_makes_the_release_incomplete_and_nothing_is_tagged(self):
         served = {'memory-api': sid('v1-api')}
         with Harness(in_use('v1'), served=served) as harness:
             harness.apply()
-            self.assertEqual(set(harness.status()['images']['previous']) - {'operator'}, {'api'})
+            self.assertEqual(harness.status()['images']['previous'], {}, 'fix5: a release that lacks a service is incomplete: nothing of it is tagged (it ends well, so `good` is then the complete build)')
 
 
 class GoodReleaseTests(unittest.TestCase):
@@ -1336,6 +1336,165 @@ class ExplorationTests(unittest.TestCase):
         self.assertEqual(issues[:3], [], f'{len(issues)} problems; the first three are shown')
 
 
+class Fix5Tests(unittest.TestCase):
+    """Review of phase 10, attempt 5 (six Minor gaps): a partial `good` is never recorded, `--rollback` never reports `rolled_back` with a service outside the destination, a signal at the edges of the
+    held-off windows never leaves `main` without releasing the lock or cancels a `reap`, and what the status file says reaches stderr and the report only escaped."""
+    OLD = {'status': 'complete', 'phases': ['engine', 'configuration', 'build', 'database', 'inspect', 'backup', 'migrate', 'bootstrap', 'backfill', 'start', 'verify'], 'backup': None,
+           'previous_images': {'memory-api': sid('v0-api')}, 'content_sha256': 's', 'documents': 0, 'projects': 0}
+
+    @staticmethod
+    def stop_in_configuration(harness):
+        return lambda instance, command, **kw: (_ for _ in ()).throw(KeyboardInterrupt()) if instance.phase == 'configuration' and command[-3:] == ['config', '--format', 'json'] else harness.docker(command, **kw)
+
+    def test_gap1_an_installation_with_services_without_a_container_never_records_a_partial_good_and_rollback_never_reports_success(self):
+        """`legacy5.py`: an old `complete` report without `images`, with only memory-api and memory-worker (or no container) running."""
+        for label, served in (('api and worker only', {'memory-api': sid('v1-api'), 'memory-worker': sid('v1-worker')}), ('no container', {})):
+            with self.subTest(label), Harness(in_use('v1'), status=self.OLD, served=served) as harness:
+                code, err = cli(harness, self.stop_in_configuration(harness))
+                self.assertEqual(code, 130, err)
+                good = (harness.status().get('images') or {}).get('good', {}).get('ids', {})
+                self.assertFalse(good, f'a good release that lacks a service is not recorded as complete: {good}')
+                harness.again().apply_failing_after('start')
+                built = {name: image_id for name, image_id in harness.served_ids().items() if image_id}
+                self.assertTrue(built and all(image_id not in {sid(f'v1-{name}') for name in NAMES} for image_id in built.values()), 'the failed build runs')
+                code, err = cli(harness.again(), rollback=True)
+                self.assertNotEqual(code, 0, err)
+                self.assertNotEqual(harness.status()['status'], 'rolled_back')
+                self.assertIn('no_previous_images', err)
+                harness.again().apply_failing_after('start')  # the next deployment must not tag the failed build as the good one
+                images = harness.status()['images']
+                tagged = set((images.get('good') or {}).get('ids', {}).values())
+                self.assertFalse(tagged & set(built.values()), 'the build that failed is not tagged as good')
+
+    def test_gap1_a_complete_installation_still_records_the_release_that_runs(self):
+        with Harness(in_use('v1'), status=self.OLD) as harness:
+            cli(harness, self.stop_in_configuration(harness))
+            self.assertEqual(harness.status()['images']['good']['ids'], {name: sid(f'v1-{name}') for name in NAMES})
+
+    def test_gap1_a_rollback_whose_recorded_images_leave_a_service_out_is_refused_before_any_service_changes(self):
+        for left_out in ('api', 'mcp', 'web'):
+            table, status = after_two_deployments()
+            status['images']['previous'].pop(left_out)
+            with self.subTest(left_out), Harness(table, status) as harness:
+                before = (harness.private / 'deployment-status.json').read_text(encoding='utf-8')
+                code, err = cli(harness, rollback=True)
+                self.assertEqual(code, deploy.EXIT_NO_PREVIOUS_IMAGES, err)
+                self.assertIn('memory-' + left_out, err)
+                self.assertFalse([c for c in harness.docker.commands if 'up' in c or c[:2] == ['docker', 'tag']], 'nothing was touched')
+                self.assertEqual((harness.private / 'deployment-status.json').read_text(encoding='utf-8'), before)
+
+    def test_gap1_only_the_images_that_are_in_the_destination_are_promoted_to_good(self):
+        table, status = after_two_deployments()
+        status['images']['previous'].pop('operator')  # the operator image is not a service: it is not part of the destination
+        with Harness(table, status) as harness:
+            code, err = cli(harness, rollback=True)
+            self.assertEqual(code, 0, err)
+            self.assertEqual(harness.status()['images']['good']['ids'], {name: sid(f'old-{name}') for name in SERVICE_OF})
+
+    @unittest.skipUnless(hasattr(signal, 'raise_signal') and hasattr(signal, 'SIGTERM'), 'needs signals')
+    def test_gap2_a_signal_between_the_end_of_settle_or_apply_and_the_disarm_still_releases_the_lock(self):
+        """`signals5.py`: a SIGTERM delivered when `disarm()` runs used to escape `main` with the lock held."""
+        real_install = deploy.install_signal_handlers
+
+        def late_install():
+            put_back = real_install()
+            original, sent = put_back.disarm, []
+
+            def disarm():
+                if not sent:  # one signal, as in life
+                    sent.append(True)
+                    signal.raise_signal(signal.SIGTERM)
+                original()
+            put_back.disarm = disarm
+            return put_back
+        before = signal.getsignal(signal.SIGTERM)
+        for label, failing, code, status in (('failure in verify', True, 1, 'failed'), ('success', False, 0, 'complete')):
+            with self.subTest(label), Harness(in_use('v0')) as harness:
+                harness.apply()
+                wrap = raising_at_verify(harness, deploy.DeploymentError('x')) if failing else None
+                with patch.object(deploy, 'install_signal_handlers', late_install):
+                    result = cli(harness, wrap)
+                self.assertEqual(result[0], code, result[1][-300:])
+                self.assertEqual(harness.status()['status'], status)
+                self.assertEqual((harness.private / deploy.LOCK_FILE).read_text(encoding='utf-8'), '', 'the lock was released')
+                self.assertEqual(signal.getsignal(signal.SIGTERM), before, 'the handlers are put back')
+
+    def test_gap3_a_signal_while_the_signals_are_being_ignored_does_not_cancel_the_reap(self):
+        """`signals5.py`: the SIGINT that was pending when `ignoring_signals` set SIG_IGN raised out of it, and the `docker stop/rm` of the container never ran."""
+        real_signal, state, calls = signal.signal, {'armed': False, 'fired': False}, []
+
+        def signal_with_pending_sigint(number, handler):
+            previous = real_signal(number, handler)
+            if state['armed'] and not state['fired'] and number == signal.SIGTERM and handler is signal.SIG_IGN:
+                state['fired'] = True
+                raise KeyboardInterrupt()
+            return previous
+        before = (signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT))
+        with Harness(in_use('v0')) as harness:
+            harness.apply()
+
+            def wrap(instance, command, **kw):
+                if 'memory-admin' in command and 'migrate' in command:
+                    state['armed'] = True
+                    raise deploy.DeploymentError('Command failed during migrate.')
+                return harness.docker(command, **kw)
+            fake = lambda command, **kw: (calls.append(command[:2]), SimpleNamespace(returncode=0, stderr=b''))[1]
+            with patch.object(deploy.signal, 'signal', signal_with_pending_sigint), patch.object(deploy.subprocess, 'run', side_effect=fake):
+                code, err = cli(harness, wrap)
+            saved = harness.status()
+            self.assertTrue(state['fired'])
+            self.assertEqual(code, 1, err)
+            self.assertEqual(calls, [['docker', 'stop'], ['docker', 'rm']])
+            self.assertEqual(len(saved.get('reaped_containers', [])), 1, saved)
+            self.assertNotIn('unreaped_containers', saved)
+        self.assertEqual((signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)), before)
+
+    def test_gap3_a_signal_before_the_reap_holds_the_signals_off_does_not_cancel_it_either(self):
+        real, calls, state = deploy.ignoring_signals, [], {'fired': False}
+
+        class Hostile:
+            def __enter__(self):
+                if not state['fired']:
+                    state['fired'] = True
+                    raise KeyboardInterrupt()  # a Ctrl-C right before the signals are held off
+                self.inner = real()
+                return self.inner.__enter__()
+
+            def __exit__(self, *exc):
+                return self.inner.__exit__(*exc)
+        with Harness(in_use('v0')) as harness:
+            harness.apply()
+
+            def wrap(instance, command, **kw):
+                if 'memory-admin' in command and 'migrate' in command:
+                    raise deploy.DeploymentError('Command failed during migrate.')
+                return harness.docker(command, **kw)
+            fake = lambda command, **kw: (calls.append(command[:2]), SimpleNamespace(returncode=0, stderr=b''))[1]
+            with patch.object(deploy, 'ignoring_signals', Hostile), patch.object(deploy.subprocess, 'run', side_effect=fake):
+                cli(harness, wrap)
+            self.assertIn(['docker', 'rm'], calls, 'the container was stopped and removed')
+            self.assertEqual(len(harness.status().get('reaped_containers', [])), 1)
+
+    def test_gap6_what_the_status_file_says_reaches_stderr_and_the_warnings_only_escaped(self):
+        evil = '\x1b]0;PWN\x07‮EVIL'
+        with Harness(status={'status': evil}) as harness:
+            code, out, err = RollbackCommandLineTests.run_main(None, harness.root, RollbackCommandLineTests.ARGV)
+            self.assertEqual(code, 4)
+            self.assertNotIn('\x1b', err)
+            self.assertNotIn('‮', err)
+            self.assertIn('PWN', err)
+        table, status = after_two_deployments()
+        status['images'].pop('previous')
+        status['status'] = evil
+        with Harness(table, status) as harness:
+            code, err = cli(harness)
+            self.assertNotIn('\x1b', err)
+            self.assertNotIn('‮', err)
+            warnings = harness.status().get('warnings', [])
+            self.assertTrue([w for w in warnings if 'PWN' in w], warnings)
+            self.assertFalse([w for w in warnings if '\x1b' in w or '‮' in w], warnings)
+
+
 class DocumentationTests(unittest.TestCase):
     """T-65: the operations manual says what the script does, with the names and codes of the script itself."""
 
@@ -1382,6 +1541,17 @@ class DocumentationTests(unittest.TestCase):
             text = plan.read_text(encoding='utf-8')
             self.assertNotIn('que solo `--break-lock` retira', text)
             self.assertIn('ya no retira ni rompe nada', text)
+
+    def test_fix5_the_manual_and_the_plan_say_what_engine_saves_and_when_the_running_release_is_recorded(self):
+        """Attempt 5, gaps 4 and 5: in `engine` the report is not saved, except the `in_progress` of the record of the running release; the record is made after the engine check, not before any phase."""
+        text = (Path(__file__).parents[3] / 'docs/operations.md').read_text(encoding='utf-8')
+        self.assertIn('salvo que ya se hubiera guardado como `in_progress`', text)
+        self.assertIn('no se registra nada (un aviso lo dice)', text)
+        plan = Path(__file__).parents[3] / 'docs/roadmap/2026-11-15-reliable-operations/improvement-plan.md'
+        if plan.exists():
+            plan_text = plan.read_text(encoding='utf-8')
+            self.assertNotIn('registra al empezar, antes de cualquier fase', plan_text)
+            self.assertIn('registra al empezar, tras la comprobación del motor y antes de la fase `configuration`', plan_text)
 
 
 if __name__ == '__main__':

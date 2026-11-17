@@ -147,15 +147,21 @@ def ignoring_signals():
     """SIGTERM, SIGHUP and SIGINT are ignored inside the block and put back after it (fix4, gap 2): the handlers of a failure and of an interruption save the report and write their warnings, and a
     signal during them must not leave `main` with a traceback; the exit code stays the one of the first cause. (Not the main thread: the caller owns the signals, nothing is ignored.)"""
     previous = {}
-    for name in ('SIGTERM', 'SIGHUP', 'SIGINT'):
-        number = getattr(signal, name, None)
-        if number is None:
-            continue
-        try:
-            previous[number] = signal.signal(number, signal.SIG_IGN)
-        except (ValueError, OSError):
-            pass
     try:
+        for name in ('SIGTERM', 'SIGHUP', 'SIGINT'):
+            number = getattr(signal, name, None)
+            if number is None:
+                continue
+            while True:  # fix5, gap 3: a signal that was pending when SIG_IGN is set runs its handler right after the call; it is held off like any other and the next one is set
+                try:
+                    previous.setdefault(number, signal.getsignal(number))
+                    signal.signal(number, signal.SIG_IGN)
+                    break
+                except (KeyboardInterrupt, Interrupted):
+                    continue
+                except (ValueError, OSError):
+                    previous.pop(number, None)
+                    break
         yield
     finally:
         for number, handler in previous.items():
@@ -697,6 +703,14 @@ class Deployment:
     def reap(self, name):
         """Stop (SIGTERM first, so the command removes what it had half written) and remove the container `name`; nothing here may hide the error that is propagating, and a signal during it is held off.
         A container that docker could not be asked to remove is recorded (`unreaped_containers`) and warned about: it may still be running (fix4, gap 3)."""
+        while True:  # fix5, gap 3: a signal in the instants before the signals are held off (or after) does not cancel the reap: it is repeated (stop and remove are idempotent)
+            try:
+                self.reap_once(name)
+                return
+            except (KeyboardInterrupt, Interrupted):
+                continue
+
+    def reap_once(self, name):
         cleared = False
         with ignoring_signals():
             for command, wait in ((['docker', 'stop', '--time', '20', name], 60), (['docker', 'rm', '--force', '--volumes', name], 60)):
@@ -709,8 +723,9 @@ class Deployment:
                     said = said.decode('utf-8', 'replace') if isinstance(said, bytes) else said if isinstance(said, str) else ''
                     cleared = done.returncode == 0 or 'no such' in said.lower()  # removing what is not there is not a failure
         if cleared:
-            self.report.setdefault('reaped_containers', []).append(name)
-        else:
+            if name not in self.report.setdefault('reaped_containers', []):
+                self.report['reaped_containers'].append(name)
+        elif name not in self.report.get('unreaped_containers', []):
             self.report.setdefault('unreaped_containers', []).append(name)
             self.warn(f'the container {name} could not be stopped and removed (docker did not answer): it may still be running. Check docker ps, and wait for it to end or remove it '
                       f'(docker rm --force {name}) before retrying.')
@@ -792,13 +807,14 @@ class Deployment:
         good = recorded.get('good') if isinstance(recorded.get('good'), dict) else {}
         good_ids, good_versions = (good.get(key) if isinstance(good.get(key), dict) else {} for key in ('ids', 'versions'))
         built_ids, built_versions = (recorded.get(key) if isinstance(recorded.get(key), dict) else {} for key in ('current', 'current_versions'))
-        if not good_ids and status not in (None, 'complete', 'rolled_back'):
+        ids = {name: self.image_to_tag(name, status, good_ids) for name in IMAGE_NAMES} if good_ids or status in (None, 'complete', 'rolled_back') else {}
+        if not ids or (not good_ids and any(not ids[name] for name in ROLLBACK_SERVICES)):  # fix5, gap 1: no judgment, or a release derived from the containers that lacks a service: nothing is tagged, the tags already recorded stay
             carried, held = (recorded.get(key) if isinstance(recorded.get(key), dict) else {} for key in ('previous', 'kept'))
             self.report['images'] = {'version': version, 'mark': mark, 'previous': dict(carried), 'kept': dict(held), 'current': {}, 'current_versions': {}}
             return
         previous, kept, promoted = {}, {}, {'ids': {}, 'versions': {}}
         for name in IMAGE_NAMES:
-            image_id = self.image_to_tag(name, status, good_ids)
+            image_id = ids[name]
             if not image_id:
                 continue  # a first deployment, an installation that predates this image, or an image that is gone: nothing to go back to for it
             repository = self.image_repo(name)
@@ -834,8 +850,14 @@ class Deployment:
         self.report['previous_images'] = served
         if status not in (None, 'complete', 'rolled_back'):
             if served:
-                self.warn(f'there is no record of a release that ended well (images.good) and the last deployment ended {status}: nothing says which images were good, so none is recorded and --rollback '
+                self.warn(f'there is no record of a release that ended well (images.good) and the last deployment ended {printable(status)}: nothing says which images were good, so none is recorded and --rollback '
                           'cannot go back until a deployment ends well')
+            return
+        if not served:  # a project that runs nothing (first installation, or every container gone) records nothing: `:latest` of `operator` alone is no release
+            return
+        if any(service not in served for service in ROLLBACK_SERVICES.values()):  # fix5, gap 1: a release that lacks a service is not a release: recording what is left would be a good that is not complete
+            self.warn('the container of ' + ', '.join(service for service in ROLLBACK_SERVICES.values() if service not in served) + ' does not exist, so the release that runs is incomplete: none is recorded as good '
+                      'and --rollback cannot go back until a deployment ends well')
             return
         ids, versions = {}, {}
         built_ids, built_versions = (recorded.get(key) if isinstance(recorded.get(key), dict) else {} for key in ('current', 'current_versions'))
@@ -1085,6 +1107,10 @@ class Deployment:
         invalid = self.invalid_previous(previous)
         if invalid:  # the file is data on disk: only `<repository of that image>:<version>-<mark>` of the images of a deployment is ever retagged to :latest
             raise NoPreviousImages('the recorded previous images are not tags this script makes (' + '; '.join(invalid) + '): refusing to use them; no service was changed')
+        outside = [service for name, service in ROLLBACK_SERVICES.items() if name not in previous]
+        if outside:  # fix5, gap 1: a rollback that leaves a service on the release that failed is not a rollback
+            raise NoPreviousImages('the recorded previous images do not include ' + ', '.join(outside) + ': a rollback would leave ' + ('it' if len(outside) == 1 else 'them') + ' on the release that is running; no service was changed. '
+                                   + no_previous_reason(self.report, self.load_status().get('status')))
         self.report['phases'] = []
         self.step('engine')
         self.run(['docker', 'version', '--format', '{{.Server.Version}}'])
@@ -1120,7 +1146,7 @@ class Deployment:
             self.report['roundtrip'] = self.run_roundtrip()
         if self.embed_stub:
             self.report['model_calls'] = self.check_no_language_model()
-        current = {name: image_id for name in IMAGE_NAMES for image_id in [self.probe(['docker', 'image', 'inspect', '--format', '{{.Id}}', self.image(name)])] if image_id}
+        current = {name: image_id for name in IMAGE_NAMES if name in previous for image_id in [self.probe(['docker', 'image', 'inspect', '--format', '{{.Id}}', self.image(name)])] if image_id}  # only what is in the destination (fix5, gap 1)
         earlier = self.report['images'] if isinstance(self.report.get('images'), dict) else {}
         earlier_ids, earlier_versions = (earlier.get(key) if isinstance(earlier.get(key), dict) else {} for key in ('current', 'current_versions'))
         mark = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
@@ -1537,7 +1563,7 @@ def no_previous_reason(report, status):
     """Why `--rollback` has no tags to go back to, exactly (fix4, gap 1)."""
     if good_recorded(report):
         return 'The release that runs is recorded as good (images.good) but no deployment has tagged it yet, so the containers and :latest already are it.'
-    return (f'No release is recorded as good (images.good): the last deployment ended {status or "without a report"} and the installation predates the record, so the script cannot tell which images were '
+    return (f'No release is recorded as good (images.good): the last deployment ended {printable(status) if status else "without a report"} and the installation predates the record, so the script cannot tell which images were '
             'good and invents none; a deployment that ends well records them (docs/operations.md, «Etiquetas locales de las imágenes»).')
 
 
@@ -1653,8 +1679,13 @@ def main(argv=None, root=ROOT):
     except (KeyboardInterrupt, Interrupted) as late:  # a signal in the instants before `settle` held the signals off
         return settle(deployment, late)
     finally:  # a phase that fails, an unexpected error, Ctrl-C and SIGTERM all release the lock, and a signal while it is released is held off
-        put_back.disarm()
         try:
+            while True:
+                try:
+                    put_back.disarm()
+                    break
+                except (KeyboardInterrupt, Interrupted):  # fix5, gap 2: a signal that arrives as the deployment is over changes nothing: the code stays the one of the cause, and the lock is released below
+                    continue
             with ignoring_signals():
                 lock.release()
         finally:
