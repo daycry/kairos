@@ -3,6 +3,8 @@ directory of the project, held by an open file for the whole deployment; the ope
 `--break-lock` on this host. A second deployment ends with `deployment_locked` before any phase runs. The JSON in the file (PID, host, start, stamp) is informative: it is written after
 the lock is taken and is what the refusal message shows. `--break-lock` is only for a lock whose owner is on ANOTHER host. Fix2 of the review of phase 10 (gaps 3, 4, 5, 8): no window
 between two owners (nothing is renamed or linked back), no traceback on Windows, a content that is not an object does not make the lock impossible to take, no file left behind.
+Fix3 of the review of phase 10 (gaps 3, 4, 5, 8): the file is opened with `O_NOFOLLOW` (a planted symbolic link is refused), `--break-lock` never deletes or renames a file (it can only take
+a lock the system lets it take), a leftover of a deployment that did not end is reported to the next one, and the file is checked to still be the one at the path before and after it is written.
 Processes here are real (`subprocess`); no test runs Docker: `subprocess.run` is a double that must not be called."""
 import contextlib
 import importlib.util
@@ -32,7 +34,7 @@ LOAD = "import importlib.util, sys\nspec = importlib.util.spec_from_file_locatio
 HOLDER = LOAD + "lock = d.DeployLock(sys.argv[2], sys.argv[3]); lock.acquire()\nprint('held', flush=True)\nimport time; time.sleep(120)\n"
 COMPETE = LOAD + """import os, time
 directory, shared = sys.argv[2], sys.argv[3]
-lock = d.DeployLock(directory, 'p')
+lock = d.DeployLock(directory, 'p', break_lock=len(sys.argv) > 4)
 for _ in range(2000):
     try:
         lock.acquire()
@@ -54,6 +56,15 @@ lock.release()
 """
 
 
+def can_symlink():
+    with tempfile.TemporaryDirectory() as directory:
+        try:
+            os.symlink(Path(directory, 'target'), Path(directory, 'link'))
+        except (OSError, NotImplementedError):
+            return False
+    return True
+
+
 def private_of(root):
     return root / '.private' / ('rehearsal-' + PROJECT)
 
@@ -71,7 +82,10 @@ def run_main(root, argv=ARGV):
     """main() of the script in `root`, with every command a double that fails the test if it runs; returns (exit code, stdout, stderr, the double)."""
     out, err = io.StringIO(), io.StringIO()
     with patch.object(deploy.subprocess, 'run', side_effect=AssertionError('no command may run')) as run, contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-        code = deploy.main(argv, root=root)
+        try:
+            code = deploy.main(argv, root=root)
+        except (KeyboardInterrupt, SystemExit) as exc:  # `main` must return a code: an exception that escapes it is a traceback
+            code = f'{type(exc).__name__} escaped main()'
     return code, out.getvalue(), err.getvalue(), run
 
 
@@ -169,28 +183,141 @@ class LockedDeploymentTests(unittest.TestCase):
                 self.assertIn('deployment_locked', err)
                 self.assertNotIn('Traceback', err)
 
-    def test_fix2_break_lock_is_only_for_a_lock_written_by_another_host(self):
-        """The one case a PID cannot answer: the file says another host holds it (a private directory on a shared disk). Without the flag it is `deployment_locked`; with it the file is replaced."""
+    def test_fix3_break_lock_never_deletes_a_file_whose_lock_is_held(self):
+        """Gaps 3 and 4: a process that is alive here holds the lock and the file says another host does. With or without `--break-lock` the file is left as it is (same file, same content) and
+        the holder is not touched: a file is never deleted to get past a lock that is held."""
         with workspace() as root, Holder(private_of(root)) as holder:
             path = private_of(root) / 'deployment.lock'
             path.write_text(json.dumps({'pid': 4242, 'host': 'some-other-machine', 'started_at': OWNER_TIME, 'project': PROJECT, 'token': 'x'}), encoding='utf-8')
-            with patch.object(deploy.Deployment, 'apply', side_effect=AssertionError('no phase may run')):
+            before, stat = path.read_text(encoding='utf-8'), os.stat(path)
+            for flags in ([], ['--break-lock']):
+                with self.subTest(flags=flags), patch.object(deploy.Deployment, 'apply', side_effect=AssertionError('no phase may run')):
+                    code, out, err, run = run_main(root, ARGV + flags)
+                    self.assertEqual(code, 3)
+                    self.assertIn('deployment_locked', err)
+                    self.assertIn('some-other-machine', err)
+                    self.assertNotIn('Traceback', err)
+                    self.assertEqual(path.read_text(encoding='utf-8'), before)
+                    self.assertTrue(os.path.samestat(stat, os.stat(path)), 'the very same file')
+                    self.assertIsNone(holder.process.poll())
+            self.assertEqual(sorted(child.name for child in private_of(root).iterdir()), ['deployment.lock'])
+
+    def test_fix3_a_break_lock_that_read_a_foreign_owner_in_the_window_does_not_delete_the_file_of_the_one_that_just_took_it(self):
+        """Gap 3 (reproduced in `kairos-test:i3p10`): A takes the free file of another host; B (`--break-lock`) was refused and read the OLD content before A emptied it. B used to delete A's file and
+        take a new one: two owners. Now B only ever fails or takes what the system lets it take."""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory, 'deployment.lock')
+            path.write_text(json.dumps({'pid': 4242, 'host': 'some-other-machine', 'started_at': OWNER_TIME, 'project': 'p', 'token': 'old'}), encoding='utf-8')
+            first, second = deploy.DeployLock(directory, 'p'), deploy.DeployLock(directory, 'p', break_lock=True)
+            first.acquire()
+            stat = os.stat(path)
+            with patch.object(deploy.DeployLock, 'owner', return_value={'pid': 4242, 'host': 'some-other-machine', 'started_at': OWNER_TIME}), self.assertRaises(deploy.DeploymentLocked):
+                second.acquire()
+            self.assertFalse(second.held)
+            self.assertTrue(os.path.samestat(stat, os.stat(path)))
+            self.assertEqual(json.loads(path.read_text(encoding='utf-8'))['token'], first.token)
+            first.release()
+
+    def test_fix3_nothing_is_ever_deleted_or_renamed_to_take_the_lock(self):
+        """Gap 4 (CWE-367): with no `unlink` there is no window between checking the file and deleting it."""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory, 'deployment.lock')
+            path.write_text(json.dumps({'pid': 4242, 'host': 'some-other-machine', 'started_at': OWNER_TIME, 'project': 'p', 'token': 'old'}), encoding='utf-8')
+            stat = os.stat(path)
+            forbidden = AssertionError('the lock never deletes or renames a file')
+            with patch.object(deploy.os, 'unlink', side_effect=forbidden), patch.object(deploy.os, 'remove', side_effect=forbidden), patch.object(deploy.os, 'rename', side_effect=forbidden), \
+                    patch.object(deploy.os, 'replace', side_effect=forbidden), patch.object(Path, 'unlink', side_effect=forbidden):
+                lock = deploy.DeployLock(directory, 'p', break_lock=True).acquire()
+                lock.release()
+            self.assertTrue(os.path.samestat(stat, os.stat(path)))
+
+    def test_fix3_a_free_lock_file_of_another_host_is_taken_and_the_next_deployment_is_told(self):
+        """Gap 8: the file still says a deployment of another host started; nothing holds the lock. It is taken (free is free) and the stderr and the report say what it left behind;
+        `--break-lock` only names it as a break."""
+        for flags, key, word in (([], 'previous_run_interrupted', 'did not end'), (['--break-lock'], 'lock_broken', 'lock broken')):
+            with self.subTest(flags=flags), workspace() as root:
+                write_lock(root, pid=4242, host='some-other-machine')
+                seen = []
+                with patch.object(deploy.Deployment, 'apply', autospec=True, side_effect=lambda instance: seen.append(json.loads(json.dumps(instance.report)))):
+                    code, out, err, run = run_main(root, ARGV + flags)
+                self.assertEqual(code, 0)
+                self.assertIn(word, err)
+                self.assertIn('some-other-machine', err)
+                self.assertEqual(seen[0][key], {'pid': 4242, 'host': 'some-other-machine', 'started_at': OWNER_TIME})
+
+    def test_fix3_a_deployment_that_died_is_reported_to_the_next_one_with_its_pid_host_and_start(self):
+        with workspace() as root:
+            holder = Holder(private_of(root))
+            holder.kill()
+            seen = []
+            with patch.object(deploy.Deployment, 'apply', autospec=True, side_effect=lambda instance: seen.append(json.loads(json.dumps(instance.report)))):
                 code, out, err, run = run_main(root)
-            self.assertEqual(code, 3)
-            self.assertIn('some-other-machine', err)
-            self.assertIn('--break-lock', err)
-            self.assertTrue(path.exists())
-            with patch.object(deploy.Deployment, 'apply', autospec=True):
-                code, out, err, run = run_main(root, ARGV + ['--break-lock'])
-            if os.name == 'nt':  # a file that another process has open cannot be deleted there: the refusal says so and nothing is broken
+            self.assertEqual(code, 0)
+            left = seen[0]['previous_run_interrupted']
+            self.assertEqual((left['pid'], left['host']), (holder.process.pid, socket.gethostname()))
+            self.assertRegex(left['started_at'], r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$')
+            self.assertIn('did not end', err)
+            self.assertIn(str(holder.process.pid), err)
+            self.assertNotIn('lock broken', err)
+
+    def test_fix3_a_lock_file_that_is_empty_says_nothing_and_one_that_is_not_json_is_still_a_leftover(self):
+        for text, expected in (('', False), ('half a js', True), ('[]', True)):
+            with self.subTest(text=text), workspace() as root:
+                write_lock(root, text=text)
+                seen = []
+                with patch.object(deploy.Deployment, 'apply', autospec=True, side_effect=lambda instance: seen.append(json.loads(json.dumps(instance.report)))):
+                    code, out, err, run = run_main(root)
+                self.assertEqual(code, 0)
+                self.assertEqual('previous_run_interrupted' in seen[0], expected)
+                self.assertEqual('did not end' in err, expected)
+
+    @unittest.skipUnless(can_symlink(), 'needs permission to create symbolic links')
+    def test_fix3_a_symbolic_link_planted_as_the_lock_is_refused_and_its_target_is_never_touched(self):
+        """Gap 5 (CWE-59, reproduced in `kairos-test:i3p10`): `O_CREAT` without `O_NOFOLLOW` followed the link, emptied its target and wrote the owner into it."""
+        for label, create in (('an existing file', True), ('a dangling link', False)):
+            with self.subTest(label), workspace() as root:
+                directory = private_of(root)
+                directory.mkdir(parents=True)
+                victim = root / 'victim.txt'
+                if create:
+                    victim.write_text('IMPORTANT DATA\n', encoding='utf-8')
+                os.symlink(victim, directory / 'deployment.lock')
+                with patch.object(deploy.Deployment, 'apply', side_effect=AssertionError('no phase may run')):
+                    code, out, err, run = run_main(root)
                 self.assertEqual(code, 3)
                 self.assertIn('deployment_locked', err)
                 self.assertNotIn('Traceback', err)
-            else:
-                self.assertEqual(code, 0)
-                self.assertIn('lock broken', err)
-                self.assertIn('some-other-machine', err)
-            self.assertEqual(sorted(child.name for child in private_of(root).iterdir()), ['deployment.lock'])
+                self.assertTrue((directory / 'deployment.lock').is_symlink(), 'the link is left as it is')
+                if create:
+                    self.assertEqual(victim.read_text(encoding='utf-8'), 'IMPORTANT DATA\n')
+                else:
+                    self.assertFalse(victim.exists(), 'the link was not followed to create its target')
+                with patch.object(deploy.Deployment, 'apply', side_effect=AssertionError('no phase may run')):
+                    code, out, err, run = run_main(root, ARGV + ['--break-lock'])
+                self.assertEqual(code, 3)
+
+    @unittest.skipIf(os.name == 'nt', 'Windows does not delete a file that is open: the window does not exist there')
+    def test_fix3_a_file_that_is_replaced_between_the_open_and_the_lock_is_not_the_lock(self):
+        """The standard order: open, lock, compare the descriptor with the path, write, compare again. A file that is not the one at the path is dropped and the lock is taken on the new one."""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory, 'deployment.lock')
+            lock = deploy.DeployLock(directory, 'p')
+            real, calls = deploy.DeployLock._lock_file, []
+
+            def swap(descriptor):
+                real(descriptor)
+                if not calls:  # the first file is replaced right after it is locked (a delete and a create by someone else)
+                    calls.append(1)
+                    path.unlink()
+                    path.write_text('', encoding='utf-8')
+            with patch.object(deploy.DeployLock, '_lock_file', staticmethod(swap)):
+                lock.acquire()
+            try:
+                self.assertTrue(lock.held)
+                self.assertEqual(json.loads(path.read_text(encoding='utf-8'))['token'], lock.token, 'the owner is written in the file that is at the path')
+                self.assertTrue(os.path.samestat(os.fstat(lock.descriptor), os.stat(path)))
+            finally:
+                lock.release()
 
     def test_fix2_a_lock_that_cannot_be_taken_for_any_reason_is_deployment_locked_never_a_traceback(self):
         """Gap 4: on Windows renaming or locking a file another process has open raised PermissionError and the exit was 1. Any operating-system error is `deployment_locked` (exit 3)."""
@@ -220,6 +347,17 @@ class CompetitionTests(unittest.TestCase):
             codes = [child.wait(timeout=120) for child in children]
             self.assertEqual(codes, [0] * 8, 'a 3 is a process that never got the lock, a 4 two owners at once')
             self.assertEqual(Path(shared, 'counter').read_text(encoding='utf-8'), '8', 'every section ran alone: no update was lost')
+            self.assertEqual(sorted(child.name for child in Path(directory).iterdir()), ['deployment.lock'])
+
+    def test_fix3_real_processes_with_break_lock_over_a_stale_file_of_another_host_never_hold_the_lock_together(self):
+        """Gaps 3 and 4: eight processes, every one with `--break-lock`, over a stale file that says another host. No window, no two owners, no lost update."""
+        with tempfile.TemporaryDirectory() as shared, tempfile.TemporaryDirectory() as directory:
+            Path(shared, 'counter').write_text('0', encoding='utf-8')
+            Path(directory, 'deployment.lock').write_text(json.dumps({'pid': 4242, 'host': 'some-other-machine', 'started_at': OWNER_TIME, 'project': 'p', 'token': 'old'}), encoding='utf-8')
+            children = [subprocess.Popen([sys.executable, '-c', COMPETE, str(SCRIPT), directory, shared, 'break']) for _ in range(8)]
+            codes = [child.wait(timeout=120) for child in children]
+            self.assertEqual(codes, [0] * 8, 'a 3 is a process that never got the lock, a 4 two owners at once')
+            self.assertEqual(Path(shared, 'counter').read_text(encoding='utf-8'), '8')
             self.assertEqual(sorted(child.name for child in Path(directory).iterdir()), ['deployment.lock'])
 
     def test_fix2_two_break_lock_and_a_plain_deployment_on_one_stale_lock_leave_exactly_one_owner(self):
@@ -291,19 +429,20 @@ class ReleaseTests(unittest.TestCase):
                 self.assertEqual(result[0], code)
                 self.free(root)
 
-    def test_ctrl_c_releases_the_lock_and_propagates(self):
+    def test_ctrl_c_releases_the_lock_and_main_ends_with_130(self):
+        """Fix3 (gap 2): Ctrl-C is no longer a traceback: the report is saved as `interrupted` (see test_deploy_rollback) and the exit code is the conventional 130."""
         with workspace() as root:
-            with self.assertRaises(KeyboardInterrupt):
-                self.deploy_with(root, KeyboardInterrupt())
+            code, out, err, run = self.deploy_with(root, KeyboardInterrupt())
+            self.assertEqual(code, 130)
+            self.assertNotIn('Traceback', err)
             self.free(root)
 
     @unittest.skipUnless(hasattr(signal, 'raise_signal') and hasattr(signal, 'SIGTERM'), 'needs signals')
-    def test_sigterm_releases_the_lock_and_puts_the_handlers_back(self):
+    def test_sigterm_releases_the_lock_ends_with_143_and_puts_the_handlers_back(self):
         with workspace() as root:
             before = signal.getsignal(signal.SIGTERM)
-            with self.assertRaises(SystemExit) as raised:
-                self.deploy_with(root, lambda: signal.raise_signal(signal.SIGTERM))
-            self.assertEqual(raised.exception.code, 128 + signal.SIGTERM)
+            code, out, err, run = self.deploy_with(root, lambda: signal.raise_signal(signal.SIGTERM))
+            self.assertEqual(code, 128 + signal.SIGTERM)
             self.free(root)
             self.assertIs(signal.getsignal(signal.SIGTERM), before)
 
