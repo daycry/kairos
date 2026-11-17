@@ -234,7 +234,7 @@ class LockedDeploymentTests(unittest.TestCase):
     def test_fix3_a_free_lock_file_of_another_host_is_taken_and_the_next_deployment_is_told(self):
         """Gap 8: the file still says a deployment of another host started; nothing holds the lock. It is taken (free is free) and the stderr and the report say what it left behind;
         `--break-lock` only names it as a break."""
-        for flags, key, word in (([], 'previous_run_interrupted', 'did not end'), (['--break-lock'], 'lock_broken', 'lock broken')):
+        for flags, key, word in (([], 'previous_run_interrupted', 'may still be running'), (['--break-lock'], 'lock_broken', 'lock broken')):
             with self.subTest(flags=flags), workspace() as root:
                 write_lock(root, pid=4242, host='some-other-machine')
                 seen = []
@@ -322,7 +322,8 @@ class LockedDeploymentTests(unittest.TestCase):
     def test_fix2_a_lock_that_cannot_be_taken_for_any_reason_is_deployment_locked_never_a_traceback(self):
         """Gap 4: on Windows renaming or locking a file another process has open raised PermissionError and the exit was 1. Any operating-system error is `deployment_locked` (exit 3)."""
         for label, patched in (('locking fails', patch.object(deploy.DeployLock, '_lock_file', side_effect=PermissionError(13, 'Permission denied'))),
-                               ('the file cannot be opened', patch.object(deploy.os, 'open', side_effect=PermissionError(13, 'Permission denied'))),
+                               ('the file cannot be opened', patch.object(deploy, 'create_without_following', side_effect=PermissionError(13, 'Permission denied')) if os.name == 'nt'
+                                else patch.object(deploy.os, 'open', side_effect=PermissionError(13, 'Permission denied'))),
                                ('no locks on this filesystem', patch.object(deploy.DeployLock, '_lock_file', side_effect=OSError(37, 'No locks available')))):
             with self.subTest(label), workspace() as root, patched:
                 with patch.object(deploy.Deployment, 'apply', side_effect=AssertionError('no phase may run')):
@@ -336,6 +337,146 @@ class LockedDeploymentTests(unittest.TestCase):
             code, out, err, run = run_main(root, ['--project-name', PROJECT, '--api-port', '18790', '--web-port', '15173'])
             self.assertEqual(code, 0)
             self.assertFalse((root / '.private').exists())
+
+
+class Fix4Tests(unittest.TestCase):
+    """Fix4 of the review of phase 10: the message about a leftover says what is known and no more (gap 4), nothing of the lock file reaches the terminal raw (gap 8), and the lock file must be a
+    regular file with one link, however it is created (gap 9)."""
+    HOSTILE = ('\x1b]0;PWNED\x07', '\x1b[2J\x1b[31mFAKE OK\x1b[0m\r', 'a\nb\x00c', '‮evil', '\x9b31m' + 'x' * 400)
+
+    @staticmethod
+    def raw(text):
+        """The characters of `text` that a terminal would act on (every one that is not printable, but the line ends the script itself writes)."""
+        return sorted({char for char in text if not char.isprintable() and char != '\n'})
+
+    def apply_seeing(self, root, flags=()):
+        seen = []
+        with patch.object(deploy.Deployment, 'apply', autospec=True, side_effect=lambda instance: seen.append(json.loads(json.dumps(instance.report)))):
+            code, out, err, run = run_main(root, ARGV + list(flags))
+        return code, err, seen
+
+    def test_a_leftover_of_another_host_says_what_is_known_not_that_the_deployment_was_killed(self):
+        with workspace() as root:
+            write_lock(root, pid=4242, host='some-other-machine')
+            code, err, seen = self.apply_seeing(root)
+            self.assertEqual(code, 0)
+            self.assertNotIn('killed', err)
+            self.assertNotIn('machine was lost', err)
+            self.assertNotIn('did not end', err, 'a deployment of another host may be running right now')
+            self.assertIn('not held on this machine', err)
+            self.assertIn('shared disk', err)
+            self.assertIn('may still be running', err)
+            self.assertIn('some-other-machine', err)
+            self.assertIn('previous_run_interrupted', seen[0], 'the report still records what the file said')
+
+    def test_a_leftover_of_this_host_and_one_that_names_nobody_still_say_that_the_deployment_did_not_end(self):
+        for label, text in (('this host', None), ('names nobody', 'half a js')):
+            with self.subTest(label), workspace() as root:
+                write_lock(root, text=text)
+                code, err, seen = self.apply_seeing(root)
+                self.assertEqual(code, 0)
+                self.assertIn('did not end', err)
+                self.assertNotIn('shared disk', err.split('did not end')[0])
+
+    def test_no_data_of_the_lock_file_reaches_stderr_or_the_report_raw(self):
+        """`c_inject.py` of the review (CWE-150): the PID, host and start of the file are written by whoever can write the file; an escape sequence in them must not act on the terminal of the operator."""
+        for value in self.HOSTILE:
+            for field in ('pid', 'host', 'started_at'):
+                kwargs = {'pid': 4242, 'host': 'some-other-machine'}
+                kwargs[field] = value
+                for flags in ((), ('--break-lock',)):
+                    with self.subTest(field=field, value=value[:12], flags=flags), workspace() as root:
+                        if field == 'started_at':
+                            write_lock(root, **{**kwargs, 'started_at': value})
+                        else:
+                            write_lock(root, **kwargs)
+                        code, err, seen = self.apply_seeing(root, flags)
+                        self.assertEqual(code, 0)
+                        self.assertEqual(self.raw(err), [], repr(err[:200]))
+                        left = seen[0].get('lock_broken') or seen[0]['previous_run_interrupted']
+                        self.assertEqual(self.raw(json.dumps(left, ensure_ascii=False)), [], repr(left))
+                        self.assertLessEqual(len(err), 2000)
+
+    def test_no_data_of_a_held_lock_file_reaches_stderr_raw_in_a_refusal(self):
+        with workspace() as root, Holder(private_of(root)):
+            path = private_of(root) / 'deployment.lock'
+            for value in self.HOSTILE:
+                with self.subTest(value=value[:12]):
+                    path.write_text(json.dumps({'pid': value, 'host': value, 'started_at': value, 'project': value, 'token': value}), encoding='utf-8')
+                    code, out, err, run = run_main(root)
+                    self.assertEqual(code, 3)
+                    self.assertEqual(self.raw(err), [], repr(err[:200]))
+
+    @unittest.skipUnless(hasattr(os, 'link'), 'needs hard links')
+    def test_a_hard_link_planted_as_the_lock_is_refused_and_the_data_it_links_to_is_never_truncated(self):
+        """`c_linux.py` of the review (CWE-59): `O_NOFOLLOW` does not cover a hard link, and taking and releasing the lock emptied the file it linked to."""
+        with workspace() as root:
+            directory = private_of(root)
+            directory.mkdir(parents=True)
+            victim = root / 'victim.txt'
+            victim.write_text('IMPORTANT DATA\n', encoding='utf-8')
+            try:
+                os.link(victim, directory / 'deployment.lock')
+            except OSError as exc:
+                self.skipTest(f'no hard links here: {exc}')
+            for flags in ((), ('--break-lock',)):
+                with patch.object(deploy.Deployment, 'apply', side_effect=AssertionError('no phase may run')):
+                    code, out, err, run = run_main(root, ARGV + list(flags))
+                self.assertEqual(code, 3)
+                self.assertIn('deployment_locked', err)
+                self.assertIn('hard link', err)
+                self.assertNotIn('Traceback', err)
+                self.assertEqual(victim.read_text(encoding='utf-8'), 'IMPORTANT DATA\n')
+                self.assertEqual((directory / 'deployment.lock').read_text(encoding='utf-8'), 'IMPORTANT DATA\n', 'the file is left as it was: not written, not emptied')
+            with self.assertRaises(deploy.DeploymentLocked):
+                deploy.DeployLock(directory, 'p').acquire()
+            self.assertEqual(victim.read_text(encoding='utf-8'), 'IMPORTANT DATA\n')
+
+    def test_a_lock_that_is_not_a_regular_file_is_deployment_locked_and_nothing_hangs(self):
+        kinds = [('a directory', os.mkdir)] + ([('a named pipe', os.mkfifo)] if hasattr(os, 'mkfifo') else [])
+        for label, make in kinds:
+            with self.subTest(label), tempfile.TemporaryDirectory() as directory:
+                make(os.path.join(directory, deploy.LOCK_FILE))
+                with self.assertRaises(deploy.DeploymentLocked):
+                    deploy.DeployLock(directory, 'p').acquire()
+
+    def test_the_opened_file_is_checked_not_the_path_a_reparse_point_or_a_second_link_found_after_the_open_is_refused_without_writing(self):
+        """The double of `fstat` (a Windows reparse point cannot be made here without the privilege of linking): whatever the descriptor says, the file is not written."""
+        for label, attributes in (('a reparse point', {'st_file_attributes': 0x400}), ('a second link', {'st_nlink': 2}), ('not a regular file', {'st_mode': 0o040000})):
+            with self.subTest(label), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory, deploy.LOCK_FILE)
+                path.write_text('KEEP', encoding='utf-8')
+                real = os.stat(path)
+                fields = dict(st_mode=real.st_mode, st_nlink=1, st_file_attributes=0)
+                fields.update(attributes)
+                fake = type('Info', (), {**fields, 'st_ino': real.st_ino, 'st_dev': real.st_dev})()
+                with patch.object(deploy.os, 'fstat', return_value=fake), patch.object(deploy.os, 'ftruncate', side_effect=AssertionError('never written')), self.assertRaises(deploy.DeploymentLocked):
+                    deploy.DeployLock(directory, 'p').acquire()
+                self.assertEqual(path.read_text(encoding='utf-8'), 'KEEP')
+
+    @unittest.skipUnless(os.name == 'nt', 'the Windows way of creating the file')
+    def test_on_windows_the_file_is_created_without_following_a_reparse_point(self):
+        """A link planted between the `lstat` and the creation must not create or truncate its target: the file is created with `CreateFileW` and `FILE_FLAG_OPEN_REPARSE_POINT` (and
+        OPEN_ALWAYS), which opens the link itself if there is one. The call is recorded here; a real link needs a privilege this account does not have."""
+        calls = []
+        real = deploy.windows_kernel()
+
+        class Spy:
+            def __getattr__(self, name):
+                return getattr(real, name)
+
+            def CreateFileW(self, *arguments):
+                calls.append(arguments)
+                return real.CreateFileW(*arguments)
+        with tempfile.TemporaryDirectory() as directory, patch.object(deploy, 'windows_kernel', return_value=Spy()):
+            lock = deploy.DeployLock(directory, 'p').acquire()
+            try:
+                self.assertEqual(len(calls), 1)
+                self.assertTrue(calls[0][5] & 0x00200000, 'FILE_FLAG_OPEN_REPARSE_POINT')
+                self.assertEqual(calls[0][4], 4, 'OPEN_ALWAYS: it never truncates')
+                self.assertTrue(lock.held)
+            finally:
+                lock.release()
 
 
 class CompetitionTests(unittest.TestCase):

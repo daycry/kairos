@@ -188,6 +188,7 @@ class Harness:
         stack.enter_context(patch.object(self.instance, 'run', side_effect=self.docker))
         stack.enter_context(patch.object(deploy, 'verify_runtime', return_value={}))
         stack.enter_context(patch.object(deploy.time, 'sleep'))
+        stack.enter_context(patch.object(deploy.subprocess, 'run', side_effect=lambda command, **kwargs: SimpleNamespace(returncode=0, stderr=b'')))  # `docker stop/rm` of a reaped container: no docker here
         stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
         stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
         return stack
@@ -774,11 +775,12 @@ def cli(harness, wrap=None, rollback=False):
     def run(instance, command, **kwargs):
         return wrap(instance, command, **kwargs) if wrap else harness.docker(command, **kwargs)
     err = io.StringIO()
-    with patch.object(deploy.Deployment, 'run', autospec=True, side_effect=run), patch.object(deploy, 'verify_runtime', return_value={}), patch.object(deploy.time, 'sleep'), \
+    reaping = contextlib.nullcontext() if hasattr(deploy.subprocess.run, 'assert_called') else patch.object(deploy.subprocess, 'run', side_effect=lambda command, **kwargs: SimpleNamespace(returncode=0, stderr=b''))  # `docker stop/rm` of a reaped container
+    with patch.object(deploy.Deployment, 'run', autospec=True, side_effect=run), patch.object(deploy, 'verify_runtime', return_value={}), patch.object(deploy.time, 'sleep'), reaping, \
             contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
         try:
             code = deploy.main(argv, root=harness.root)
-        except (KeyboardInterrupt, SystemExit) as exc:  # `main` must return a code: an exception that escapes it is a traceback and no saved report
+        except (KeyboardInterrupt, SystemExit, deploy.Interrupted) as exc:  # `main` must return a code: an exception that escapes it is a traceback and no saved report
             code = f'{type(exc).__name__} escaped main()'
     return code, err.getvalue()
 
@@ -914,6 +916,202 @@ class InterruptedDeploymentTests(unittest.TestCase):
             self.assertFalse((harness.private / 'deployment-status.tmp').exists())
 
 
+class LegacyInstallationTests(unittest.TestCase):
+    """Fix4 of the review of phase 10 (gap 1, the class): an installation with no `images.good` (no report, or an old `complete` report: the real state of the installed project) has its running
+    release recorded as good at the START of a deployment, after the lock and before any phase, so that no interruption or failure afterwards (in `configuration`, half way through the tagging)
+    can lose it. When the last status cannot be trusted and there is no record, nothing is invented and the script says exactly why `--rollback` cannot go back."""
+
+    @staticmethod
+    def stop_in(harness, where, error):
+        state = {'n': 0}
+
+        def run(instance, command, **kwargs):
+            if where == 'configuration' and instance.phase == 'configuration' and command[-3:] == ['config', '--format', 'json']:
+                raise error
+            if where == 'tag' and instance.phase == 'build' and command[:2] == ['docker', 'tag']:
+                state['n'] += 1
+                if state['n'] == 2:
+                    raise error
+            return harness.docker(command, **kwargs)
+        return run
+
+    def test_a_stop_in_configuration_or_in_the_tagging_of_a_legacy_installation_still_rolls_back_to_the_release_that_ran(self):
+        """The cases of the review (`legacy.py`): report `complete` without `good`, or no report; Ctrl-C or a failure in `configuration` or at the second `docker tag`, and the plain
+        run; then a deployment that moves the containers and fails after `start`, then `--rollback`: the containers go back to v1."""
+        for status in ({'status': 'complete'}, None):
+            for where, error in (('none', None), ('configuration', KeyboardInterrupt()), ('configuration', deploy.DeploymentError('x')), ('tag', KeyboardInterrupt()), ('tag', deploy.DeploymentError('x'))):
+                with self.subTest(report=status, stop=where, error=type(error).__name__), Harness(in_use('v1'), status=status) as harness:
+                    if where != 'none':
+                        code, err = cli(harness, self.stop_in(harness, where, error))
+                        self.assertEqual(code, 130 if isinstance(error, KeyboardInterrupt) else 1, err)
+                        self.assertEqual(harness.status()['images']['good']['ids'], {name: sid(f'v1-{name}') for name in NAMES}, 'the release that runs was recorded before the stop')
+                    harness.again().apply_failing_after('start')
+                    code, err = cli(harness, rollback=True)
+                    self.assertEqual(code, 0, err)
+                    self.assertEqual(harness.served_ids(), {name: sid(f'v1-{name}') for name in SERVICE_OF})
+                    self.assertEqual({harness.docker.images[f'{repo(name)}:latest'] for name in NAMES}, {sid(f'v1-{name}') for name in NAMES})
+
+    def test_the_running_release_is_saved_as_good_before_configuration_and_after_the_engine_check(self):
+        for status in ({'status': 'complete'}, {'status': 'rolled_back', 'images': {'previous': {}}}, None):
+            with self.subTest(report=status), Harness(in_use('v1'), status=status) as harness:
+                real = harness.docker
+
+                def stop(command, **kwargs):
+                    if command[-3:] == ['config', '--format', 'json']:  # the first thing `configuration` runs
+                        raise KeyboardInterrupt()
+                    return real(command, **kwargs)
+                with harness.patches(), patch.object(harness.instance, 'run', side_effect=stop), self.assertRaises(KeyboardInterrupt):
+                    harness.instance.apply()
+                saved = harness.status()
+                self.assertEqual(saved['status'], 'in_progress')
+                self.assertEqual(saved['images']['good']['ids'], {name: sid(f'v1-{name}') for name in NAMES}, 'the containers, and :latest for operator')
+
+    def test_a_release_that_is_already_recorded_is_not_saved_again_and_a_first_installation_saves_nothing(self):
+        record = {'previous': {}, 'good': {'ids': {name: sid(f'v1-{name}') for name in NAMES}, 'versions': {name: VERSION for name in NAMES}}}
+        with Harness(in_use('v1'), status={'status': 'complete', 'images': record}) as harness:
+            before = (harness.private / 'deployment-status.json').read_text(encoding='utf-8')
+            with harness.patches(), patch.object(harness.instance, 'run', side_effect=deploy.DeploymentError('engine denied')), self.assertRaises(deploy.DeploymentError):
+                harness.instance.apply()
+            self.assertEqual((harness.private / 'deployment-status.json').read_text(encoding='utf-8'), before)
+        with Harness() as harness:
+            with harness.patches(), patch.object(harness.instance, 'run', side_effect=deploy.DeploymentError('engine denied')), self.assertRaises(deploy.DeploymentError):
+                harness.instance.apply()
+            self.assertFalse((harness.private / 'deployment-status.json').exists(), 'nothing runs, so there is nothing to record')
+        with Harness(in_use('v1'), status={'status': 'complete'}) as harness:  # a legacy installation: a denied engine is refused before docker is asked for anything else and before any write
+            before = (harness.private / 'deployment-status.json').read_text(encoding='utf-8')
+            with harness.patches(), patch.object(harness.instance, 'run', side_effect=deploy.DeploymentError('engine denied')) as run, self.assertRaises(deploy.DeploymentError):
+                harness.instance.apply()
+            self.assertEqual(run.call_args_list[0].args[0][:2], ['docker', 'version'])
+            self.assertEqual(run.call_count, 1)
+            self.assertEqual((harness.private / 'deployment-status.json').read_text(encoding='utf-8'), before)
+
+    def test_without_a_record_and_after_a_status_that_cannot_be_trusted_nothing_is_invented_and_the_script_says_why_rollback_cannot_go_back(self):
+        for status in ('failed', 'interrupted', 'in_progress'):
+            with self.subTest(status), Harness(in_use('v1'), status={'status': status, 'images': {'previous': {}}}) as harness:
+                real = harness.docker
+
+                def stop(instance, command, **kwargs):
+                    if instance.phase == 'configuration' and command[-3:] == ['config', '--format', 'json']:
+                        raise KeyboardInterrupt()
+                    return real(command, **kwargs)
+                code, err = cli(harness, stop)
+                self.assertEqual(code, 130)
+                self.assertNotIn('good', harness.status()['images'], 'no release is made up')
+                self.assertTrue([w for w in harness.status()['warnings'] if 'images.good' in w and status in w], harness.status().get('warnings'))
+                self.assertIn('images.good', err)
+                self.assertNotIn('still goes back to it', err, 'the message of an interruption promises no rollback that does not exist')
+                self.assertIn('no release is recorded as good', err)
+                code, err = cli(harness, rollback=True)
+                self.assertEqual(code, 4)
+                self.assertIn('no_previous_images', err)
+                self.assertIn('images.good', err, 'the message says why: there is no record of a good release')
+
+    def test_an_interruption_with_a_record_says_that_rollback_goes_back(self):
+        with Harness(in_use('v0')) as harness:
+            harness.apply()
+            code, err = cli(harness, raising_at_verify(harness, KeyboardInterrupt()))
+            self.assertEqual(code, 130)
+            self.assertIn('--rollback still goes back to it', err)
+
+
+class ExitOfTheHandlersTests(unittest.TestCase):
+    """Fix4 (gaps 2 and 3): the handlers of a failure or an interruption are not themselves interrupted (a signal during them is held off, and `main` returns the code of the first cause), and every
+    container a deployment starts has a name its `reap` can stop and remove."""
+
+    @staticmethod
+    def hostile(harness, first, second, where):
+        """`main` with `first` raised in verify and `second` raised while the report is saved (`save`), while the hints are made (`hints`) or in the release of the lock (`release`)."""
+        real_save, real_hints, real_release = deploy.Deployment.save_report, deploy.failure_hints, deploy.DeployLock.release
+
+        def fire():
+            signal.raise_signal({'sigterm': signal.SIGTERM, 'sigint': signal.SIGINT}[second])
+
+        def save(self):
+            if where == 'save' and self.report.get('status') in ('interrupted', 'failed'):
+                fire()
+            return real_save(self)
+
+        def hints(report, phase):
+            if where == 'hints':
+                fire()
+            return real_hints(report, phase)
+
+        def release(self):
+            if where == 'release':
+                fire()
+            return real_release(self)
+
+        def wrap(instance, command, **kwargs):
+            if instance.phase == 'verify' and 'content-manifest' in command:
+                if first == 'sigterm':
+                    signal.raise_signal(signal.SIGTERM)
+                elif first == 'ctrlc':
+                    raise KeyboardInterrupt()
+                else:
+                    raise deploy.DeploymentError('x')
+            return harness.docker(command, **kwargs)
+        with patch.object(deploy.Deployment, 'save_report', save), patch.object(deploy, 'failure_hints', hints), patch.object(deploy.DeployLock, 'release', release):
+            return cli(harness, wrap)
+
+    @unittest.skipUnless(hasattr(signal, 'raise_signal') and hasattr(signal, 'SIGTERM') and hasattr(signal, 'SIGINT'), 'needs signals')
+    def test_a_signal_during_the_failure_or_interruption_handlers_does_not_escape_main(self):
+        """`signals2.py` of the review: a second SIGTERM (or SIGINT) while the report is saved, while the hints are printed or while the lock is released used to leave `main` with a traceback."""
+        cases = (('SIGTERM then SIGTERM while saving', 'sigterm', 'sigterm', 'save', 128 + signal.SIGTERM, 'interrupted'),
+                 ('SIGTERM then SIGTERM in the hints', 'sigterm', 'sigterm', 'hints', 128 + signal.SIGTERM, 'interrupted'),
+                 ('failure then SIGTERM while saving', 'fail', 'sigterm', 'save', 1, 'failed'),
+                 ('failure then SIGINT while saving', 'fail', 'sigint', 'save', 1, 'failed'),
+                 ('failure then SIGTERM in the hints', 'fail', 'sigterm', 'hints', 1, 'failed'),
+                 ('Ctrl-C then SIGINT while saving', 'ctrlc', 'sigint', 'save', 130, 'interrupted'),
+                 ('Ctrl-C then SIGTERM in the release of the lock', 'ctrlc', 'sigterm', 'release', 130, 'interrupted'),
+                 ('failure then SIGTERM in the release of the lock', 'fail', 'sigterm', 'release', 1, 'failed'))
+        before = (signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT))
+        for label, first, second, where, code, status in cases:
+            with self.subTest(label), Harness(in_use('v0')) as harness:
+                harness.apply()
+                result = self.hostile(harness, first, second, where)
+                self.assertEqual(result[0], code, result[1][-300:])
+                self.assertEqual(harness.status()['status'], status)
+                self.assertEqual((signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)), before, 'the handlers are put back')
+                self.assertEqual((harness.private / deploy.LOCK_FILE).read_text(encoding='utf-8'), '', 'the lock was released')
+
+    def test_the_containers_of_every_compose_run_have_a_name_and_an_interruption_stops_and_removes_it(self):
+        for verb in ('inspect', 'migrate', 'backfill-chunks', 'memory-files'):
+            with self.subTest(verb), Harness(in_use('v1')) as harness:
+                seen, stops = {}, []
+
+                def wrap(instance, command, **kwargs):
+                    if 'run' in command and (verb in command[command.index('memory-admin'):] if 'memory-admin' in command else verb in command):
+                        seen['name'] = command[command.index('--name') + 1]  # ValueError: a container with no name cannot be reaped
+                        raise KeyboardInterrupt()
+                    return harness.docker(command, **kwargs)
+                with patch.object(deploy.subprocess, 'run', side_effect=lambda command, **kwargs: stops.append(list(command)) or SimpleNamespace(returncode=0, stderr=b'')):
+                    code, err = cli(harness, wrap)
+                self.assertEqual(code, 130, err)
+                name = seen['name']
+                self.assertEqual(stops, [['docker', 'stop', '--time', '20', name], ['docker', 'rm', '--force', '--volumes', name]])
+                self.assertEqual(harness.status()['reaped_containers'], [name])
+                self.assertNotIn('unreaped_containers', harness.status())
+
+    def test_a_container_that_could_not_be_stopped_is_said_not_hidden_behind_no_later_phase_was_run(self):
+        with Harness(in_use('v1')) as harness:
+            seen = {}
+
+            def wrap(instance, command, **kwargs):
+                if 'run' in command and 'memory-admin' in command and 'migrate' in command:
+                    seen['name'] = command[command.index('--name') + 1]
+                    raise KeyboardInterrupt()
+                return harness.docker(command, **kwargs)
+            with patch.object(deploy.subprocess, 'run', side_effect=OSError('docker is gone')):
+                code, err = cli(harness, wrap)
+            self.assertEqual(code, 130)
+            name = seen['name']
+            self.assertEqual(harness.status()['unreaped_containers'], [name])
+            self.assertIn('may still be running', err)
+            self.assertIn(name, err)
+            self.assertIn('docker rm --force ' + name, err)
+            self.assertNotIn('reaped_containers', harness.status())
+
+
 class GoodIdTests(unittest.TestCase):
     """Fix3 (gap 6): an id read from `deployment-status.json` is passed to docker only as `sha256:` and 64 lowercase hexadecimal digits; anything else is ignored with a warning."""
     BAD = ('alpine:3', 'busybox', 'sha256:' + 'A' * 64, 'sha256:' + 'a' * 63, 'sha256:' + 'a' * 65, 'sha256:' + 'a' * 64 + '\n', 'sha256:' + 'g' * 64, 'sha256:abc', 'sha256:v1-api', '', ' ' + sid('x'), 7)
@@ -970,10 +1168,17 @@ class TagMarkTests(unittest.TestCase):
 class ExplorationTests(unittest.TestCase):
     """Fix3: random sequences (fixed seed) of deployments that end well, fail in each phase, are killed (nothing saved) or interrupted by Ctrl-C (`interrupted` saved), and rollbacks that fail or are
     interrupted, over the double of Docker. The oracle is the model: after every step a `--rollback` must go to (or already be at) the LAST GOOD RELEASE, with its containers AND its `:latest`,
-    and the tag of that release must still exist. (The double keeps an image by id after it loses its last tag, as Docker does.)"""
+    and the tag of that release must still exist. (The double keeps an image by id after it loses its last tag, as Docker does.)
+
+    Fix4, `legacy` mode (the installed project: no report and no `images.good`): the first step is anything, and the stops also happen in `configuration`, half way through the tagging, around the
+    save of `in_progress` and inside the tagging and the verification of a rollback."""
     APPLY_STEPS = ['ok'] + [f'{kind}:{phase}' for kind in ('fail', 'kill', 'ctrlc') for phase in ('build', 'inspect', 'backup', 'migrate', 'backfill', 'start', 'start_partial', 'verify')]
     ROLLBACK_STEPS = ['rb', 'rb_kill_up', 'rb_ctrlc_up', 'rb_fail_up']
+    LEGACY_STEPS = (['ok'] + [f'{kind}:{phase}' for kind in ('fail', 'kill', 'ctrlc') for phase in ('configuration', 'build', 'inspect', 'backup', 'migrate', 'backfill', 'start', 'start_partial', 'verify', 'tagcmd')]
+                    + [f'{kind}:{phase}' for kind in ('kill', 'ctrlc') for phase in ('save_before', 'save_after')]
+                    + ROLLBACK_STEPS + [f'rb_{kind}_{phase}' for kind in ('fail', 'kill', 'ctrlc') for phase in ('tag', 'verify')])
     SEQUENCES, LENGTH, SEED = 24, 6, 20261117
+    LEGACY_SEQUENCES, LEGACY_LENGTH, LEGACY_SEED = 60, 8, 9
 
     class Clock(datetime.datetime):
         tick = 0
@@ -986,9 +1191,11 @@ class ExplorationTests(unittest.TestCase):
     def wrapped(self, harness, step):
         real = harness.docker
         kind, _, phase = step.partition(':')
+        state = {'n': 0, 'k': self.dice.randint(1, 12), 'after': self.dice.random() < 0.5}
 
-        def exception():
-            return deploy.DeploymentError('x') if kind == 'fail' else KeyboardInterrupt() if kind == 'ctrlc' else Killed()
+        def exception(of=None):
+            of = of or kind
+            return deploy.DeploymentError('x') if of == 'fail' else KeyboardInterrupt() if of == 'ctrlc' else Killed()
 
         def run(command, **kwargs):
             now = harness.instance.phase
@@ -1008,31 +1215,57 @@ class ExplorationTests(unittest.TestCase):
                     raise exception()
                 if phase == 'verify' and now == 'verify' and 'content-manifest' in command:
                     raise exception()
-            if step.startswith('rb_') and 'up' in command:
+                if phase == 'configuration' and now == 'configuration' and command[-3:] == ['config', '--format', 'json']:
+                    raise exception()
+                if phase == 'tagcmd' and now == 'build' and (command[:2] == ['docker', 'tag'] or command[:3] == ['docker', 'image', 'rm']):
+                    state['n'] += 1
+                    if state['n'] == state['k']:
+                        if state['after']:
+                            real(command, **kwargs)
+                        raise exception()
+            if step in self.ROLLBACK_STEPS[1:] and 'up' in command:
                 real([c for c in command if c not in ('memory-mcp', 'memory-web')], **kwargs)
                 raise {'rb_kill_up': Killed, 'rb_ctrlc_up': KeyboardInterrupt, 'rb_fail_up': lambda: deploy.DeploymentError('up')}[step]()
+            if step.startswith('rb_') and step.endswith('_tag') and now == 'rollback' and command[:2] == ['docker', 'tag']:
+                state['n'] += 1
+                if state['n'] == min(state['k'], 3):
+                    if state['after']:
+                        real(command, **kwargs)
+                    raise exception(step.split('_')[1])
+            if step.startswith('rb_') and step.endswith('_verify') and now == 'verify' and 'content-manifest' in command:
+                raise exception(step.split('_')[1])
             return real(command, **kwargs)
         return run
 
     def do(self, harness, step):
         harness.again()
-        with harness.patches(), patch.object(harness.instance, 'run', side_effect=self.wrapped(harness, step)):
+        instance = harness.instance
+        realsave, (kind, _, phase) = instance.save_report, step.partition(':')
+
+        def save():
+            if phase in ('save_before', 'save_after') and instance.report.get('status') == 'in_progress' and not getattr(save, 'done', False):
+                save.done = True  # the first save of `in_progress`: the process stops right before it (nothing written) or right after it (written)
+                if phase == 'save_after':
+                    realsave()
+                raise KeyboardInterrupt() if kind == 'ctrlc' else Killed()
+            return realsave()
+        with harness.patches(), patch.object(instance, 'run', side_effect=self.wrapped(harness, step)), patch.object(instance, 'save_report', side_effect=save):
             try:
-                harness.instance.rollback() if step.startswith('rb') else harness.instance.apply()
+                instance.rollback() if step.startswith('rb') else instance.apply()
                 return 'done'
             except (deploy.NoPreviousImages, deploy.AlreadyAtPrevious) as exc:
                 return type(exc).__name__
             except Killed:
                 return 'killed'  # nothing else runs: the status file is what the last `save_report` wrote
             except KeyboardInterrupt:
-                harness.instance.report.update(status='interrupted', failed_phase=harness.instance.phase)  # what `main` does
-                if harness.instance.phase != 'engine':
-                    harness.instance.save_report()
+                instance.report.update(status='interrupted', failed_phase=instance.phase)  # what `main` does
+                if instance.phase != 'engine':
+                    realsave()
                 return 'interrupted'
             except Exception:
-                harness.instance.report.update(status='failed', failed_phase=harness.instance.phase)
-                if harness.instance.phase != 'engine':
-                    harness.instance.save_report()
+                instance.report.update(status='failed', failed_phase=instance.phase)
+                if instance.phase != 'engine':
+                    realsave()
                 return 'failed'
 
     @staticmethod
@@ -1054,6 +1287,8 @@ class ExplorationTests(unittest.TestCase):
             path.write_text(snapshot[3], encoding='utf-8')
         if expected is None:
             return [] if outcome == 'NoPreviousImages' else [f'expected no_previous_images, got {outcome} (containers {served})']
+        if outcome == 'NoPreviousImages' and served == {name: expected[name] for name in SERVICE_OF} and latest == expected:
+            return []  # the good release is recorded (images.good) but no deployment has tagged anything since: the containers and :latest already are it, so there is nothing to go back to
         problems = []
         tagged = {name: any(value == expected[name] and not key.endswith(':latest') for key, value in snapshot[0].items() if key.startswith(repo(name) + ':')) for name in NAMES}
         if not all(tagged.values()):
@@ -1066,15 +1301,18 @@ class ExplorationTests(unittest.TestCase):
             problems.append(f'`:latest` {[name for name in NAMES if latest[name] != expected[name]]} is not the good release after {outcome}')
         return problems
 
-    def sequence(self, rng):
+    def sequence(self, rng, legacy=False):
         with Harness(in_use('v0')) as harness:
             good, expected, log, issues = self.latest(harness), None, [], []
-            for _ in range(self.LENGTH):
-                step = rng.choice(self.APPLY_STEPS + self.ROLLBACK_STEPS)
+            for _ in range(self.LEGACY_LENGTH if legacy else self.LENGTH):
+                step = rng.choice(self.LEGACY_STEPS if legacy else self.APPLY_STEPS + self.ROLLBACK_STEPS)
                 before = dict(good)
                 outcome = self.do(harness, step)
-                if step == 'ok':
+                stopped_before_the_save = step.split(':')[-1] in ('configuration', 'tagcmd') or step == 'kill:save_before'  # nothing of this deployment was recorded
+                if not step.startswith('rb') and outcome == 'done':  # `ok`, or a stop that never came (a tagging with fewer commands than the one it was meant to stop at)
                     expected, good = before, self.latest(harness)
+                elif stopped_before_the_save:
+                    pass  # the rollback target is what it was
                 elif not step.startswith('rb'):
                     expected = good
                 elif outcome == 'done':
@@ -1085,9 +1323,16 @@ class ExplorationTests(unittest.TestCase):
             return issues
 
     def test_after_any_sequence_a_rollback_goes_to_the_last_good_release_with_its_containers_and_its_latest(self):
-        rng = random.Random(self.SEED)
+        rng, self.dice = random.Random(self.SEED), random.Random(self.SEED + 1)
         with patch.object(deploy, 'datetime', self.Clock):
             issues = [issue for _ in range(self.SEQUENCES) for issue in self.sequence(rng)]
+        self.assertEqual(issues[:3], [], f'{len(issues)} problems; the first three are shown')
+
+    def test_fix4_legacy_installation_with_stops_in_configuration_and_in_the_tagging_gives_no_problem(self):
+        """Lens B of attempt 4 (`explore4.py ... legacy`): 401 problems in 300 sequences of 8 steps at HEAD of fix3, all after a stop in `configuration` or in the tagging of an installation that had no record."""
+        rng, self.dice = random.Random(self.LEGACY_SEED), random.Random(self.LEGACY_SEED + 1)
+        with patch.object(deploy, 'datetime', self.Clock):
+            issues = [issue for _ in range(self.LEGACY_SEQUENCES) for issue in self.sequence(rng, legacy=True)]
         self.assertEqual(issues[:3], [], f'{len(issues)} problems; the first three are shown')
 
 
@@ -1116,11 +1361,27 @@ class DocumentationTests(unittest.TestCase):
         for stale in ('se borra ese fichero, se toma el bloqueo sobre uno nuevo', 'el segundo `--rollback` seguido, o un despliegue que falló antes de `start` y por tanto no movió ningún contenedor',
                       'Compara la imagen de destino de cada servicio con la que **ejecuta su contenedor** (`docker inspect` de cada contenedor), no con `:latest`'):
             self.assertNotIn(stale, text, 'a promise the code no longer keeps (fix3)')
+        for name in ('may still be running', 'puede no propagarse', 'unreaped_containers', 'FILE_FLAG_OPEN_REPARSE_POINT', 'un solo nombre', 'No release is recorded as good', 'cualquier fase salvo `engine`',
+                     'caracteres de control escapados', 'antes de la fase `configuration`', '`kairos-deploy-<orden>-<id>`'):
+            self.assertIn(name, text, 'fix4: the manual says what the script does')
+        self.assertNotIn('(lo mataron o su equipo se perdió)', text, 'a certainty the message no longer claims')
+        self.assertNotIn('`--rollback` sigue volviendo a la última versión buena.', text.split('Antes de repetir un despliegue que se interrumpió')[1][:300], 'no unconditional promise of a rollback')
         shown = io.StringIO()
         with contextlib.redirect_stdout(shown), self.assertRaises(SystemExit):
             deploy.main(['--help'])
         self.assertIn('ANOTHER host', ' '.join(shown.getvalue().split()), 'the help of --break-lock says what the manual says')
         self.assertEqual((deploy.EXIT_LOCKED, deploy.EXIT_NO_PREVIOUS_IMAGES, deploy.EXIT_ALREADY_AT_PREVIOUS), (3, 4, 5))
+
+
+    def test_fix4_the_docstring_and_the_plan_do_not_say_that_break_lock_removes_a_lock(self):
+        """Attempt 4, gap 5: `--break-lock` only names the take-over of a FREE lock of another host; the docstring of `DeploymentLocked` and item (19) of the plan said it removes one."""
+        self.assertNotIn('only `--break-lock` removes it', deploy.DeploymentLocked.__doc__)
+        self.assertIn('ever broken by', deploy.DeploymentLocked.__doc__)
+        plan = Path(__file__).parents[3] / 'docs/roadmap/2026-11-15-reliable-operations/improvement-plan.md'
+        if plan.exists():  # the roadmap is not part of the test image
+            text = plan.read_text(encoding='utf-8')
+            self.assertNotIn('que solo `--break-lock` retira', text)
+            self.assertIn('ya no retira ni rompe nada', text)
 
 
 if __name__ == '__main__':

@@ -184,8 +184,9 @@ class BackupTimeoutTests(unittest.TestCase):
                 self.assertRegex(name, r'^kairos-deploy-' + verb + r'-[0-9a-f]{10}$')
                 self.assertNotIn('knowledge-graphs', name)
                 self.assertLess(command.index('--name'), command.index('memory-admin', command.index('run')))
-            else:
-                self.assertNotIn('--name', command)
+            else:  # fix4 (gap 3): every `compose run` has a name its `reap` can stop, so an interruption never leaves a migration running next to a retry
+                name = command[command.index('--name') + 1]
+                self.assertRegex(name, r'^kairos-deploy-' + verb + r'-[0-9a-f]{10}$')
 
     def test_an_invalid_timeout_is_refused_by_the_deployment_and_by_the_command_line(self):
         for bad in (0, -5, True, 86401, '10', 1.5):
