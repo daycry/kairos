@@ -112,6 +112,22 @@ La fase `start` espera a que todos los servicios estén sanos. El caso más habi
 
 Mientras Ollama no responda, la API puede seguir aceptando operaciones, pero los trabajos de extracción y embeddings quedarán pendientes o fallarán; revísalos después en **Operaciones**.
 
+### Retroceso de un despliegue (`--rollback`)
+
+Si la versión recién desplegada falla, vuelve a las imágenes de la anterior **sin migrar**:
+
+```powershell
+python scripts/deploy-memory.py --apply --rollback
+```
+
+`--rollback` lee de `deployment-status.json` las etiquetas `kairos-*:<versión>-<marca>` que registró el despliegue anterior (`images.previous`), comprueba que siguen en Docker, lee el manifiesto de contenido (`content-manifest`), pone esas imágenes en `:latest` y recrea solo `memory-api`, `memory-worker`, `memory-mcp` y `memory-web` con `up --no-deps --no-build --wait`. Después vuelve a leer el manifiesto (debe ser idéntico), repite la comprobación de ejecución (herramientas y manifiestos por MCP) y registra `status: rolled_back`, `images.current` y `rollback.from` (los ids que había antes) en `deployment-status.json`. Fases: `engine`, `configuration`, `rollback`, `verify` (`python scripts/deploy-memory.py --rollback` sin `--apply` las imprime). Toma el mismo bloqueo que un despliegue.
+
+**No toca los datos.** No ejecuta `backup`, `migrate`, `bootstrap` ni `backfill-chunks`, no para la base, no borra volúmenes ni etiquetas y no cambia la imagen de `memory-postgres`. Por eso solo vuelve **a las imágenes, no a los datos**: se apoya en que las migraciones son aditivas, de modo que el código anterior funciona sobre la base ya migrada (véase «Retroceso de pgvector» para el caso en que no es así). Lo que la nueva versión escribió con el esquema nuevo (por ejemplo, fragmentos de documentos o filas de las tablas nuevas) sigue en la base; el código anterior lo ignora. Si necesitas devolver la **base** a un estado anterior, restaura una copia (`kairos-before-*.dump`) con el procedimiento de restauración: un retroceso de imágenes no lo hace.
+
+**Sin etiquetas anteriores no hace nada.** Un proyecto desplegado una sola vez (o cuyo informe no registra `images.previous`) termina con `no_previous_images` (código de salida 4) sin cambiar ningún servicio, imagen ni volumen; lo mismo si una etiqueta registrada ya no está en Docker (el mensaje nombra la que falta). El informe `deployment-status.json` se deja como estaba. `--rollback` no admite `--fresh`, `--stop-services-before-migrate` ni `--verify-backup`; en un `--project-name` aislado admite `--embed-stub` y `--roundtrip`, que comprueban además una búsqueda de ida y vuelta tras el retroceso.
+
+**Tras un retroceso**, `:latest` apunta a la versión anterior y la versión de la que volviste solo existe como id (`rollback.from`) hasta que se vuelva a construir: para avanzar de nuevo, corrige el problema y ejecuta `python scripts/deploy-memory.py --apply`, que etiquetará las imágenes en uso antes de construir.
+
 ## Comprobar una instalación
 
 1. Comprueba salud de base, migración y API y que web y trabajador están activos.

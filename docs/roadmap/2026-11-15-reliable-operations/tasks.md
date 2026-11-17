@@ -49,14 +49,14 @@ test-plan: n/a (sin UI)
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 6 | 6 | 100% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 4 | 4 | 100% | 0 / 7.2h | 1.06 / 1.0h | 0 / 0.2h | 0 / 240 k |
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 6 | 7 | 85.7% | 0 / 19.8h | 0.27 / 2.6h | 0 / 0.7h | 0 / 660 k |
-| Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 2 | 7 | 28.6% | 0 / 34.2h | 0.31 / 4.6h | 0 / 1.1h | 0 / 1140 k |
+| Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 3 | 7 | 42.9% | 0 / 34.2h | 0.47 / 4.6h | 0 / 1.1h | 0 / 1140 k |
 | Fase 11 — Sonda de ida y vuelta (C-06) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 0 | 7 | 0% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 0 | 6 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **61** | **98** | **62.2%** | **0 / 412.8h** | **5.56 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **62** | **98** | **63.3%** | **0 / 412.8h** | **5.72 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1955,10 +1955,11 @@ test-plan: n/a (sin UI)
 ### T-63 — `--rollback` sin migrar
 
 - **Descripción**: `--rollback` vuelve a las etiquetas registradas sin migrar; sin etiquetas anteriores falla con `no_previous_images` sin tocar servicios. Se apoya en que las migraciones son aditivas. Fuente: CA-24; O-06; P-08.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: `deploy-memory.py --apply --rollback` vuelve a las imágenes del despliegue anterior sin migrar ni tocar datos; sin imágenes anteriores falla con `no_previous_images` y no cambia nada.
+- **Estado**: completado
+- **Cerrada**: 2026-11-17
 - **Tiempo humano**: est. 4.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.60h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.60h (estimado) · real 0.16h (medido)
 - **Supervisión**: est. 0.15h (≈25 % IA) · real —
 - **Previsión IA**: 166 k in / 14 k out tok · ⚠️ verificar €
 - **Dependencias**: T-62
@@ -1968,17 +1969,17 @@ test-plan: n/a (sin UI)
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_deploy_rollback|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] `--rollback` recompone los servicios con las etiquetas anteriores del registro y no ejecuta `migrate` (prueba con dobles)
-- [ ] Sin etiquetas anteriores falla con `no_previous_images` y no cambia servicios
-- [ ] `docs/operations.md` explica el retroceso y su límite (imágenes, no datos)
+- [x] `--rollback` recompone los servicios con las etiquetas anteriores del registro y no ejecuta `migrate` (prueba con dobles)
+- [x] Sin etiquetas anteriores falla con `no_previous_images` y no cambia servicios
+- [x] `docs/operations.md` explica el retroceso y su límite (imágenes, no datos)
 
 **Subtareas**
-- [ ] Escribir primero las pruebas (rojo)
-- [ ] Implementar `--rollback`
-- [ ] Documentar
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero las pruebas (rojo)
+- [x] Implementar `--rollback`
+- [x] Documentar
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `docs/operations.md:186`, `:201` (el código anterior funciona sobre la base migrada) y la tarea de etiquetado.
+**Notas** (2026-11-17): RED: `test_deploy_rollback` (RollbackTests) falló con `AttributeError: 'Deployment' object has no attribute 'rollback'` y la línea de órdenes con `SystemExit: 2` (`--rollback` desconocido) · 2026-11-17. Diseño: `Deployment.rollback()` lee `images.previous` del informe (sin él: `NoPreviousImages`, `no_previous_images`, SIN ejecutar ni un comando); `engine`, `prepare()` (la fase `configuration` de `apply`, extraída sin cambiar su secuencia), comprueba que cada etiqueta registrada existe (`docker image inspect`; si falta, `no_previous_images` antes de tocar nada), lee `content-manifest`, `docker tag <etiqueta> <imagen>:latest` por imagen y `up -d --no-deps --no-build --wait` solo de `memory-api/worker/mcp/web`; no ejecuta backup, migrate, bootstrap ni backfill (prueba: ninguna orden los contiene), vuelve a leer el manifiesto (`compare_content`), `verify_runtime` y, con `--roundtrip`/`--embed-stub`, la búsqueda de ida y vuelta y el contador de llamadas al modelo. El informe conserva `images.previous`, fija `images.current` y `rollback.from`/`to`/`migrated: false` y `status: rolled_back`. `main`: `--rollback` toma el mismo bloqueo, sale con 4 y `no_previous_images:` por stderr SIN guardar el informe (no pisa las etiquetas), plan en seco con `ROLLBACK_PHASES`, y rechaza `--fresh`, `--stop-services-before-migrate` y `--verify-backup`. Documentado en `docs/operations.md` («Retroceso de un despliegue»), con su límite: imágenes, no datos. Verificación: equivalente dirigido en `kairos-test:i3p9f2` con ficheros montados: `memory_platform.tests.test_deploy_rollback memory_platform.tests.test_deploy memory_platform.tests.test_deploy_isolation memory_platform.tests.test_deploy_lock` → `Ran 93 tests ... OK` (8 de T-62 + 8 de T-63 nuevas en esas dos tareas) y `test_compose_limits test_worker_heartbeat test_deploy_rollback` → `Ran 53 tests ... OK`. Limite conocido: con el mismo código fuente dos construcciones dan el mismo id de imagen, así que el ensayo (T-64) comprueba que los contenedores usan el id de la etiqueta registrada y que no hubo migración, no una diferencia de código. Patrón: `docs/operations.md:186`, `:201` (el código anterior funciona sobre la base migrada) y la tarea de etiquetado.
 
 ### T-64 — Ensayo aislado de retroceso y de latido `unhealthy`
 

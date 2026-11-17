@@ -632,11 +632,8 @@ class Deployment:
         temporary.write_text(json.dumps(self.report, indent=2) + '\n', encoding='utf-8')
         temporary.replace(destination)
 
-    def apply(self):
-        self.step('engine')
-        self.run(['docker', 'version', '--format', '{{.Server.Version}}'])
-        self.run(['docker', 'compose', 'version', '--short'])
-        # No secret creation, image build or service change precedes this check.
+    def prepare(self):
+        """The `configuration` phase, shared by `apply` and `rollback`: the project's own configuration, secrets and compose files, and what Compose resolves from them."""
         self.step('configuration')
         # An isolated rehearsal never reads the installed project's .env or private configuration.
         config = {} if self.isolated else read_env(self.root / '.env')
@@ -681,6 +678,57 @@ class Deployment:
             raise DeploymentError('Compose resolves a different secret directory')
         if {value.get('name') for value in effective['volumes'].values()} != set(self.volumes):
             raise DeploymentError('Compose resolves different data volumes')
+        return effective
+
+    def rollback(self):
+        """`--rollback` (T-63, CA-24, O-06): the services go back to the images tagged by the previous deployment, WITHOUT migrating: no backup, no `migrate`, no bootstrap, no backfill, no data touched.
+
+        It relies on the migrations being additive (the code of the previous release works on the migrated database: docs/operations.md). Without recorded tags (or if one is gone) it ends with
+        `no_previous_images` before any service, image or volume is touched. The images are put back in `:latest` and only the services of the four tagged images are recreated, with
+        `--no-deps --no-build`; the content manifest is read before and after and must be equal; the runtime check (and the round trip with `--roundtrip`) closes it.
+        """
+        recorded = self.report.get('images')
+        previous = recorded.get('previous') if isinstance(recorded, dict) else None
+        if not isinstance(previous, dict) or not previous:
+            raise NoPreviousImages('no previous images are recorded for this project (deployment-status.json has no tags of an earlier release): there is nothing to go back to; no service was changed')
+        self.report['phases'] = []
+        self.step('engine')
+        self.run(['docker', 'version', '--format', '{{.Server.Version}}'])
+        self.run(['docker', 'compose', 'version', '--short'])
+        self.prepare()
+        self.step('rollback')
+        gone = [tag for tag in previous.values() if not self.probe(['docker', 'image', 'inspect', '--format', '{{.Id}}', tag])]
+        if gone:
+            raise NoPreviousImages('the recorded images are no longer here: ' + ', '.join(gone) + '; no service was changed')
+        before = self.long_operator('content-manifest')
+        self.report['rollback'] = {'from': {name: self.probe(['docker', 'image', 'inspect', '--format', '{{.Id}}', self.image(name)]) for name in previous},
+                                   'to': dict(previous), 'migrated': False}
+        for name, tag in previous.items():
+            self.run(['docker', 'tag', tag, self.image(name)])
+        services = [ROLLBACK_SERVICES[name] for name in ROLLBACK_SERVICES if name in previous]
+        if services:
+            self.run(self.compose + ['up', '-d', '--no-deps', '--no-build', '--wait', '--wait-timeout', '90', *services])
+        self.step('verify')
+        final = self.long_operator('content-manifest')
+        compare_content(before, final)
+        self.report['verification'] = verify_runtime(final, self.secret_dir, self.args.verify_key_file, f'http://127.0.0.1:{self.web_port}', self.report.setdefault('warnings', []))
+        if self.roundtrip:
+            self.step('roundtrip')
+            self.report['roundtrip'] = self.run_roundtrip()
+        if self.embed_stub:
+            self.report['model_calls'] = self.check_no_language_model()
+        self.report['images']['current'] = {name: self.probe(['docker', 'image', 'inspect', '--format', '{{.Id}}', self.image(name)]) for name in previous}
+        self.report.update(status='rolled_back', content_sha256=final['sha256'], documents=len(final['documents']), projects=len(final['projects']))
+        self.save_report()
+        print('Kairos rolled back to the images ' + ', '.join(previous.values()) + '; nothing was migrated. ' + verified_message(self.report['verification']) + ' Report: '
+              + ('.private/rehearsal-' + self.project + '/' if self.isolated else '.private/') + 'deployment-status.json')
+
+    def apply(self):
+        self.step('engine')
+        self.run(['docker', 'version', '--format', '{{.Server.Version}}'])
+        self.run(['docker', 'compose', 'version', '--short'])
+        # No secret creation, image build or service change precedes this check.
+        effective = self.prepare()
         if not self.args.fresh:
             for volume in self.volumes:
                 self.run(['docker', 'volume', 'inspect', '--format', '{{.Name}}', volume])
@@ -1105,11 +1153,16 @@ def main(argv=None, root=ROOT):
                              'Default: on for an isolated --project-name, off for the installed project')
     parser.add_argument('--stop-services-before-migrate', action='store_true',
                         help='Stop memory-api and memory-worker before the migrate phase (they are started again by the start phase); default: leave them running')
+    parser.add_argument('--rollback', action='store_true',
+                        help='Go back to the images tagged by the previous deployment (kairos-*:<version>-<mark>) WITHOUT migrating; no_previous_images if there are none. '
+                             'Not for --fresh, --stop-services-before-migrate or --verify-backup')
     parser.add_argument('--break-lock', action='store_true',
                         help='Remove the lock file of a deployment whose process is gone (deployment_locked); it never breaks the lock of a process that is still running here')
     args = parser.parse_args(argv)
     if args.apply and args.dry_run:
         parser.error('--dry-run and --apply exclude each other')
+    if args.rollback and (args.fresh or args.stop_services_before_migrate or args.verify_backup is not None):
+        parser.error('--rollback goes back to the previous images without migrating: it takes no --fresh, --stop-services-before-migrate or --verify-backup')
     if not args.apply:
         try:
             validate_isolation(args.project_name, args.api_port, args.web_port)
@@ -1121,6 +1174,10 @@ def main(argv=None, root=ROOT):
         except DeploymentError as exc:
             parser.error(str(exc))
         verifying = args.verify_backup if args.verify_backup is not None else args.project_name != DEFAULT_PROJECT
+        if args.rollback:
+            print(json.dumps({'mode': 'dry-run', 'phases': ROLLBACK_PHASES + (('roundtrip',) if args.roundtrip else ()), 'rollback': True, 'services': [ROLLBACK_SERVICES[n] for n in ROLLBACK_SERVICES],
+                              'project': args.project_name, 'migrate': False, 'data_removed': False}, indent=2))
+            return 0
         phases = PHASES[:PHASES.index('backup') + 1] + (('verify_backup',) if verifying else ()) + PHASES[PHASES.index('backup') + 1:] + (('roundtrip',) if args.roundtrip else ())
         print(json.dumps({'mode': 'dry-run', 'phases': phases, 'services': SERVICES + ((STUB_SERVICE,) if args.embed_stub else ()), 'fresh': args.fresh, 'project': args.project_name,
                           'backup_timeout_seconds': check_backup_timeout(args.backup_timeout), 'verify_backup': verifying, 'volumes': project_volumes(args.project_name), 'models': 'simulated embedding provider; no language model' if args.embed_stub else 'preserve configuration',
@@ -1142,7 +1199,10 @@ def main(argv=None, root=ROOT):
             deployment.report['lock_broken'] = {key: lock.broken.get(key) for key in ('pid', 'host', 'started_at')}
             print(f'WARNING: lock broken: it was held by a deployment {lock.describe(lock.broken)}.', file=sys.stderr)
         try:
-            deployment.apply()
+            deployment.rollback() if args.rollback else deployment.apply()
+        except NoPreviousImages as exc:  # nothing was touched, and the report (with the tags) is left as it is
+            print(f'{exc.code}: {exc}', file=sys.stderr)
+            return 4
         except Exception as exc:
             deployment.report.update(status='failed', failed_phase=deployment.phase,
                                      error_code=type(exc).__name__,
