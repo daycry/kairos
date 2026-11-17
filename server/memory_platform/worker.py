@@ -20,6 +20,8 @@ JOB_DEADLINE_MARGIN = 10  # seconds the job may outlive the provider's own deadl
 IDLE_SECONDS = 1.0  # wait between two claims when the queue is empty
 WRITE_RETRY_MAX = 5  # failed writes of one outcome (`complete_job`/`fail_job`) after which the worker stops repeating it, however well the renewal of the lease works
 BACKOFF_FIRST = 1.0  # ceiling of the wait after the first consecutive database failure; it doubles up to MEMORY_WORKER_DB_BACKOFF_MAX
+HEARTBEAT_FILE = '/tmp/kairos-worker-heartbeat'  # written by `Worker.beat` (tmpfs of memory-worker); the Compose healthcheck reads its age (T-56)
+STORE_OK_MAX_AGE = 120.0  # seconds since the last access to the database that worked after which the worker stops writing the heartbeat file (R-01); `Worker.beat` raises it to lease/3+60 for a long lease
 
 
 class Abandoned(Exception):
@@ -96,9 +98,10 @@ async def embed_receipt(provider, settings, payload, canonical_hash, item_vector
 
 
 class Worker:
-    def __init__(self, store, settings, providers=None, worker_id=None, *, clock=None, rng=None, waiter=None, heartbeat_wait=None):
+    def __init__(self, store, settings, providers=None, worker_id=None, *, clock=None, rng=None, waiter=None, heartbeat_wait=None, heartbeat_file=None):
         """`clock` (monotonic seconds), `rng` (jitter, [0, 1)), `waiter` (the wait between claims; default: ends early when the worker is told to stop)
-        and `heartbeat_wait` (the pause of the lease heartbeat) exist so that a test drives time and does not wait for it."""
+        and `heartbeat_wait` (the pause of the lease heartbeat) exist so that a test drives time and does not wait for it. `heartbeat_file`: the file `beat`
+        writes (None: none; the service passes HEARTBEAT_FILE)."""
         self.store, self.settings = store, settings
         self.store.max_attempts = settings.max_attempts  # the cap `claim_job` applies to a job whose lease expired (`attempts_exhausted`); same value as the retry policy below
         self.id = worker_id or socket.gethostname()+':'+str(uuid.uuid4())
@@ -115,6 +118,27 @@ class Worker:
         self._heartbeat_wait = heartbeat_wait or asyncio.sleep
         self.last_store_ok = self.clock()  # `clock()` of the last access to the database that worked (R-01: an outage must not look healthy)
         self.store_failures = 0  # consecutive failures of the database or of the loop; any access that works sets it back to 0
+        self.heartbeat_file = heartbeat_file
+        self._beat_failed = False
+
+    def beat(self):
+        """Write the heartbeat file (the clock reading) and say whether it was written. It is not written when the last access to the database that worked is
+        older than STORE_OK_MAX_AGE (or lease/3+60 when that is longer: a job's lease renewal is then the only access): a worker that loops over a database
+        it cannot reach must not look healthy (R-01). A file that cannot be written is logged once and never stops the worker."""
+        if not self.heartbeat_file:
+            return False
+        now = self.clock()
+        if now-self.last_store_ok > max(STORE_OK_MAX_AGE, self.settings.lease_seconds/3+60):
+            return False
+        try:
+            with open(self.heartbeat_file, 'w', encoding='utf-8') as handle:
+                handle.write(f'{now:.3f}' + chr(10))
+        except OSError as exc:
+            if not self._beat_failed:
+                self._beat_failed = True
+                observability.log_failure('heartbeat_file_failed', exc, 'warning')
+            return False
+        return True
 
     async def _wait_or_stop(self, seconds):
         """Wait `seconds`, or less when the worker is told to stop: a stop never waits for a backoff."""
@@ -213,6 +237,7 @@ class Worker:
                 try:
                     beat = self.clock()
                     renewed = await self._store('heartbeat', self.store.renew_lease, job['id'], job['fence'], self.settings.lease_seconds)
+                    self.beat()  # the renewal worked (`_store` advanced `last_store_ok`): a job that takes long is a worker that lives
                 except StoreUnavailable:
                     continue
                 except Exception as exc:
@@ -250,6 +275,7 @@ class Worker:
                 try:
                     beat = self.clock()
                     renewed = await self._store('heartbeat', self.store.renew_lease, job['id'], job['fence'], self.settings.lease_seconds)
+                    self.beat()  # the renewal worked (`_store` advanced `last_store_ok`): a job that takes long is a worker that lives
                     if renewed:
                         lease[0] = beat+self.settings.lease_seconds
                     else:
@@ -356,6 +382,7 @@ class Worker:
         `backoff_delay` (growing, with jitter, up to MEMORY_WORKER_DB_BACKOFF_MAX) before the next claim; any access that works resets it."""
         cap = getattr(self.settings, 'worker_db_backoff_max', DEFAULT_BACKOFF_MAX)
         while not self.stopping.is_set():
+            self.beat()
             try:
                 worked = await self.run_once()
             except Exception as exc:
@@ -377,7 +404,7 @@ async def serve():
     store = Store(settings.dsn, settings.project_maps, embedding_enabled=getattr(settings, 'embed_enabled', True))
     store.extraction_enabled = getattr(settings, 'extract_enabled', False)
     attach_pool(store, settings, 'worker')
-    worker = Worker(store, settings)
+    worker = Worker(store, settings, heartbeat_file=HEARTBEAT_FILE)
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:

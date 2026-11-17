@@ -201,6 +201,14 @@ services:
     networks: [memory-data, inference]
     depends_on:
       memory-migrate: {condition: service_completed_successfully}
+    # Healthy while the loop writes /tmp/kairos-worker-heartbeat (tmpfs of x-process) and the database answers it (T-56). The file must be younger than 180 s;
+    # once it is older, `unhealthy` comes after interval x retries = 3 x 30 s = 90 s more (at most 270 s after the loop stopped).
+    healthcheck:
+      test: [CMD, python, -c, "import os, sys, time; sys.exit(0 if time.time() - os.stat('/tmp/kairos-worker-heartbeat').st_mtime < 180 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     stop_grace_period: 45s
 
   memory-web:
