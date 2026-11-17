@@ -45,12 +45,31 @@ BACKFILL_REPORT_KEYS = ('status', 'reason', 'enqueued', 'derived', 'failed', 'pe
 STUB_SERVICE, STUB_PORT, STUB_DIMENSIONS = 'embed-stub', 11434, 768  # the simulated embedding provider of an isolated rehearsal (T-71, T-72); 768 = nomic-embed-text, the vector index
 REHEARSAL_PROJECT_ID = 'rehearsal'
 SPY_QUERY = f"import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:{STUB_PORT}/__spy',timeout=5).read().decode())"
+IMAGE_NAMES = ('api', 'worker', 'mcp', 'web', 'operator')  # what a deployment tags and a rollback restores; never `postgres`: the server of the data directory is not rolled back (T-62, CA-24)
+ROLLBACK_SERVICES = {'api': 'memory-api', 'worker': 'memory-worker', 'mcp': 'memory-mcp', 'web': 'memory-web'}  # the containers a rollback recreates
+TAGS_KEPT = 2  # the tagged images of the releases before the current one that are kept per image; the older tags are removed
+TAG_MARK = re.compile(r'^[A-Za-z0-9_.]+-(\d{8}T\d{6}Z)$')  # `<version>-<mark>` of a tag this script made
 PHASES = ('engine', 'configuration', 'build', 'database', 'inspect', 'backup',
           'migrate', 'bootstrap', 'backfill', 'start', 'verify')
+ROLLBACK_PHASES = ('engine', 'configuration', 'rollback', 'verify')  # `--rollback`: no backup, no migrate, no bootstrap, no backfill
 
 
 class DeploymentError(Exception):
     pass
+
+
+class NoPreviousImages(DeploymentError):
+    """`no_previous_images` (CA-24): `--rollback` has no recorded tags of an earlier release to go back to (or one of them is gone); no service was touched."""
+    code = 'no_previous_images'
+
+
+def release_version(root):
+    """The version the tags carry: the one of the components (`client/package.json`), made safe for a Docker tag; `unversioned` without it."""
+    try:
+        version = json.loads((Path(root) / 'client' / 'package.json').read_text(encoding='utf-8')).get('version')
+    except (OSError, ValueError, AttributeError):
+        version = None
+    return re.sub(r'[^A-Za-z0-9_.]', '_', version)[:40] if isinstance(version, str) and version else 'unversioned'
 
 
 class DeploymentLocked(DeploymentError):
@@ -376,6 +395,9 @@ class Deployment:
         self.compose = ['docker', 'compose', '-p', self.project, '--project-directory', str(root)]
         self.phase = 'engine'
         self.secret_values = []
+        recorded = self.load_status().get('images')  # the tags of the earlier releases outlive a deployment that stops before it tags again: a rollback still finds them
+        if recorded:
+            self.report['images'] = recorded
 
     def run(self, command, timeout=120, extra_env=None):
         """Run `command`; `extra_env` adds variables to ITS environment only (a secret that a `-e NAME` of docker takes from there, never from the argument list)."""
@@ -423,6 +445,70 @@ class Deployment:
     def image(self, name):
         """The image of a service of this project: the rehearsal's own tag, or the one docker-compose.yml fixes for the installed project."""
         return isolated_image(self.project, name) if self.isolated else f'kairos-{name}:latest'
+
+    def image_repo(self, name):
+        """The repository of that image without its tag: the tags `<version>-<mark>` live under it. An isolated project is always under `rehearsal-<project>-`, so it can never equal an installed name."""
+        return self.image(name).rsplit(':', 1)[0]
+
+    def probe(self, command, timeout=60):
+        """The output of a read-only command, or None if it failed; a failure never becomes `command_failure` of the report nor replaces the error being raised."""
+        kept = self.report.get('command_failure')
+        try:
+            return self.run(command, timeout=timeout) or None
+        except DeploymentError:
+            return None
+        finally:
+            if kept is None:
+                self.report.pop('command_failure', None)
+            else:
+                self.report['command_failure'] = kept
+
+    def load_status(self):
+        try:
+            value = json.loads(safe_path(self.private / 'deployment-status.json').read_text(encoding='utf-8'))
+        except (OSError, ValueError, DeploymentError):
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    def tags_of(self, name):
+        """The tags `<version>-<mark>` of this image, newest mark first."""
+        listed = self.probe(['docker', 'image', 'ls', self.image_repo(name), '--format', '{{.Tag}}']) or ''
+        found = [(match.group(1), tag) for tag in listed.split() for match in [TAG_MARK.match(tag)] if match]
+        return [tag for _, tag in sorted(found, reverse=True)]
+
+    def tag_previous_images(self):
+        """T-62 (CA-24, O-06): before the build replaces `:latest`, the images in use are tagged `<repository>:<version>-<mark>` so that `--rollback` has something to go back to.
+
+        The tags of the TAGS_KEPT newest marks stay per image and the older ones are removed (only the tag: an image a container uses is never deleted). An image that is the same as
+        the newest tag is not tagged again (a deployment that stopped and is retried does not use up the kept tags on one release). The report records `previous` (the tags of this
+        deployment), `kept`, and, after the build, `current` (the image ids now in `:latest`).
+        """
+        version, mark = release_version(self.root), datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+        previous, kept = {}, {}
+        for name in IMAGE_NAMES:
+            image_id = self.probe(['docker', 'image', 'inspect', '--format', '{{.Id}}', self.image(name)])
+            if not image_id:
+                continue  # a first deployment, or an installation that predates this image: nothing to go back to
+            newest = (self.tags_of(name) or [None])[0]
+            if newest and self.probe(['docker', 'image', 'inspect', '--format', '{{.Id}}', f'{self.image_repo(name)}:{newest}']) == image_id:
+                previous[name] = f'{self.image_repo(name)}:{newest}'
+            else:
+                previous[name] = f'{self.image_repo(name)}:{version}-{mark}'
+                self.run(['docker', 'tag', image_id, previous[name]])
+            kept[name] = []
+            for number, tag in enumerate(self.tags_of(name)):
+                if number < TAGS_KEPT:
+                    kept[name].append(f'{self.image_repo(name)}:{tag}')
+                else:
+                    self.quietly(['docker', 'image', 'rm', f'{self.image_repo(name)}:{tag}'])
+        self.report['images'] = {'version': version, 'mark': mark, 'previous': previous, 'kept': kept, 'current': {}}
+
+    def record_current_images(self):
+        current = self.report.setdefault('images', {'previous': {}}).setdefault('current', {})
+        for name in IMAGE_NAMES:
+            image_id = self.probe(['docker', 'image', 'inspect', '--format', '{{.Id}}', self.image(name)])
+            if image_id:
+                current[name] = image_id
 
     def quietly(self, command, timeout=60):
         """Run a clean-up or probe command: True if it succeeded (or what it removes was not there), False if not; a failure never becomes `command_failure` of the report nor replaces the error being raised."""
@@ -617,7 +703,9 @@ class Deployment:
                 previous[service] = self.run(['docker', 'inspect', '--format', '{{.Image}}', ids[0]])
         self.report['previous_images'] = previous
         self.step('build')
+        self.tag_previous_images()
         self.run(self.compose + ['build', 'memory-postgres', *SERVICES, 'memory-admin'], timeout=1800)
+        self.record_current_images()
         self.step('database')
         self.run(self.compose + ['up', '-d', '--no-deps', '--wait', '--wait-timeout', '90', 'memory-postgres'])
         self.run(self.compose + ['run', '--rm', '--no-deps', '-T', 'memory-files'])

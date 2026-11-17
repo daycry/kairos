@@ -49,14 +49,14 @@ test-plan: n/a (sin UI)
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 6 | 6 | 100% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 4 | 4 | 100% | 0 / 7.2h | 1.06 / 1.0h | 0 / 0.2h | 0 / 240 k |
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 6 | 7 | 85.7% | 0 / 19.8h | 0.27 / 2.6h | 0 / 0.7h | 0 / 660 k |
-| Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 1 | 7 | 14.3% | 0 / 34.2h | 0.17 / 4.6h | 0 / 1.1h | 0 / 1140 k |
+| Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 2 | 7 | 28.6% | 0 / 34.2h | 0.31 / 4.6h | 0 / 1.1h | 0 / 1140 k |
 | Fase 11 — Sonda de ida y vuelta (C-06) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 0 | 7 | 0% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 0 | 6 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **60** | **98** | **61.2%** | **0 / 412.8h** | **5.42 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **61** | **98** | **62.2%** | **0 / 412.8h** | **5.56 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1926,10 +1926,11 @@ test-plan: n/a (sin UI)
 ### T-62 — Etiquetas locales `kairos-*:<versión>-<marca>` y registro en `deployment-status.json`
 
 - **Descripción**: Etiquetar las imágenes locales antes de cada construcción (`kairos-*:<versión>-<marca>`), conservar las dos anteriores y registrar las etiquetas en `deployment-status.json`. Fuente: CA-24; O-06; P-08.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Cada despliegue etiqueta antes de construir las imágenes en uso como `kairos-*:<versión>-<marca>`, conserva las dos últimas y las registra en `deployment-status.json`.
+- **Estado**: completado
+- **Cerrada**: 2026-11-17
 - **Tiempo humano**: est. 4h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.53h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.53h (estimado) · real 0.14h (medido)
 - **Supervisión**: est. 0.13h (≈25 % IA) · real —
 - **Previsión IA**: 147 k in / 13 k out tok · ⚠️ verificar €
 - **Dependencias**: T-61
@@ -1939,17 +1940,17 @@ test-plan: n/a (sin UI)
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_deploy_rollback|test_deploy|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Antes de construir, las imágenes vigentes se etiquetan `kairos-*:<versión>-<marca>` y `deployment-status.json` registra las etiquetas anterior y actual
-- [ ] Se conservan las dos anteriores y las más antiguas se retiran (prueba con dobles)
-- [ ] Los nombres de imagen del despliegue aislado no coinciden con los de la instalación
+- [x] Antes de construir, las imágenes vigentes se etiquetan `kairos-*:<versión>-<marca>` y `deployment-status.json` registra las etiquetas anterior y actual
+- [x] Se conservan las dos anteriores y las más antiguas se retiran (prueba con dobles)
+- [x] Los nombres de imagen del despliegue aislado no coinciden con los de la instalación
 
 **Subtareas**
-- [ ] Escribir primero las pruebas con dobles (rojo)
-- [ ] Implementar el etiquetado y el registro
-- [ ] Retirada de etiquetas antiguas
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero las pruebas con dobles (rojo)
+- [x] Implementar el etiquetado y el registro
+- [x] Retirada de etiquetas antiguas
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `deploy-memory.py:236-258` y `:296-410` (construcción y estado) y `docker-compose.yml:69-198` (imágenes `:latest`).
+**Notas** (2026-11-17): RED: `test_deploy_rollback` falló con `KeyError: 'images'` (el informe no registraba etiquetas), `AttributeError: 'Deployment' object has no attribute 'image_repo'` y `... no attribute 'release_version'` · 2026-11-17. Diseño: antes de `docker compose build` (fase `build`) cada imagen de `api`, `worker`, `mcp`, `web` y `operator` que existe se etiqueta `<repositorio>:<versión>-<marca UTC>` (versión de `client/package.json`, `unversioned` sin él; `postgres` no se etiqueta: el servidor del directorio de datos no se retrocede); se conservan las `TAGS_KEPT`=2 marcas más recientes por imagen y se retira solo la etiqueta de las anteriores (`docker image rm repo:tag`, nunca `:latest` ni una imagen en uso); una imagen idéntica a la etiqueta más reciente no se etiqueta otra vez (un despliegue reintentado no gasta las dos conservadas en una misma versión). `deployment-status.json` registra `images`: `version`, `mark`, `previous` (etiquetas de este despliegue), `kept` y `current` (ids de `:latest` tras construir); el registro sobrevive a un despliegue que se detiene antes de etiquetar. Las imágenes del despliegue aislado van siempre bajo `rehearsal-<proyecto>-`, nunca bajo `kairos-` (prueba). Verificación: equivalente dirigido de la orden del plan en la imagen `kairos-test:i3p9f2` con los ficheros montados: `memory_platform.tests.test_deploy_rollback memory_platform.tests.test_deploy memory_platform.tests.test_deploy_isolation memory_platform.tests.test_deploy_lock` → `Ran 85 tests ... OK` (8 nuevas de etiquetado). Patrón: `deploy-memory.py:236-258` y `:296-410` (construcción y estado) y `docker-compose.yml:69-198` (imágenes `:latest`).
 
 ### T-63 — `--rollback` sin migrar
 
