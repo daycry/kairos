@@ -3110,3 +3110,7 @@ Lentes: B; A+C (diff `af7df9b..64f3861`, fix4). 133 OK en el anfitrión (2 omiti
 | 4 | Minor | Manual: en `engine` ya se guardó `in_progress` | T-65 | corregido (fix5) | Lente A n.º A-1 |
 | 5 | Minor | Ítem (19): «antes de cualquier fase» frente a «tras `engine`» | T-65 | corregido (fix5) | Lente A n.º A-2 |
 | 6 | Minor | `status` del estado sin escapar en stderr y `warnings` | T-62, T-63 | corregido (fix5) | Lente C n.º C-1 (CWE-150) |
+
+## Revisión de dos lentes — intento 1: Fase 11 (T-68 a T-71) (T-68, T-69, T-70, T-71)
+
+Pendiente de revisión; sin veredicto.
