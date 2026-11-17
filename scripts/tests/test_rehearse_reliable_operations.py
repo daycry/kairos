@@ -428,7 +428,7 @@ class RollbackStageTests(unittest.TestCase):
         self.assertEqual(measured['deadline_after_stop_seconds'], 100.0)
         self.assertEqual(measured['bound_after_stop_seconds'], 190.0, 'deadline of the last beat + 30 x 3')
         self.assertGreaterEqual(measured['unhealthy_after_stop_seconds'], 175.0)
-        self.assertLessEqual(measured['unhealthy_after_deadline_seconds'], 90 + ops.HEALTH_SLACK_SECONDS)
+        self.assertLessEqual(measured['unhealthy_after_deadline_seconds'], 90)
         self.assertEqual(stack.signals, [('SIGSTOP', 'memory-worker-container'), ('SIGCONT', 'memory-worker-container')])
         self.assertEqual([c for c in stack.commands if c[:2] == ['docker', 'stop'] or c[:2] == ['docker', 'rm']], [], 'the loop is stopped, the container is not')
 
@@ -440,6 +440,25 @@ class RollbackStageTests(unittest.TestCase):
                     rehearsal.worker_unhealthy()
                 self.assertIn(message, str(raised.exception))
                 self.assertEqual(stack.signals[-1], ('SIGCONT', 'memory-worker-container'))
+
+    def test_fix1_the_bound_is_strict_the_margin_of_the_wait_never_approves_a_late_unhealthy(self):
+        """Fix1 (review of phase 10, gap 5): 195 s after the stop is 5 s past the bound of 190 s; the 10 s that the wait allows to still measure it are not part of the verdict."""
+        rehearsal, stack = self.rehearsal(unhealthy_after_deadline=95)
+        with self.assertRaises(ops.RehearsalError) as raised:
+            rehearsal.worker_unhealthy()
+        self.assertIn('later than the deadline', str(raised.exception))
+        late = rehearsal.report['worker_unhealthy']
+        self.assertIs(late['within_bound'], False)
+        self.assertGreater(late['late_by_seconds'], 0)
+        self.assertEqual(stack.signals[-1], ('SIGCONT', 'memory-worker-container'))
+
+    def test_fix1_the_measurement_reports_its_own_pause_and_how_far_inside_the_bound_it_was(self):
+        rehearsal, stack = self.rehearsal()
+        rehearsal.worker_unhealthy()
+        measured = rehearsal.report['worker_unhealthy']
+        self.assertLessEqual(measured['late_by_seconds'], 0)
+        self.assertEqual(measured['measurement_pause_seconds'], 3, 'the latency of the measurement is reported apart: the poll that detects it waits this long')
+        self.assertLessEqual(measured['unhealthy_after_stop_seconds'], measured['bound_after_stop_seconds'])
 
     def test_a_worker_that_does_not_recover_once_resumed_fails_the_rehearsal(self):
         rehearsal, stack = self.rehearsal(stays_unhealthy=True)

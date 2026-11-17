@@ -55,7 +55,8 @@ REFERENCE_BYTES = 5 * 1024 ** 3  # the volume the review of milestone A worried 
 ROLLBACK_IMAGES = ('api', 'worker', 'mcp', 'web', 'operator')  # the images a deployment tags (scripts/deploy-memory.py IMAGE_NAMES)
 FAULTY_SERVICES = ('api', 'worker')  # recreated on the "faulty release" image before the rollback
 FAULTY_LABEL = 'com.kairos.rehearsal=faulty-release'
-HEALTH_SLACK_SECONDS = 10  # what the daemon's scheduling of a probe may add to `interval x retries` after the deadline; reported with the measurement, never hidden
+HEALTH_SLACK_SECONDS = 10  # only the margin of the WAIT, so that a late `unhealthy` can still be measured and reported; the verdict (`within_bound`) is strict and never uses it
+POLL_PAUSE_SECONDS = 3  # the pause between two polls of the health: the latency of the measurement, reported apart
 UNHEALTHY_EXTRA_SECONDS, RECOVER_SECONDS, HEALTHY_SECONDS = 240, 240, 300
 FINGERPRINT_CODE = '''
 import json, time
@@ -350,11 +351,11 @@ class OperationsRehearsal(restore_module.Rehearsal):
             deadline = float(self.run(['docker', 'exec', container, 'python', '-c', "print(open('/tmp/kairos-worker-heartbeat').read().strip())"]).strip())  # frozen: the last beat
             bound = deadline + interval * retries
             unhealthy_at = self.wait_for('memory-worker turning unhealthy with its loop stopped', lambda: self.container_now(container) if self.health('memory-worker') == 'unhealthy' else None,
-                                         max(bound - stopped_at, 0) + HEALTH_SLACK_SECONDS + UNHEALTHY_EXTRA_SECONDS, pause=3)
+                                         max(bound - stopped_at, 0) + HEALTH_SLACK_SECONDS + UNHEALTHY_EXTRA_SECONDS, pause=POLL_PAUSE_SECONDS)
             result = {'loop_stopped': 'SIGSTOP of the process of memory-worker (the container and its healthcheck keep running)', 'interval_seconds': interval, 'retries': retries,
                       'deadline_after_stop_seconds': round(deadline - stopped_at, 1), 'bound_after_stop_seconds': round(bound - stopped_at, 1),
                       'unhealthy_after_stop_seconds': round(unhealthy_at - stopped_at, 1), 'unhealthy_after_deadline_seconds': round(unhealthy_at - deadline, 1),
-                      'slack_seconds': HEALTH_SLACK_SECONDS, 'within_bound': unhealthy_at <= bound + HEALTH_SLACK_SECONDS}
+                      'late_by_seconds': round(unhealthy_at - bound, 1), 'measurement_pause_seconds': POLL_PAUSE_SECONDS, 'within_bound': unhealthy_at <= bound}
             self.report['worker_unhealthy'] = result
             if not result['within_bound']:
                 raise RehearsalError('memory-worker turned unhealthy later than the deadline of its last beat + interval x retries: ' + json.dumps(result, sort_keys=True))
