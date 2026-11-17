@@ -116,3 +116,20 @@ Cada fase cierra con su revisión adversarial. El detalle de cada intento está 
 | 1 | Minor | Coordinación, ensayo en el mismo clúster, permisos de `rclone.conf`, limpieza de la clave, retención remota, manifiesto remoto truncado, `cleanup()`, carrera de `--prune` | Corregidos en fix1 |
 | 1 | Minor | Red `egress` con destino `dir:`; JSON de usage-meter en T-48 | Deuda → Fase 9; deuda aceptada |
 | 2 | Minor | Métrica en la validación de arranque, evento en la retención local, resto de la carrera de `--prune`, ventana comprobar-subir (CWE-367), «sin red» en el runbook | Deuda → T-50 |
+
+## Hito A — revisión del diff completo (T-51, criterio 3)
+
+- **Fecha**: 2026-11-17
+- **Lentes**: intento 1, una lente del hito sobre `main...HEAD` (80 ficheros: interacciones entre fases, código nuevo de la Fase 8, coherencia de CHANGELOG, docs, Coordinación, contrato MCP y migraciones) y una Lente C sobre el código de la Fase 8 (`12bef4d`, `de36248`); intento 2, lentes B+C sobre el fix1 (`3d54967..ca0d3ca`). Ninguna había revisado las fases.
+- **Veredicto**: sin hallazgos Critical ni Important abiertos. Contrato MCP sin cambios; migraciones solo aditivas; `statement_timeout` no alcanza a `pg_dump`, huellas, `restore-check` ni `prune-tables`; huellas y volcado salen de una sola instantánea.
+- **Evidencia**: suite MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1203}; `scope-check.py --base main` exit 0; ensayo del hito A `kairos-ops-c` (`restored_and_content_verified`, `worker_survived_db_restart` con 256 pendientes, 0 reinicios, 0 `failed`, `knowledge-graphs-*` idéntico).
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Important → Minor (arbitrado) | «Cifrada» se decide por la cabecera age y el manifiesto: quien escribe en `memory-backups` puede fabricar cabecera + volcado en claro con un manifiesto falsificado (CWE-345) | Deuda declarada: solo escriben en ese volumen servicios que ya tienen las credenciales de la base (sacarían los datos directamente); `operations.md` ya declara que el manifiesto detecta corrupción, no manipulación, y que la autenticidad depende del cifrado y de proteger el volumen; sin la clave privada no hay forma de detectarlo en el servidor |
+| 1 | Minor | Manifiesto subido con campos libres (CWE-200); reescritura del mismo inodo tras comprobar (CWE-367) | Mismo atacante y misma declaración; la copia mala tras un desajuste se borra del destino desde el fix1 |
+| 1 | Minor | Métrica en 1 ante `Settings.from_env()` o `MEMORY_RETENTION_*` inválidos y ante un fallo de la retención local; CHANGELOG con promesas que el código no cumple (métrica, `MEMORY_CONNECT_TIMEOUT`) | Corregidos en el fix1 |
+| 1 | Minor | `backup-cycle --loop` sin `connect_timeout` ni keepalives (F4×F7) | Corregido: `guarded_dsn` en admin, `pg_dump`/`pg_restore` y `restore-check`, sin `statement_timeout` |
+| 1 | Minor | `rclone rcat` anulaba `--retries` | Corregido: `copyto --copy-links /proc/self/fd/<n>` desde el descriptor verificado |
+| 1 | Minor | El ensayo no exigía trabajos pendientes con la base parada; detalles de `configuration.md` y Coordinación | Corregidos |
+| 2 | Minor | Mensaje «nothing was deleted» tras borrar la copia mala; `copyto` sin `--ignore-times` no reemplaza un manifiesto remoto dañado del mismo tamaño y fecha | Corregidos por el orquestador |
