@@ -21,6 +21,9 @@ from memory_platform.tests.test_store import create_core
 
 ROOT = Path(__file__).resolve().parents[3]
 PRIVATE_MARK = 'AGE-SECRET' + '-KEY-'  # split: this very file must not contain the marker it forbids elsewhere
+# A real age private key: the marker, '1' and 58 bech32 characters. The tree scan looks for this, not for the bare marker, so the
+# manuals may name the prefix (`AGE-SECRET-KEY-…`) when they explain that a recipients file holding one is rejected.
+PRIVATE_KEY = re.compile((PRIVATE_MARK + '1[023456789ACDEFGHJKLMNPQRSTUVWXYZ]{58}').encode())
 
 
 def new_identity(root, name='key'):
@@ -260,7 +263,7 @@ class NoPrivateKeyTests(unittest.TestCase):
                 try:
                     if path.stat().st_size > 5_000_000:
                         continue
-                    if PRIVATE_MARK.encode() in path.read_bytes():
+                    if PRIVATE_KEY.search(path.read_bytes()):
                         found.append(str(path.relative_to(ROOT)))
                 except OSError:
                     continue

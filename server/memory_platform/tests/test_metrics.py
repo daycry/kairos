@@ -264,15 +264,18 @@ class InstrumentationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sample('kairos_provider_errors_total', provider='extract', code='provider_rejected'), before + 1)
 
     async def test_a_query_whose_budget_runs_out_during_the_embedding_counts_provider_timeout(self):
-        """The layer's own plazo (semantic_budget_ms) expires before the provider's: `counted` only sees a cancellation, the layer counts it."""
+        """The layer's own plazo (semantic_budget_ms) expires before the provider's: `counted` only sees a cancellation, the layer counts it.
+
+        The budget is 500 ms, not 50: it also covers `has_vectors` in a worker thread, and on a loaded CI runner 50 ms could run out
+        there (phase `store`, rightly not a provider timeout), which made the test flaky."""
         async def slow(request):
-            await asyncio.sleep(1)
+            await asyncio.sleep(5)
             return httpx.Response(200, json={'embeddings': [[1.0, 0.5]]})
         settings = Settings('unused', request_timeout=5, embedding_query_timeout=5)
         store = Mock(has_vectors=Mock(return_value=True), search_items=Mock(return_value=[]))
         retrieval = Retrieval(store, settings, Embeddings(settings, transport=httpx.MockTransport(slow)))
         before = sample('kairos_provider_errors_total', provider='embed', code='provider_timeout')
-        result = await retrieval.search({}, {'project_ids': ['a'], 'q': QUERY, 'layers': ['episodic'], 'semantic_budget_ms': 50})
+        result = await retrieval.search({}, {'project_ids': ['a'], 'q': QUERY, 'layers': ['episodic'], 'semantic_budget_ms': 500})
         self.assertEqual(result['degraded'], {'layer': 'semantic', 'reason': 'timeout'})
         self.assertEqual(sample('kairos_provider_errors_total', provider='embed', code='provider_timeout'), before + 1)
 

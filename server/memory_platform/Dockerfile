@@ -63,6 +63,8 @@ COPY --chown=postgres:postgres scripts/diagnose-deployment.py /app/scripts/diagn
 COPY --chown=postgres:postgres scripts/export-contracts.py /app/scripts/export-contracts.py
 COPY --chown=postgres:postgres docker-compose.yml /app/docker-compose.yml
 COPY --chown=postgres:postgres docker-compose.backup-rclone.yml /app/docker-compose.backup-rclone.yml
+# The manuals are read as text by the compose tests (variables, healthchecks and the Linux case must match the compose file).
+COPY --chown=postgres:postgres docs/configuration.md docs/operations.md /app/docs/
 # The portal's nginx.conf and Dockerfile are read as text by the nginx route tests.
 COPY --chown=postgres:postgres web/nginx.conf /app/web/nginx.conf
 COPY --chown=postgres:postgres web/Dockerfile /app/web/Dockerfile
