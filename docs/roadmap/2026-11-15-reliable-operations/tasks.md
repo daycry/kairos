@@ -50,13 +50,13 @@ test-plan: n/a (sin UI)
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 4 | 4 | 100% | 0 / 7.2h | 1.06 / 1.0h | 0 / 0.2h | 0 / 240 k |
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 7 | 7 | 100% | 0 / 19.8h | 0.27 / 2.6h | 0 / 0.7h | 0 / 660 k |
 | Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 7 | 7 | 100.0% | 0 / 34.2h | 5.48 / 4.6h | 0 / 1.1h | 0 / 1140 k |
-| Fase 11 — Sonda de ida y vuelta (C-06) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
+| Fase 11 — Sonda de ida y vuelta (C-06) | 1 | 6 | 16.7% | 0 / 23.4h | 0.5 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 0 | 7 | 0% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 0 | 6 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **67** | **98** | **68.4%** | **0 / 412.8h** | **10.73 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **68** | **98** | **69.4%** | **0 / 412.8h** | **11.23 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1259,7 +1259,7 @@ test-plan: n/a (sin UI)
 - **Verificación**:
   - `python scripts/deploy-memory.py --project-name kairos-ops-a --embed-stub --verify-backup` → termina en 0 y el informe registra `verify_backup` con resultado y duración; después `docker ps -a --filter name=kairos-ops-a` y `docker volume ls --filter name=kairos-ops-a` muestran solo recursos propios, que se eliminan al terminar
   - `docker ps --filter name=knowledge-graphs` y `docker volume ls --filter name=knowledge-graphs` → idénticos antes y después
-  - Salida fix2 (2026-11-16, tras fix1 y fix2; `kairos-ops-a`, puertos 28791/25174, `--embed-stub`, secretos sintéticos nuevos): (1) `--apply --fresh --roundtrip` → exit 0, `PASS roundtrip`, `chat_calls 0`; (2) `--apply --verify-backup` → exit 0, `PASS verify-backup: verified in 38.65 s`, fases `backup, verify_backup, migrate`, `verify_backup {status: verified, tables: 26, cleanup: complete}`; (3) copia con manifiesto alterado (`actors`) → `backup_restore_mismatch: ... actors`, `status: failed`, `cleanup: complete`, sin `migrate`; ningún `kairos-verify-*` (contenedor ni red) tras (2) ni (3). `docker ps -a`, `volume ls` y `network ls` con filtro `knowledge-graphs` antes y después: idénticos (15 contenedores, 7 volúmenes, 6 redes; `cmp` sin diferencias). Retirado por nombre exacto: 7 contenedores, 5 redes, 2 volúmenes, 6 imágenes `rehearsal-kairos-ops-a-*`, secretos y `.private/rehearsal-kairos-ops-a`; `--filter name=kairos-ops` → 0. No se tocó `knowledge-graphs-*`, el Ollama del host (11434) ni la base desplegada.
+  - Salida fix2 (2026-11-16, tras fix1 y fix2; `kairos-ops-a`, puertos 28791/25174, `--embed-stub`, secretos sintéticos nuevos): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (13)», T-40, Salida fix2 (2026-11-16, tras fix1 y fix2; `kairos-ops-a`, puertos 28791/25174, `--embed-stub`, secretos sintéticos nuevos)).
 
 **Criterios de aceptación**
 - [x] El ensayo usa el proyecto `kairos-ops-a`, nunca `knowledge-graphs`, ni el Ollama del host (`--embed-stub`)
@@ -1475,7 +1475,7 @@ test-plan: n/a (sin UI)
   - `python -m unittest discover -s scripts/tests -p test_rehearse_restore.py` → `OK`
   - `python scripts/rehearse-restore.py --project-name kairos-ops-b --embed-stub` → salida con `restored_and_content_verified`; el proyecto `kairos-ops-b` se elimina al terminar y `docker ps --filter name=knowledge-graphs` queda idéntico
   - Salida original (2026-11-16, antes de fix1): 8 pruebas en `OK` y ensayo real en 11 min 44 s con `restored_and_content_verified` (26 tablas) y `knowledge-graphs-*` idéntico; superada por la salida de fix1.
-  - Salida fix1 (2026-11-16): `python -m unittest discover -s scripts/tests -p test_rehearse_restore.py` → `Ran 16 tests ... OK`. `python -u scripts/rehearse-restore.py --project-name kairos-ops-b --embed-stub` → exit 0 en 427 s: `{"cleanup": "complete", "cycle": {"bytes": 73490, "copy": "kairos-cycle-20261116T213555925413Z.dump.age", "destination": "dir"}, "project": "kairos-ops-b", "restore": {"database": "memory_restore_150557dfc3af", "server": "ephemeral", "status": "restored_and_content_verified", "tables": 26}, "status": "restored_and_content_verified", "steps": ["deploy", "keys", "cycle", "download", "verify", "decrypt", "restore"], "verify": {"sha256": "9ced5d82…"}}`. `docker ps -a`, `volume ls` y `network ls` con filtro `knowledge-graphs` antes y después: idénticos (31 líneas, `cmp` sin diferencias); `--filter name=kairos-ops`: 0 contenedores, 0 volúmenes, 0 redes, 0 imágenes `rehearsal-kairos-ops-*`; el directorio temporal (clave incluida) y el servidor efímero (`kairos-ops-b-restore-pg-*`, con su red y su volumen) eliminados.
+  - Salida fix1 (2026-11-16): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (13)», T-47, Salida fix1 (2026-11-16)).
 
 **Criterios de aceptación**
 - [x] El ensayo descarga del destino simulado (directorio), verifica el sha256, descifra con una clave de prueba generada en el ensayo, ejecuta `restore-check` en un proyecto aislado vacío y compara el manifiesto
@@ -1508,7 +1508,7 @@ test-plan: n/a (sin UI)
 - **Verificación**:
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
   - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
-  - Salida (2026-11-16, tercera ejecución, tras corregir el ARG): `docker build -f server/memory_platform/Dockerfile --target test --progress=plain -t kairos-test:i3p7 .` (exit 0): `MEMORY_TEST_RESULT {"database": "PostgreSQL", "environment": "isolated-container-build", "errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1184}`; `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `Ran 45 tests ... OK`. Imagen `operator` construida aparte con el ARG nuevo (`rclone` 1.60.1+dfsg-4, `age` 1.2.1) y retirada por nombre. (Cierre de fase: 1154 → 1184.)
+  - Salida (2026-11-16, tercera ejecución, tras corregir el ARG): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (13)», T-48, Salida (2026-11-16, tercera ejecución, tras corregir el ARG)).
   - Salida fix1 (2026-11-16): `docker build -f server/memory_platform/Dockerfile --target test --progress=plain -t kairos-test:i3p7f1 .` (exit 0): `MEMORY_TEST_RESULT {"database": "PostgreSQL", "environment": "isolated-container-build", "errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1195}`; `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `Ran 45 tests ... OK`. (Corrección de la revisión de la Fase 7: 1184 → 1195.)
 
 **Criterios de aceptación**
@@ -1576,7 +1576,7 @@ test-plan: n/a (sin UI)
 - **Verificación**:
   - `python -m unittest discover -s scripts/tests -p test_rehearse_reliable_operations.py` → `OK`
   - `python scripts/rehearse-reliable-operations.py --project-name kairos-ops-c --embed-stub --stage a` → `restored_and_content_verified` y `worker_survived_db_restart` con contador de reinicios igual y 0 trabajos `failed`
-  - Salida (2026-11-16/17): `python -I -m unittest discover -s scripts/tests -p test_rehearse_reliable_operations.py` → `Ran 11 tests ... OK` (4 mutantes del script: 4 caen). Ensayo real (segundo intento; el primero cayó en `compose start memory-worker` por el `memory-migrate` ya retirado y se corrigió con `docker stop/start` por id) → exit 0: `{"cleanup": "complete", "project": "kairos-ops-c", "stage": "a", "status": "restored_and_content_verified", "restore": {"status": "restored_and_content_verified", "tables": 26, "server": "ephemeral"}, "cycle": {"bytes": 2235899, "destination": "dir"}, "seed": {"embeddings": 30000, "dims": 768}, "queue": {"events": 300, "pending_before_worker": 300}, "worker_survived_db_restart": {"restarts_before": 0, "restarts_after": 0, "same_start": true, "running": true, "running_while_down": true, "pending_at_stop": 256, "down_seconds": 30, "jobs": {"succeeded": 301}, "failed": 0}, "fingerprints": {"rows": 30001, "table_bytes": 132268032, "embeddings_seconds": 62.07, "all_tables_seconds": 56.34, "seconds_per_row": 0.002069, "megabytes_per_second": 2.1, "seconds_for_5_gb": 2519, "backup_timeout_seconds": 3600, "within_timeout": true}, "timings": {"backup_cycle_seconds": 93.1, "restore_step_seconds": 111.8}}`. `docker ps -a`, `volume ls`, `network ls` filtrados por `knowledge-graphs` (con `StartedAt` y reinicios), antes y después: idénticos; `kairos-ops` → 0 contenedores, 0 volúmenes, 0 redes y 0 imágenes `rehearsal-kairos-ops`; el Ollama del host sigue en 200.
+  - Salida (2026-11-16/17): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (13)», T-50, Salida (2026-11-16/17)).
 
 **Criterios de aceptación**
 - [x] Con trabajos en cola, parar y arrancar `memory-postgres` del ensayo: `memory-worker` no se reinicia por error propio (contador de reinicios igual), la cola se vacía y ningún trabajo queda `failed` por esa caída
@@ -2062,7 +2062,7 @@ test-plan: n/a (sin UI)
 - [x] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas** (2026-11-17): Suite completa sobre `1136f43` (`kairos-test:i3p10f`): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 1, "tests": 1360}`. El omitido era `test_on_windows_the_file_is_created_without_following_a_reparse_point` (solo Windows), que la puerta de la CI (`"skipped": 0`) habría rechazado: se convirtió en una prueba portable (dobles de `kernel32` y `msvcrt` en cualquier sistema y además la llamada real en Windows), sin debilitar nada; `test_deploy_lock` en Linux 34 OK sin omitidos, en Windows 34 OK (2 omitidos solo POSIX, fuera de la CI). El recuento sigue en 1360 (una prueba sale y otra entra). `KAIROS_MIN_TESTS` y `MIN_FLOOR` 1360 con su historia; la tabla de `docs/operations.md` y `README.md:252` lo repiten; `test_ci_workflow.py` 45 OK. Cierra la deuda n.º 11 del intento 1 de la revisión (suite completa para T-56 y T-61..T-63). Excepción declarada: usage-meter no medido (horas estimadas, mismo patrón que T-42, T-48, T-59 y T-60). Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Cierra la fase: no se abre la revisión adversarial con la suite en rojo.
+**Notas** (2026-11-17): archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (13)», T-66, notas de cierre).
 
 ### T-67 — Revisión adversarial de la fase (dos lentes)
 
@@ -2094,40 +2094,42 @@ test-plan: n/a (sin UI)
 - [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
 - [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas** (2026-11-17): Cerrada en el intento 5 (ciclo 1: intentos 1-3 con A+B+C+D, B + A+C y B + A+C; al 3.º quedaban 2 Important y el orquestador abrió el ciclo 2 con la delegación del usuario, «Las preguntas toma la mejor decisión»; intentos 4 y 5: B + A+C). Correcciones: fix1 `1b46eb4`, `508f209`; fix2 `c0764e5` a `16e2b51`; fix3 `4e27e42` a `0c70641`; fix4 `9555f47` a `64f3861`; fix5 (Minor del cierre) `1136f43`. Tablas de los intentos 1-4 en `execution-history.md` (compactaciones 5, 7, 8 y 10, con SHA-256); la del 5 sigue en este ledger. Resumen en `review.md`. Suite 1360 en verde tras fix5 (T-66); `scope-check.py --base main` exit 0. Mutantes: cada corrección se registró con RED de comportamiento sobre el código anterior (Notas de T-61..T-65, archivadas en las compactaciones 11 y 12) y la Lente B reprodujo cada hallazgo con el doble de Docker o en `kairos-test:i3p10` antes y después; los dos mutantes del latido de la fase 9 se matan en T-64. Excepción declarada al segundo criterio: no se mutó en memoria cada control nuevo uno por uno; la evidencia es el RED por corrección y las exploraciones aleatorias de la Lente B (600 secuencias de 8 pasos con `images.good` y 600 sin él, sin problemas al cierre). usage-meter no medido (horas estimadas). Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+**Notas** (2026-11-17): archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (13)», T-67, notas de cierre).
 
 ---
 
 ## Fase 11 — Sonda de ida y vuelta (C-06)
 
-**Estado**: borrador · **Hito**: B · **Estimado**: 23.4h (19.5h base, de ellas 6.5h de revisión adversarial) · **Real**: — · **Coste est.**: 1.170 € · **Tokens est.**: 780 k
+**Estado**: en-progreso · **Hito**: B · **Estimado**: 23.4h (19.5h base, de ellas 6.5h de revisión adversarial) · **Real**: — · **Coste est.**: 1.170 € · **Tokens est.**: 780 k
 
 ### T-68 — Proyecto `kairos-probe` y clave de alcance acotado
 
 - **Descripción**: Aprovisionar el proyecto dedicado `kairos-probe` y una clave con alcance solo sobre él, sin tocar proyectos de usuarios. Fuente: CA-33; M-06.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Nuevo `admin probe-provision`: crea el proyecto aislado `kairos-probe` y una clave de lectura y escritura que solo llega a él (el token va a un fichero 600, nunca a la salida).
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 3h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.5h (estimado)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 110 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/admin.py`, `server/memory_platform/tests/test_probe_provisioning.py`
+- **Archivos**: `server/memory_platform/admin.py`, `server/memory_platform/tests/test_probe_provisioning.py`, `server/memory_platform/probe.py` (fichero nuevo: el aprovisionamiento y, en T-69, la sonda; `admin.py` queda con el cableado), `docs/roadmap/2026-11-15-reliable-operations/improvement-plan.md` (ítem (20) de Coordinación)
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_probe_provisioning|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] La clave de la sonda solo tiene alcance sobre `kairos-probe` (una escritura en otro proyecto da 403, prueba)
-- [ ] El aprovisionamiento es idempotente y no escribe en proyectos de usuarios
-- [ ] La clave no se imprime en registros ni se guarda en el repositorio
+- [x] La clave de la sonda solo tiene alcance sobre `kairos-probe` (una escritura en otro proyecto da 403, prueba)
+  - (enmendado en la implementación, con la delegación del usuario: fuera del alcance la API responde 404, no 403, porque `store_auth._require` oculta los proyectos ajenos; dentro de `kairos-probe` las acciones no permitidas dan 403.)
+- [x] El aprovisionamiento es idempotente y no escribe en proyectos de usuarios
+- [x] La clave no se imprime en registros ni se guarda en el repositorio
 
 **Subtareas**
-- [ ] Escribir primero las pruebas (rojo)
-- [ ] Implementar el aprovisionamiento idempotente
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero las pruebas (rojo)
+- [x] Implementar el aprovisionamiento idempotente
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `admin.py:240-321` (subcomandos), `store_auth.py:36-77` (concesiones por proyecto) y la clave temporal de verificación de `deploy-memory.py --roundtrip`.
+**Notas** (2026-11-18): RED: `test_probe_provisioning` (11 pruebas) contra el HEAD (`kairos-test:i3p10f`, sin `probe.py`) falló con `ImportError: cannot import name 'probe' from 'memory_platform'` · 2026-11-17. RED de comportamiento con mutantes de `probe.py` sobre el código nuevo, cada uno muerto: `PROBE_SCOPES` con `admin` → 3 fallos (`test_it_makes_the_project_and_a_key_with_read_and_write_on_it_alone`, `test_a_key_with_a_wider_reach_is_never_reused_and_is_not_ours_to_revoke`, `test_the_key_is_refused_everywhere_but_its_project_a_write_elsewhere_is_not_even_found`); reutilizar cualquier clave válida → `test_a_key_with_a_wider_reach_...`; el token en el informe → `test_the_command_prints_the_key_id_and_the_path_and_never_the_token` · 2026-11-18. Nuevo `probe.py` (`provision`, `admin_actor`, `valid_key`) y subcomando `admin probe-provision --key-file` (`MEMORY_PROBE_KEY_FILE`, por defecto `/backups/kairos-probe.key`, volumen de `memory-admin`, fuera del repositorio): proyecto `kairos-probe` con política `summary` (la mínima que acepta notas), clave `read`+`write` con `project_ids: [kairos-probe]`, fichero 0600 escrito de forma atómica (rechaza enlace o directorio: `key_file_unsafe`). Una segunda ejecución no cambia nada (ni una fila de auditoría); un fichero inválido, o una clave más ancha (en proyectos o en permisos), da una clave nueva y revoca las `kairos-probe` anteriores de ese proyecto (la más ancha no es nuestra y no se revoca); si el fichero no se puede escribir, se revoca la clave recién creada. El informe lleva el id de la clave y la ruta, nunca el token. Cada prueba usa su propia base (`CREATE DATABASE` y retirada): `kairos-probe` es un nombre fijo y no entra en la base compartida de la suite. Verificación (el arnés de `run_postgres.py` con estos módulos, PostgreSQL aislado y sin red): `memory_platform.tests.test_probe_provisioning` → 11 pruebas `ok`, 0 omitidas; suite completa: es de T-72 (orquestador); evidencia de esta tarea: las ejecuciones dirigidas (71 pruebas de test_probe_provisioning, test_probe y test_observability, 0 fallos, 0 omitidas). usage-meter no medido (horas estimadas, como T-42 y T-59). Patrón: `admin.py:240-321` (subcomandos), `store_auth.py:36-77` (concesiones por proyecto) y la clave temporal de verificación de `deploy-memory.py --roundtrip`.
 
 ### T-69 — `admin probe`: escribir, esperar recibo `embed`, buscar, retirar
 

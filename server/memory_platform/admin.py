@@ -11,6 +11,7 @@ import tempfile
 import hashlib
 
 from . import observability
+from . import probe as round_trip
 from .backup import BackupError, check_keep, create_backup, encrypted_name, encryption_plan, manifest_path, prune_backups, table_fingerprints, terminate_as_exit, verify_backup
 from .chunking import chunk_text, embedding_text
 from .config import (Settings, backup_destination, backup_interval_seconds, backup_keep, backup_recipients_file, backup_remote_keep, backup_require_encryption, retention_windows)
@@ -346,6 +347,12 @@ def main(argv=None):
     prune.add_argument('--dry-run', action='store_true', help='Only report what each table would lose; nothing is written')
     prune.add_argument('--batch', type=int, default=1000, help=f'Rows deleted per transaction (1..{PRUNE_BATCH_MAX})')
     prune.add_argument('--table', action='append', choices=sorted(RETENTION_TABLES), help='Only this table (repeatable); default: every table that has a window')
+    provision = commands.add_parser('probe-provision', help='Make the project kairos-probe and a key that reaches only it (read and write), idempotent; the token goes to --key-file, never to the output')
+    provision.add_argument('--key-file', default=os.environ.get('MEMORY_PROBE_KEY_FILE', round_trip.DEFAULT_KEY_FILE), help='Where the token of the probe key is kept (0600)')
+    probe = commands.add_parser('probe', help='Round trip through /v1 with the probe key: write a synthetic note, wait for its embed receipt, search for it, retire it; exit 1 with probe_failed and the stage when any fails')
+    probe.add_argument('--url', default=None, help='Where /v1 answers (default MEMORY_PROBE_URL or http://memory-api:8790)')
+    probe.add_argument('--key-file', default=os.environ.get('MEMORY_PROBE_KEY_FILE', round_trip.DEFAULT_KEY_FILE), help='The probe key written by probe-provision')
+    probe.add_argument('--metrics-file', default=os.environ.get('MEMORY_PROBE_METRICS_FILE', round_trip.DEFAULT_METRICS_FILE), help='Where kairos_probe_* are written for a textfile collector (empty: nowhere)')
     commands.add_parser('inspect')
     commands.add_parser('content-manifest')
     backup = commands.add_parser('backup', help='pg_dump to a new file with its manifest <file>.json (sha256, bytes, schema version, time, counts)')
@@ -405,6 +412,13 @@ def main(argv=None):
                           'bytes': manifest['content_bytes' if content else 'bytes'], 'sha256': manifest['content_sha256' if content else 'sha256'],
                           'encrypted': manifest['encrypted'], 'schema_version': manifest['schema_version'], 'created_at': manifest['created_at']}, sort_keys=True))
         return
+    if args.command == 'probe':  # needs no database: it only speaks /v1 with its own key
+        observability.configure_logging()  # `probe_failed` goes to stderr as one JSON line
+        report = round_trip.probe_command(args.url, args.key_file, args.metrics_file)
+        print(json.dumps(report, sort_keys=True))
+        if report['status'] != 'probe_ok':
+            raise SystemExit('probe_failed: stage=%s code=%s' % (report['stage'], report['code']))
+        return
     try:
         settings = Settings.from_env()
         dsn = guarded_dsn(settings.dsn)
@@ -421,6 +435,11 @@ def main(argv=None):
             print(json.dumps({'status': 'skipped', 'reason': 'embeddings_disabled', 'enqueued': 0}))
         else:
             print(json.dumps(dict(backfill_chunks(store, settings.embedding_model, batch=args.batch, max_jobs=args.max_jobs, project=args.project, retry_failed=args.retry_failed), status='backfilled'), sort_keys=True))
+    elif args.command == 'probe-provision':
+        try:
+            print(json.dumps(round_trip.provision(store, args.key_file), sort_keys=True))
+        except round_trip.ProbeError as error:
+            raise SystemExit(f'{error.code}: {error}') from None
     elif args.command == 'prune-tables':
         print(json.dumps(prune_tables(store, windows, batch=args.batch, dry_run=args.dry_run, tables=args.table), sort_keys=True))
     elif args.command == 'bootstrap':

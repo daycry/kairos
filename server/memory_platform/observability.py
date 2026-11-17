@@ -23,7 +23,7 @@ from .privacy import redact_log
 LOGGER = logging.getLogger('kairos')
 LOGGER.addHandler(logging.NullHandler())  # silent until `configure_logging` runs (tests, imports)
 REQUEST_ID = contextvars.ContextVar('kairos_request_id', default=None)
-FIELDS = ('request_id', 'layer', 'duration_ms', 'exc_type', 'code', 'status', 'method', 'route', 'destination', 'provider', 'reason', 'outcome', 'caller', 'count')
+FIELDS = ('request_id', 'layer', 'duration_ms', 'exc_type', 'code', 'status', 'method', 'route', 'destination', 'provider', 'reason', 'outcome', 'caller', 'count', 'stage')
 MAX_FIELD = 200
 FOREIGN_LOGGERS = ('uvicorn.error',)
 QUIET_LOGGERS = ('httpx', 'httpcore')
@@ -215,6 +215,11 @@ WORKER_JOB_SECONDS = Histogram('kairos_worker_job_seconds', 'Duration of a job i
 OFFSITE_REGISTRY = CollectorRegistry()  # apart from REGISTRY: memory-api never runs a cycle, so its /metrics must not claim a result (a constant 0 would page someone)
 BACKUP_OFFSITE_SUCCESS = Gauge('kairos_backup_offsite_success', '1 when the last `backup-cycle` copy reached its destination and was verified there, 0 when it did not (the copy stays local and the next cycle retries)',
                                registry=OFFSITE_REGISTRY)
+PROBE_REGISTRY = CollectorRegistry()  # apart too: only `admin probe` sets these, and it writes them to a file (no process of the service serves them)
+PROBE_STAGES = ('write', 'index', 'search', 'retire')
+PROBE_SUCCESS = Gauge('kairos_probe_success', '1 when the last `admin probe` wrote, indexed, found and retired its synthetic memory, 0 when any stage failed', registry=PROBE_REGISTRY)
+PROBE_STAGE_SECONDS = Gauge('kairos_probe_stage_seconds', 'Seconds each stage of the last `admin probe` took (a stage that did not run has no series)', ['stage'], registry=PROBE_REGISTRY)
+PROBE_LAST_RUN = Gauge('kairos_probe_last_run_timestamp_seconds', 'Unix time at which the last `admin probe` finished, whatever its result', registry=PROBE_REGISTRY)
 BACKUP_OFFSITE_LAST_RUN = Gauge('kairos_backup_offsite_last_run_timestamp_seconds', 'Unix time at which the last `backup-cycle` finished its offsite stage, whatever its result', registry=OFFSITE_REGISTRY)
 
 
@@ -331,6 +336,20 @@ def record_offsite(ok, now=None):
     """The result of the offsite stage of one `backup-cycle`: `kairos_backup_offsite_success` 1 or 0 and the time it finished."""
     BACKUP_OFFSITE_SUCCESS.set(1 if ok else 0)
     BACKUP_OFFSITE_LAST_RUN.set(time.time() if now is None else now)
+
+
+def record_probe(ok, stages, now=None):
+    """The result of one `admin probe`: `kairos_probe_success` 1 or 0, the seconds of every stage that ran (`stages` {stage: seconds}) and the time it finished."""
+    PROBE_SUCCESS.set(1 if ok else 0)
+    PROBE_STAGE_SECONDS.clear()
+    for stage, seconds in stages.items():
+        PROBE_STAGE_SECONDS.labels(closed(stage, PROBE_STAGES)).set(max(0.0, float(seconds)))
+    PROBE_LAST_RUN.set(time.time() if now is None else now)
+
+
+def render_probe_metrics():
+    """Only the three probe series, in the text exposition format (`admin probe --metrics-file` writes them; a textfile collector reads them)."""
+    return generate_latest(PROBE_REGISTRY)
 
 
 def render_offsite_metrics():
