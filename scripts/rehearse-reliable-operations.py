@@ -10,9 +10,25 @@ Stage `a` (closing of milestone A) runs the two closing criteria on ONE isolated
   3. database restart  with jobs queued, `memory-postgres` is stopped and started: `memory-worker` must not restart by its own error (same restart counter and same start time), the queue
                        must empty and no job may end `failed`
 
-and ends with `restored_and_content_verified` and `worker_survived_db_restart`. It never touches `knowledge-graphs-*`, the Ollama of the host or any other project: the whole run is the
-project given with --project-name (`kairos-ops-<name>`) and the resources the restore rehearsal names by exact name. Later stages of the initiative extend `--stage`; `all` runs every
-stage there is.
+and ends with `restored_and_content_verified` and `worker_survived_db_restart`.
+
+Stage `rollback` (closing of C-04: CA-24 and the rehearsal case of CA-21) runs on ONE isolated project, one step after the other, Docker in the foreground:
+
+  1. deploy            the first deployment (`--fresh --embed-stub --roundtrip`) and a second one (`--no-verify-backup`): the second tags the images of the first as
+                       `rehearsal-<project>-<name>:<version>-<mark>` before it builds and records them in `deployment-status.json`
+  2. tags              the recorded tags exist and have the shape `<repository>:<version>-<mark>`, one per image
+  3. bad_release       a "faulty release" is put in place: `memory-api` and `memory-worker` are recreated on an image committed from the first one with another label, so that the
+                       containers really run something other than what the tags hold
+  4. rollback          `deploy-memory.py --apply --rollback`: the services go back to the recorded tags (container image = the tag's image, not the faulty one), no `migrate` ran
+                       (the phases are engine, configuration, rollback, verify, roundtrip), the `content-manifest` equals the one read just before, and the round trip finds
+                       an observation by search
+  5. worker_unhealthy  the loop of `memory-worker` is stopped (SIGSTOP of its process: the container keeps running and its healthcheck keeps running), and the container must turn
+                       `unhealthy` within the AMENDED bound of CA-21: the deadline the heartbeat file holds (the last beat) + `interval x retries` of the container's own healthcheck
+                       (plus a stated slack for the daemon's probe scheduling); it is then resumed and must be healthy again
+
+and ends with `rollback_ok`, with the measurements under `rollback` and `worker_unhealthy`. It never touches `knowledge-graphs-*`, the Ollama of the host or any other project: the whole run is the
+project given with --project-name (`kairos-ops-<name>`) and the resources the restore rehearsal names by exact name (the tagged images and the faulty ones included, removed by exact
+reference or id at the end). `all` runs stage `a` and then the `rollback` steps on the same project.
 """
 from __future__ import annotations
 
@@ -20,6 +36,7 @@ import argparse
 import importlib.util
 import json
 from pathlib import Path
+import re
 import shutil
 import sys
 import tempfile
@@ -28,13 +45,18 @@ import uuid
 from datetime import datetime, timezone
 
 ROOT = Path(__file__).resolve().parents[1]
-STAGES = ('a', 'all')
+STAGES = ('a', 'rollback', 'all')
 PROJECT_ID = 'rehearsal'  # the project the deployment's own round trip creates (capture on)
 SEED_MODEL, SEED_DIMS = 'rehearsal-seed', 768  # a model no index covers; the dimension of the usual embedding models
 DEFAULT_SEED_ROWS, DEFAULT_QUEUE_JOBS = 30000, 300
 DB_DOWN_SECONDS, DRAIN_SECONDS, READY_SECONDS = 30, 600, 180
 BACKUP_TIMEOUT_SECONDS = 3600  # `--backup-timeout` of scripts/deploy-memory.py
 REFERENCE_BYTES = 5 * 1024 ** 3  # the volume the review of milestone A worried about
+ROLLBACK_IMAGES = ('api', 'worker', 'mcp', 'web', 'operator')  # the images a deployment tags (scripts/deploy-memory.py IMAGE_NAMES)
+FAULTY_SERVICES = ('api', 'worker')  # recreated on the "faulty release" image before the rollback
+FAULTY_LABEL = 'com.kairos.rehearsal=faulty-release'
+HEALTH_SLACK_SECONDS = 10  # what the daemon's scheduling of a probe may add to `interval x retries` after the deadline; reported with the measurement, never hidden
+UNHEALTHY_EXTRA_SECONDS, RECOVER_SECONDS, HEALTHY_SECONDS = 240, 240, 300
 FINGERPRINT_CODE = '''
 import json, time
 from memory_platform.config import Settings
@@ -217,9 +239,169 @@ class OperationsRehearsal(restore_module.Rehearsal):
         if failed:
             raise RehearsalError(f'{failed} job(s) ended failed after the database restart: ' + json.dumps(result, sort_keys=True))
 
+    # -- stage rollback ---------------------------------------------------------------------------------------------------------
+
+    def read_status(self):
+        try:
+            return json.loads((self.private / 'deployment-status.json').read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            raise RehearsalError('The deployment left no readable deployment-status.json') from None
+
+    def deploy_command(self, *extra):
+        return [sys.executable, str(self.root / 'scripts/deploy-memory.py'), '--apply', *extra, '--project-name', self.project, '--secret-dir', str(self.work / 'secrets'),
+                '--api-port', str(self.args.api_port), '--web-port', str(self.args.web_port), '--embed-stub', '--roundtrip']
+
+    def second_deploy(self):
+        """The second deployment of the project: it tags the images of the first (the previous release) before it builds."""
+        self.step('deploy_again')
+        self.run(self.deploy_command('--no-verify-backup'), timeout=restore_module.DEPLOY_TIMEOUT)
+
+    def image_id(self, reference):
+        out = self.run(['docker', 'image', 'inspect', '--format', '{{.Id}}', reference], check=False)
+        return out.strip() if self.last_code == 0 and out.strip() else None
+
+    def container_image(self, service):
+        return self.run(['docker', 'inspect', '-f', '{{.Image}}', self.container_of(service)]).strip()
+
+    def content_hash(self):
+        out = self.compose_run('run', '--rm', '--no-deps', '-T', '--name', self.container('manifest'), 'memory-admin', 'content-manifest', timeout=restore_module.DEPLOY_TIMEOUT)
+        return self.json(out.strip())['sha256']
+
+    def tagged_images(self):
+        self.step('tags')
+        recorded = self.read_status().get('images') or {}
+        previous = recorded.get('previous') or {}
+        missing = [name for name in ROLLBACK_IMAGES if name not in previous]
+        if missing:
+            raise RehearsalError('The second deployment recorded no previous tag for: ' + ', '.join(missing))
+        ids = {}
+        for name, tag in previous.items():
+            if not re.fullmatch(re.escape(f'rehearsal-{self.project}-{name}') + r':[A-Za-z0-9_.]+-\d{8}T\d{6}Z', tag):
+                raise RehearsalError(f'The recorded tag {tag} is not rehearsal-{self.project}-{name}:<version>-<mark>')
+            ids[name] = self.image_id(tag)
+            if not ids[name]:
+                raise RehearsalError(f'The recorded tag {tag} does not exist in Docker')
+        self.previous_ids = ids
+        self.report['tags'] = {'previous': previous, 'ids': ids, 'kept': recorded.get('kept')}
+
+    def faulty_release(self):
+        """Put something else than the tagged images in `:latest` and under `memory-api` and `memory-worker`: an image committed from the previous one with another label (an exact copy
+        otherwise, so the stack still works). Without it two deployments of the same source would hold the same image and a rollback could not be told from doing nothing."""
+        self.step('bad_release')
+        self.faulty_ids = []
+        for name in FAULTY_SERVICES:
+            temporary = self.container(f'faulty-{name}')
+            self.run(['docker', 'create', '--name', temporary, self.previous_ids[name]])
+            self.run(['docker', 'commit', '-c', f'LABEL {FAULTY_LABEL}', temporary, self.image(name)])
+            self.run(['docker', 'rm', '--force', temporary])
+            self.faulty_ids.append(self.image_id(self.image(name)))
+        services = [f'memory-{name}' for name in FAULTY_SERVICES]
+        self.compose_run('up', '-d', '--no-deps', '--no-build', '--wait', '--wait-timeout', '120', *services, timeout=restore_module.DEPLOY_TIMEOUT)
+        for name, faulty in zip(FAULTY_SERVICES, self.faulty_ids):
+            if self.container_image(f'memory-{name}') != faulty or faulty == self.previous_ids[name]:
+                raise RehearsalError(f'memory-{name} does not run the faulty image that was put in place')
+        self.report['faulty_release'] = {name: faulty for name, faulty in zip(FAULTY_SERVICES, self.faulty_ids)}
+
+    def rollback_deployment(self):
+        self.step('rollback')
+        before = self.content_hash()
+        self.run(self.deploy_command('--rollback'), timeout=restore_module.DEPLOY_TIMEOUT)
+        status = self.read_status()
+        rollback, images = status.get('rollback') or {}, status.get('images') or {}
+        phases = status.get('phases') or []
+        if status.get('status') != 'rolled_back' or rollback.get('migrated') is not False:
+            raise RehearsalError('The deployment did not report a rollback without migrating: ' + json.dumps({k: status.get(k) for k in ('status', 'failed_phase', 'message')}))
+        if phases[:4] != ['engine', 'configuration', 'rollback', 'verify'] or any('migrate' in phase or phase in ('backup', 'bootstrap', 'backfill', 'build') for phase in phases):
+            raise RehearsalError('The rollback ran phases it must not: ' + ', '.join(phases))
+        if status.get('content_sha256') != before:
+            raise RehearsalError('The content-manifest after the rollback differs from the one read before it')
+        for name in ROLLBACK_IMAGES:
+            if (images.get('current') or {}).get(name) != self.previous_ids[name]:
+                raise RehearsalError(f'The recorded current image of {name} is not the one of its tag')
+        for name in FAULTY_SERVICES:
+            running = self.container_image(f'memory-{name}')
+            if running != self.previous_ids[name] or running in self.faulty_ids:
+                raise RehearsalError(f'memory-{name} does not run the image of its recorded tag after the rollback')
+        found = (status.get('roundtrip') or {}).get('found_ref')
+        if not found:
+            raise RehearsalError('The search after the rollback found nothing')
+        self.report['rollback'] = {'status': status['status'], 'migrated': False, 'phases': phases, 'content_sha256': before, 'content_equal': True, 'search_found_ref': found,
+                                   'restored_to': {name: self.previous_ids[name] for name in FAULTY_SERVICES}, 'replaced_faulty': dict(zip(FAULTY_SERVICES, self.faulty_ids))}
+
+    def health(self, service):
+        return self.run(['docker', 'inspect', '-f', '{{.State.Health.Status}}', self.container_of(service)]).strip()
+
+    def container_now(self, container):
+        return float(self.run(['docker', 'exec', container, 'python', '-c', 'import time;print(time.time())']).strip())
+
+    def worker_unhealthy(self):
+        """CA-21 (amended): with the loop stopped the container turns `unhealthy` within the deadline the heartbeat file holds + `interval x retries`. Times are the container's own clock,
+        the same one the healthcheck compares the deadline with."""
+        self.step('worker_unhealthy')
+        container = self.container_of('memory-worker')
+        check = self.json(self.run(['docker', 'inspect', '-f', '{{json .Config.Healthcheck}}', container]).strip())
+        interval, retries = check['Interval'] / 1e9, int(check['Retries'])
+        self.wait_for('the worker healthy before its loop is stopped', lambda: self.health('memory-worker') == 'healthy', HEALTHY_SECONDS, pause=5)
+        stopped = False
+        try:
+            self.run(['docker', 'kill', '--signal', 'SIGSTOP', container])
+            stopped = True
+            stopped_at = self.container_now(container)
+            deadline = float(self.run(['docker', 'exec', container, 'python', '-c', "print(open('/tmp/kairos-worker-heartbeat').read().strip())"]).strip())  # frozen: the last beat
+            bound = deadline + interval * retries
+            unhealthy_at = self.wait_for('memory-worker turning unhealthy with its loop stopped', lambda: self.container_now(container) if self.health('memory-worker') == 'unhealthy' else None,
+                                         max(bound - stopped_at, 0) + HEALTH_SLACK_SECONDS + UNHEALTHY_EXTRA_SECONDS, pause=3)
+            result = {'loop_stopped': 'SIGSTOP of the process of memory-worker (the container and its healthcheck keep running)', 'interval_seconds': interval, 'retries': retries,
+                      'deadline_after_stop_seconds': round(deadline - stopped_at, 1), 'bound_after_stop_seconds': round(bound - stopped_at, 1),
+                      'unhealthy_after_stop_seconds': round(unhealthy_at - stopped_at, 1), 'unhealthy_after_deadline_seconds': round(unhealthy_at - deadline, 1),
+                      'slack_seconds': HEALTH_SLACK_SECONDS, 'within_bound': unhealthy_at <= bound + HEALTH_SLACK_SECONDS}
+            self.report['worker_unhealthy'] = result
+            if not result['within_bound']:
+                raise RehearsalError('memory-worker turned unhealthy later than the deadline of its last beat + interval x retries: ' + json.dumps(result, sort_keys=True))
+        finally:
+            if stopped:
+                self.run(['docker', 'kill', '--signal', 'SIGCONT', container], check=False)
+        self.wait_for('memory-worker healthy again once its loop runs', lambda: self.health('memory-worker') == 'healthy', RECOVER_SECONDS, pause=5)
+        self.report['worker_unhealthy']['recovered'] = True
+
+    def remove_tagged_images(self):
+        """What the deployments of this rehearsal left in the image store, by exact repository and id: the tags `<version>-<mark>`, `:latest` and the faulty images. Returns the problems."""
+        problems = []
+        for name in ROLLBACK_IMAGES:
+            repository = f'rehearsal-{self.project}-{name}'
+            for reference in self.run(['docker', 'image', 'ls', repository, '--format', '{{.Repository}}:{{.Tag}}'], check=False).split():
+                if reference.startswith(repository + ':'):
+                    self.run(['docker', 'image', 'rm', reference], check=False)
+        for image_id in getattr(self, 'faulty_ids', []):
+            if image_id:
+                self.run(['docker', 'image', 'rm', image_id], check=False)
+        for name in ROLLBACK_IMAGES:
+            repository = f'rehearsal-{self.project}-{name}'
+            left = [r for r in self.run(['docker', 'image', 'ls', repository, '--format', '{{.Repository}}:{{.Tag}}'], check=False).split() if r.startswith(repository + ':')]
+            problems += [f'image left in docker: {r}' for r in left]
+        for image_id in getattr(self, 'faulty_ids', []):
+            if image_id and self.image_id(image_id):
+                problems.append(f'faulty image left in docker: {image_id}')
+        return problems
+
+    def cleanup(self):
+        result = super().cleanup()
+        try:
+            extra = self.remove_tagged_images()
+        except BaseException as error:  # the rest of the cleanup is done; this one never hides the failure that came first
+            extra = [f'tagged images ({type(error).__name__})']
+        if not extra:
+            return result
+        return ('incomplete: ' if result == 'complete' else result + ', ') + ', '.join(extra)
+
     # -- the rehearsal ----------------------------------------------------------------------------------------------------------
 
+    def rollback_steps(self):
+        return [self.second_deploy, self.tagged_images, self.faulty_release, self.rollback_deployment, self.worker_unhealthy]
+
     def sequence(self):
+        if self.args.stage == 'rollback':
+            return [self.deploy] + self.rollback_steps()
         timings = self.report.setdefault('timings', {})
 
         def cycle():
@@ -227,7 +409,8 @@ class OperationsRehearsal(restore_module.Rehearsal):
 
         def restore():
             timings['restore_step_seconds'] = self.timed(super(OperationsRehearsal, self).restore)
-        return [self.deploy, self.seed_embeddings, self.make_keys, cycle, self.download, self.verify, self.decrypt, restore, self.measure_fingerprints, self.queue_jobs, self.database_restart]
+        stage_a = [self.deploy, self.seed_embeddings, self.make_keys, cycle, self.download, self.verify, self.decrypt, restore, self.measure_fingerprints, self.queue_jobs, self.database_restart]
+        return stage_a + (self.rollback_steps() if self.args.stage == 'all' else [])
 
     def rehearse(self):
         failure = None
@@ -253,14 +436,15 @@ class OperationsRehearsal(restore_module.Rehearsal):
             raise failure
         if cleanup != 'complete':
             raise RehearsalError('The rehearsal succeeded but its cleanup is ' + cleanup)
-        return dict(status='restored_and_content_verified', project=self.project, stage=self.args.stage, steps=self.steps, cleanup=cleanup, **self.report)
+        status = {'a': 'restored_and_content_verified', 'rollback': 'rollback_ok', 'all': 'rehearsal_ok'}[self.args.stage]
+        return dict(status=status, project=self.project, stage=self.args.stage, steps=self.steps, cleanup=cleanup, **self.report)
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--project-name', required=True, help='kairos-ops-<name>: the isolated project of the rehearsal (created and removed here)')
     parser.add_argument('--embed-stub', action='store_true', help='Required: the simulated embedding provider; the Ollama of the host is never used')
-    parser.add_argument('--stage', choices=STAGES, default='all', help='a: the closing of milestone A (restore runbook, fingerprints, database restart); all: every stage there is')
+    parser.add_argument('--stage', choices=STAGES, default='all', help='a: the closing of milestone A (restore runbook, fingerprints, database restart); rollback: two tagged deployments, --rollback without migrating and the worker turning unhealthy with its loop stopped (C-04); all: every stage there is')
     parser.add_argument('--seed-rows', type=int, default=DEFAULT_SEED_ROWS, help='Rows of memory.embeddings seeded before the copy (default %(default)s)')
     parser.add_argument('--queue-jobs', type=int, default=DEFAULT_QUEUE_JOBS, help='Events written (one embed job each) before the database is stopped (default %(default)s)')
     parser.add_argument('--api-port', type=int, default=restore_module.DEFAULT_API_PORT)

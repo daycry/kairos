@@ -255,6 +255,135 @@ class HeartbeatTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(worker.beat())
 
 
+class LostLeaseTests(unittest.IsolatedAsyncioTestCase):
+    """T-64, debts n.º 6 and 7 of the review of phase 9: a job whose lease is lost is cancelled (it can no longer write its result, and while it ran on without beating the worker
+    turned `unhealthy`), and two mutants of the heartbeat code that survived the earlier tests are killed."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.path = Path(self.directory.name) / 'heartbeat'
+        self.clock = Clock()
+        self.store = Mock()
+        self.job = {'id': 'job', 'fence': 4, 'attempts': 1, 'destination': 'extract', 'policy': {}, 'payload': {'title': 'Source', 'content': 'Synthetic summary'}}
+        self.store.claim_job.return_value = self.job
+        self.result = {'payload': {'title': 'Lesson', 'content': 'Synthetic summary'}, 'status': 'extracted'}
+
+    def stamp(self):
+        return float(self.path.read_text(encoding='utf-8')) if self.path.exists() else None
+
+    async def test_a_job_is_cancelled_when_its_lease_is_lost_and_its_row_is_left_alone(self):
+        """`renew_lease` says False: the fence is no longer ours. The provider call is cancelled at once (it would run to its deadline without a beat), nothing is written for the job
+        (`complete_job` and `fail_job` are the new owner's business: their fence would refuse ours anyway) and the worker goes on."""
+        self.store.renew_lease.return_value = False
+        events = []
+
+        async def hb_wait(seconds):
+            self.clock.now += seconds
+            await asyncio.sleep(0)
+
+        async def slow(source):
+            try:
+                await asyncio.sleep(3)  # far longer than the renewal takes, far shorter than any real deadline
+            except asyncio.CancelledError:
+                events.append('cancelled')
+                raise
+            events.append('finished')
+            return self.result
+        worker = Worker(self.store, settings(lease_seconds=900), {'extract': Mock(extract=slow)}, clock=self.clock, rng=lambda: 1.0, waiter=AsyncMock(), heartbeat_wait=hb_wait,
+                        heartbeat_file=self.path)
+        self.assertTrue(await asyncio.wait_for(worker.run_once(), 30))
+        self.assertEqual(events, ['cancelled'], 'the job was not left to run on to its deadline')
+        self.store.complete_job.assert_not_called()
+        self.store.fail_job.assert_not_called()
+        self.store.renew_lease.assert_called_once()
+        self.assertTrue(worker.stopping.is_set() is False, 'the worker itself carries on')
+
+    async def test_cancelling_the_job_of_a_lost_lease_does_not_swallow_a_cancellation_from_outside(self):
+        self.store.renew_lease.return_value = True
+        started = asyncio.Event()
+
+        async def hb_wait(seconds):
+            await asyncio.sleep(3600)
+
+        async def slow(source):
+            started.set()
+            await asyncio.sleep(3600)
+        worker = Worker(self.store, settings(lease_seconds=900), {'extract': Mock(extract=slow)}, clock=self.clock, rng=lambda: 1.0, waiter=AsyncMock(), heartbeat_wait=hb_wait)
+        task = asyncio.create_task(worker.run_once())
+        await asyncio.wait_for(started.wait(), 5)
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 5)
+        self.store.complete_job.assert_not_called()
+
+    async def test_a_lease_that_lives_is_not_cancelled_and_its_result_is_written(self):
+        self.store.renew_lease.return_value = True
+        renewals = []
+
+        async def hb_wait(seconds):
+            await asyncio.sleep(0.05)
+
+        async def slow(source):
+            while not self.store.renew_lease.call_count:  # the job ends only after a renewal that worked
+                await asyncio.sleep(0.05)
+            renewals.append(self.store.renew_lease.call_count)
+            return self.result
+        worker = Worker(self.store, settings(lease_seconds=900), {'extract': Mock(extract=slow)}, clock=self.clock, rng=lambda: 1.0, waiter=AsyncMock(), heartbeat_wait=hb_wait)
+        await asyncio.wait_for(worker.run_once(), 30)
+        self.assertTrue(renewals)
+        self.store.complete_job.assert_called_once()
+
+    async def test_the_wait_before_repeating_a_renewal_never_passes_the_end_of_the_lease(self):
+        """Mutant «no lease cap in the renewal retry» (`left` out of `min(period, backoff, left)`): with a 30 s lease (period 10 s) the waits after the first renewal that fails grow
+        1, 2, 4, 8 s and the next would be 16 s with 5 s of lease left: it must wait 5 s (the end of the lease), not 10 s (the period) nor 16 s."""
+        self.store.renew_lease.side_effect = [DOWN] * 60
+        waits = []
+
+        async def hb_wait(seconds):
+            waits.append(seconds)
+            self.clock.now += seconds
+            await asyncio.sleep(0)
+
+        async def slow(source):
+            while len(waits) < 6:
+                await asyncio.sleep(0)
+            return self.result
+        worker = Worker(self.store, settings(lease_seconds=30, worker_db_backoff_max=60.0), {'extract': Mock(extract=slow)}, clock=self.clock, rng=lambda: 1.0, waiter=AsyncMock(),
+                        heartbeat_wait=hb_wait)
+        await asyncio.wait_for(worker.run_once(), 20)
+        self.assertEqual(waits[:6], [10, 1.0, 2.0, 4.0, 8.0, 5.0])
+        end = 1000.0 + 30
+        reached = 1000.0
+        for wait in waits[:6]:
+            reached += wait
+            self.assertLessEqual(reached, end, 'a retry never sleeps past the end of the lease this worker keeps')
+
+    async def test_the_loop_beats_before_the_wait_that_follows_a_failure_even_when_the_last_beat_is_old(self):
+        """Mutant «no beat before the backoff wait» (`self.beat()` out of the `store_failures` branch of `run`): the claim beat at 1000 (deadline 1140); the job takes 50 s and its
+        result cannot be written (the database went away: the write is given up after its 1 s budget); the loop must then beat (the last access that worked is 60 s old) so that the
+        deadline covers the wait that follows (now + backoff max + margin), not leave the claim's deadline to pass."""
+        async def slow(source):
+            self.clock.now += 50
+            return self.result
+        self.store.complete_job.side_effect = DOWN
+        seen, holder = [], []
+
+        async def waiter(seconds):
+            seen.append(self.stamp())
+            self.clock.now += 10
+            if len(seen) >= 2:
+                holder[0].stopping.set()
+        claims = iter([self.job])
+        self.store.claim_job.side_effect = lambda *args: next(claims, None)
+        worker = Worker(self.store, settings(lease_seconds=240, worker_write_retry_seconds=1), {'extract': Mock(extract=slow)}, clock=self.clock, rng=lambda: 1.0, waiter=waiter,
+                        heartbeat_file=self.path)
+        holder.append(worker)
+        await asyncio.wait_for(worker.run(), 10)
+        self.assertEqual(seen[0], 1000.0 + 240 / 3 + HEARTBEAT_MARGIN, 'the claim beat is what the file holds while the result is retried')
+        self.assertEqual(seen[1], 1060.0 + TURN, 'the loop beat before waiting: now (1060) + backoff max + margin')
+
+
 class ComposeHealthcheckTests(unittest.TestCase):
     def setUp(self):
         self.compose = yaml.safe_load((ROOT / 'docker-compose.yml').read_text(encoding='utf-8'))

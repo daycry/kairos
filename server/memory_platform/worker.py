@@ -283,6 +283,15 @@ class Worker:
             Once that lease has run out the period is back (the database refuses a lease that ran out anyway: `renew_lease` only renews a live one)."""
             left = lease[0]-self.clock()
             return period if left <= 0 else min(period, backoff_delay(misses, cap, self.rng), left)
+        work = []  # the task of the provider call (once it exists): the heartbeat cancels it when the lease is lost
+
+        def cancel_work():
+            """The lease is gone, so the result of the job can no longer be written (`complete_job` and `fail_job` refuse a fence that is not ours) and nobody beats for it: cancel the
+            provider call instead of letting it run on to its deadline, during which the worker would turn `unhealthy` (T-64, debt 6). The row is NOT touched: whoever claimed it
+            after the lease expired owns it."""
+            if work and not work[0].done():
+                work[0].cancel()
+
         async def heartbeat():
             wait, misses = period, 0
             while True:
@@ -298,6 +307,7 @@ class Worker:
                     else:
                         observability.log_event('lease_lost', 'warning', destination=destination)
                         lost.set()
+                        cancel_work()
                         return
                 except StoreUnavailable:
                     misses += 1
@@ -311,6 +321,7 @@ class Worker:
                         continue
                     observability.log_failure('heartbeat_failed', exc, 'warning', destination=destination)
                     lost.set()
+                    cancel_work()
                     return
         async def failed(*args):
             nonlocal outcome, written
@@ -333,22 +344,31 @@ class Worker:
                 deadline = worker_deadline(self.settings, planned, stored_vector=False)
             else:
                 deadline = self.settings.provider_timeout+10
-            async with asyncio.timeout(deadline) as limit:
-                if job['destination'] == 'embed':
-                    stored = None
-                    if planned > 1:
-                        stored = await self._store('read', stored_item_vector, self.store, job['project_id'], job['item_id'], job['resource_type'], job['version'], job['canonical_hash'], self.settings.embedding_model)
-                        if stored:
-                            limit.reschedule(limit.when()+embedding_job_timeout(self.settings, 1))
-                    receipt = await embed_receipt(provider, self.settings, job['payload'], job['canonical_hash'], stored)
-                elif job['destination'] == 'extract':
+            async def compute():
+                async with asyncio.timeout(deadline) as limit:
+                    if job['destination'] == 'embed':
+                        stored = None
+                        if planned > 1:
+                            stored = await self._store('read', stored_item_vector, self.store, job['project_id'], job['item_id'], job['resource_type'], job['version'], job['canonical_hash'], self.settings.embedding_model)
+                            if stored:
+                                limit.reschedule(limit.when()+embedding_job_timeout(self.settings, 1))
+                        return await embed_receipt(provider, self.settings, job['payload'], job['canonical_hash'], stored)
                     # Extraction is explicitly scheduled, never inferred from a capture event.
                     # Store read views include routing IDs, refs and a nested raw
                     # payload. Those are not model output fields and encourage
                     # copying an invalid storage envelope instead of a memory.
                     view = job['payload']
                     source = view.get('payload', view)
-                    receipt = await provider.extract(source)
+                    return await provider.extract(source)
+            work.append(asyncio.create_task(compute()))
+            try:
+                receipt = await work[0]
+            except asyncio.CancelledError:
+                if lost.is_set() and work[0].cancelled() and not asyncio.current_task().cancelling():  # the heartbeat cancelled the call, not whoever runs this worker
+                    observability.log_event('job_cancelled', 'warning', destination=destination, reason='lease_lost')
+                    outcome = 'lost'
+                    return True
+                raise
             if lost.is_set():
                 return True
             if job['destination'] == 'embed' and not receipt.get('verified'):

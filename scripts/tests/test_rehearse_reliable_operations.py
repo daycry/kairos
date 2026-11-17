@@ -3,13 +3,18 @@
 The restore steps are the ones of scripts/rehearse-restore.py (its own tests cover them); what is pinned here is what this script adds: the seeded volume of embeddings, the
 fingerprint measurement against the backup timeout, the queue that has to survive a stop and start of `memory-postgres`, and that a restart of the worker, a job that fails or a
 queue that never empties fail the rehearsal while the cleanup still runs. Nothing here needs Docker or the network.
+
+Stage `rollback` (T-64, CA-24 and the rehearsal case of CA-21) is pinned in `RollbackStageTests` against a double of Docker that keeps the images, the image each container runs and the
+health of `memory-worker` on a simulated clock: the tags must exist, the faulty release must really change what runs, the rollback must put the tagged images back without migrating and
+with the same content, the worker must turn `unhealthy` within the deadline of its last beat + `interval x retries` and be healthy again once resumed, and the cleanup removes every tag.
 """
 import importlib.util
 import json
 from pathlib import Path
 import re
+import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -218,6 +223,268 @@ class OperationsTests(unittest.TestCase):
         with patch.object(ops.OperationsRehearsal, 'apply', return_value={'status': 'restored_and_content_verified'}):
             self.assertEqual(ops.main(['--project-name', 'kairos-ops-c', '--embed-stub', '--stage', 'a']), 0)
         self.assertTrue(re.fullmatch(r'kairos-ops-[a-z0-9][a-z0-9-]{0,24}', 'kairos-ops-c'))
+
+
+NAMES = ('api', 'worker', 'mcp', 'web', 'operator')
+PROJECT = 'kairos-ops-c'
+TAG = '0.4.0-20261103T100000Z'
+
+
+def previous_tags(project=PROJECT):
+    return {name: f'rehearsal-{project}-{name}:{TAG}' for name in NAMES}
+
+
+def second_status():
+    return {'status': 'complete', 'images': {'previous': previous_tags(), 'kept': {name: [previous_tags()[name]] for name in NAMES}, 'current': {}}}
+
+
+def rollback_status(**changes):
+    value = {'status': 'rolled_back', 'phases': ['engine', 'configuration', 'rollback', 'verify', 'roundtrip'], 'rollback': {'migrated': False}, 'content_sha256': 's1',
+             'images': {'previous': previous_tags(), 'current': {name: f'sha256:old-{name}' for name in NAMES}}, 'roundtrip': {'found_ref': 'ref-1'}}
+    value.update(changes)
+    return value
+
+
+class FakeStack:
+    """Docker for the rollback stage: the images (`reference -> id`), the image each container runs, the health of `memory-worker` on a simulated clock (`now`, advanced by the
+    rehearsal's own sleeps) and the signals sent to it."""
+    EPOCH = 1_000_000.0
+
+    def __init__(self, **faults):
+        self.faults, self.commands, self.now = faults, [], 0.0
+        self.images = {f'rehearsal-{PROJECT}-{name}:{TAG}': f'sha256:old-{name}' for name in NAMES}
+        self.images.update({f'rehearsal-{PROJECT}-{name}:latest': f'sha256:new-{name}' for name in NAMES})
+        self.running = {'memory-api-container': 'sha256:new-api', 'memory-worker-container': 'sha256:new-worker'}
+        self.stopped_at = self.resumed_at = None
+        self.signals = []
+
+    def advance(self, seconds):
+        self.now += seconds
+
+    def health(self):
+        if self.stopped_at is not None and self.resumed_at is None:
+            if self.faults.get('never_unhealthy'):
+                return 'healthy'
+            return 'unhealthy' if self.now >= self.stopped_at + self.faults.get('deadline_offset', 100) + self.faults.get('unhealthy_after_deadline', 75) else 'healthy'
+        return 'unhealthy' if self.faults.get('stays_unhealthy') and self.resumed_at is not None else 'healthy'
+
+    def __call__(self, command, timeout=None, environment=None):
+        self.commands.append(list(command))
+        text = ' '.join(command)
+        if command[:2] == ['docker', 'compose'] and 'ps' in command and '-q' in command:
+            return 0, command[-1] + '-container' + chr(10), ''
+        if command[:2] == ['docker', 'compose'] and 'up' in command:
+            for name in ('api', 'worker'):
+                if f'memory-{name}' in command:
+                    self.running[f'memory-{name}-container'] = self.images[f'rehearsal-{PROJECT}-{name}:latest']
+            return 0, '', ''
+        if command[:2] == ['docker', 'compose'] and 'content-manifest' in command:
+            return 0, json.dumps({'sha256': 's1'}), ''
+        if command[:3] == ['docker', 'image', 'inspect']:
+            found = self.images.get(command[-1]) or (command[-1] if command[-1] in self.images.values() else None)
+            return (0, found + chr(10), '') if found else (1, '', 'No such image')
+        if command[:3] == ['docker', 'image', 'ls']:
+            return 0, ''.join(key + chr(10) for key in self.images if key.startswith(command[3] + ':')), ''
+        if command[:3] == ['docker', 'image', 'rm']:
+            if command[-1] in self.images:
+                del self.images[command[-1]]
+            else:
+                for key in [k for k, v in self.images.items() if v == command[-1]]:
+                    del self.images[key]
+            return 0, '', ''
+        if command[:2] == ['docker', 'create']:
+            self.created = command[-1]
+            return 0, 'created' + chr(10), ''
+        if command[:2] == ['docker', 'commit']:
+            name = command[-1].rsplit(':', 1)[0].rsplit('-', 1)[1]
+            self.images[command[-1]] = f'sha256:faulty-{name}'
+            return 0, '', ''
+        if command[0] == sys.executable and '--rollback' in command:
+            if not self.faults.get('not_restored'):
+                self.running.update({'memory-api-container': 'sha256:old-api', 'memory-worker-container': 'sha256:old-worker'})
+                for name in NAMES:
+                    self.images[f'rehearsal-{PROJECT}-{name}:latest'] = f'sha256:old-{name}'
+            return 0, '', ''
+        if command[:2] == ['docker', 'inspect']:
+            if '{{.Image}}' in command:
+                return 0, self.running[command[-1]] + chr(10), ''
+            if '{{.State.Health.Status}}' in command:
+                return 0, self.health() + chr(10), ''
+            if '{{json .Config.Healthcheck}}' in command:
+                return 0, json.dumps({'Test': ['CMD'], 'Interval': 30_000_000_000, 'Timeout': 5_000_000_000, 'Retries': 3}), ''
+        if command[:2] == ['docker', 'exec']:
+            if 'time.time()' in text:
+                return 0, repr(self.EPOCH + self.now) + chr(10), ''
+            if 'kairos-worker-heartbeat' in text:
+                return 0, repr(self.EPOCH + self.stopped_at + self.faults.get('deadline_offset', 100)) + chr(10), ''
+        if command[:2] == ['docker', 'kill']:
+            self.signals.append((command[command.index('--signal') + 1], command[-1]))
+            if 'SIGSTOP' in command:
+                self.stopped_at = self.now
+            else:
+                self.resumed_at = self.now
+            return 0, '', ''
+        return 0, '', ''
+
+
+class RollbackStageTests(unittest.TestCase):
+    def rehearsal(self, **faults):
+        stack = FakeStack(**faults)
+        rehearsal = ops.OperationsRehearsal(arguments(stage='rollback'), root=ROOT, run=stack)
+        rehearsal.sleep = stack.advance
+        rehearsal.clock = lambda: stack.now
+        rehearsal.work = Path(ROOT / '.private' / 'unit-test-never-written')
+        rehearsal.read_status = Mock(side_effect=[second_status(), rollback_status(**faults.get('status', {}))])
+        return rehearsal, stack
+
+    def through_rollback(self, rehearsal):
+        rehearsal.tagged_images()
+        rehearsal.faulty_release()
+        rehearsal.rollback_deployment()
+
+    def test_the_stage_is_chosen_with_the_command_line_and_runs_the_two_deployments_the_rollback_and_the_probe_in_that_order(self):
+        rehearsal, stack = self.rehearsal()
+        self.assertIn('rollback', ops.STAGES)
+        names = [getattr(action, '__name__', '') for action in rehearsal.sequence()]
+        self.assertEqual(names, ['deploy', 'second_deploy', 'tagged_images', 'faulty_release', 'rollback_deployment', 'worker_unhealthy'])
+        stage_all = ops.OperationsRehearsal(arguments(stage='all'), root=ROOT, run=stack)
+        names = [getattr(action, '__name__', '') for action in stage_all.sequence()]
+        self.assertEqual(names[:1], ['deploy'])
+        self.assertEqual(names[-5:], ['second_deploy', 'tagged_images', 'faulty_release', 'rollback_deployment', 'worker_unhealthy'])
+        self.assertEqual([getattr(a, '__name__', '') for a in ops.OperationsRehearsal(arguments(stage='a'), root=ROOT, run=stack).sequence()].count('second_deploy'), 0)
+        with patch.object(ops.OperationsRehearsal, 'apply', return_value={'status': 'rollback_ok'}):
+            self.assertEqual(ops.main(['--project-name', PROJECT, '--embed-stub', '--stage', 'rollback']), 0)
+
+    def test_the_second_deployment_is_not_fresh_skips_the_slow_backup_restore_and_keeps_the_stub_and_the_round_trip(self):
+        rehearsal, stack = self.rehearsal()
+        rehearsal.work = Path('/tmp/never')
+        rehearsal.second_deploy()
+        command = stack.commands[-1]
+        self.assertNotIn('--fresh', command)
+        for flag in ('--apply', '--no-verify-backup', '--embed-stub', '--roundtrip'):
+            self.assertIn(flag, command)
+        self.assertEqual(command[command.index('--project-name') + 1], PROJECT)
+
+    def test_the_recorded_tags_must_exist_and_have_the_shape_of_the_deployment(self):
+        rehearsal, stack = self.rehearsal()
+        rehearsal.tagged_images()
+        self.assertEqual(rehearsal.previous_ids, {name: f'sha256:old-{name}' for name in NAMES})
+        self.assertEqual(rehearsal.report['tags']['previous'], previous_tags())
+        for broken in ({}, {name: tag for name, tag in previous_tags().items() if name != 'web'}, {**previous_tags(), 'api': 'kairos-api:0.4.0-20261103T100000Z'}, {**previous_tags(), 'api': f'rehearsal-{PROJECT}-api:latest'}):
+            rehearsal, stack = self.rehearsal()
+            rehearsal.read_status = Mock(return_value={'images': {'previous': broken}})
+            with self.assertRaises(ops.RehearsalError):
+                rehearsal.tagged_images()
+        rehearsal, stack = self.rehearsal()
+        del stack.images[previous_tags()['worker']]
+        with self.assertRaises(ops.RehearsalError) as raised:
+            rehearsal.tagged_images()
+        self.assertIn('does not exist', str(raised.exception))
+
+    def test_the_faulty_release_really_changes_what_the_containers_run(self):
+        rehearsal, stack = self.rehearsal()
+        rehearsal.tagged_images()
+        rehearsal.faulty_release()
+        self.assertEqual(stack.running, {'memory-api-container': 'sha256:faulty-api', 'memory-worker-container': 'sha256:faulty-worker'})
+        self.assertEqual(rehearsal.report['faulty_release'], {'api': 'sha256:faulty-api', 'worker': 'sha256:faulty-worker'})
+        commit = next(c for c in stack.commands if c[:2] == ['docker', 'commit'])
+        self.assertIn('LABEL ' + ops.FAULTY_LABEL, commit)
+        up = next(c for c in stack.commands if 'up' in c)
+        self.assertIn('--no-build', up)
+        self.assertEqual(up[-2:], ['memory-api', 'memory-worker'])
+
+    def test_the_rollback_must_leave_the_containers_on_the_tagged_images_without_migrating_and_with_the_same_content(self):
+        rehearsal, stack = self.rehearsal()
+        self.through_rollback(rehearsal)
+        report = rehearsal.report['rollback']
+        self.assertEqual((report['status'], report['migrated'], report['content_equal'], report['search_found_ref']), ('rolled_back', False, True, 'ref-1'))
+        self.assertEqual(report['restored_to'], {'api': 'sha256:old-api', 'worker': 'sha256:old-worker'})
+        self.assertEqual(report['replaced_faulty'], {'api': 'sha256:faulty-api', 'worker': 'sha256:faulty-worker'})
+        deploy = [c for c in stack.commands if c[0] == sys.executable and '--rollback' in c]
+        self.assertEqual(len(deploy), 1)
+        self.assertNotIn('--fresh', deploy[0])
+
+    def test_a_rollback_that_does_not_do_what_it_says_fails_the_rehearsal(self):
+        cases = {'not_restored': ({'not_restored': True}, 'image of its recorded tag'),
+                 'status': ({'status': {'status': 'failed'}}, 'did not report a rollback'),
+                 'migrated': ({'status': {'rollback': {'migrated': True}}}, 'did not report a rollback'),
+                 'phases': ({'status': {'phases': ['engine', 'configuration', 'rollback', 'verify', 'migrate']}}, 'phases it must not'),
+                 'content': ({'status': {'content_sha256': 'different'}}, 'content-manifest'),
+                 'current': ({'status': {'images': {'current': {name: 'sha256:other' for name in NAMES}, 'previous': previous_tags()}}}, 'recorded current image'),
+                 'search': ({'status': {'roundtrip': {}}}, 'found nothing')}
+        for label, (faults, message) in cases.items():
+            with self.subTest(label):
+                rehearsal, stack = self.rehearsal(**faults)
+                with self.assertRaises(ops.RehearsalError) as raised:
+                    self.through_rollback(rehearsal)
+                self.assertIn(message, str(raised.exception))
+
+    def test_the_worker_turns_unhealthy_within_the_deadline_of_its_last_beat_plus_interval_times_retries(self):
+        rehearsal, stack = self.rehearsal()
+        rehearsal.worker_unhealthy()
+        measured = rehearsal.report['worker_unhealthy']
+        self.assertTrue(measured['within_bound'] and measured['recovered'])
+        self.assertEqual((measured['interval_seconds'], measured['retries']), (30.0, 3), 'the bound uses the healthcheck the container really has')
+        self.assertEqual(measured['deadline_after_stop_seconds'], 100.0)
+        self.assertEqual(measured['bound_after_stop_seconds'], 190.0, 'deadline of the last beat + 30 x 3')
+        self.assertGreaterEqual(measured['unhealthy_after_stop_seconds'], 175.0)
+        self.assertLessEqual(measured['unhealthy_after_deadline_seconds'], 90 + ops.HEALTH_SLACK_SECONDS)
+        self.assertEqual(stack.signals, [('SIGSTOP', 'memory-worker-container'), ('SIGCONT', 'memory-worker-container')])
+        self.assertEqual([c for c in stack.commands if c[:2] == ['docker', 'stop'] or c[:2] == ['docker', 'rm']], [], 'the loop is stopped, the container is not')
+
+    def test_a_worker_that_turns_unhealthy_too_late_or_never_fails_the_rehearsal_and_is_resumed_anyway(self):
+        for faults, message in (({'unhealthy_after_deadline': 140}, 'later than the deadline'), ({'never_unhealthy': True}, 'turning unhealthy')):
+            with self.subTest(faults):
+                rehearsal, stack = self.rehearsal(**faults)
+                with self.assertRaises(ops.RehearsalError) as raised:
+                    rehearsal.worker_unhealthy()
+                self.assertIn(message, str(raised.exception))
+                self.assertEqual(stack.signals[-1], ('SIGCONT', 'memory-worker-container'))
+
+    def test_a_worker_that_does_not_recover_once_resumed_fails_the_rehearsal(self):
+        rehearsal, stack = self.rehearsal(stays_unhealthy=True)
+        with self.assertRaises(ops.RehearsalError) as raised:
+            rehearsal.worker_unhealthy()
+        self.assertIn('healthy again', str(raised.exception))
+
+    def test_the_cleanup_removes_every_tag_and_every_faulty_image_by_exact_reference(self):
+        rehearsal, stack = self.rehearsal()
+        self.through_rollback(rehearsal)
+        stack.images['kairos-api:0.4.0-20261103T100000Z'] = 'sha256:installed-api'  # an installed name that must never be touched
+        stack.images[f'rehearsal-{PROJECT}-extra:latest'] = 'sha256:extra'
+        self.assertEqual(rehearsal.remove_tagged_images(), [])
+        self.assertEqual({key for key in stack.images if key.startswith('rehearsal-')}, {f'rehearsal-{PROJECT}-extra:latest'})
+        self.assertIn('kairos-api:0.4.0-20261103T100000Z', stack.images)
+        removed = [c[-1] for c in stack.commands if c[:3] == ['docker', 'image', 'rm']]
+        self.assertTrue(removed and all(r.startswith(f'rehearsal-{PROJECT}-') or r.startswith('sha256:faulty') for r in removed), removed)
+
+    def test_an_image_that_cannot_be_removed_is_reported_by_the_cleanup(self):
+        rehearsal, stack = self.rehearsal()
+        self.through_rollback(rehearsal)
+        real = stack.__call__
+
+        def stubborn(command, timeout=None, environment=None):
+            if command[:3] == ['docker', 'image', 'rm'] and command[-1].endswith(TAG):
+                stack.commands.append(list(command))
+                return 1, '', 'conflict'
+            return real(command, timeout, environment)
+        rehearsal.run_command = stubborn
+        problems = rehearsal.remove_tagged_images()
+        self.assertTrue(problems and all(p.startswith('image left in docker: ') for p in problems), problems)
+
+    def test_nothing_the_stage_runs_names_another_project_or_the_host_ollama(self):
+        rehearsal, stack = self.rehearsal()
+        self.through_rollback(rehearsal)
+        rehearsal.worker_unhealthy()
+        for command in stack.commands:
+            text = ' '.join(command)
+            self.assertNotIn('knowledge-graphs-', text)
+            self.assertNotIn('knowledge-graphs_', text)
+            self.assertNotIn('11434', text)
+            if command[:2] == ['docker', 'compose']:
+                self.assertEqual(command[command.index('-p') + 1], PROJECT)
+            if command[:2] in (['docker', 'kill'], ['docker', 'commit'], ['docker', 'create']):
+                self.assertTrue(any(PROJECT in part or part.startswith('sha256:') or part == 'memory-worker-container' for part in command), command)
 
 
 if __name__ == '__main__':

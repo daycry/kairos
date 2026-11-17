@@ -48,15 +48,15 @@ test-plan: n/a (sin UI)
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 9 | 9 | 100% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 6 | 6 | 100% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 4 | 4 | 100% | 0 / 7.2h | 1.06 / 1.0h | 0 / 0.2h | 0 / 240 k |
-| Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 6 | 7 | 85.7% | 0 / 19.8h | 0.27 / 2.6h | 0 / 0.7h | 0 / 660 k |
-| Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 3 | 7 | 42.9% | 0 / 34.2h | 0.47 / 4.6h | 0 / 1.1h | 0 / 1140 k |
+| Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 7 | 7 | 100% | 0 / 19.8h | 0.27 / 2.6h | 0 / 0.7h | 0 / 660 k |
+| Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 4 | 7 | 57.1% | 0 / 34.2h | 1.04 / 4.6h | 0 / 1.1h | 0 / 1140 k |
 | Fase 11 — Sonda de ida y vuelta (C-06) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 0 | 7 | 0% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 0 | 6 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **62** | **98** | **63.3%** | **0 / 412.8h** | **5.72 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **64** | **98** | **65.3%** | **0 / 412.8h** | **6.29 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1680,7 +1680,7 @@ test-plan: n/a (sin UI)
 
 ## Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04)
 
-**Estado**: borrador · **Hito**: B · **Estimado**: 19.8h (16.5h base, de ellas 5.5h de revisión adversarial) · **Real**: — · **Coste est.**: 990 € · **Tokens est.**: 660 k
+**Estado**: completado · **Hito**: B · **Estimado**: 19.8h (16.5h base, de ellas 5.5h de revisión adversarial) · **Real**: — · **Coste est.**: 990 € · **Tokens est.**: 660 k
 
 ### T-54 — `mem_limit` y `cpus` configurables en todos los servicios
 
@@ -1744,7 +1744,8 @@ test-plan: n/a (sin UI)
 
 - **Descripción**: El bucle del worker escribe `/tmp/kairos-worker-heartbeat` en cada vuelta (solo si `last_store_ok` es reciente: R-01) y `memory-worker` declara un healthcheck sobre el fichero; con el bucle parado, el contenedor pasa a `unhealthy` en ≤ plazo del último latido + `interval × retries`. Enmienda (revisión de la Fase 9, n.º 1; aprobada por el orquestador): el original decía «por antigüedad del fichero» y «≤ `interval × retries`»; el fichero guarda ahora el plazo del siguiente latido. Fuente: CA-21; O-05; R-01.
 - **Changelog**: `memory-worker` pasa a `unhealthy` si su bucle se para o no alcanza la base durante unos minutos (latido en `/tmp/kairos-worker-heartbeat`, healthcheck cada 30 s).
-- **Estado**: en-progreso
+- **Estado**: completado
+- **Cerrada**: 2026-11-17
 - **Tiempo humano**: est. 3h (base) · real —
 - **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.10h (medido)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
@@ -1758,7 +1759,7 @@ test-plan: n/a (sin UI)
 **Criterios de aceptación**
 - [x] Prueba unitaria con reloj inyectado: el latido avanza en cada vuelta sana y no avanza si la base lleva caída más que el umbral
 - [x] `memory-worker` declara healthcheck por antigüedad de `/tmp/kairos-worker-heartbeat` (fichero en el `tmpfs` existente) con `interval × retries` documentados — Enmienda (revisión de la Fase 9, n.º 1, aprobada por el orquestador): el healthcheck compara con el reloj el plazo que guarda el fichero, no su antigüedad, y se documentan también el plazo del latido y su cota
-- [ ] El caso real de `unhealthy` con el bucle detenido se ejercita en el ensayo de la Fase 10
+- [x] El caso real de `unhealthy` con el bucle detenido se ejercita en el ensayo de la Fase 10
 
 **Subtareas**
 - [x] Escribir primero la prueba del latido (rojo)
@@ -1766,13 +1767,7 @@ test-plan: n/a (sin UI)
 - [x] Añadir el healthcheck al compose
 - [x] `usage-meter start/close` de la tarea
 
-**Notas** (2026-11-17): Estado `en-progreso` solo por el último criterio (el lint no admite `completado` con un criterio sin marcar): el código, las pruebas y el healthcheck están hechos; el caso real de `unhealthy` es de T-64 (Fase 10) y al cumplirse se marca `[x]` y `completado` con `Cerrada`. RED: `test_worker_heartbeat` falló con `ImportError: cannot import name 'HEARTBEAT_FILE' from 'memory_platform.worker'` · 2026-11-17. Sustituido por fix1/fix2 (el resto de este párrafo describe el diseño original, con umbral de antigüedad de 180 s y `unhealthy` ≤ 270 s; el vigente guarda el plazo del siguiente latido en el fichero y su cota es plazo del último latido + `interval × retries`: ver las Correcciones fix1 y fix2 de abajo y `docs/operations.md`): `Worker.beat()` escribe el fichero una vez por vuelta de `run` y en cada renovación de concesión que funciona (un trabajo largo no se ve parado), solo si `clock() - last_store_ok` ≤ máx(120 s, lease/3 + 60 s); un error de escritura se registra una vez (`heartbeat_file_failed`) y no para el worker; `serve()` pasa `HEARTBEAT_FILE`. Healthcheck: fichero con menos de 180 s, `interval` 30 s × `retries` 3 = 90 s, `timeout` 5 s, `start_period` 60 s; `unhealthy` ≤ 270 s tras parar el bucle (documentado en `docs/operations.md` y en un comentario del compose). Pruebas con reloj inyectado: avanza en cada vuelta sana, se congela con la base caída más que el umbral, vuelve al recuperarse, umbral con lease larga, fichero no escribible, sin fichero, renovación de una concesión larga, y el healthcheck del compose. Sigue abierto el ejercicio real de `unhealthy` con el bucle detenido: es del ensayo de la Fase 10 (T-64) por diseño.
-
-**Corrección fix1 (revisión de la Fase 9, intento 1, n.º 1 y 5)** (2026-11-17). **Enmienda de criterios aprobada por el orquestador:** CA-21 (`spec.md`) y el criterio/`Verificación` de T-64 pasan de «≤ `interval × retries`» a «≤ plazo del último latido + `interval × retries`»; el original no era alcanzable con ningún umbral de antigüedad y el umbral fijo de 180 s no seguía la cadencia del latido (con `MEMORY_LEASE_SECONDS=900` un worker sano oscilaba a `unhealthy` durante un trabajo largo, y con la base caída `beat()` seguía escribiendo hasta lease/3 + 60 s, así que no se cumplían los 270 s de `operations.md`). Nuevo diseño: el fichero guarda el PLAZO (segundos de época) del siguiente latido: el bucle lo escribe cada vuelta con ahora + `MEMORY_WORKER_DB_BACKOFF_MAX` + 60 s y la renovación de la concesión con ahora + lease/3 + 60 s; `beat()` no escribe nada si el último acceso real a la base que funcionó tiene más de 120 s ni antes del primero (`last_store_ok` arranca en `None`: n.º 5); el healthcheck (forma `CMD`, `python -c`, sin shell) sale con 1 cuando `time.time()` supera el plazo o el fichero falta, está vacío o es ilegible; `start_period: 60s`. Cota: `unhealthy` ≤ plazo restante del último latido + `interval × retries` (30 s × 3 = 90 s), con cualquier lease: unos 210 s por defecto, unos 450 s con lease 900 y la base caída en mitad de un trabajo. `docs/operations.md` (la promesa de 270 s), `docs/configuration.md`, `spec.md` (CA-21) e `improvement-plan.md` (Coordinación 18) puestos al día. RED: `test_worker_heartbeat` falló con `ImportError: cannot import name 'HEARTBEAT_MARGIN' from 'memory_platform.worker'` · 2026-11-17. Pruebas nuevas con reloj inyectado: lease de 900 s mantiene sano al worker durante un trabajo largo (cada renovación llega antes del plazo anterior), con la base caída el plazo caduca dentro de la cota, no late nunca antes del primer acceso que funciona, y el comando del healthcheck del compose (su `python` ejecutado contra un fichero temporal) da 0 antes del plazo y 1 después, sin fichero o con basura, y lee lo que escribe el worker. «tmpfs de solo lectura» de `docs/operations.md` corregido (el de solo lectura es el sistema de ficheros raíz; `/tmp` es el `tmpfs` escribible). Siguen abiertos CA-21/T-64: el caso real de `unhealthy` de la Fase 10. `test_worker_db_down.LoopTests.test_last_store_ok_moves_only_with_an_access_that_worked` actualizada (RED: `AssertionError: None != 100.0`). Horas fix1: 0,4 h IA (estimado). Verificación: la orden `docker build … --target test` completa se ejecuta en T-59; aquí las pruebas se ejecutaron en la imagen de pruebas ya construida (`kairos-test:i3p8f2`) montando los ficheros cambiados: `test_worker_heartbeat` 10 OK, más `test_worker_db_down.BackoffTests`/`LoopTests` sin regresión. `usage-meter`: 0,10 h (medido).
-
-**Corrección fix2 (revisión de la Fase 9, intento 2, n.º 1, 3, 7 y 8)** (2026-11-17, última pasada; horas IA ≈ 0,6 h (estimado)). (n.º 1) `run_once` escribe el latido con el plazo de la primera renovación (ahora + lease/3 + 60 s) justo después de un reclamo que funcionó (un acceso real a la base) y antes de crear la tarea de renovación; cada renovación lo renueva con el mismo plazo; antes de una espera por fallo, `run` late otra vez (un trabajo que termina con las renovaciones funcionando puede dejar el último latido más viejo que esa espera) y la asignación por defecto de `beat()` pasa a `max(IDLE_SECONDS, MEMORY_WORKER_DB_BACKOFF_MAX)`; así, cada fase en la que el worker está legítimamente ocupado (espera ociosa, reclamo, trabajo entre renovaciones, escritura del resultado con la tarea de renovación viva, espera por fallo) tiene un plazo que cubre hasta su siguiente latido, para cualquier `MEMORY_LEASE_SECONDS` y `MEMORY_WORKER_DB_BACKOFF_MAX`. Prueba: `test_the_probe_never_finds_the_deadline_passed_between_the_claim_and_the_first_renewal_for_any_lease_and_backoff` recorre el bucle REAL (`Worker.run`: una vuelta ociosa, el latido del bucle, el reclamo y un trabajo de max(1,2 × lease, backoff + 180 s) en reloj simulado) con lease 240/900/3600 × backoff 1/60/600 y sondea el plazo cada 30 s como el healthcheck. RED de comportamiento: sobre el `worker.py` de HEAD 843bcbb falló con `AssertionError: Lists differ: [(1091.0, 1062.0, False), (1121.0, 1062.0, False)] != []` (sonda de 1091 s con plazo de 1062 s: `unhealthy` entre el reclamo y la primera renovación; con lease 900: `[(1151.0, 1121.0, False), …]`) · 2026-11-17; en verde tras el cambio (3 pasadas seguidas). `operations.md` (párrafo del latido) y el comentario del healthcheck de `docker-compose.yml` reescritos para que sean ciertos. (n.º 3) La renovación que falla (`StoreUnavailable` o error transitorio contestado) se repite tras la espera de un reclamo (`backoff_delay`: 1, 2, 4… s, tope `MEMORY_WORKER_DB_BACKOFF_MAX`, con jitter) y como mucho lo que queda de la concesión según el reloj del worker; pasada esta, vuelve a lease/3; `renew_lease` solo renueva una concesión viva (`lease_until>clock_timestamp()`, `store_jobs.py:162`), así que repetirla no revive una que ya no es nuestra, y una renovación que la base rechaza (`False`) no se repite (el latido termina y marca la pérdida). Pruebas: `test_a_failed_renewal_is_repeated_after_a_short_wait_while_the_lease_lives_and_the_worker_stays_healthy` (corte de un segundo y error 40001; sondeo cada 30 s sin `unhealthy`), `test_the_retry_of_a_renewal_waits_at_most_the_backoff_max_and_never_past_the_lease` (esperas 300, 1, 2, 4, 8, 16, 20…, y 300 tras caducar la concesión) y `test_a_renewal_the_database_refuses_is_never_repeated`; RED sobre el código de HEAD: `AssertionError: [] is not true : the retries wait at most the backoff max` y los sondeos fallidos. La espera de la prueba del bucle se sincroniza con la tarea de renovación (el acceso a la base corre en un hilo real) para no depender de la velocidad de la máquina. (n.º 7) El párrafo del diseño retirado queda marcado «Sustituido por fix1/fix2». (n.º 8) El RED de comportamiento es el de la prueba nueva del n.º 1 (arriba); los `ImportError`/comprobación directa de fix1 quedan como historia.
-
-**Notas del plan**: Patrón: `worker.py:178-184` (`run`), `docker-compose.yml:32-33` (`tmpfs` y sistema de ficheros de solo lectura) y `:170-194` (servicios sin healthcheck). Aprendizaje 2: reloj inyectado.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (3) — notas de T-56 y de las tareas T-61 a T-64», T-56).
 
 ### T-57 — Healthcheck de `memory-web`
 
@@ -1921,7 +1916,7 @@ test-plan: n/a (sin UI)
 - [x] Añadir `--break-lock`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas** (2026-11-17): RED: `test_deploy_lock` falló con `AssertionError: SystemExit not raised` (SIGTERM no liberaba nada), `AssertionError: 1 != 0` (sin bloqueo: `main` ejecutaba la fase) y `AttributeError: ... does not have the attribute 'pid_alive'`/`DeployLock` · 2026-11-17. Diseño: `DeployLock` crea `deployment.lock` con `O_EXCL` en el directorio privado del proyecto (JSON: `pid`, `host`, `started_at`, `project`, `token`); `main` lo toma tras construir `Deployment` y ANTES de `apply` (sin fases, sin tocar `deployment-status.json` del dueño) y lo libera en un `finally` (fallo de fase, error inesperado, Ctrl-C) más manejadores de SIGTERM/SIGHUP que lanzan `SystemExit` (códigos 128+n) y se restauran. Salida: `deployment_locked: ...` por stderr con PID, host y hora, código de salida 3. Dueño local con PID muerto: se informa («not running … --break-lock») y NO se rompe; `--break-lock` solo rompe un dueño muerto, de otro host o ilegible, y NUNCA el de un proceso vivo aquí (decisión del implementador para que no se rompa en silencio; aviso `lock broken` por stderr y `lock_broken` en el informe). Un bloqueo que otro tomó no lo borra el que termina (token). `pid_alive` usa `os.kill(pid, 0)` en POSIX y la tabla de procesos en Windows (allí `os.kill` TERMINARÍA el proceso). `main(argv, root=ROOT)` admite la raíz para las pruebas. Verificación: la orden de `docker build --target test` entera (suite completa) es de T-66; se ejecutó el equivalente dirigido en la imagen `kairos-test:i3p9f2` con los ficheros montados: `memory_platform.tests.test_deploy_lock memory_platform.tests.test_deploy memory_platform.tests.test_deploy_isolation` → `Ran 77 tests ... OK` (14 nuevas); `python -I -m unittest discover -s scripts/tests` → `Ran 162 tests ... OK`. Patrón: `deploy-memory.py:296-410` (secuencia de fases) y el directorio privado del proyecto (`deployment-status.json`, `docs/operations.md:186`). El script no se ejecuta contra la instalación real.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (3) — notas de T-56 y de las tareas T-61 a T-64», T-61).
 
 ### T-62 — Etiquetas locales `kairos-*:<versión>-<marca>` y registro en `deployment-status.json`
 
@@ -1950,7 +1945,7 @@ test-plan: n/a (sin UI)
 - [x] Retirada de etiquetas antiguas
 - [x] `usage-meter start/close` de la tarea
 
-**Notas** (2026-11-17): RED: `test_deploy_rollback` falló con `KeyError: 'images'` (el informe no registraba etiquetas), `AttributeError: 'Deployment' object has no attribute 'image_repo'` y `... no attribute 'release_version'` · 2026-11-17. Diseño: antes de `docker compose build` (fase `build`) cada imagen de `api`, `worker`, `mcp`, `web` y `operator` que existe se etiqueta `<repositorio>:<versión>-<marca UTC>` (versión de `client/package.json`, `unversioned` sin él; `postgres` no se etiqueta: el servidor del directorio de datos no se retrocede); se conservan las `TAGS_KEPT`=2 marcas más recientes por imagen y se retira solo la etiqueta de las anteriores (`docker image rm repo:tag`, nunca `:latest` ni una imagen en uso); una imagen idéntica a la etiqueta más reciente no se etiqueta otra vez (un despliegue reintentado no gasta las dos conservadas en una misma versión). `deployment-status.json` registra `images`: `version`, `mark`, `previous` (etiquetas de este despliegue), `kept` y `current` (ids de `:latest` tras construir); el registro sobrevive a un despliegue que se detiene antes de etiquetar. Las imágenes del despliegue aislado van siempre bajo `rehearsal-<proyecto>-`, nunca bajo `kairos-` (prueba). Verificación: equivalente dirigido de la orden del plan en la imagen `kairos-test:i3p9f2` con los ficheros montados: `memory_platform.tests.test_deploy_rollback memory_platform.tests.test_deploy memory_platform.tests.test_deploy_isolation memory_platform.tests.test_deploy_lock` → `Ran 85 tests ... OK` (8 nuevas de etiquetado). Patrón: `deploy-memory.py:236-258` y `:296-410` (construcción y estado) y `docker-compose.yml:69-198` (imágenes `:latest`).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (3) — notas de T-56 y de las tareas T-61 a T-64», T-62).
 
 ### T-63 — `--rollback` sin migrar
 
@@ -1979,37 +1974,38 @@ test-plan: n/a (sin UI)
 - [x] Documentar
 - [x] `usage-meter start/close` de la tarea
 
-**Notas** (2026-11-17): RED: `test_deploy_rollback` (RollbackTests) falló con `AttributeError: 'Deployment' object has no attribute 'rollback'` y la línea de órdenes con `SystemExit: 2` (`--rollback` desconocido) · 2026-11-17. Diseño: `Deployment.rollback()` lee `images.previous` del informe (sin él: `NoPreviousImages`, `no_previous_images`, SIN ejecutar ni un comando); `engine`, `prepare()` (la fase `configuration` de `apply`, extraída sin cambiar su secuencia), comprueba que cada etiqueta registrada existe (`docker image inspect`; si falta, `no_previous_images` antes de tocar nada), lee `content-manifest`, `docker tag <etiqueta> <imagen>:latest` por imagen y `up -d --no-deps --no-build --wait` solo de `memory-api/worker/mcp/web`; no ejecuta backup, migrate, bootstrap ni backfill (prueba: ninguna orden los contiene), vuelve a leer el manifiesto (`compare_content`), `verify_runtime` y, con `--roundtrip`/`--embed-stub`, la búsqueda de ida y vuelta y el contador de llamadas al modelo. El informe conserva `images.previous`, fija `images.current` y `rollback.from`/`to`/`migrated: false` y `status: rolled_back`. `main`: `--rollback` toma el mismo bloqueo, sale con 4 y `no_previous_images:` por stderr SIN guardar el informe (no pisa las etiquetas), plan en seco con `ROLLBACK_PHASES`, y rechaza `--fresh`, `--stop-services-before-migrate` y `--verify-backup`. Documentado en `docs/operations.md` («Retroceso de un despliegue»), con su límite: imágenes, no datos. Verificación: equivalente dirigido en `kairos-test:i3p9f2` con ficheros montados: `memory_platform.tests.test_deploy_rollback memory_platform.tests.test_deploy memory_platform.tests.test_deploy_isolation memory_platform.tests.test_deploy_lock` → `Ran 93 tests ... OK` (8 de T-62 + 8 de T-63 nuevas en esas dos tareas) y `test_compose_limits test_worker_heartbeat test_deploy_rollback` → `Ran 53 tests ... OK`. Limite conocido: con el mismo código fuente dos construcciones dan el mismo id de imagen, así que el ensayo (T-64) comprueba que los contenedores usan el id de la etiqueta registrada y que no hubo migración, no una diferencia de código. Patrón: `docs/operations.md:186`, `:201` (el código anterior funciona sobre la base migrada) y la tarea de etiquetado.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (3) — notas de T-56 y de las tareas T-61 a T-64», T-63).
 
 ### T-64 — Ensayo aislado de retroceso y de latido `unhealthy`
 
 - **Descripción**: Ejecutar un ensayo aislado con dos despliegues etiquetados y `--rollback`, y comprobar que con el bucle del worker detenido el contenedor pasa a `unhealthy`. Fuente: CA-24, CA-21 (caso del ensayo).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Un ensayo aislado (`--stage rollback`) demuestra el retroceso de imágenes sin migrar y que `memory-worker` pasa a `unhealthy` con el bucle parado; un trabajo que pierde su concesión se cancela en vez de dejar al worker `unhealthy`.
+- **Estado**: completado
+- **Cerrada**: 2026-11-17
 - **Tiempo humano**: est. 4h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.53h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.53h (estimado) · real 0.57h (medido)
 - **Supervisión**: est. 0.13h (≈25 % IA) · real —
 - **Previsión IA**: 147 k in / 13 k out tok · ⚠️ verificar €
 - **Dependencias**: T-63, T-56
 - **Tipo**: devops
-- **Archivos**: `scripts/rehearse-reliable-operations.py`, `scripts/tests/test_rehearse_reliable_operations.py`
+- **Archivos**: `scripts/rehearse-reliable-operations.py`, `scripts/tests/test_rehearse_reliable_operations.py`, `server/memory_platform/worker.py` (deuda n.º 6: cancelar el trabajo al perder la concesión), `server/memory_platform/tests/test_worker_heartbeat.py` (deudas n.º 6 y 7: pruebas y mutantes), `docs/operations.md` (el comportamiento nuevo del worker y la etapa del ensayo, E3)
 - **Cubre (tests)**: —
 - **Verificación**:
   - `python scripts/rehearse-reliable-operations.py --project-name kairos-ops-d --embed-stub --stage rollback` → `rollback_ok` con `content-manifest` igual, una búsqueda correcta y `worker_unhealthy` en ≤ plazo del último latido + `interval × retries` (enmienda de la revisión de la Fase 9, n.º 1)
   - `docker ps --filter name=knowledge-graphs` y `docker volume ls --filter name=knowledge-graphs` → idénticos antes y después
 
 **Criterios de aceptación**
-- [ ] Los servicios vuelven a las etiquetas anteriores sin migrar, `content-manifest` es igual y una búsqueda funciona
-- [ ] Con el bucle detenido, `memory-worker` pasa a `unhealthy` en ≤ `interval × retries` — Enmienda (revisión de la Fase 9, n.º 1, aprobada por el orquestador): en ≤ plazo del último latido + `interval × retries`
-- [ ] Evidencia anotada en `Notas`; proyecto aislado retirado al terminar
+- [x] Los servicios vuelven a las etiquetas anteriores sin migrar, `content-manifest` es igual y una búsqueda funciona
+- [x] Con el bucle detenido, `memory-worker` pasa a `unhealthy` en ≤ `interval × retries` — Enmienda (revisión de la Fase 9, n.º 1, aprobada por el orquestador): en ≤ plazo del último latido + `interval × retries`
+- [x] Evidencia anotada en `Notas`; proyecto aislado retirado al terminar
 
 **Subtareas**
-- [ ] Añadir la etapa `rollback` al script
-- [ ] Ejecutar el ensayo (primer plano, de uno en uno)
-- [ ] Retirar el proyecto
-- [ ] `usage-meter start/close` de la tarea
+- [x] Añadir la etapa `rollback` al script
+- [x] Ejecutar el ensayo (primer plano, de uno en uno)
+- [x] Retirar el proyecto
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Deuda Minor de la revisión de la Fase 9 (intento 3, n.º 6 y 7): (6) tras perder la concesión, el trabajo sigue hasta su plazo sin latir y el worker pasa a `unhealthy` (`worker.py:296-313,352`): decidir en el ensayo si se cancela el trabajo al perder la concesión o se documenta; (7) pruebas que maten los mutantes «sin tope de la concesión en el reintento de la renovación» (`worker.py:285`) y «sin latido antes de la espera por fallo» (`worker.py:417`). Patrón: la etapa `a` creada en la Fase 8. Restricción dura: nada `knowledge-graphs-*`, ni Ollama del host.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (3) — notas de T-56 y de las tareas T-61 a T-64», T-64).
 
 ### T-65 — Documentar bloqueo y retroceso
 
