@@ -47,7 +47,7 @@ test-plan: n/a (sin UI)
 | Fase 5 — Permisos por transacción (C-03, B-02) | 5 | 5 | 100% | 0 / 24.0h | 0 / 3.2h | 0 / 0.8h | 0 / 800 k |
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 9 | 9 | 100% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 6 | 6 | 100% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
-| Fase 8 — Cierre del hito A: no perder datos ni parar | 3 | 4 | 75% | 0 / 7.2h | 1.06 / 1.0h | 0 / 0.2h | 0 / 240 k |
+| Fase 8 — Cierre del hito A: no perder datos ni parar | 4 | 4 | 100% | 0 / 7.2h | 1.06 / 1.0h | 0 / 0.2h | 0 / 240 k |
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 0 | 7 | 0% | 0 / 19.8h | 0 / 2.6h | 0 / 0.7h | 0 / 660 k |
 | Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 0 | 7 | 0% | 0 / 34.2h | 0 / 4.6h | 0 / 1.1h | 0 / 1140 k |
 | Fase 11 — Sonda de ida y vuelta (C-06) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
@@ -56,7 +56,7 @@ test-plan: n/a (sin UI)
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **52** | **98** | **53.1%** | **0 / 412.8h** | **4.98 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **53** | **98** | **54.1%** | **0 / 412.8h** | **4.98 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -1557,7 +1557,7 @@ test-plan: n/a (sin UI)
 
 ## Fase 8 — Cierre del hito A: no perder datos ni parar
 
-**Estado**: en-progreso · **Hito**: A · **Estimado**: 7.2h (6.0h base, de ellas 0.0h de revisión adversarial) · **Real**: — · **Coste est.**: 360 € · **Tokens est.**: 240 k
+**Estado**: completado · **Hito**: A · **Estimado**: 7.2h (6.0h base, de ellas 0.0h de revisión adversarial) · **Real**: — · **Coste est.**: 360 € · **Tokens est.**: 240 k
 
 ### T-50 — Ensayo de cierre del hito A: restauración externa y caída de base con el worker en marcha
 
@@ -1651,10 +1651,10 @@ test-plan: n/a (sin UI)
 ### T-53 — Pull request del hito A (solo con OK del usuario)
 
 - **Descripción**: Abrir el PR del hito A desde `feat/reliable-operations` para que la Iniciativa 5 pueda empezar con A fusionado. El PR solo se abre con el OK expreso del usuario; la tarea no se marca hecha hasta que el PR exista. Fuente: P-09 (un PR por hito).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: PR del hito A (#4) fusionado en `main`.
+- **Estado**: completado
 - **Tiempo humano**: est. 1h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real 0.3h (estimado; incluye diagnosticar y corregir la prueba intermitente)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 37 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: T-52
@@ -1664,17 +1664,17 @@ test-plan: n/a (sin UI)
 - **Verificación**: `gh pr view --json number,state,headRefName` → PR abierto desde `feat/reliable-operations` (`state: OPEN`)
 
 **Criterios de aceptación**
-- [ ] Hay OK expreso del usuario anotado en `Notas`
-- [ ] El PR enlaza el ledger y lista los criterios de cierre 1 y 2 con su evidencia
-- [ ] La CI del PR está en verde o sus fallos explicados
+- [x] Hay OK expreso del usuario anotado en `Notas`
+- [x] El PR enlaza el ledger y lista los criterios de cierre 1 y 2 con su evidencia
+- [x] La CI del PR está en verde o sus fallos explicados
 
 **Subtareas**
-- [ ] Pedir el OK al usuario
-- [ ] Abrir el PR con el cuerpo y las evidencias
-- [ ] Anotar el número en `Notas`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Pedir el OK al usuario
+- [x] Abrir el PR con el cuerpo y las evidencias
+- [x] Anotar el número en `Notas`
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Atribución de commits y PR: la del recordatorio del sistema. No se hace merge.
+**Notas**: OK expreso del usuario: «Fusiónalo cuando esté en verde» (abrir el PR de cada hito y fusionarlo con la CI en verde, merge commit, conservando la rama); esto sustituye al «No se hace merge» original. PR #4 (https://github.com/daycry/kairos/pull/4), cuerpo con el enlace al ledger y los criterios de cierre 1 y 2 con su evidencia (T-50). CI: en la primera ejecución falló `retrieval-eval` (push) por `test_the_extra_call_for_other_dimensions_fits_inside_the_job_deadline`, con solo 0,1 s de holgura; se amplió a 0,8 s (commit en T-51; el mutante sin la ampliación del plazo en `run_once` sigue en rojo) y la CI quedó en verde en todos los trabajos de las dos ejecuciones. usage-meter no medido: estimado. Atribución de commits y PR: la del recordatorio del sistema.
 
 ---
 
