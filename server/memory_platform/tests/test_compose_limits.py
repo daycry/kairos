@@ -153,6 +153,9 @@ class LoggingAndHostsTests(unittest.TestCase):
         self.assertNotIn('OLLAMA_HOST=0.0.0.0', section)
         self.assertNotIn('Haz que escuche solo en la IP de la pasarela', section)
         self.assertNotIn('pasarela de `egress` (la que usa `host-gateway`)', section)
+        # Review of phase 9, attempt 3 (n.º 1): a wildcard listen also opens [::]:11434, which the IPv4 rules do not cover; the manual must forbid it.
+        self.assertNotIn('también vale escuchar en todas las interfaces', section)
+        self.assertIn('IPv6', section)
         self.assertIn('`INPUT`', section)
         self.assertIn('DOCKER-USER', section)
         self.assertIn('FORWARD', section)

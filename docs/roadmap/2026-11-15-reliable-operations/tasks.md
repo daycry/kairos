@@ -2006,7 +2006,7 @@ test-plan: n/a (sin UI)
 - [ ] Retirar el proyecto
 - [ ] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: la etapa `a` creada en la Fase 8. Restricción dura: nada `knowledge-graphs-*`, ni Ollama del host.
+**Notas**: Deuda Minor de la revisión de la Fase 9 (intento 3, n.º 6 y 7): (6) tras perder la concesión, el trabajo sigue hasta su plazo sin latir y el worker pasa a `unhealthy` (`worker.py:296-313,352`): decidir en el ensayo si se cancela el trabajo al perder la concesión o se documenta; (7) pruebas que maten los mutantes «sin tope de la concesión en el reintento de la renovación» (`worker.py:285`) y «sin latido antes de la espera por fallo» (`worker.py:417`). Patrón: la etapa `a` creada en la Fase 8. Restricción dura: nada `knowledge-graphs-*`, ni Ollama del host.
 
 ### T-65 — Documentar bloqueo y retroceso
 
@@ -3084,5 +3084,20 @@ Lentes: A+B+C+D (re-evalúan lo corregido y lo que introduce el fix). Diff `f78f
 | 8 | Minor | El RED del n.º 1/5 es un `ImportError` y el del n.º 6 una comprobación directa, no una prueba fallando sobre el código viejo | T-56, T-59 | pendiente (fix2: RED de comportamiento para la prueba nueva del n.º 1) | Lente A (d) |
 
 ## Revisión de dos lentes — intento 3: Fase 9 tras fix2 (T-54, T-55, T-56, T-59)
+
+Lentes: A+B+C (D solo tenía un Minor de documentación, que revisa A). Diff `843bcbb..ce3b035` (fix2 `2fd572b`). Suite 1241, 0 fallos. Veredicto: n.º 1-8 del intento 2 cerrados. Lente B: bucle real simulado con 135 combinaciones de concesión, espera y latencia, 0 sondas fallidas; reintento de la renovación sin revivir concesiones ajenas. Lente A: compactación sin pérdidas (SHA-256 recalculados). Lente C: receta principal (escuchar en la pasarela de `docker0` + INPUT con la subred de `egress`) correcta. 1 Important y 8 Minor. Al 3.er intento con un gap Important, decisión del orquestador con la delegación del usuario («Las preguntas toma la mejor decisión»): seguir con un ciclo nuevo acotado; el orquestador corrige el n.º 1 y los Minor de documentación (n.º 2-5) y relanza A+C (intento 4); n.º 6-8 → deuda en T-64.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | La alternativa `OLLAMA_HOST=0.0.0.0` con la regla de `iptables` deja Ollama abierto por IPv6: Go escucha en `[::]` con un comodín y la receta no tiene reglas `ip6tables` (un VPS con IPv6 pública expone `/api/pull` y `/api/delete` sin autenticación) | T-55 | corregido (orquestador, fix3: alternativa retirada con el motivo IPv6; prueba `test_the_documentation_does_not_claim_that_listening_on_a_gateway_protects_ollama` exige `IPv6`, roja sobre el manual anterior: `FAILED (failures=1)`) | Lente C n.º 1 (CWE-306, CWE-1327); `operations.md:407` |
+| 2 | Minor | Admitir la subred de `egress` admite a todo contenedor de esa red: con `docker-compose.backup-rclone.yml` también `memory-backup` llega a Ollama sin la lista del proxy | T-55 | corregido (orquestador, fix3) | Lente C n.º 2, Lente A (fuera de lente) |
+| 3 | Minor | «`<proyecto>` por defecto el del directorio» es falso: el Compose fija `name: knowledge-graphs` | T-55 | corregido (orquestador, fix3) | Lente A N2; `docker-compose.yml:1` |
+| 4 | Minor | La cifra «sin render» (15 y 6) no sale de la fórmula del texto (16 y 7) | T-54 | corregido (orquestador, fix3: 16 y 7, con la cuenta) | Lente A N1; `configuration.md:156` |
+| 5 | Minor | `operations.md:277` dice que una renovación fallida «se reintenta en el siguiente latido», contra el fix2 | T-56 | corregido (orquestador, fix3: espera corta con tope y sin pasar la concesión) | Lente B (fuera de lente) |
+| 6 | Minor | Tras perder la concesión el trabajo sigue hasta su plazo sin latir (no hay cancelación, ni antes ni ahora) y el worker pasa a `unhealthy` | T-56 | deuda → T-64 (ensayo del healthcheck: decidir cancelar el trabajo o documentarlo) | Lente B n.º 1 (simulado); `worker.py:296-313,352` |
+| 7 | Minor | Dos mutantes sobreviven: quitar el tope de la concesión del reintento y el latido antes de la espera por fallo | T-56 | deuda → T-64 (pruebas que los maten) | Lente B n.º 2 y 3; `worker.py:285,417` |
+| 8 | Minor | Sin RED registrado de las pruebas nuevas de n.º 4-6 (fallan sobre el código anterior: comprobado por la Lente A); quedan formas rebuscadas de clave que el escaneo no caza (partida a < 24 columnas, concatenada) | T-54, T-59 | deuda aceptada (comprobado por la lente; riesgo residual sin salida real de `age-keygen` con esas formas) | Lente A N3, Lente C n.º 3 |
+
+## Revisión de dos lentes — intento 4: Fase 9 tras fix3 — ciclo 2, abierto con OK del usuario: «Las preguntas toma la mejor decisión» (T-54, T-55, T-56)
 
 Pendiente de revisión; sin veredicto.
