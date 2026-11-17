@@ -963,3 +963,25 @@ Lentes: B; A+C en un solo revisor (re-evalúan lo corregido en fix1; D sin halla
 | 6 | Minor | `current_versions` acepta valores que Docker no admite como tag (`.x`, > 128 caracteres): el despliegue se para en `build` | T-62 | corregido (fix2 `c0764e5`, `9585bf3`, `9582280`, `16e2b51`) | Lente B n.º 6; `deploy-memory.py:596-598` |
 | 7 | Minor | El veredicto estricto del ensayo da falsos «fuera» (~10 %): el instante medido va por detrás de la transición y Docker suma la duración de cada sonda a `interval` | T-64 | corregido (fix2 `c0764e5`, `9585bf3`, `9582280`, `16e2b51`) | Lente B n.º 7 |
 | 8 | Minor | Un SIGKILL entre el `rename` y su `unlink` deja `deployment.lock.<hex>.broken`, que la limpieza del proyecto aislado no reconoce | T-61 | corregido (fix2 `c0764e5`, `9585bf3`, `9582280`, `16e2b51`) | Lentes A+C (fuera de lente); `deploy-memory.py:41,467` |
+
+## Compactación 2026-11-17 (8) — revisión de la fase 10, intento 3
+
+Veredicto del intento 3, escrito directamente aquí para mantener `tasks.md` por debajo del límite de lectura.
+
+### Revisión de dos lentes — intento 3: Fase 10 tras fix2 (T-61, T-62, T-63, T-64, T-65)
+
+SHA-256: `2ea09bca1aa294471c5138c0cebca6fff7905aa01f6f97b63fd15bc9b6f7972f`.
+
+Lentes: B; A+C en un solo revisor. Diff `eea915d..16e2b51` (fix2). `test_deploy_lock`+`test_deploy_rollback` 61 OK, `test_rehearse_reliable_operations` 31 OK, scripts del anfitrión 181 OK; `scope-check` exit 0; `ledger-lint` 0 incoherencias; SHA-256 de la compactación (6) 5/5. Veredicto: n.º 1-8 del intento 2 cerrados salvo la variante n.º 1 de abajo. Lente B: 200 secuencias aleatorias de 6 pasos con el doble de Docker; `--rollback` vuelve siempre a la última versión buena salvo con `:latest` desfasado; los hijos no heredan el bloqueo (PEP 446); veredicto del ensayo con `State.Health.Log` sin defectos. A+C: enmiendas de CA-21/CA-23 aceptables dentro de la delegación. 2 Important y 7 Minor. Al 3.er intento con gaps Important, decisión del orquestador con la delegación del usuario («Las preguntas toma la mejor decisión»): ciclo nuevo acotado (fix3 corrige todo; intento 4 es el primero del ciclo 2), como en la fase 9.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | `already_at_previous` solo mira los contenedores: tras un fallo anterior a `start`, `:latest` (y `memory-admin`/operator) sigue en la build fallida, `--rollback` sale con exit 5 y el `up -d` que indican el mensaje y el manual arranca esa build (regresión de fix2) | T-63, T-65 | pendiente (fix3) | Lente B n.º 1 (`rb3/focused.py` caso 2; 379 apariciones en la exploración); `deploy-memory.py:881-886,1310-1312`, `operations.md:142` |
+| 2 | Important | Un despliegue interrumpido (Ctrl-C/SIGTERM/SIGHUP/SIGKILL) tras etiquetar no guarda el registro de etiquetas: `--rollback` usa el `previous` del informe anterior y vuelve a v0 en vez de v1, marcándolo `good`; sin informe previo, el reintento toma la build interrumpida como buena | T-62, T-63 | pendiente (fix3) | Lente B n.º 2 (`focused.py` caso 1); `deploy-memory.py:648,1000,1389-1394` |
+| 3 | Minor | Ventana POSIX entre dos dueños: `is_current` se comprueba antes de vaciar el JSON viejo de otro equipo, y un `--break-lock` lo borra bajo el bloqueo recién tomado | T-61 | pendiente (fix3) | Lente B n.º 3 (reproducido en `kairos-test:i3p10`); `deploy-memory.py:228-234,260-266` |
+| 4 | Minor | TOCTOU entre `samestat` y `unlink` en `remove_foreign` (dos `--break-lock` sobre un bloqueo de otro equipo) | T-61 | pendiente (fix3) | Lente C n.º 2 (CWE-367); `deploy-memory.py:263-265` |
+| 5 | Minor | `O_CREAT` sin `O_NOFOLLOW` sigue un enlace simbólico plantado en `deployment.lock` y sobrescribe/vacía su destino (regresión frente al `O_EXCL` anterior) | T-61 | pendiente (fix3) | Lente C n.º 1 (CWE-59, reproducido en `kairos-test:i3p10`); `deploy-memory.py:215,232,290` |
+| 6 | Minor | Los ids de `images.good` aceptan cualquier referencia sin `/` (`alpine:3`), no solo `sha256:<hex>` | T-62 | pendiente (fix3) | Lente C n.º 3 (CWE-20); `deploy-memory.py:66,595-597` |
+| 7 | Minor | `TAG_MARK` sin anclas y `tags_of` con `.match`: una etiqueta manual con sufijo cuenta como del script y la poda la puede borrar | T-62 | pendiente (fix3) | Lente A n.º 3; `deploy-memory.py:63,584` |
+| 8 | Minor | La enmienda de CA-23 pierde «se informa»: un despliegue muerto a mitad no se avisa al siguiente | T-61 | pendiente (fix3: avisar si el fichero no está vacío al tomarlo) | Lente A n.º 1; `deploy-memory.py:230-233` |
+| 9 | Minor | La nota de CA-21 se presenta como «aclaración» pero amplía la cota numérica (hasta ~20 s con sondas agotadas) | T-64 | pendiente (fix3: llamarla enmienda) | Lente A n.º 2; `spec.md:209`, `tasks.md:2007` |
