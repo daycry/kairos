@@ -50,13 +50,13 @@ test-plan: n/a (sin UI)
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 4 | 4 | 100% | 0 / 7.2h | 1.06 / 1.0h | 0 / 0.2h | 0 / 240 k |
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 7 | 7 | 100% | 0 / 19.8h | 0.27 / 2.6h | 0 / 0.7h | 0 / 660 k |
 | Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 7 | 7 | 100.0% | 0 / 34.2h | 5.48 / 4.6h | 0 / 1.1h | 0 / 1140 k |
-| Fase 11 — Sonda de ida y vuelta (C-06) | 1 | 6 | 16.7% | 0 / 23.4h | 0.5 / 3.1h | 0 / 0.8h | 0 / 780 k |
+| Fase 11 — Sonda de ida y vuelta (C-06) | 2 | 6 | 33.3% | 0 / 23.4h | 1.3 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 0 | 7 | 0% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 0 | 6 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **68** | **98** | **69.4%** | **0 / 412.8h** | **11.23 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **69** | **98** | **70.4%** | **0 / 412.8h** | **12.03 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2134,31 +2134,32 @@ test-plan: n/a (sin UI)
 ### T-69 — `admin probe`: escribir, esperar recibo `embed`, buscar, retirar
 
 - **Descripción**: `admin probe` contra `/v1`: escribe un recuerdo sintético con marca única, espera su recibo `embed`, lo busca con la capa semántica, lo retira y mide cada etapa; un fallo en cualquier etapa termina con código ≠ 0, `probe_failed` con `stage` (`write`, `index`, `search`, `retire`) y `kairos_probe_success 0`, e intenta retirar lo escrito. Fuente: CA-30, CA-31; M-06.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Nuevo `admin probe`: escribe una nota sintética por `/v1`, espera a que el worker la indexe, la encuentra con la búsqueda semántica y la retira; con un fallo sale con 1 y dice en qué etapa.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.67h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.67h (estimado) · real 0.8h (estimado)
 - **Supervisión**: est. 0.17h (≈25 % IA) · real —
 - **Previsión IA**: 184 k in / 16 k out tok · ⚠️ verificar €
 - **Dependencias**: T-68
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/admin.py`, `server/memory_platform/observability.py`, `server/memory_platform/tests/test_probe.py`
+- **Archivos**: `server/memory_platform/admin.py`, `server/memory_platform/observability.py`, `server/memory_platform/tests/test_probe.py`, `server/memory_platform/probe.py` (la sonda; fichero nuevo de T-68)
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_probe|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Sobre un servidor sano la sonda termina en 0 y publica la duración de cada etapa
-- [ ] Con el worker parado, falla en ≤ `MEMORY_PROBE_TIMEOUT` con `probe_failed`, `stage=index` y código ≠ 0, e intenta retirar lo escrito
-- [ ] Tras una ejecución no quedan recuerdos activos de la sonda (solo retirados)
-- [ ] El tiempo se mide con reloj inyectado en las pruebas (sin esperas reales)
+- [x] Sobre un servidor sano la sonda termina en 0 y publica la duración de cada etapa
+- [x] Con el worker parado, falla en ≤ `MEMORY_PROBE_TIMEOUT` con `probe_failed`, `stage=index` y código ≠ 0, e intenta retirar lo escrito
+- [x] Tras una ejecución no quedan recuerdos activos de la sonda (solo retirados)
+- [x] El tiempo se mide con reloj inyectado en las pruebas (sin esperas reales)
 
 **Subtareas**
-- [ ] Escribir primero las pruebas (rojo)
-- [ ] Implementar las cuatro etapas y su clasificación de fallos
-- [ ] Publicar métricas `kairos_probe_*`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero las pruebas (rojo)
+- [x] Implementar las cuatro etapas y su clasificación de fallos
+- [x] Publicar métricas `kairos_probe_*`
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `scripts/memory-client.py` y `mcp/kairos_mcp` (clientes de `/v1`), `tests/chain_harness.py` (cadena en proceso) y `observability.py:189-213` (métricas). Defaults `MEMORY_PROBE_TIMEOUT` 120 s.
+**Notas** (2026-11-18): RED: `test_probe` (`RoundTripTests`, `HttpApiTests`, `CommandTests`) contra el HEAD falló con `ImportError: cannot import name 'probe' from 'memory_platform'` · 2026-11-17. RED de comportamiento con mutantes de `probe.py`, cada uno muerto: sin la retirada final → `test_a_healthy_server_ends_ok_and_every_stage_has_its_duration` y 3 más; sin la limpieza tras un fallo (`clean_up`) → 16 fallos (`test_each_failure_names_its_stage_and_code_and_retires_what_it_wrote`, `test_with_the_worker_stopped_it_fails_at_index_within_the_budget_and_tries_to_retire`, …); sin el control de `index` → 9 fallos y 2 errores; sin acotar cada petición por el presupuesto restante → `test_every_request_is_bounded_by_what_is_left_of_the_budget`; aceptar un acierto léxico como semántico → `test_a_lexical_only_answer_is_not_a_semantic_hit` y 2 más · 2026-11-18. `Probe` (en `probe.py`) recibe `api` con `call(método, ruta, cuerpo, plazo)`, `clock` y `sleep` inyectados (`FakeServer` y `Clock` en las pruebas: ninguna espera real, y un doble de `time` que falla si se usa el reloj real); etapas `write` (`POST /v1/events`), `index` (lee `/v1/projects/kairos-probe/events/<id>/status` hasta que el trabajo `embed` está `succeeded`), `search` (capa semántica: la nota **y** `backends.semantic` en `ok` con resultados) y `retire` (evento `delete` v2 y una búsqueda léxica que ya no la devuelve). `MEMORY_PROBE_TIMEOUT` (120 s, 1..3600) es el presupuesto de todo el recorrido y acota cada petición; la retirada tiene su plazo corto propio (10 s). Un fallo termina con código 1, `probe_failed` con `stage` y un `code` cerrado, `kairos_probe_success 0` e intenta retirar lo escrito (`retired` true/false/null; un `write` dudoso prueba v2 y, si 409, una lápida en v1). Métricas `kairos_probe_success`, `kairos_probe_stage_seconds{stage}` y `kairos_probe_last_run_timestamp_seconds` en un registro aparte y en `MEMORY_PROBE_METRICS_FILE`; campo de log `stage` (aditivo) y eventos `probe_failed` y `probe_retire_failed`. El transporte real (`HttpApi`, httpx) se prueba contra un servidor de pruebas en el bucle local (`HttpApiTests`: envía el `Bearer` y el cuerpo JSON, no sigue redirecciones —la clave solo viaja a la URL configurada—, una respuesta que no es un objeto JSON es `None` y una conexión rechazada es `unreachable` con el tipo `ConnectError`). CWE-150: del servidor solo salen el número de estado, el tipo de excepción y los códigos cerrados (prueba con un ESC en el cuerpo de la respuesta y con un mensaje de excepción con un token). Verificación (arnés de la suite, subconjunto): `memory_platform.tests.test_probe` (clases `RoundTripTests`, `HttpApiTests` y `CommandTests`) → 18 pruebas `ok`, 0 omitidas; suite completa: es de T-72 (orquestador); evidencia de esta tarea: las ejecuciones dirigidas (71 pruebas de test_probe_provisioning, test_probe y test_observability, 0 fallos, 0 omitidas). usage-meter no medido (horas estimadas). Patrón: `scripts/memory-client.py` y `mcp/kairos_mcp` (clientes de `/v1`), `tests/chain_harness.py` (cadena en proceso) y `observability.py:189-213` (métricas). Defaults `MEMORY_PROBE_TIMEOUT` 120 s.
 
 ### T-70 — Pruebas de la sonda con worker real y worker parado
 
@@ -2277,7 +2278,7 @@ test-plan: n/a (sin UI)
 
 ## Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06)
 
-**Estado**: borrador · **Hito**: B · **Estimado**: 23.4h (19.5h base, de ellas 6.5h de revisión adversarial) · **Real**: — · **Coste est.**: 1.170 € · **Tokens est.**: 780 k
+**Estado**: en-progreso · **Hito**: B · **Estimado**: 23.4h (19.5h base, de ellas 6.5h de revisión adversarial) · **Real**: — · **Coste est.**: 1.170 € · **Tokens est.**: 780 k
 
 ### T-74 — `kairos_jobs_oldest_pending_seconds` y aviso de cola atascada
 
