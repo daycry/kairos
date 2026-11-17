@@ -71,7 +71,7 @@ class RestoreFromManifestTests(unittest.TestCase):
             self.assertIsNone(failure, failure)
             report = json.loads(out)
             self.assertEqual(report['status'], 'restored_and_content_verified')
-            self.assertEqual(calls, [self.target], 'only the restored database was read')
+            self.assertEqual(calls, [admin.guarded_dsn(self.target)], 'only the restored database was read (with the connect timeout and keepalives every admin connection carries)')
             manifest = json.loads(Path(str(copy) + '.json').read_text(encoding='utf-8'))
             self.assertEqual(report['tables'], manifest['fingerprints'])
 

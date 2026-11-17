@@ -537,7 +537,8 @@ class CommandTests(PruneDatabase):
             return real(store, windows, **options)
         with patch('memory_platform.admin.prune_tables', spy):
             self.run_main(['prune-tables', '--dry-run'])
-        self.assertEqual(seen, {'timeout': '0', 'dsn': self.dsn})
+        self.assertEqual(seen, {'timeout': '0', 'dsn': admin.guarded_dsn(self.dsn)})  # the DSN plus a connect timeout and keepalives (a half-open connection must fail), never a statement timeout
+        self.assertNotIn('statement_timeout', seen['dsn'])
 
 
 if __name__ == '__main__':

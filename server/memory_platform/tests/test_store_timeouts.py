@@ -276,8 +276,10 @@ class AdminPlazoTests(unittest.TestCase):
         with patch.object(admin.subprocess, 'run', fake_run):
             self.run_admin('backup', '--output', str(target))
         self.assertIn('dbname=' + self.name, captured['text'])
-        for forbidden in ('statement_timeout', 'connect_timeout', 'options', 'keepalives', 'tcp_user_timeout'):
+        for forbidden in ('statement_timeout', 'options'):  # a dump is a long query on purpose
             self.assertNotIn(forbidden, captured['text'])
+        for guard in ('connect_timeout=10', 'keepalives=1', 'keepalives_idle=', 'keepalives_interval=', 'keepalives_count=', 'tcp_user_timeout='):  # a half-open connection must fail the cycle instead of hanging it
+            self.assertIn(guard, captured['text'])
 
 
 class WorkerStatementTimeoutTests(unittest.IsolatedAsyncioTestCase):
