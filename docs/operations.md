@@ -72,7 +72,7 @@ La verificación usa una sesión temporal de `admin`, leída del archivo privado
 
 Sólo para una instalación realmente nueva, utiliza `--fresh --secret-dir <directorio-privado>` junto con `--apply`. Esto permite preparar archivos que no existan y hacer el bootstrap una sola vez; no reemplaza contraseñas existentes. No uses `--fresh` para eludir un problema con los volúmenes de la instalación actual.
 
-Lee la salida completa y comprueba su resultado final. El script es la fuente para las fases y argumentos exactos de despliegue. No lances una segunda actualización mientras otra siga procesando. Si se interrumpe, verifica el estado real de contenedores y migración antes de repetir.
+Lee la salida completa y comprueba su resultado final. El script es la fuente para las fases y argumentos exactos de despliegue. El script no deja lanzar una segunda actualización mientras otra siga procesando: la segunda termina con `deployment_locked` (véase «Un despliegue a la vez»). Si se interrumpe, verifica el estado real de contenedores y migración antes de repetir.
 
 La limpieza de código y la recreación de contenedores son operaciones distintas. Que una imagen se construya no demuestra que la instalación esté usando esa imagen. Antes de declarar una entrega aplicada, registra la imagen activa y realiza la comprobación funcional siguiente.
 
@@ -112,6 +112,21 @@ La fase `start` espera a que todos los servicios estén sanos. El caso más habi
 
 Mientras Ollama no responda, la API puede seguir aceptando operaciones, pero los trabajos de extracción y embeddings quedarán pendientes o fallarán; revísalos después en **Operaciones**.
 
+### Un despliegue a la vez (`deployment_locked`, `--break-lock`)
+
+Cada `--apply` (también `--rollback`) toma un bloqueo exclusivo del proyecto antes de ejecutar ninguna fase: el fichero `deployment.lock` del directorio privado del proyecto (`.private/` de la instalación, `.private/rehearsal-<proyecto>/` de un ensayo), creado con creación exclusiva y con el PID, el equipo, la hora de inicio y el proyecto del proceso que despliega. Se retira al terminar, también si una fase falla, si hay un error inesperado, con Ctrl-C y con SIGTERM/SIGHUP.
+
+- **Otro despliegue en curso.** El segundo termina de inmediato con `deployment_locked: ...` por stderr (PID, equipo y hora del dueño), código de salida **3**, sin ejecutar ninguna fase y sin tocar `deployment-status.json` del que sigue en marcha. Espera a que termine; no lo repitas.
+- **Bloqueo de un proceso muerto.** Si el dueño es de este equipo y su PID ya no existe (el despliegue se mató con `kill -9`, se apagó el equipo), el mensaje lo dice («The owner process (PID n) is not running») y **el bloqueo se queda**: no se rompe en silencio. Antes de retirarlo, comprueba el estado real de los contenedores y de la migración, como en cualquier despliegue interrumpido; después repite con **`--break-lock`**, que retira ese bloqueo, avisa por stderr (`lock broken`, con el dueño anterior; el informe lo guarda como `lock_broken`) y despliega.
+- **Lo que `--break-lock` no rompe.** Nunca el bloqueo de un proceso que sigue vivo en este equipo (sale con `deployment_locked` y «still running»: espera o detén ese proceso). Un bloqueo de otro equipo (un directorio privado compartido) o uno ilegible no se puede comprobar aquí: sin `--break-lock` también es `deployment_locked`, y con él se retira bajo tu responsabilidad.
+- El plan (`python scripts/deploy-memory.py` sin `--apply`) no toma ningún bloqueo.
+
+### Etiquetas locales de las imágenes
+
+Antes de construir (fase `build`), `--apply` etiqueta las imágenes en uso (`api`, `worker`, `mcp`, `web` y `operator`; no `postgres`) como `kairos-<imagen>:<versión>-<marca>`, donde `<versión>` es la de los componentes (`client/package.json`) y `<marca>` la hora UTC del despliegue (`AAAAMMDDTHHMMSSZ`); un ensayo aislado las lleva como `rehearsal-<proyecto>-<imagen>:<versión>-<marca>`, nunca bajo un nombre de la instalación. Se conservan las **dos** marcas más recientes por imagen y se retira la etiqueta de las anteriores (solo la etiqueta: nunca `:latest` ni una imagen que usa un contenedor); una imagen idéntica a la etiqueta más reciente no se etiqueta otra vez, de modo que repetir un despliegue que se detuvo no gasta las dos conservadas en una misma versión. La primera instalación no tiene nada que etiquetar.
+
+`deployment-status.json` registra en `images`: `version`, `mark`, `previous` (las etiquetas de este despliegue: las imágenes que había antes de construir), `kept` (las etiquetas conservadas por imagen) y `current` (los ids de `:latest` tras construir). El registro sobrevive a un despliegue posterior que se detiene antes de etiquetar de nuevo, para que `--rollback` siga teniendo adónde volver. Comprueba las etiquetas con `docker image ls kairos-api` (y las demás imágenes).
+
 ### Retroceso de un despliegue (`--rollback`)
 
 Si la versión recién desplegada falla, vuelve a las imágenes de la anterior **sin migrar**:
@@ -124,7 +139,7 @@ python scripts/deploy-memory.py --apply --rollback
 
 **No toca los datos.** No ejecuta `backup`, `migrate`, `bootstrap` ni `backfill-chunks`, no para la base, no borra volúmenes ni etiquetas y no cambia la imagen de `memory-postgres`. Por eso solo vuelve **a las imágenes, no a los datos**: se apoya en que las migraciones son aditivas, de modo que el código anterior funciona sobre la base ya migrada (véase «Retroceso de pgvector» para el caso en que no es así). Lo que la nueva versión escribió con el esquema nuevo (por ejemplo, fragmentos de documentos o filas de las tablas nuevas) sigue en la base; el código anterior lo ignora. Si necesitas devolver la **base** a un estado anterior, restaura una copia (`kairos-before-*.dump`) con el procedimiento de restauración: un retroceso de imágenes no lo hace.
 
-**Sin etiquetas anteriores no hace nada.** Un proyecto desplegado una sola vez (o cuyo informe no registra `images.previous`) termina con `no_previous_images` (código de salida 4) sin cambiar ningún servicio, imagen ni volumen; lo mismo si una etiqueta registrada ya no está en Docker (el mensaje nombra la que falta). El informe `deployment-status.json` se deja como estaba. `--rollback` no admite `--fresh`, `--stop-services-before-migrate` ni `--verify-backup`; en un `--project-name` aislado admite `--embed-stub` y `--roundtrip`, que comprueban además una búsqueda de ida y vuelta tras el retroceso.
+**Sin etiquetas anteriores no hace nada.** Un proyecto desplegado una sola vez (o cuyo informe no registra `images.previous`) termina con `no_previous_images` (código de salida **4**) sin cambiar ningún servicio, imagen ni volumen; lo mismo si una etiqueta registrada ya no está en Docker (el mensaje nombra la que falta). El informe `deployment-status.json` se deja como estaba. `--rollback` no admite `--fresh`, `--stop-services-before-migrate` ni `--verify-backup`; en un `--project-name` aislado admite `--embed-stub` y `--roundtrip`, que comprueban además una búsqueda de ida y vuelta tras el retroceso.
 
 **Tras un retroceso**, `:latest` apunta a la versión anterior y la versión de la que volviste solo existe como id (`rollback.from`) hasta que se vuelva a construir: para avanzar de nuevo, corrige el problema y ejecuta `python scripts/deploy-memory.py --apply`, que etiquetará las imágenes en uso antes de construir.
 

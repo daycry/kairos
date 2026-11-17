@@ -49,14 +49,14 @@ test-plan: n/a (sin UI)
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 6 | 6 | 100% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 4 | 4 | 100% | 0 / 7.2h | 1.06 / 1.0h | 0 / 0.2h | 0 / 240 k |
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 7 | 7 | 100% | 0 / 19.8h | 0.27 / 2.6h | 0 / 0.7h | 0 / 660 k |
-| Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 4 | 7 | 57.1% | 0 / 34.2h | 1.04 / 4.6h | 0 / 1.1h | 0 / 1140 k |
+| Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 5 | 7 | 71.4% | 0 / 34.2h | 1.18 / 4.6h | 0 / 1.1h | 0 / 1140 k |
 | Fase 11 — Sonda de ida y vuelta (C-06) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 0 | 7 | 0% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 0 | 6 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **64** | **98** | **65.3%** | **0 / 412.8h** | **6.29 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **65** | **98** | **66.3%** | **0 / 412.8h** | **6.43 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2010,26 +2010,27 @@ test-plan: n/a (sin UI)
 ### T-65 — Documentar bloqueo y retroceso
 
 - **Descripción**: Documentar `deployment_locked`, `--break-lock`, las etiquetas locales y `--rollback`. Fuente: CA-23, CA-24 (documentación).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: La guía de operaciones explica `deployment_locked`, `--break-lock`, las etiquetas locales de las imágenes y `--rollback` (con su límite: imágenes, no datos).
+- **Estado**: completado
+- **Cerrada**: 2026-11-17
 - **Tiempo humano**: est. 1.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real 0.14h (medido)
 - **Supervisión**: est. 0.05h (≈25 % IA) · real —
 - **Previsión IA**: 55 k in / 5 k out tok · ⚠️ verificar €
 - **Dependencias**: T-64
 - **Tipo**: docs
-- **Archivos**: `docs/operations.md`
+- **Archivos**: `docs/operations.md`, `server/memory_platform/tests/test_deploy_rollback.py` (una prueba que compara los nombres y códigos del manual con los del script), `scripts/deploy-memory.py` (constantes `EXIT_LOCKED` y `EXIT_NO_PREVIOUS_IMAGES` para esa comparación)
 - **Cubre (tests)**: —
 - **Verificación**: lectura: `docs/operations.md` describe `deployment_locked`, `--break-lock`, las etiquetas `kairos-*:<versión>-<marca>`, `--rollback` y `no_previous_images`
 
 **Criterios de aceptación**
-- [ ] Nombres y códigos iguales al script
+- [x] Nombres y códigos iguales al script
 
 **Subtareas**
-- [ ] Actualizar `docs/operations.md`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Actualizar `docs/operations.md`
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Estilo: secciones de despliegue de `docs/operations.md:128-201`.
+**Notas** (2026-11-17): RED: `test_deploy_rollback.DocumentationTests` contra el `docs/operations.md` anterior falló con `AssertionError: 'deployment_locked' not found in '# Operación y recuperación…'` · 2026-11-17. Secciones nuevas en «Desplegar»: «Un despliegue a la vez (`deployment_locked`, `--break-lock`)» (bloqueo, código de salida 3, PID muerto, qué rompe y qué no `--break-lock`), «Etiquetas locales de las imágenes» (`kairos-<imagen>:<versión>-<marca>`, dos conservadas, registro `images`) y «Retroceso de un despliegue (`--rollback`)» (T-63; código de salida 4, `no_previous_images`, imágenes y no datos), más el párrafo de la concesión perdida y la medición del ensayo (T-64). La prueba comprueba contra el script los códigos, el fichero de bloqueo, las opciones, las fases del retroceso, las imágenes, las dos etiquetas conservadas y los códigos de salida. Verificación (lectura + prueba): `memory_platform.tests.test_deploy_rollback memory_platform.tests.test_deploy memory_platform.tests.test_deploy_isolation memory_platform.tests.test_deploy_lock memory_platform.tests.test_worker_heartbeat memory_platform.tests.test_compose_limits` → `Ran 136 tests ... OK`. Estilo: secciones de despliegue de `docs/operations.md:128-201`.
 
 ### T-66 — Cierre de fase: suite completa y subida del mínimo
 

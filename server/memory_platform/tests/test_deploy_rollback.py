@@ -343,5 +343,22 @@ class RollbackCommandLineTests(unittest.TestCase):
                 self.assertEqual(raised.exception.code, 2)
 
 
+class DocumentationTests(unittest.TestCase):
+    """T-65: the operations manual says what the script does, with the names and codes of the script itself."""
+
+    def test_the_manual_names_the_codes_flags_phases_tags_and_exit_codes_of_the_script(self):
+        text = (Path(__file__).parents[3] / 'docs/operations.md').read_text(encoding='utf-8')
+        for name in (deploy.DeploymentLocked.code, deploy.NoPreviousImages.code, deploy.LOCK_FILE, '--break-lock', '--rollback', 'kairos-<imagen>:<versión>-<marca>', 'images.previous', 'content-manifest', 'lock broken',
+                     f'código de salida **{deploy.EXIT_LOCKED}**', f'código de salida **{deploy.EXIT_NO_PREVIOUS_IMAGES}**'):
+            self.assertIn(name, text)
+        for phase in deploy.ROLLBACK_PHASES:
+            self.assertIn(f'`{phase}`', text)
+        for image in deploy.IMAGE_NAMES:
+            self.assertIn(f'`{image}`', text)
+        self.assertEqual(deploy.TAGS_KEPT, 2)
+        self.assertIn('**dos**', text)
+        self.assertEqual((deploy.EXIT_LOCKED, deploy.EXIT_NO_PREVIOUS_IMAGES), (3, 4))
+
+
 if __name__ == '__main__':
     unittest.main()

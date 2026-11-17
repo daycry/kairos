@@ -35,6 +35,7 @@ VERIFY_PROJECT_LABEL = 'com.kairos.project'
 VERIFY_NAME_PROJECT = 24  # the longest project text in a verify container name: `kairos-verify-pg-<project>-<mark>` is a hostname and must stay within 63 characters
 VERIFY_MAINTENANCE_WORK_MEM = '256MB'  # the restore rebuilds the vector indexes: the 64 MB default makes a big one slow enough to exhaust the plazo
 BACKUP_TIMEOUT_MAX_SECONDS = 86400  # a timeout is a bound: 0 or "no limit" would let a stuck copy hang the deployment
+EXIT_LOCKED, EXIT_NO_PREVIOUS_IMAGES = 3, 4  # exit codes of `deployment_locked` and `no_previous_images` (documented in docs/operations.md)
 LOCK_FILE = 'deployment.lock'  # in the private directory of the project: created exclusively by the deployment that runs, removed when it ends (T-61, CA-23)
 ISOLATED_PRIVATE_FILES = ('memory-platform.env', 'compose.override.yml', 'deployment-status.json', 'deployment-status.tmp', LOCK_FILE)
 VOLUMES = (DEFAULT_PROJECT + '_memory-postgres-data', DEFAULT_PROJECT + '_memory-backups')
@@ -1192,7 +1193,7 @@ def main(argv=None, root=ROOT):
         lock.acquire()
     except DeploymentLocked as exc:  # before any phase and without touching the report of the deployment that holds the lock
         print(f'{exc.code}: {exc}', file=sys.stderr)
-        return 3
+        return EXIT_LOCKED
     put_back = install_signal_handlers()
     try:
         if lock.broken is not None:
@@ -1202,7 +1203,7 @@ def main(argv=None, root=ROOT):
             deployment.rollback() if args.rollback else deployment.apply()
         except NoPreviousImages as exc:  # nothing was touched, and the report (with the tags) is left as it is
             print(f'{exc.code}: {exc}', file=sys.stderr)
-            return 4
+            return EXIT_NO_PREVIOUS_IMAGES
         except Exception as exc:
             deployment.report.update(status='failed', failed_phase=deployment.phase,
                                      error_code=type(exc).__name__,
