@@ -2545,10 +2545,11 @@ test-plan: n/a (sin UI)
 ### T-82 — Implementación: `abstain`, `MEMORY_ABSTAIN_THRESHOLDS` y `MEMORY_ABSTAIN_DEFAULT`
 
 - **Descripción**: Implementar la abstención como parámetro opcional `abstain` y `MEMORY_ABSTAIN_DEFAULT` (`off` por defecto), con umbral por modelo (`MEMORY_ABSTAIN_THRESHOLDS`). Abstiene solo si la mejor similitud queda por debajo del umbral y ningún resultado tiene `lexical_match`: responde `abstained: true` e `items: []`. Fuente: CA-27, CA-29; M-01; P-04.
-- **Changelog**:
-- **Estado**: en-progreso
+- **Changelog**: La búsqueda acepta el parámetro opcional `abstain` (y `MEMORY_ABSTAIN_DEFAULT`, apagado por defecto) para responder «nada relevante» sin resultados cuando la similitud es baja; sin él la respuesta no cambia.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.67h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.67h (estimado) · real 0.13h (medido)
 - **Supervisión**: est. 0.17h (≈25 % IA) · real —
 - **Previsión IA**: 184 k in / 16 k out tok · ⚠️ verificar €
 - **Dependencias**: T-81
@@ -2558,25 +2559,26 @@ test-plan: n/a (sin UI)
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_abstention|test_retrieval|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Con `abstain` activo y similitud por debajo del umbral sin `lexical_match`: `items: []` y `abstained: true`
-- [ ] Sin `abstain` y con `MEMORY_ABSTAIN_DEFAULT=off` la respuesta es idéntica a la actual (prueba de no regresión por comparación campo a campo)
-- [ ] Sin umbral para el modelo: la búsqueda responde normal y añade `abstention: "uncalibrated"`; con la capa semántica `degraded` nunca abstiene
-- [ ] Una pregunta con `lexical_match` nunca abstiene
+- [x] Con `abstain` activo y similitud por debajo del umbral sin `lexical_match`: `items: []` y `abstained: true`
+- [x] Sin `abstain` y con `MEMORY_ABSTAIN_DEFAULT=off` la respuesta es idéntica a la actual (prueba de no regresión por comparación campo a campo)
+- [x] Sin umbral para el modelo: la búsqueda responde normal y añade `abstention: "uncalibrated"`; con la capa semántica `degraded` nunca abstiene
+- [x] Una pregunta con `lexical_match` nunca abstiene
 
 **Subtareas**
-- [ ] Escribir primero las pruebas (rojo)
-- [ ] Exponer la similitud a la fusión
-- [ ] Implementar el parámetro, las variables y el campo
-- [ ] Probar no regresión
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero las pruebas (rojo)
+- [x] Exponer la similitud a la fusión
+- [x] Implementar el parámetro, las variables y el campo
+- [x] Probar no regresión
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 0.13h (medido).
 
-**Notas**: Patrón: `models.py:160` (`Search`), `:200` (`SearchResult`), `app.py:397` (`search`), `config.py:232-235`, `:292-295` (lectura de variables) y `retrieval.py:106` (`search`). Cambio visible para clientes: aditivo y opcional.
+**Notas**: RED 2026-11-18: `test_abstention` falló con `ImportError: cannot import name 'abstain_from_env'` antes de implementar; después 12 pruebas OK en local (sin Docker; la suite entera corre en T-85). Implementado en `retrieval.py` (`_abstain`; la señal se captura antes de `hit()`), `config.py` (`abstain_from_env`, `check_abstain`, `Settings.abstain_default/abstain_thresholds`) y `models.py` (`Search.abstain`, `SearchResult.abstained/abstention`). Con `abstain` activo la respuesta lleva siempre `abstained` (true/false); `abstention: uncalibrated` sin umbral. Decisión: `app.py` y `store_vectors.py` no cambian (la similitud ya viaja en `score`). Pendiente (no es de esta fase de código): pasar las variables por `docker-compose.yml` y listarlas en `docs/configuration.md` (T de documentación de la fase 14).
 
 ### T-83 — Contratos aditivos: `abstain`, `abstained` y `abstention`
 
 - **Descripción**: Añadir el parámetro `abstain` y los campos `abstained`/`abstention` como opcionales en `memory-platform.openapi.json` y `kairos-mcp.json` (incluido `result_schemas.search` con `additionalProperties: false`), regenerar `mcp/contract` y declararlo en los CHANGELOG con una nota para la Iniciativa 7. Fuente: CA-29; M-01; R-09.
 - **Changelog**:
-- **Estado**: borrador
+- **Estado**: en-progreso
 - **Tiempo humano**: est. 2h (base) · real —
 - **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real —
 - **Supervisión**: est. 0.07h (≈25 % IA) · real —

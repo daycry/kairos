@@ -168,6 +168,7 @@ class Search(Model):
     limit: Annotated[int, Field(ge=1, le=100)] = 20
     categories: Annotated[list[Annotated[str, Field(max_length=200)]], Field(max_length=100)] | None = None
     tags: Annotated[list[Annotated[str, Field(max_length=300)]], Field(max_length=64)] | None = None
+    abstain: bool | None = Field(None, description='Optional: answer `abstained: true` with no items when the best semantic similarity is below the threshold of the embeddings model and no lexical layer returned anything; unset follows the server setting MEMORY_ABSTAIN_DEFAULT (off by default)')
 
 class MatchedChunk(Model):
     """The fragment that answered a semantic hit. Offsets are Unicode code points (not bytes or UTF-16 units) into title + newline + content."""
@@ -202,6 +203,8 @@ class SearchResult(Model):
     backends: dict[str, Any]
     partial: bool
     degraded: Degraded | None = Field(None, description='Optional: present only when the semantic layer alone fell short; `partial` keeps its meaning')
+    abstained: bool | None = Field(None, description='Optional: present only when abstention is active; true means nothing relevant was found and `items` is empty')
+    abstention: Literal['uncalibrated'] | None = Field(None, description='Optional: `uncalibrated` when abstention was asked for but the embeddings model has no threshold, so the answer is the normal one')
 
 class Details(Model):
     refs: Annotated[list[Annotated[str, Field(max_length=4000)]], Field(max_length=20, min_length=1)]

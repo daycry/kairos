@@ -130,6 +130,7 @@ class Retrieval:
                 return layer, [], {'status': 'unavailable', 'count': 0}
             finally:
                 record_layer(layer, time.monotonic()-started, outcome)
+        signal = {}  # the best cosine of the semantic layer and the model that scored it: `hit()` drops them, abstention needs them
         async def vectors():
             if not request.semantic or not request.q.strip() or not set(layers).intersection({'episodic', 'documental'}):
                 return 'semantic', [], {'status': 'off', 'count': 0}
@@ -157,7 +158,11 @@ class Retrieval:
                 # An empty answer can still be truncated, and the hits' own fields are dropped by hit(): read both first.
                 truncated = bool(getattr(values, 'candidates_truncated', False)) or any(value.get('candidates_truncated', False) for value in values)
                 candidate_limit = max((value.get('candidate_limit', 0) for value in values), default=0) or getattr(values, 'candidate_limit', 10000)
-                values = [hit(value) for value in values if value['layer'] in layers and value['project_id'] in request.project_ids and value.get('category') not in request.exclude_categories]
+                values = [value for value in values if value['layer'] in layers and value['project_id'] in request.project_ids and value.get('category') not in request.exclude_categories]
+                scores = [float(value['score']) for value in values if value.get('score') is not None]
+                if scores:
+                    signal.update(best=max(scores), model=next((value['embedding_model'] for value in values if value.get('embedding_model')), self.settings.embedding_model))
+                values = [hit(value) for value in values]
                 status = 'partial' if truncated else 'ok'
                 record_layer('semantic', time.monotonic()-started, status)
                 return 'semantic', values, {'status': status, 'count': len(values), 'candidate_limit': candidate_limit, 'candidates_truncated': truncated}
@@ -196,7 +201,21 @@ class Retrieval:
         reason = backends['semantic'].get('reason')
         if reason and all(v['status'] in ('ok', 'off') for name, v in backends.items() if name != 'semantic'):
             answer['degraded'] = {'layer': 'semantic', 'reason': reason}
+        if request.abstain if request.abstain is not None else self.settings.abstain_default:
+            self._abstain(answer, signal, backends, any(values for layer, values, _ in results if layer != 'semantic'))
         return answer
+
+    def _abstain(self, answer, signal, backends, lexical):
+        """Abstention (docs/architecture.md, "Abstención: la señal"): `abstained: true` and no items only with a complete semantic answer whose best
+        cosine is below the threshold of its model and no lexical layer hit; no signal (layer off, degraded, truncated) or no threshold never abstains."""
+        answer['abstained'] = False
+        if 'best' not in signal or backends['semantic']['status'] != 'ok' or 'degraded' in answer:
+            return
+        threshold = self.settings.abstain_thresholds.get(signal['model'])
+        if threshold is None:
+            answer['abstention'] = 'uncalibrated'
+        elif signal['best'] < threshold and not lexical:
+            answer['items'], answer['abstained'] = [], True
 
     async def details(self, actor, request):
         request = request if isinstance(request, m.Details) else m.Details.model_validate(request)
