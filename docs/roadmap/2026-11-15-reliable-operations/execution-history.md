@@ -1513,3 +1513,127 @@ Lentes: B; A+C (diff `af7df9b..64f3861`, fix4). 133 OK en el anfitrión (2 omiti
 | 4 | Minor | Manual: en `engine` ya se guardó `in_progress` | T-65 | corregido (fix5) | Lente A n.º A-1 |
 | 5 | Minor | Ítem (19): «antes de cualquier fase» frente a «tras `engine`» | T-65 | corregido (fix5) | Lente A n.º A-2 |
 | 6 | Minor | `status` del estado sin escapar en stderr y `warnings` | T-62, T-63 | corregido (fix5) | Lente C n.º C-1 (CWE-150) |
+
+### Mediciones de usage-meter de fix1 (fase 13)
+
+JSON literal de `usage-meter close` de las tres ventanas de fix1 (T-82-fix1, T-83-fix1, T-85-fix1). El JSON de T-81..T-85 no se conservó (ver las Notas de T-85).
+
+```json
+{
+  "artefacto": "reliable-operations/T-82-fix1",
+  "inicio": "2026-11-18T06:20:29Z",
+  "fin": "2026-11-18T06:32:07Z",
+  "fuente": "medido",
+  "tokens_reales": {
+    "entrada": 56,
+    "salida": 30533,
+    "cache_creacion": 54494,
+    "cache_lectura": 2669675,
+    "respuestas": 28
+  },
+  "eur": null,
+  "horas_ia": 0.28,
+  "duracion": "17m",
+  "duracion_reloj": "12m",
+  "ratio_usado": 300000,
+  "ratio_origen": "default no calibrado (300000)",
+  "tokens_procedencia": "transcript",
+  "tokens_cobertura": "completa",
+  "transcripts_leidos": 2,
+  "transcripts_subagente": 1,
+  "transcripts_con_error": 0,
+  "coste_procedencia": "sin_coste",
+  "coste_cobertura": "sin_coste",
+  "coste_sin_precio": [],
+  "tarifa_verificada_el": null,
+  "medicion_persistida": true,
+  "fuente_id": "src-8ffaaac4e3b9a11805b5148dbea387f65be01b42fba05cbf3ca54c4b799a95c8",
+  "ventana_id": "win-d1246a07e4ef44a5a275b2825db08fd5",
+  "revision_medicion": 1,
+  "avisos": [
+    "CALIBRATION: fila marcada (estimado); fuera de la mediana",
+    "CALIBRATION: fila marcada (estimado); fuera de la mediana",
+    "precioTokens no fiable (0/ausente/viejo) → eur=null; ejecuta la skill rates-verify"
+  ]
+}
+```
+
+```json
+{
+  "artefacto": "reliable-operations/T-83-fix1",
+  "inicio": "2026-11-18T06:33:17Z",
+  "fin": "2026-11-18T06:33:56Z",
+  "fuente": "medido",
+  "tokens_reales": {
+    "entrada": 6,
+    "salida": 2055,
+    "cache_creacion": 3524,
+    "cache_lectura": 405207,
+    "respuestas": 3
+  },
+  "eur": null,
+  "horas_ia": 0.02,
+  "duracion": "1m",
+  "duracion_reloj": "1m",
+  "ratio_usado": 300000,
+  "ratio_origen": "default no calibrado (300000)",
+  "tokens_procedencia": "transcript",
+  "tokens_cobertura": "completa",
+  "transcripts_leidos": 1,
+  "transcripts_subagente": 1,
+  "transcripts_con_error": 0,
+  "coste_procedencia": "sin_coste",
+  "coste_cobertura": "sin_coste",
+  "coste_sin_precio": [],
+  "tarifa_verificada_el": null,
+  "medicion_persistida": true,
+  "fuente_id": "src-8ffaaac4e3b9a11805b5148dbea387f65be01b42fba05cbf3ca54c4b799a95c8",
+  "ventana_id": "win-9f352b29aac94168b1ed4cb6c4aa38b0",
+  "revision_medicion": 1,
+  "avisos": [
+    "CALIBRATION: fila marcada (estimado); fuera de la mediana",
+    "CALIBRATION: fila marcada (estimado); fuera de la mediana",
+    "precioTokens no fiable (0/ausente/viejo) → eur=null; ejecuta la skill rates-verify"
+  ]
+}
+```
+
+```json
+{
+  "artefacto": "reliable-operations/T-85-fix1",
+  "inicio": "2026-11-18T06:34:49Z",
+  "fin": "2026-11-18T06:51:06Z",
+  "fuente": "medido",
+  "tokens_reales": {
+    "entrada": 30,
+    "salida": 3889,
+    "cache_creacion": 7473,
+    "cache_lectura": 2361773,
+    "respuestas": 15
+  },
+  "eur": null,
+  "horas_ia": 0.04,
+  "duracion": "2m",
+  "duracion_reloj": "16m",
+  "ratio_usado": 300000,
+  "ratio_origen": "default no calibrado (300000)",
+  "tokens_procedencia": "transcript",
+  "tokens_cobertura": "completa",
+  "transcripts_leidos": 2,
+  "transcripts_subagente": 1,
+  "transcripts_con_error": 0,
+  "coste_procedencia": "sin_coste",
+  "coste_cobertura": "sin_coste",
+  "coste_sin_precio": [],
+  "tarifa_verificada_el": null,
+  "medicion_persistida": true,
+  "fuente_id": "src-8ffaaac4e3b9a11805b5148dbea387f65be01b42fba05cbf3ca54c4b799a95c8",
+  "ventana_id": "win-9dfa6d5266e54c4ea1200b2984d55848",
+  "revision_medicion": 1,
+  "avisos": [
+    "CALIBRATION: fila marcada (estimado); fuera de la mediana",
+    "CALIBRATION: fila marcada (estimado); fuera de la mediana",
+    "precioTokens no fiable (0/ausente/viejo) → eur=null; ejecuta la skill rates-verify"
+  ]
+}
+```

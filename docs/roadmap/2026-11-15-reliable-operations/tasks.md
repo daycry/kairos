@@ -2644,7 +2644,7 @@ test-plan: n/a (sin UI)
 - **Estado**: completado
 - **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 1h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real 0.07h (medido)
+- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real 0.11h (medido; 0.07h + 0.04h de fix1)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 37 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: T-84
@@ -2665,8 +2665,10 @@ test-plan: n/a (sin UI)
 - [x] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.07h (medido).
+  - usage-meter fix1 (`reliable-operations/T-85-fix1`): 0.04h (medido).
 
 **Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (23) — notas de T-81 a T-85», T-85).
+**Notas** (fix1): suite 2026-11-18 (`kairos-test:i3p13f`, tras fix1 de la fase 13): `MEMORY_TEST_RESULT` `{"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1519}`; mínimo 1511 a 1519 en `ci.yml` (con historia), `MIN_FLOOR`, `docs/operations.md` y `README.md:252`; `test_ci_workflow`: 45 OK. Enmienda al tercer criterio (revisión de la fase 13, n.º 6): el resumen de las mediciones sustituye al JSON literal de usage-meter de T-81..T-85; motivo: `usage-meter close` imprimió el JSON en la sesión de entonces y no se conservó (`.claude/usage-state.json` guarda solo marcadores, y repetir `close` emitiría otra medición, no la original), así que las horas medidas de cada tarea (`real … (medido)`) son el único dato que sobrevive; las de fix1 sí se pegan en `execution-history.md` (compactación 23, mediciones de fix1).
 
 ### T-86 — Revisión adversarial de la fase (dos lentes)
 
