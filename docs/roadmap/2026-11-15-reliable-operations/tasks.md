@@ -3138,4 +3138,5 @@ Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (14) �
 
 ## Revisión de dos lentes — intento 2: Fase 11 tras fix1 (T-68, T-69, T-70, T-71)
 
-Pendiente de revisión; sin veredicto.
+Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (16) — revisión de la fase 11, intento 2»). Resumen: lentes A, B y C+D; 0 Critical, 0 Important, 7 Minor; la fase cierra con fix2.
+

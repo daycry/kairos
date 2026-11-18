@@ -1255,3 +1255,23 @@ SHA-256: `117ede94af86dff0cbec4678a8a47b1be7d87ea27130f9edc0bba4ec93a32975`.
 SHA-256: `8e7bc8c78dd6bf83012d40471505447d36027df8a42c0900563fc31952f2de54`.
 
 **Notas** (2026-11-18): Suite completa sobre `1ebdf63` (`kairos-test:i3p11f`): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1408}`. Un build anterior sobre `1aa6b65` dio 1404 con 2 fallos (`test_auth_cache.EveryTransactionTests`: `probe.py` fuera de las listas revisadas de lecturas de permisos); corregido en `b7115da` (comandos de operador con su motivo). `KAIROS_MIN_TESTS` y `MIN_FLOOR` 1408 con su historia; tabla de `docs/operations.md` y `README.md:252` igual; `test_ci_workflow.py` OK. Excepción declarada: usage-meter no medido (horas estimadas, mismo patrón que T-66). Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Cierra la fase: no se abre la revisión adversarial con la suite en rojo.
+
+## Compactación 2026-11-18 (16) — revisión de la fase 11, intento 2
+
+Veredicto del intento 2, escrito directamente aquí para mantener `tasks.md` por debajo del límite de lectura.
+
+### Revisión de dos lentes — intento 2: Fase 11 tras fix1 (T-68, T-69, T-70, T-71)
+
+SHA-256: `b5c9020652d091ffe0a457fc637a76a79acd2368513bc86f0fc156f054cff182`.
+
+Lentes: A; B; C+D en un solo revisor (`review-lens-select --base a48a574`: C y D). Diff `a48a574..428b4e3` (fix1). Suite 1442, 0 fallos ni omitidos; `scope-check --base main` exit 0 con `criterios_alterados: []`; sin DDL destructivo ni cambios en contrato MCP, proxy ni nginx. Lentes A y B: gaps 1-3 y 5-10 y 12 del intento 1 corregidos; n.º 4 parcial (ver n.º 5 abajo). Lente C+D: purga verificada en PostgreSQL aislado (`memory_items` 3→0, `item_versions` 6→0, `events` 6→0, `jobs` 3→0), cada sentencia por índice que empieza por `project_id`; la cuenta de servicio no inicia sesión y su clave no delega. 0 Critical, 0 Important, 7 Minor. Decisión del orquestador: la fase cierra con una corrección final de los Minor (fix2), sin otro intento.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Minor | La purga corre aunque la clave dé 401 y no comprueba que el proyecto `kairos-probe` sea el de la sonda (título y concesiones): con un `kairos-probe.key` viejo y un proyecto ajeno con ese id, borraría sus notas retiradas | T-69 | pendiente (fix2: misma comprobación `project_foreign` antes de purgar; sin ella, no purga) | Lente A (fuera de lente), confirmado por el orquestador; `probe.py:456-457,476-497` |
+| 2 | Minor | La rotación revoca cualquier clave `kairos-probe` con alcance solo `kairos-probe`, también la más amplia de un administrador humano, contra `operations.md:444` | T-68 | pendiente (fix2) | Lente B N2 (reproducido); `probe.py:599-602`, `test_probe_provisioning.py:185-187` |
+| 3 | Minor | El alta de la cuenta de servicio y sus tres concesiones (`admin` incluida) no deja auditoría; `--as` se ignora sin aviso cuando el proyecto ya existe, y la rotación queda a nombre de la cuenta de servicio (CWE-778) | T-68 | pendiente (fix2) | Lente C N1 y N2 (ejecutado); `probe.py:569,572-578` |
+| 4 | Minor | La purga no tiene tope global: con la base lenta, hasta ~130 s (8 sentencias de 15 s), frente a «hasta 25 s» del manual; `configuration.md:127` y el ítem (20)(d) omiten la purga | T-69, T-71 | pendiente (fix2: tope global o cifra corregida en los tres textos) | Lente A N1; `operations.md:431`, `probe.py:482-496` |
+| 5 | Minor | Ctrl-C/SIGTERM con el `POST /v1/events` en vuelo deja la nota activa y declara `retired: null`; una segunda señal dentro de `clean_up` igual; `docker stop` da 10 s y la retirada hasta 20 s | T-69 | pendiente (fix2) | Lente B N1 (reproducido), lentes A y C (fuera de lente); `probe.py:199-204,327-335` |
+| 6 | Minor | `last_success` se lee antes del bloqueo y las métricas se escriben tras soltarlo y tras la purga: dos ejecuciones solapadas pueden hacer retroceder el valor | T-69 | pendiente (fix2) | Lente B N3 (razonado); `probe.py:425,432-433,445,453-457` |
+| 7 | Minor | El bloqueo `open(<clave>.lock,'a')` fuera del `try`: con la clave en un montaje de solo lectura cada ejecución acaba en `internal_error` (regresión frente al intento 1) | T-69 | pendiente (fix2) | Lente B N4 (razonado); `probe.py:386,429-431,454` |
