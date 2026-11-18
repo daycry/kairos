@@ -105,3 +105,52 @@ test('an online doctor keeps the stale warning in its status', async t => {
   const result = await doctor(f.root, { online: true, transport, now: () => T0 });
   assert.equal(result.status, 'degraded'); assert.deepEqual(result.warnings, ['capture_queue_stale']); assert.equal(result.project_authorized, true);
 });
+
+// fix1 of the review of phase 12 (item 3): the dispatcher checkpoints (queue.json replaced, queue.jsonl emptied) while doctor reads. The read is not atomic and takes no lock, so the two files must be
+// seen from the same moment: a snapshot read before the checkpoint and a journal read after it are not a queue that ever existed.
+function admitOpen(f, queue, id) {
+  const spec = normalizeHook('claude', { cwd: f.root, session_id: 'session-1', hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_use_id: id, tool_input: { command: 'echo ' + id }, tool_response: { output: 'out', exit_code: 0 } },
+    { root: f.root, project: 'alpha', mode: 'summary', deliveryID: 'native-' + id });
+  return queue.admit(spec);
+}
+
+// Runs `during(queue)` right before doctor reads queue.jsonl, that is, between its read of queue.json and its read of the journal.
+async function doctorWithWriterBetweenReads(t, during) {
+  const f = fixture(t);
+  const queue = new Outbox(f.config.directory, f.config.binding, { now: () => iso(T0 - 2_000_000) }); t.after(() => queue.close());
+  admitOpen(f, queue, 'call-1'); queue.checkpoint();  // snapshot 1: one capture pending, 2000 s old
+  const realOpen = fs.openSync; let armed = true;
+  fs.openSync = function (file, ...rest) {
+    if (armed && String(file).endsWith('queue.jsonl')) { armed = false; during(queue, f); }
+    return realOpen.call(this, file, ...rest);
+  };
+  t.after(() => { fs.openSync = realOpen; });
+  const result = await doctor(f.root, { now: () => T0 });
+  assert.equal(armed, false, 'the interleaving happened');
+  return result;
+}
+
+test('a checkpoint between the two reads of doctor does not show a delivered capture as stale', async t => {
+  const result = await doctorWithWriterBetweenReads(t, queue => { queue.update([...queue.rows.values()][0].key, { phase: 'complete' }); queue.checkpoint(); });
+  assert.equal(result.capture_queue, undefined);  // delivered: nothing waits, and the output is the one of a queue with nothing pending
+  assert.equal(result.warnings, undefined); assert.equal(result.status, 'configured');
+});
+
+test('a checkpoint and a later write between the two reads is not an unreadable queue', async t => {
+  const result = await doctorWithWriterBetweenReads(t, (queue, f) => {
+    queue.update([...queue.rows.values()][0].key, { phase: 'complete' }); queue.checkpoint();
+    admitOpen(f, queue, 'call-2');  // journal line with seq above the old snapshot + 1
+  });
+  assert.notDeepEqual(result.capture_queue, { status: 'unreadable' });
+  assert.equal(result.capture_queue.pending, 1);
+});
+
+test('a queue that keeps being replaced under doctor is reported as unreadable, not as a made-up age', async t => {
+  const f = fixture(t); admit(f, T0 - 5_000_000);
+  const queue = new Outbox(f.config.directory, f.config.binding, { now: () => iso(T0) }); t.after(() => queue.close());
+  const realOpen = fs.openSync;
+  fs.openSync = function (file, ...rest) { if (String(file).endsWith('queue.jsonl')) queue.checkpoint(); return realOpen.call(this, file, ...rest); };  // every read of the journal is preceded by a checkpoint
+  t.after(() => { fs.openSync = realOpen; });
+  const result = await doctor(f.root, { now: () => T0 });
+  assert.deepEqual(result.capture_queue, { status: 'unreadable' });
+});
