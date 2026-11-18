@@ -2516,10 +2516,11 @@ test-plan: n/a (sin UI)
 ### T-81 — Diseño de la señal de abstención: similitud semántica y `lexical_match`
 
 - **Descripción**: Decidir y documentar cómo se expone la mejor similitud semántica a la fusión y cómo se combina con `lexical_match` y el estado `degraded`. La decisión se registra en `Notas` y en `docs/architecture.md`. Fuente: CA-27, CA-29; M-01.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Se documenta cómo decide Kairos que no hay nada relevante: la mejor similitud semántica frente a un umbral por modelo, sin abstener nunca si hay coincidencia de palabras o la capa semántica falla.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 4h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.53h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.53h (estimado) · real 0.04h (medido)
 - **Supervisión**: est. 0.13h (≈25 % IA) · real —
 - **Previsión IA**: 147 k in / 13 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
@@ -2529,22 +2530,23 @@ test-plan: n/a (sin UI)
 - **Verificación**: lectura: `docs/architecture.md` describe la señal (mejor similitud coseno por modelo, ningún `lexical_match`, `degraded` sin señal) y por qué no se usa el RRF
 
 **Criterios de aceptación**
-- [ ] La decisión cubre capa semántica ausente o `degraded` (sin señal: no abstiene), `abstain` sin umbral (`abstention: "uncalibrated"`) y preguntas cercanas al tema de un recuerdo
-- [ ] Queda escrito qué métricas mediría la puerta (abstención correcta y falsa)
+- [x] La decisión cubre capa semántica ausente o `degraded` (sin señal: no abstiene), `abstain` sin umbral (`abstention: "uncalibrated"`) y preguntas cercanas al tema de un recuerdo
+- [x] Queda escrito qué métricas mediría la puerta (abstención correcta y falsa)
 
 **Subtareas**
-- [ ] Leer la fusión y la capa vectorial
-- [ ] Prototipar la señal sobre datos sembrados y anotar la medición
-- [ ] Redactar la decisión
-- [ ] `usage-meter start/close` de la tarea
+- [x] Leer la fusión y la capa vectorial
+- [x] Prototipar la señal sobre datos sembrados y anotar la medición
+- [x] Redactar la decisión
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 0.04h (medido).
 
-**Notas**: Patrón: `retrieval.py:172-190` (fusión RRF por rango, no mide relevancia absoluta), `store_vectors.py:101`, `:408` (similitud coseno) y `Hit.lexical_match`.
+**Notas**: Diseño en `docs/architecture.md` («Abstención: la señal»). Señal: mejor coseno de la capa semántica (RRF no mide relevancia absoluta), capturado antes de `hit()`. Decisión abierta resuelta con lo más conservador: coincidencia léxica = cualquier acierto de capa léxica (no solo `lexical_match: trigram`, que solo marcan los trigramas), `partial` semántico = sin señal. Prototipo (embeddings simulados, 72 preguntas): positivas 0,12-0,87 (mediana 0,55); 7 sin relación 0,10-0,29; solapan en la cola: el umbral se calibra en la fase 14. Sin umbrales por defecto. Métricas de la puerta: abstención correcta (negativas) y falsa (positivas).
 
 ### T-82 — Implementación: `abstain`, `MEMORY_ABSTAIN_THRESHOLDS` y `MEMORY_ABSTAIN_DEFAULT`
 
 - **Descripción**: Implementar la abstención como parámetro opcional `abstain` y `MEMORY_ABSTAIN_DEFAULT` (`off` por defecto), con umbral por modelo (`MEMORY_ABSTAIN_THRESHOLDS`). Abstiene solo si la mejor similitud queda por debajo del umbral y ningún resultado tiene `lexical_match`: responde `abstained: true` e `items: []`. Fuente: CA-27, CA-29; M-01; P-04.
 - **Changelog**:
-- **Estado**: borrador
+- **Estado**: en-progreso
 - **Tiempo humano**: est. 5h (base) · real —
 - **Tiempo IA (ejec.)**: est. 0.67h (estimado) · real —
 - **Supervisión**: est. 0.17h (≈25 % IA) · real —
