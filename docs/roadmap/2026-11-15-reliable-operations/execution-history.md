@@ -1382,3 +1382,31 @@ Lentes: A; B; C+D en un solo revisor (`review-lens-select --base 150998f`: C por
 | 5 | Minor | Ninguna prueba de la suite ejecuta `LIVE_QUEUE_SQL` contra PostgreSQL con valores (solo dobles y el ensayo) | T-74 | pendiente (fix1) | Lentes A y B (fuera de lente); `test_metrics.py:121-162` |
 | 6 | Minor | Tras un despliegue, `deploy-memory.py` no recrea `memory-probe`: un servicio ya arrancado sigue con la imagen anterior; el manual no lo dice | T-75, T-78 | pendiente (fix1: recrearlo si está activo, o documentarlo) | Lente A (fuera de lente); `deploy-memory.py:1187` |
 | 7 | Minor | El periodo real del bucle es duración + intervalo, no «cada `MEMORY_PROBE_INTERVAL`» | T-78 | pendiente (fix1) | Lente B (fuera de lente) |
+
+## Compactación 2026-11-18 (20) — notas fix1 de T-74 a T-79
+
+Notas de las correcciones fix1 y fix2 de la revisión de la fase 12, movidas tal cual desde `tasks.md` para mantenerlo por debajo del límite de lectura.
+
+### T-74
+
+SHA-256: `2cba8f579b160d06505f749ab2b307bc756477195daacff117eee51a6cee9a6a`.
+
+Fix1 (revisión fase 12, n.º 1 y 5): una señal tras un recorrido correcto (lectura de cola, purga, escritura del .prom, cierre del cliente) ya no reescribe informe ni .prom como `setup/interrupted`: el informe conserva su resultado y lleva `interrupted: true` (`run_command`, `write_metrics_kept`). `LiveQueueSqlTests` ejecuta `LIVE_QUEUE_SQL` en PostgreSQL real con valores (vacía→0, pending con `available_at` futuro→0, running con concesión viva→0, running caducada y unknown vencido cuentan, terminales no cuentan): pasó sin cambio de código, la consulta ya era correcta. RED 2026-11-18: `test_fix1_a_signal_after_a_good_round_trip…` FAIL [queue] y [purge] con el código anterior.
+
+### T-75
+
+SHA-256: `4bb8c7c8ac5aa3720b00db3d7d5d6e0cc9c05163df6329fab908584fce6a3c64`.
+
+Fix1 (n.º 1, 2, 4 y 6): el bucle instala SIGTERM→KeyboardInterrupt durante todo su ciclo (también la espera) y termina con `probe_interrupted` (RED: `test_fix1_a_stop_during_the_wait…` dejaba escapar el KeyboardInterrupt). Healthcheck = `python -m memory_platform.probe health`: latido propio del bucle (`kairos-probe.heartbeat`, `--heartbeat-file`/`MEMORY_PROBE_HEARTBEAT_FILE`) con margen intervalo + ciclo más largo (timeout + 20 + 10 + 15 + 2 s) + 60 s; un `admin probe` manual ya no lo tapa (RED: AttributeError y FAIL de compose). Mínimo privilegio: `volume.subpath: probe` en `/backups/probe`, rutas por defecto migradas a `/backups/probe/kairos-probe.*` (migración en el manual); `memory_dsn` se queda: el repo solo tiene un rol de base, motivo anotado en el manual. `deploy-memory.py` recrea `memory-probe` si estaba en marcha (`refresh_probe`; RED: ERROR en `migrate_run(probe_running=True)`).
+
+### T-76
+
+SHA-256: `7cf58aa0d106d9ad31b0d7a514cdabfd51f6228fceef35e88b9e964135558446`.
+
+Fix1 (n.º 3): `queueAge` lee `queue.json` y `queue.jsonl` con `stableRead` (identidad del snapshot e inodo del diario antes y después; hasta 8 intentos; `capture_queue_unstable` → `unreadable`), sin bloqueo ni escritura. 3 pruebas nuevas intercalan el checkpoint del dispatcher entre las dos lecturas. RED 2026-11-18: las 3 fallaban (cola entregada mostrada como atascada, `unreadable` sin pendientes, edad inventada).
+
+### T-78
+
+SHA-256: `c56afdc1440220ab5438bf86bd737869b9fe9a971cd56e4a6a400048a66242d1`.
+
+Fix1 (n.º 1, 2, 4, 6 y 7): el manual dice que el periodo real es duración + intervalo, que una parada termina con `probe_interrupted` en cualquier punto del ciclo conservando el resultado ya escrito, el latido y su margen, el subdirectorio `probe` (Engine 26/Compose 2.26), el motivo de `memory_dsn`, la recreación tras el despliegue y la migración de rutas; `configuration.md`, `client/README.md` e ítem (21) del plan al día; prueba nueva en `DocumentationTests`.

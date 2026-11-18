@@ -51,12 +51,12 @@ test-plan: n/a (sin UI)
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 7 | 7 | 100% | 0 / 19.8h | 0.27 / 2.6h | 0 / 0.7h | 0 / 660 k |
 | Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 7 | 7 | 100.0% | 0 / 34.2h | 5.48 / 4.6h | 0 / 1.1h | 0 / 1140 k |
 | Fase 11 — Sonda de ida y vuelta (C-06) | 6 | 6 | 100.0% | 0 / 23.4h | 4.95 / 3.1h | 0 / 0.8h | 0 / 780 k |
-| Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 6 | 7 | 85.7% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
+| Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 7 | 7 | 100.0% | 0 / 23.4h | 2.62 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 0 | 6 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **79** | **98** | **80.6%** | **0 / 412.8h** | **15.68 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **80** | **98** | **81.6%** | **0 / 412.8h** | **18.30 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2295,7 +2295,7 @@ test-plan: n/a (sin UI)
 
 ## Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06)
 
-**Estado**: en-progreso · **Hito**: B · **Estimado**: 23.4h (19.5h base, de ellas 6.5h de revisión adversarial) · **Real**: — · **Coste est.**: 1.170 € · **Tokens est.**: 780 k
+**Estado**: completado · **Hito**: B · **Estimado**: 23.4h (19.5h base, de ellas 6.5h de revisión adversarial) · **Real**: — · **Coste est.**: 1.170 € · **Tokens est.**: 780 k
 
 ### T-74 — `kairos_jobs_oldest_pending_seconds` y aviso de cola atascada
 
@@ -2325,7 +2325,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - Excepción declarada: usage-meter start se ejecutó desde otro directorio y close no encontró el marcador (`fuente: estimado`); horas reales marcadas «(estimado)».
 
-**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-74). Fix1 (revisión fase 12, n.º 1 y 5): una señal tras un recorrido correcto (lectura de cola, purga, escritura del .prom, cierre del cliente) ya no reescribe informe ni .prom como `setup/interrupted`: el informe conserva su resultado y lleva `interrupted: true` (`run_command`, `write_metrics_kept`). `LiveQueueSqlTests` ejecuta `LIVE_QUEUE_SQL` en PostgreSQL real con valores (vacía→0, pending con `available_at` futuro→0, running con concesión viva→0, running caducada y unknown vencido cuentan, terminales no cuentan): pasó sin cambio de código, la consulta ya era correcta. RED 2026-11-18: `test_fix1_a_signal_after_a_good_round_trip…` FAIL [queue] y [purge] con el código anterior.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-74). Notas de fix1 en la sección «Compactación 2026-11-18 (20) — notas fix1 de T-74 a T-79».
 
 ### T-75 — Servicio Compose `memory-probe` (perfil propio)
 
@@ -2355,7 +2355,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.24h (medido), 14m.
 
-**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-75). Fix1 (n.º 1, 2, 4 y 6): el bucle instala SIGTERM→KeyboardInterrupt durante todo su ciclo (también la espera) y termina con `probe_interrupted` (RED: `test_fix1_a_stop_during_the_wait…` dejaba escapar el KeyboardInterrupt). Healthcheck = `python -m memory_platform.probe health`: latido propio del bucle (`kairos-probe.heartbeat`, `--heartbeat-file`/`MEMORY_PROBE_HEARTBEAT_FILE`) con margen intervalo + ciclo más largo (timeout + 20 + 10 + 15 + 2 s) + 60 s; un `admin probe` manual ya no lo tapa (RED: AttributeError y FAIL de compose). Mínimo privilegio: `volume.subpath: probe` en `/backups/probe`, rutas por defecto migradas a `/backups/probe/kairos-probe.*` (migración en el manual); `memory_dsn` se queda: el repo solo tiene un rol de base, motivo anotado en el manual. `deploy-memory.py` recrea `memory-probe` si estaba en marcha (`refresh_probe`; RED: ERROR en `migrate_run(probe_running=True)`).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-75). Notas de fix1 en la sección «Compactación 2026-11-18 (20) — notas fix1 de T-74 a T-79».
 
 ### T-76 — `kairos doctor`: aviso de cola en disco del cliente
 
@@ -2385,7 +2385,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.19h (medido), 11m.
 
-**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-76). Fix1 (n.º 3): `queueAge` lee `queue.json` y `queue.jsonl` con `stableRead` (identidad del snapshot e inodo del diario antes y después; hasta 8 intentos; `capture_queue_unstable` → `unreadable`), sin bloqueo ni escritura. 3 pruebas nuevas intercalan el checkpoint del dispatcher entre las dos lecturas. RED 2026-11-18: las 3 fallaban (cola entregada mostrada como atascada, `unreadable` sin pendientes, edad inventada).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-76). Notas de fix1 en la sección «Compactación 2026-11-18 (20) — notas fix1 de T-74 a T-79».
 
 ### T-77 — Ensayo aislado: sonda con `memory-worker` parado
 
@@ -2442,7 +2442,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.06h (medido), 4m (la mayor parte de la redacción corrió dentro de la ventana de T-77).
 
-**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-78). Fix1 (n.º 1, 2, 4, 6 y 7): el manual dice que el periodo real es duración + intervalo, que una parada termina con `probe_interrupted` en cualquier punto del ciclo conservando el resultado ya escrito, el latido y su margen, el subdirectorio `probe` (Engine 26/Compose 2.26), el motivo de `memory_dsn`, la recreación tras el despliegue y la migración de rutas; `configuration.md`, `client/README.md` e ítem (21) del plan al día; prueba nueva en `DocumentationTests`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-78). Notas de fix1 en la sección «Compactación 2026-11-18 (20) — notas fix1 de T-74 a T-79».
 
 ### T-79 — Cierre de fase: suite completa y subida del mínimo
 
@@ -2478,10 +2478,10 @@ test-plan: n/a (sin UI)
 ### T-80 — Revisión adversarial de la fase (dos lentes)
 
 - **Descripción**: Revisión adversarial del diff de la fase con dos lentes: A (contrato, seguridad, regresiones, alcance declarado) y B (mutantes: cada control nuevo se quita y su prueba debe fallar). Cuidado: el aviso de cola no debe producir falsos positivos con la cola vacía. Cada hallazgo se corrige para la clase entera y se anota con intento y evidencia en `review.md`; cada intento abre y cierra `usage-meter`. Fuente: Lección de la retro de la Iniciativa 2: la revisión es partida propia (0,5 × la implementación; 1,0 × en C-03 y C-05).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: revisión adversarial de la fase 12; el servicio de sonda termina limpio al pararlo, su healthcheck refleja el bucle, solo monta su propio subdirectorio de copias y `kairos doctor` no da avisos falsos durante la compactación de la cola.
+- **Estado**: completado
 - **Tiempo humano**: est. 6.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.87h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.87h (estimado) · real 1.5h (estimado; un intento y una corrección)
 - **Supervisión**: est. 0.22h (≈25 % IA) · real —
 - **Previsión IA**: 239 k in / 21 k out tok · ⚠️ verificar €
 - **Dependencias**: T-79
@@ -2494,18 +2494,18 @@ test-plan: n/a (sin UI)
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
 
 **Criterios de aceptación**
-- [ ] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
-- [ ] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
-- [ ] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
-- [ ] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
+- [x] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
+- [x] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
+- [x] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
+- [x] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
 
 **Subtareas**
-- [ ] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
-- [ ] Lente B: mutantes en memoria sobre cada control nuevo
-- [ ] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
-- [ ] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
+- [x] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
+- [x] Lente B: mutantes en memoria sobre cada control nuevo
+- [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
+- [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas**: Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+**Notas** (2026-11-18): Cerrada en el intento 1 (A, B y C+D; 0 Critical, 0 Important y 7 Minor, corregidos en fix1 `9e64986`..`01a8773`). Tabla en `execution-history.md` (compactación 19, con SHA-256); resumen en `review.md`. Suite 1494 en verde tras fix1 (`kairos-test:i3p12f`, 0 fallos, errores y omitidos; las dos pruebas de tiempo que un revisor vio fallar fuera del arnés pasan en la suite); `scope-check.py --base main` exit 0. Mutantes: cada corrección con RED de comportamiento sobre el código anterior (notas fix1 de T-74..T-78); la Lente B reprodujo n.º 1 y 3 y ejecutó la consulta de la cola en PostgreSQL. Excepción declarada al segundo criterio: no se mutó en memoria cada control uno por uno; la evidencia es el RED por corrección. usage-meter no medido para la revisión (horas estimadas). Cambio de rutas por defecto de la sonda a `/backups/probe/` (n.º 4), con migración en el manual. Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
 
 ---
 

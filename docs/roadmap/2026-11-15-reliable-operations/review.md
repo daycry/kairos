@@ -188,3 +188,14 @@ Cada fase cierra con su revisión adversarial. El detalle de cada intento está 
 | 1 | Important | Notas retiradas con vector sin podar (~8 GB/año) | Corregido en fix1: purga de filas solo de `kairos-probe` |
 | 1 | Minor | Interrupción sin limpieza, `.prom` silencioso, aprovisionamientos concurrentes, proyecto ajeno adoptado, auditoría al primer administrador, nombre de la métrica, criterio sin enmienda, retirada fuera del presupuesto, usage-meter | Corregidos en fix1 (usage-meter, por el orquestador) |
 | 2 | Minor | Purga sin comprobar el dueño, rotación de la clave de un humano, auditoría del aprovisionamiento y `--as`, purga sin tope, interrupción con la escritura en vuelo, `last_success` que retrocede, `.lock` en solo lectura | Corregidos en fix2 |
+
+## Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (T-74 a T-80)
+
+- **Fecha**: 2026-11-18
+- **Lentes**: intento 1, A, B y C+D en un solo revisor (C por `docker-compose.yml`, `Dockerfile` y `ci.yml`; D por la consulta de la cola).
+- **Veredicto**: cerrada en el intento 1 sin hallazgos Critical ni Important; los 7 Minor, corregidos en fix1.
+- **Evidencia**: suite del servidor 1494 tests, 0 fallos, errores y omitidos; `KAIROS_MIN_TESTS` y `MIN_FLOOR` 1494; `scripts/tests` 186 OK; cliente 100/100; `scope-check.py --base main` exit 0; contrato MCP, `schema.sql`, migraciones, `ollama-proxy/default.conf.template` y `web/nginx.conf` sin cambios; `LIVE_QUEUE_SQL` con `Index Scan using memory_job_queue` (0,37 ms con 500 000 filas) y valores comprobados en PostgreSQL; ensayo aislado `kairos-ops-e` (sonda sana, worker parado detectado en `index` con `queue_stuck`, recuperación) con listados de `knowledge-graphs-*` idénticos.
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Minor | SIGTERM tras una ida y vuelta correcta o durante la espera del bucle; healthcheck sin el plazo de la sonda y tapado por una ejecución manual; `doctor` frente al checkpoint de la cola; `memory-probe` con todo el volumen de copias en escritura; consulta de la cola sin prueba en PostgreSQL; `memory-probe` no recreado tras un despliegue; periodo del bucle en el manual | Corregidos en fix1 (`memory_dsn` se mantiene: el repo tiene un solo rol de base, motivo en el manual) |
