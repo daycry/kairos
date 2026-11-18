@@ -2341,3 +2341,54 @@ SHA-256: `91bf70d9c221deb2575b31a986c68f1e6f18cd511679722ecbba54efebf9a375`.
   ]
 }
 ```
+
+## Compactación 2026-11-18 (29) — cierre de la fase 14
+
+Veredicto del intento 2 y notas de las tareas de la fase 14 movidas al cerrar, para mantener `tasks.md` por debajo del límite de lectura. Cada bloque archivado es el texto literal de `tasks.md` antes del cierre (con los punteros que la revisión marcó como N1 y N2); su SHA-256 es sobre ese texto.
+
+### Revisión de dos lentes — intento 2: Fase 14: calibración de la abstención (fix1) (T-87, T-88, T-89, T-90, T-91, T-92)
+
+SHA-256: `554ca8dd0e8a32f33383e45b92c07cc75ce41db95e33d94d0737f5621596004f`.
+
+Lentes: A, B y C en un solo revisor (re-evaluación de lo corregido). Diff `ffb7eca..3a347f0` (fix1, 13 ficheros). Suite 1553, 0 fallos ni omitidos; `scope-check --base main` exit 0; `ledger-lint` exit 0; `test_ci_workflow` 48 OK; `test_metrics` en el host 51 (3 errores conocidos de `psycopg`). Mutantes de `thresholds.json` en memoria: los 6 caen. `pick_threshold` con el caso de B1 devuelve 0.50002 (0.70/0.05) y 3000 conjuntos aleatorios, 0 violaciones. `check_dataset` con id repetido: exit 1 en los dos órdenes. Imagen por digest coherente con `docker image inspect`. Lente C: sin hallazgos. 0 Critical, 0 Important, 2 Minor. Decisión del orquestador: cierre con corrección de los Minor sin otro intento (mismo criterio que la fase 13).
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| A1..A5, A7, B1..B4 | — | Gaps del intento 1 | T-87..T-92 | corregidos en fix1 | Lente A y B, intento 2 |
+| A6 | Minor | Punteros a la compactación: T-87, T-89, T-90 y T-91 corregidos; quedaban N1 y N2 | T-88..T-91 | corregido por el orquestador | Lente A |
+| N1 | Minor | El puntero de las notas de T-88 llevaba a la compactación 25, que no tiene T-88 | T-88 | corregido por el orquestador: apunta a la 26 y la 28 | Lente A; `tasks.md:2780`, `execution-history.md:1656-1786` |
+| N2 | Minor | El JSON de usage-meter de T-89, T-90 y T-91 se buscaba en «Mediciones de la fase 14», y está en la compactación 26 | T-89, T-90, T-91 | corregido por el orquestador | Lente A; `tasks.md:2813,2843,2869`, `execution-history.md:1966,2129,2171` |
+
+### T-88
+
+SHA-256: `8e5d523d5f03587bcfd799a60004abb42702dbde4be925bbee6d88390e73b8ed`.
+
+**Notas**: original archivado en `execution-history.md` (sección «Compactación 2026-11-18 (28) — notas de T-88 y T-92 y fix1 de la fase 14», T-88) y detalle en `execution-history.md` (sección «Compactación 2026-11-18 (25) — notas fix1 de T-81 a T-85», subsección T-88; JSON de usage-meter en «Mediciones de la fase 14»). Medida con el simulado (umbral 0.2022): correcta 0.50 (12/24), falsa 0.0417, recall@5 1.0, MRR 0.9715, `passed: true`; con 0.99, `passed: false`. Decisión tomada (usuario, 2026-11-18, «12 de 24 en la CI»; R-07): metas por proveedor, simulado ≥ 0.50/≤ 0.05 (guarda de regresión) y modelo real ≥ 0.70/≤ 0.05; P-05, CA-27, go y R-07 enmendados con fecha. fix1 (A1, A3): README de la puerta documenta el bloque `abstention` y el motivo; `abstention_measurement_errors` añadido a la puerta (B3). Medición del fix1 compartida con T-89.
+
+### T-89
+
+SHA-256: `490c97e619bc57865a814e6fd0cd4bf877fa7ef53a4d9843466e6286eec55fcd`.
+
+**Notas**: RED: `FileNotFoundError` (sin `measure_abstention.py`) y 3 fallos reales de la medición (`UnicodeDecodeError` de la salida de Docker, `embed job states failed: 4`, run demasiado largo). `uncalibrated`: con el modelo real ningún umbral da ≥ 70 % correcta y ≤ 5 % falsa (0.60: 50.0/2.8 %; 0.65: 62.5/8.3 %; 0.70: 95.8/13.9 %); recall@5 1.0, MRR 0.993; sin umbral por defecto. Listados `knowledge-graphs` (contenedores, volúmenes, redes) idénticos antes y después; `kairos-calib-*` sin restos. Detalle completo en `execution-history.md` (sección «Compactación 2026-11-18 (25) — notas fix1 de T-81 a T-85», subsección T-89; JSON de usage-meter en «Mediciones de la fase 14»). fix1 (B1, B2, B3, A7, Lente C; RED y detalle en «Compactación 2026-11-18 (28)» de `execution-history.md`): `pick_threshold` recalcula las metas tras redondear; restos `kairos-calib-*` informados también en el error y listado fallido = «no verificable»; `measurement_errors` y `abstention_measurement_errors` en la puerta; `deterministic: null` documentado en `docs/operations.md`; imagen del Ollama por digest. Medición compartida por T-87, T-88, T-89, T-90 y T-92 (0.29h medido, una ventana).
+
+### T-90
+
+SHA-256: `69cf1eb92aad9e0cef25a286ff5d7f9a392e794feebb4c8c9c8a0a806c93056e`.
+
+**Notas**: RED: 3 mutantes del paso de CI sobrevivían hasta acotarlos al trabajo `retrieval-eval`. 8 mutantes de `run.py`/`thresholds.json` y 7 del paso de CI, todos detectados; `test_metrics` pasó de 24 a 45 pruebas; `retrieval-eval` sigue fuera de la suite. Detalle completo en `execution-history.md` (sección «Compactación 2026-11-18 (25) — notas fix1 de T-81 a T-85», subsección T-90; JSON de usage-meter en «Mediciones de la fase 14»). fix1 (A2): mutantes de `thresholds.json`: con la prueba previa SOBREVIVÍAN `simulated.min_correct_rate`=0.0 y la clave borrada (RED); con `test_the_simulated_abstention_goals_are_fixed_and_cannot_be_lowered_or_removed` caen los 6 (0.0, clave borrada, `max_false_rate`=0.5, `threshold` borrado, `simulated` borrado, meta de primer nivel 0.5).
+
+### T-92
+
+SHA-256: `3ca47331c551c8252773f1cf41a09a616d58e1cc5f39c0a5fac8defc8f7158a9`.
+
+**Notas**: TDD n/a: ejecución de la suite y subida del mínimo, sin código que probar antes. Original archivado en `execution-history.md` (sección «Compactación 2026-11-18 (28) — notas de T-88 y T-92 y fix1 de la fase 14», T-92; 1547 pruebas en verde, 2377 s). fix1: suite repetida con las 6 pruebas nuevas del fix: `MEMORY_TEST_RESULT {"database": "PostgreSQL", "environment": "isolated-container-build", "errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1553}`; mínimo 1547 -> 1553 en `KAIROS_MIN_TESTS` (con su comentario), `MIN_FLOOR`, `docs/operations.md` y `README.md:252`; `python -m unittest scripts.tests.test_ci_workflow` -> `OK`. Puerta con el simulado: `passed: true`, correcta 0.50, falsa 0.0417, recall@5 1.0, MRR 0.9715. Medición del fix1 compartida con T-89.
+
+### T-93
+
+SHA-256: `64b36a89bce37edcb3e826986c0a998f3725bf473ca1a3acad22f4ca1183b9d5`.
+
+**Notas**: Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+
+### T-93 (cierre)
+
+**Notas** (2026-11-18): Cerrada en el intento 2. Intento 1: lentes A, B y C; 0 Critical, 2 Important (meta del simulado sin enmienda; meta sin prueba que la fije) y 9 Minor; decisión del usuario sobre A1, «12 de 24 en la CI»; fix1 `819035c`..`3a347f0`. Intento 2: A, B y C en un solo revisor; 10 de 11 gaps corregidos, A6 a medias y 2 Minor nuevos (N1, N2: punteros), corregidos por el orquestador al cerrar. Suite 1553 en verde (`kairos-test:i3p14f`, 0 fallos, errores y omitidos); `scope-check.py --base main` exit 0. Mutantes: la Lente A mató los 6 de `thresholds.json` en el intento 2; B1 con 3000 conjuntos aleatorios, 0 violaciones. usage-meter no se abrió para la revisión: las horas son la duración medida de los revisores (intento 1: 0.40h, tres lentes en paralelo; intento 2: 0.33h) más 0.22h estimadas del cierre. Tablas en `execution-history.md` (compactaciones 27 y 29, con SHA-256); resumen en `review.md`.

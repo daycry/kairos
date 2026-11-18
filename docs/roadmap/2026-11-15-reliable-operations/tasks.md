@@ -53,10 +53,10 @@ test-plan: n/a (sin UI)
 | Fase 11 — Sonda de ida y vuelta (C-06) | 6 | 6 | 100.0% | 0 / 23.4h | 4.95 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 7 | 7 | 100.0% | 0 / 23.4h | 2.62 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 6 | 6 | 100.0% | 0 / 33.6h | 2.36 / 4.5h | 0 / 1.1h | 0 / 1120 k |
-| Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 6 | 7 | 85.7% | 0 / 33.6h | 9.41 / 4.5h | 0 / 1.1h | 0 / 1120 k |
+| Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 7 | 7 | 100.0% | 0 / 33.6h | 10.36 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **92** | **98** | **93.9%** | **0 / 412.8h** | **30.07 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **93** | **98** | **94.9%** | **0 / 412.8h** | **31.02 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2712,7 +2712,7 @@ test-plan: n/a (sin UI)
 
 ## Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05)
 
-**Estado**: en-progreso · **Hito**: B · **Estimado**: 33.6h (28.0h base, de ellas 14.0h de revisión adversarial) · **Real**: — · **Coste est.**: 1.680 € · **Tokens est.**: 1120 k
+**Estado**: completado · **Hito**: B · **Estimado**: 33.6h (28.0h base, de ellas 14.0h de revisión adversarial) · **Real**: — · **Coste est.**: 1.680 € · **Tokens est.**: 1120 k
 
 ### T-87 — Conjunto `dataset-v1-negatives` (≥ 20 preguntas sin respuesta) y validación
 
@@ -2777,7 +2777,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.39h (medido).
 
-**Notas**: original archivado en `execution-history.md` (sección «Compactación 2026-11-18 (28) — notas de T-88 y T-92 y fix1 de la fase 14», T-88) y detalle en `execution-history.md` (sección «Compactación 2026-11-18 (25) — notas fix1 de T-81 a T-85», subsección T-88; JSON de usage-meter en «Mediciones de la fase 14»). Medida con el simulado (umbral 0.2022): correcta 0.50 (12/24), falsa 0.0417, recall@5 1.0, MRR 0.9715, `passed: true`; con 0.99, `passed: false`. Decisión tomada (usuario, 2026-11-18, «12 de 24 en la CI»; R-07): metas por proveedor, simulado ≥ 0.50/≤ 0.05 (guarda de regresión) y modelo real ≥ 0.70/≤ 0.05; P-05, CA-27, go y R-07 enmendados con fecha. fix1 (A1, A3): README de la puerta documenta el bloque `abstention` y el motivo; `abstention_measurement_errors` añadido a la puerta (B3). Medición del fix1 compartida con T-89.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (29) — cierre de la fase 14», T-88). Notas anteriores en «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)» y «Compactación 2026-11-18 (28) — notas de T-88 y T-92 y fix1 de la fase 14», subsección T-88; JSON de usage-meter en «Mediciones de la fase 14». Decisión del usuario (2026-11-18, «12 de 24 en la CI»): metas por proveedor (simulado ≥ 0.50/≤ 0.05, modelo real ≥ 0.70/≤ 0.05); P-05, CA-27, go y R-07 enmendados.
 
 ### T-89 — Medición del umbral de `nomic-embed-text` con un Ollama efímero y aislado (P-05)
 
@@ -2810,7 +2810,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 4.58h (medido).
 
-**Notas**: RED: `FileNotFoundError` (sin `measure_abstention.py`) y 3 fallos reales de la medición (`UnicodeDecodeError` de la salida de Docker, `embed job states failed: 4`, run demasiado largo). `uncalibrated`: con el modelo real ningún umbral da ≥ 70 % correcta y ≤ 5 % falsa (0.60: 50.0/2.8 %; 0.65: 62.5/8.3 %; 0.70: 95.8/13.9 %); recall@5 1.0, MRR 0.993; sin umbral por defecto. Listados `knowledge-graphs` (contenedores, volúmenes, redes) idénticos antes y después; `kairos-calib-*` sin restos. Detalle completo en `execution-history.md` (sección «Compactación 2026-11-18 (25) — notas fix1 de T-81 a T-85», subsección T-89; JSON de usage-meter en «Mediciones de la fase 14»). fix1 (B1, B2, B3, A7, Lente C; RED y detalle en «Compactación 2026-11-18 (28)» de `execution-history.md`): `pick_threshold` recalcula las metas tras redondear; restos `kairos-calib-*` informados también en el error y listado fallido = «no verificable»; `measurement_errors` y `abstention_measurement_errors` en la puerta; `deterministic: null` documentado en `docs/operations.md`; imagen del Ollama por digest. Medición compartida por T-87, T-88, T-89, T-90 y T-92 (0.29h medido, una ventana).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (29) — cierre de la fase 14», T-89). Notas anteriores en «Compactación 2026-11-18 (25) — notas fix1 de T-81 a T-85», subsección T-89, y fix1 en «Compactación 2026-11-18 (28) — notas de T-88 y T-92 y fix1 de la fase 14»; JSON de usage-meter en «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», subsección T-89. `nomic-embed-text` queda `uncalibrated` (ningún umbral da ≥ 70 % y ≤ 5 %).
 
 ### T-90 — Pruebas de la puerta de abstención
 
@@ -2840,7 +2840,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.07h (medido).
 
-**Notas**: RED: 3 mutantes del paso de CI sobrevivían hasta acotarlos al trabajo `retrieval-eval`. 8 mutantes de `run.py`/`thresholds.json` y 7 del paso de CI, todos detectados; `test_metrics` pasó de 24 a 45 pruebas; `retrieval-eval` sigue fuera de la suite. Detalle completo en `execution-history.md` (sección «Compactación 2026-11-18 (25) — notas fix1 de T-81 a T-85», subsección T-90; JSON de usage-meter en «Mediciones de la fase 14»). fix1 (A2): mutantes de `thresholds.json`: con la prueba previa SOBREVIVÍAN `simulated.min_correct_rate`=0.0 y la clave borrada (RED); con `test_the_simulated_abstention_goals_are_fixed_and_cannot_be_lowered_or_removed` caen los 6 (0.0, clave borrada, `max_false_rate`=0.5, `threshold` borrado, `simulated` borrado, meta de primer nivel 0.5).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (29) — cierre de la fase 14», T-90). Notas anteriores en «Compactación 2026-11-18 (25) — notas fix1 de T-81 a T-85», subsección T-90; JSON de usage-meter en «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», subsección T-90. fix1 (A2): las metas del simulado tienen prueba; caen los 6 mutantes de `thresholds.json`.
 
 ### T-91 — Documentar la abstención y avisar a la Iniciativa 7
 
@@ -2866,7 +2866,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.02h (medido).
 
-**Notas**: RED: `test_abstention_docs` no se cumplía sobre el HEAD anterior. `docs/configuration.md`, `docs/operations.md` y ambos CHANGELOG actualizados; `test_abstention_docs` (4 pruebas); `manual.md` sin cambio (el portal no expone `abstain`); ítem (23) en `improvement-plan.md`. Detalle completo en `execution-history.md` (sección «Compactación 2026-11-18 (25) — notas fix1 de T-81 a T-85», subsección T-91; JSON de usage-meter en «Mediciones de la fase 14»).
+**Notas**: RED: `test_abstention_docs` no se cumplía sobre el HEAD anterior. `docs/configuration.md`, `docs/operations.md` y ambos CHANGELOG actualizados; `test_abstention_docs` (4 pruebas); `manual.md` sin cambio (el portal no expone `abstain`); ítem (23) en `improvement-plan.md`. Detalle completo en `execution-history.md` (sección «Compactación 2026-11-18 (25) — notas fix1 de T-81 a T-85», subsección T-91; JSON de usage-meter en «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», subsección T-91).
 
 ### T-92 — Cierre de fase: suite completa y subida del mínimo
 
@@ -2897,15 +2897,15 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 3.75h (medido).
 
-**Notas**: TDD n/a: ejecución de la suite y subida del mínimo, sin código que probar antes. Original archivado en `execution-history.md` (sección «Compactación 2026-11-18 (28) — notas de T-88 y T-92 y fix1 de la fase 14», T-92; 1547 pruebas en verde, 2377 s). fix1: suite repetida con las 6 pruebas nuevas del fix: `MEMORY_TEST_RESULT {"database": "PostgreSQL", "environment": "isolated-container-build", "errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1553}`; mínimo 1547 -> 1553 en `KAIROS_MIN_TESTS` (con su comentario), `MIN_FLOOR`, `docs/operations.md` y `README.md:252`; `python -m unittest scripts.tests.test_ci_workflow` -> `OK`. Puerta con el simulado: `passed: true`, correcta 0.50, falsa 0.0417, recall@5 1.0, MRR 0.9715. Medición del fix1 compartida con T-89.
+**Notas**: TDD n/a: ejecución de la suite y subida del mínimo, sin código que probar antes. Archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (29) — cierre de la fase 14», T-92); notas anteriores en «Compactación 2026-11-18 (28) — notas de T-88 y T-92 y fix1 de la fase 14», T-92; JSON de usage-meter en «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», subsección T-92. Suite 1553 (0 fallos, errores y omitidos); mínimo 1553 en los 4 sitios.
 
 ### T-93 — Revisión adversarial de la fase (dos lentes)
 
 - **Descripción**: Revisión adversarial del diff de la fase con dos lentes: A (contrato, seguridad, regresiones, alcance declarado) y B (mutantes: cada control nuevo se quita y su prueba debe fallar). Cuidado: umbral calibrado con embeddings simulados (R-07), abstención falsa en positivas y ausencia de uso del Ollama del host; revisión a 1,0 ×. Cada hallazgo se corrige para la clase entera y se anota con intento y evidencia en `review.md`; cada intento abre y cierra `usage-meter`. Fuente: Lección de la retro de la Iniciativa 2: la revisión es partida propia (0,5 × la implementación; 1,0 × en C-03 y C-05).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: revisión adversarial de la fase 14; metas de abstención por proveedor por decisión del usuario (simulado 50 %/5 % en la CI, modelos reales 70 %/5 %), y la calibración avisa de errores de medición y de restos sin verificar.
+- **Estado**: completado
 - **Tiempo humano**: est. 14h (base) · real —
-- **Tiempo IA (ejec.)**: est. 1.87h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 1.87h (estimado) · real 0.95h (medido: duración de los revisores, 0.73h; más 0.22h estimadas del cierre)
 - **Supervisión**: est. 0.47h (≈25 % IA) · real —
 - **Previsión IA**: 515 k in / 45 k out tok · ⚠️ verificar €
 - **Dependencias**: T-92
@@ -2918,18 +2918,18 @@ test-plan: n/a (sin UI)
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
 
 **Criterios de aceptación**
-- [ ] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
-- [ ] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
-- [ ] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
-- [ ] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
+- [x] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
+- [x] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
+- [x] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
+- [x] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas` (excepción: sin usage-meter en la revisión; horas medidas por la duración de los revisores, ver Notas)
 
 **Subtareas**
-- [ ] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
-- [ ] Lente B: mutantes en memoria sobre cada control nuevo
-- [ ] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
-- [ ] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
+- [x] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
+- [x] Lente B: mutantes en memoria sobre cada control nuevo
+- [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
+- [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter` (medidos por la duración de los revisores, ver Notas)
 
-**Notas**: Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+**Notas** (2026-11-18): Cerrada en el intento 2. Intento 1: lentes A, B y C; 0 Critical, 2 Important (meta del simulado sin enmienda; meta sin prueba que la fije) y 9 Minor; decisión del usuario sobre A1, «12 de 24 en la CI»; fix1 `819035c`..`3a347f0`. Intento 2: A, B y C en un solo revisor; 10 de 11 gaps corregidos, A6 a medias y 2 Minor nuevos (N1, N2: punteros), corregidos por el orquestador al cerrar. Suite 1553 en verde (`kairos-test:i3p14f`, 0 fallos, errores y omitidos); `scope-check.py --base main` exit 0. Mutantes: la Lente A mató los 6 de `thresholds.json` en el intento 2; B1 con 3000 conjuntos aleatorios, 0 violaciones. usage-meter no se abrió para la revisión: las horas son la duración medida de los revisores (intento 1: 0.40h, tres lentes en paralelo; intento 2: 0.33h) más 0.22h estimadas del cierre. Tablas en `execution-history.md` (compactaciones 27 y 29, con SHA-256); resumen en `review.md`.
 
 ---
 
@@ -3186,3 +3186,8 @@ Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (24) �
 ## Revisión de dos lentes — intento 1: Fase 14: calibración de la abstención y puerta retrieval-eval (T-87, T-88, T-89, T-90, T-91, T-92)
 
 Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (27) — revisión de la fase 14, intento 1»). Resumen: lentes A, B y C; 0 Critical, 2 Important (meta del simulado sin enmienda; meta sin prueba que la fije) y 9 Minor; decisión del usuario: metas por proveedor (simulado 0,50/0,05); fix1 corrige todo.
+
+
+## Revisión de dos lentes — intento 2: Fase 14: calibración de la abstención (fix1) (T-87, T-88, T-89, T-90, T-91, T-92)
+
+Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (29) — cierre de la fase 14»). Resumen: lentes A, B y C; 10 de 11 gaps del intento 1 corregidos; 0 Critical, 0 Important y 2 Minor (punteros), corregidos por el orquestador; la fase cierra.

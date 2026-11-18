@@ -212,3 +212,18 @@ Cada fase cierra con su revisión adversarial. El detalle de cada intento está 
 | 1 | Important | Abstenía con una capa léxica caída, parcial o con el plazo de trigramas vencido (se leía como «sin coincidencia léxica») | Corregido en fix1: sin señal léxica completa no abstiene; matriz de 728 combinaciones |
 | 1 | Minor | Separador mal escrito en los umbrales, `uncalibrated` sin aciertos, variables fuera del Compose y del manual, CHANGELOG sin la nota de `context`, JSON de usage-meter, sufijo `:latest` | Corregidos en fix1 (JSON por enmienda: la ventana original no se conservó) |
 | 2 | Minor | Frase de la fusión movida al párrafo de Abstención en `configuration.md` | Corregido por el orquestador |
+
+## Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (T-87 a T-93)
+
+- **Fecha**: 2026-11-18
+- **Lentes**: intento 1, A, B y C (C por `ci.yml`); intento 2, A, B y C en un solo revisor.
+- **Veredicto**: cerrada en el intento 2 sin hallazgos Critical ni Important; los 2 Minor del intento 2 (punteros del ledger), corregidos por el orquestador.
+- **Decisión del usuario** (2026-11-18, «12 de 24 en la CI»): metas de abstención por proveedor. Con el simulado de la CI, ≥ 0,50 de abstención correcta y ≤ 0,05 de falsa como guarda de regresión (R-07); con modelos reales, ≥ 0,70 y ≤ 0,05. Enmendados P-05, CA-27, la decisión de go y R-07.
+- **Evidencia**: suite del servidor 1553 tests, 0 fallos, errores y omitidos; `KAIROS_MIN_TESTS` y `MIN_FLOOR` 1553; `scope-check.py --base main` exit 0; puertas recall@5 ≥ 0,80, MRR ≥ 0,60 y regresión ≤ 2 sin cambios; `dataset-v1.jsonl` sin cambios; `MEMORY_ABSTAIN_DEFAULT=off` y contrato MCP/OpenAPI sin cambios; `nomic-embed-text` medido con un Ollama efímero `kairos-calib-*` y sin calibrar (ningún umbral cumple 70 %/5 %), listados `knowledge-graphs-*` idénticos antes y después.
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Important | Metas del simulado rebajadas a 0,50 sin enmienda de la spec y con una DECISIÓN ABIERTA en una tarea cerrada | Corregido en fix1 con la decisión del usuario y enmiendas fechadas |
+| 1 | Important | Ninguna prueba fijaba la meta del simulado (con 0,0 o sin la clave, la CI seguía verde) | Corregido en fix1: prueba nueva; 6 mutantes en rojo |
+| 1 | Minor | README de la puerta, fila TOTAL, `TDD n/a` de T-92, punteros, `deterministic: null` sin documentar, redondeo de `pick_threshold`, restos sin verificar, errores de medición silenciados, orden de argumentos de `check_dataset` | Corregidos en fix1 (punteros, a medias) |
+| 2 | Minor | Punteros de T-88 y del JSON de T-89, T-90 y T-91 a secciones sin ese contenido | Corregido por el orquestador |
