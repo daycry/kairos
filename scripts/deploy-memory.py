@@ -53,6 +53,7 @@ LOCK_FILE = 'deployment.lock'  # in the private directory of the project: held w
 ISOLATED_PRIVATE_FILES = ('memory-platform.env', 'compose.override.yml', 'deployment-status.json', 'deployment-status.tmp', LOCK_FILE)
 VOLUMES = (DEFAULT_PROJECT + '_memory-postgres-data', DEFAULT_PROJECT + '_memory-backups')
 SERVICES = ('memory-api', 'memory-worker', 'memory-mcp', 'memory-web')
+PROBE_SERVICE = 'memory-probe'  # opt-in (profile `probe`): not in SERVICES, so a deployment never starts it, but one that is already running is recreated with the new image
 NEW_NETWORKS = ('mcp',)  # networks that an installation made before this release does not have yet: the start creates them, a missing one is not an error
 BACKFILL_TIMEOUT_SECONDS = 1800  # queues jobs in short transactions; the worker does the embedding after `start`
 BACKFILL_REPORT_KEYS = ('status', 'reason', 'enqueued', 'derived', 'failed', 'pending', 'remaining', 'batches', 'embedding_filled', 'stale_marked')  # counts only, never anything else
@@ -677,6 +678,19 @@ class Deployment:
             raise DeploymentError(f'Command failed during {self.phase}.')
         return result.stdout.strip()
 
+    def refresh_probe(self):
+        """The round-trip probe is opt-in (profile `probe`) and the `up` above does not name it: a `memory-probe` that is running would go on with the image of the previous release (it shares the
+        `operator` image that was just built). When it is running it is recreated, without waiting for its healthcheck (start period 120 s); when it is not, it is not started. A failure of the
+        listing is not a failure of the deployment (the probe is not part of what the deployment verifies), a failure of the recreation is."""
+        try:
+            running = self.run(self.compose + ['--profile', 'probe', 'ps', '--status', 'running', '--services']).split()
+        except DeploymentError:
+            self.report.pop('command_failure', None)  # the listing is a question, not a step
+            return
+        if PROBE_SERVICE in running:
+            self.run(self.compose + ['--profile', 'probe', 'up', '-d', '--no-deps', '--force-recreate', PROBE_SERVICE])
+            self.report['probe_recreated'] = True
+
     def step(self, name):
         self.phase = name
         self.report['phases'].append(name)
@@ -1233,6 +1247,7 @@ class Deployment:
         self.step('start')
         self.run(self.compose + ['up', '-d', '--no-deps', '--wait', '--wait-timeout', '90',
                                  *((STUB_SERVICE,) if self.embed_stub else ()), 'ollama', *SERVICES])
+        self.refresh_probe()
         self.step('verify')
         final = self.long_operator('content-manifest')
         if before:

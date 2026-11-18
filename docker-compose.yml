@@ -283,9 +283,10 @@ services:
     stop_grace_period: 60s
 
   # Round-trip probe (C-06), opt-in: `docker compose --profile probe up -d memory-probe` (the installed project picks it up only at its next `up`).
-  # `probe --loop` writes a synthetic note through /v1 with the probe key, waits for its embed receipt, searches for it and retires it, every MEMORY_PROBE_INTERVAL seconds, and writes
-  # kairos_probe_* to the textfile of the volume (it also warns with `queue_stuck` above MEMORY_QUEUE_STUCK_SECONDS). The key is the FILE `probe-provision` leaves in /backups (the default of the command, never a variable);
-  # the DSN secret only purges the retired notes of the `kairos-probe` project. No ports: nothing reaches it, and it reaches memory-api over the internal database network.
+  # `probe --loop` writes a synthetic note through /v1 with the probe key, waits for its embed receipt, searches for it and retires it, then waits MEMORY_PROBE_INTERVAL seconds (the period is
+  # the duration of a run plus the interval), and writes kairos_probe_* to the textfile of the volume (it also warns with `queue_stuck` above MEMORY_QUEUE_STUCK_SECONDS). The key is the FILE `probe-provision`
+  # leaves in /backups/probe (the default of the command, never a variable); the DSN secret only purges the retired notes of the `kairos-probe` project (the one role of the installation: see docs/operations.md,
+  # `memory_dsn` of the service). No ports: nothing reaches it, and it reaches memory-api over the internal database network.
   memory-probe:
     <<: *process
     image: kairos-operator:latest
@@ -303,12 +304,16 @@ services:
     secrets: [memory_dsn]
     entrypoint: [python, -m, memory_platform.admin]
     command: [probe, --loop]
-    volumes: [memory-backups:/backups]
+    # Least privilege: only the `probe` directory of the volume (compose `volume.subpath`, Docker Engine and Compose with that field; the directory must exist, `probe-provision` creates it), mounted at the
+    # path the defaults of the command use. The encrypted copies of memory-backup, next to it in the volume, are not visible to this service.
+    volumes:
+      - {type: volume, source: memory-backups, target: /backups/probe, volume: {subpath: probe}}
     networks: [memory-data]
     init: true
-    # Healthy while the metrics file is fresh (a run writes it even when it fails): older than three intervals plus 300 s (the timeout of a run and its retirement) means the loop is not running.
+    # Healthy while the loop beats: the heartbeat file (only `probe --loop` writes it, at the start and the end of every cycle; an `admin probe` by hand writes the .prom but not this) is younger than
+    # MEMORY_PROBE_INTERVAL + the longest cycle (MEMORY_PROBE_TIMEOUT + retirement + purge + queue read) + 60 s. The margin is computed by the code (`python -m memory_platform.probe health`).
     healthcheck:
-      test: [CMD, python, -c, "import os, sys, time; sys.exit(0 if time.time() - os.stat(os.environ.get('MEMORY_PROBE_METRICS_FILE', '/backups/kairos-probe.prom')).st_mtime < 3 * float(os.environ['MEMORY_PROBE_INTERVAL']) + 300 else 1)"]
+      test: [CMD, python, -m, memory_platform.probe, health]
       interval: 60s
       timeout: 5s
       retries: 3

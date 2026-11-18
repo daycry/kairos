@@ -127,6 +127,25 @@ class BackfillPhaseTests(unittest.TestCase):
         self.assertLess(stop, backfill)  # the previous worker never sees the queued jobs
         self.assertEqual(instance.report['phases'][instance.report['phases'].index('bootstrap') + 1], 'backfill')
 
+    def test_fix1_a_running_memory_probe_is_recreated_with_the_new_image_and_one_that_is_not_running_is_not_started(self):
+        """The profile `probe` is opt-in and the main `up` does not name it: a loop that was already running would go on with the image of the previous release."""
+        from memory_platform.tests.test_deploy_isolation import IsolatedDeploymentTests
+        helper = IsolatedDeploymentTests('migrate_run')
+        _, without = helper.migrate_run(probe_running=False)
+        self.assertFalse([c for c in without if 'memory-probe' in c], 'a service that was not running is not started')
+        instance, commands = helper.migrate_run(probe_running=True)
+        main_up = next(n for n, command in enumerate(commands) if 'up' in command and 'ollama' in command)
+        recreate = [n for n, command in enumerate(commands) if 'up' in command and 'memory-probe' in command]
+        self.assertEqual(len(recreate), 1)
+        command = commands[recreate[0]]
+        self.assertGreater(recreate[0], main_up)
+        self.assertTrue({'--profile', 'probe', '--force-recreate', '--no-deps', '-d'} <= set(command), command)
+        self.assertEqual(command[-1], 'memory-probe')
+        self.assertNotIn('--wait', command)  # its healthcheck has a start period of 120 s: the deployment does not wait for it
+        self.assertTrue(instance.report.get('probe_recreated'))
+        verify = instance.report['phases'].index('verify')
+        self.assertLess(instance.report['phases'].index('start'), verify)
+
     def test_the_report_keeps_only_the_known_count_keys(self):
         noisy = json.dumps({'status': 'backfilled', 'enqueued': 1, 'remaining': 0, 'batches': 1, 'embedding_filled': 0, 'dsn': 'postgresql://u:secret@h/db'})
         instance, _ = self.run_phases(noisy)

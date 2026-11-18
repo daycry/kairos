@@ -508,6 +508,121 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(self.metric('kairos_probe_success'), 0.0)
         self.assertIs(signal.getsignal(signal.SIGTERM), before)
 
+    # -- fix1 of the review of phase 12 (items 1 and 2): a signal at any point of the life cycle, and the heartbeat of the loop -------------
+
+    def test_fix1_a_signal_after_a_good_round_trip_keeps_the_result_in_the_report_and_the_file(self):
+        """The queue check and the purge come after the round trip: a signal there is noted (`interrupted`), and the report and the .prom keep what the run already wrote."""
+        self.key.write_text('mp_token\n', encoding='utf-8')
+
+        def interrupt(*arguments):
+            raise KeyboardInterrupt
+        for label, raising, quiet in (('queue', 'queue_check', 'purge_after'), ('purge', 'purge_after', 'queue_check')):
+            with self.subTest(label):
+                clock = Clock()
+                with patch.object(probe, raising, interrupt), patch.object(probe, quiet, lambda *arguments: None):
+                    report, _ = self.probe_command(FakeServer(clock), clock, lambda: object())
+                self.assertEqual((report['status'], report['kairos_probe_success'], report.get('interrupted')), ('probe_ok', 1, True))
+                self.assertIs(report['metrics_written'], True)
+                self.assertEqual(self.metric('kairos_probe_success'), 1.0)
+
+    def test_fix1_a_signal_while_the_metrics_are_written_does_not_replace_a_good_result_with_a_failure(self):
+        self.key.write_text('mp_token\n', encoding='utf-8')
+        clock = Clock()
+        real, calls = probe.write_metrics, []
+
+        def interrupted_once(path):
+            calls.append(path)
+            if len(calls) == 1:
+                raise KeyboardInterrupt
+            return real(path)
+        with patch.object(probe, 'write_metrics', interrupted_once), patch.object(probe, 'purge_after', lambda *arguments: None), patch.object(probe, 'queue_check', lambda *arguments: None):
+            report, _ = self.probe_command(FakeServer(clock), clock, lambda: object())
+        self.assertEqual((report['status'], report.get('interrupted'), report['metrics_written']), ('probe_ok', True, True))
+        self.assertEqual(self.metric('kairos_probe_success'), 1.0)
+
+    def loop(self, sleep, *, environ=None, queue=None):
+        """`admin probe --loop` with the clock injected, `sleep` as the wait between runs and a scripted server per run."""
+        self.key.write_text('mp_token\n', encoding='utf-8')
+        clock = Clock()
+        out, err = io.StringIO(), io.StringIO()
+        with patch.object(admin, 'LOOP_CYCLES', None), patch('memory_platform.admin.time', SimpleNamespace(sleep=sleep)), patch('memory_platform.probe.time', SimpleNamespace(monotonic=clock, sleep=clock.sleep)), \
+                patch.dict(os.environ, dict({'MEMORY_PROBE_INTERVAL': '45'}, **(environ or {}))), patch.object(probe, 'HttpApi', lambda url, token: FakeServer(clock)), \
+                patch.object(probe, 'purge_after', lambda *arguments: None), patch.object(probe, 'queue_check', queue or (lambda *arguments: None)), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            with self.assertRaises(SystemExit) as stop:
+                admin.main(['probe', '--loop', '--metrics-file', str(self.metrics), '--key-file', str(self.key)])
+        return stop.exception.code, out.getvalue(), err.getvalue()
+
+    def test_fix1_a_stop_during_the_wait_between_runs_ends_the_loop_with_probe_interrupted(self):
+        """The manual says that a stop of the service ends with `probe_interrupted`; the wait is where the loop spends nearly all its time."""
+        def stop(seconds):
+            raise KeyboardInterrupt  # what the SIGTERM handler raises
+        code, out, _ = self.loop(stop)
+        self.assertEqual(code, 'probe_interrupted: the service was stopped')
+        self.assertEqual([json.loads(line)['status'] for line in out.splitlines() if line.startswith('{"')], ['probe_ok'])
+        self.assertEqual(self.metric('kairos_probe_success'), 1.0)  # the result of the run before the stop stays
+
+    @unittest.skipUnless(hasattr(signal, 'SIGTERM') and os.name == 'posix', 'SIGTERM is a POSIX signal')
+    def test_fix1_a_real_sigterm_during_the_wait_ends_the_loop_with_probe_interrupted_and_puts_the_handler_back(self):
+        before = signal.getsignal(signal.SIGTERM)
+
+        def terminate(seconds):
+            os.kill(os.getpid(), signal.SIGTERM)
+            for _ in range(1000):  # the Python handler runs between two bytecodes
+                pass
+        code, _, _ = self.loop(terminate)
+        self.assertEqual(code, 'probe_interrupted: the service was stopped')
+        self.assertIs(signal.getsignal(signal.SIGTERM), before)
+
+    def test_fix1_a_signal_after_a_good_run_ends_the_loop_without_another_wait(self):
+        sleeps = []
+
+        def interrupt(*arguments):
+            raise KeyboardInterrupt
+        code, out, _ = self.loop(sleeps.append, queue=interrupt)
+        self.assertEqual(code, 'probe_interrupted: the service was stopped')
+        self.assertEqual(sleeps, [])
+        self.assertEqual(self.metric('kairos_probe_success'), 1.0)
+
+    def test_fix1_the_loop_beats_in_a_file_of_its_own_and_a_manual_probe_does_not(self):
+        heartbeat = self.directory / 'kairos-probe.heartbeat'
+        self.assertEqual(probe.heartbeat_path(str(self.metrics)), str(heartbeat))  # next to the metrics file, never the same name (a textfile collector reads *.prom)
+        self.assertEqual(probe.heartbeat_path(str(self.metrics), 'other.beat'), 'other.beat')
+        self.assertEqual(probe.heartbeat_path('', environ={}), probe.DEFAULT_HEARTBEAT_FILE)
+        self.assertEqual(probe.heartbeat_path(None, environ={'MEMORY_PROBE_METRICS_FILE': '/x/y.prom'}), '/x/y.heartbeat')
+        self.assertEqual(probe.heartbeat_path(None, environ={'MEMORY_PROBE_HEARTBEAT_FILE': '/x/beat'}), '/x/beat')
+        self.key.write_text('mp_token\n', encoding='utf-8')
+        clock = Clock()
+        with patch('memory_platform.probe.time', SimpleNamespace(monotonic=clock, sleep=clock.sleep)):
+            self.command(api=FakeServer(clock))  # `admin probe` by hand: it writes the .prom the old healthcheck looked at
+        self.assertTrue(self.metrics.exists())
+        self.assertFalse(heartbeat.exists())
+
+        def stop(seconds):
+            raise KeyboardInterrupt
+        self.loop(stop)
+        self.assertTrue(heartbeat.exists())
+
+    def test_fix1_the_margin_of_the_healthcheck_covers_a_whole_cycle_with_its_budgets(self):
+        for interval, timeout in ((10, 1.0), (300, 120.0), (300, 3600.0), (86400, 3600.0)):
+            with self.subTest(interval=interval, timeout=timeout):
+                longest_cycle = timeout + probe.RETIRE_BUDGET + probe.CONNECT_BUDGET + probe.PURGE_BUDGET + observability.QUEUE_STATEMENT_TIMEOUT_MS / 1000
+                self.assertGreater(probe.heartbeat_max_age(interval, timeout), max(interval, longest_cycle))  # never a false `unhealthy` with the loop alive
+                self.assertLess(probe.heartbeat_max_age(interval, timeout), interval + longest_cycle + 300)  # and a dead loop is noticed within about one cycle
+
+    def test_fix1_health_reads_the_heartbeat_not_the_metrics_file(self):
+        beat, prom = self.directory / 'kairos-probe.heartbeat', self.metrics
+        environ = {'MEMORY_PROBE_METRICS_FILE': str(prom), 'MEMORY_PROBE_INTERVAL': '300', 'MEMORY_PROBE_TIMEOUT': '3600'}
+        now = 1_000_000.0
+        for name, age in ((beat, 3600 + 300), (prom, 5)):  # a heartbeat of 65 minutes ago with MEMORY_PROBE_TIMEOUT=3600 is a loop inside one slow run; a fresh .prom is somebody's `admin probe`
+            name.write_text('x', encoding='utf-8')
+            os.utime(name, (now - age, now - age))
+        self.assertTrue(probe.healthy(environ, now))  # 3600 s timeout: the old margin (3 x 300 + 300) would say unhealthy here
+        os.utime(beat, (now - 100_000, now - 100_000))
+        self.assertFalse(probe.healthy(environ, now))  # a loop that stopped beating: the fresh .prom of a manual probe does not hide it
+        beat.unlink()
+        self.assertFalse(probe.healthy(environ, now))
+        self.assertTrue(probe.healthy(dict(environ, MEMORY_PROBE_HEARTBEAT_FILE=str(prom)), now))  # an explicit file is the one that is read
+
     def test_a_transport_that_cannot_be_built_still_writes_success_zero(self):
         """Item 4: the construction of `HttpApi` is inside the same net as the run."""
         self.key.write_text('mp_token\n', encoding='utf-8')
@@ -1052,6 +1167,57 @@ class ChainTests(IsolatedDatabase, unittest.TestCase):
         self.assertIn('kairos_probe_last_success_timestamp_seconds', metrics.read_text(encoding='utf-8'))
 
 
+class LiveQueueSqlTests(IsolatedDatabase, unittest.TestCase):
+    """fix1 of the review of phase 12 (item 5): `LIVE_QUEUE_SQL` with VALUES, against a real PostgreSQL (the other tests of the query use doubles that return what the test says)."""
+
+    def setUp(self):
+        self.store = self.make_store()
+        self.store.create_project(self.actor, {'id': 'queue-fixture', 'title': 'Queue fixture'})
+        self.count = 0
+
+    def job(self, state, *, due=None, lease=None, destination='embed'):
+        """One job of `memory.jobs`: `due` seconds from now for `available_at` (negative: already due), `lease` the same for `lease_until` (running jobs)."""
+        self.count += 1
+        with self.store.transaction() as c:
+            c.execute("INSERT INTO memory.jobs(id,project_id,item_id,version,canonical_hash,resource_type,destination,operation,state,available_at,lease_until) "
+                      "VALUES(%s,'queue-fixture',%s,1,'h','note',%s,'upsert',%s,clock_timestamp()+make_interval(secs=>%s),"
+                      "CASE WHEN %s::float8 IS NULL THEN NULL ELSE clock_timestamp()+make_interval(secs=>%s::float8) END)",
+                      ('job-%d' % self.count, 'item-%d' % self.count, destination, state, due or 0, lease, lease))
+
+    def oldest(self):
+        value = observability.oldest_pending_seconds(self.store)
+        self.assertIsNotNone(value, 'the query itself failed')
+        return value
+
+    def test_an_empty_queue_is_zero(self):
+        self.assertEqual(self.oldest(), 0.0)
+
+    def test_a_job_that_waits_for_its_retry_time_or_a_live_lease_is_not_stuck(self):
+        self.job('pending', due=3600)  # available_at in the future: a retry that has not come yet
+        self.job('unknown', due=3600)
+        self.job('running', due=-5000, lease=600)  # running with a lease that is still valid: it has been running for long, which is no reason to alarm
+        self.assertEqual(self.oldest(), 0.0)
+
+    def test_terminal_jobs_never_count_however_old(self):
+        self.job('succeeded', due=-90000)
+        self.job('failed', due=-90000)
+        self.assertEqual(self.oldest(), 0.0)
+
+    def test_a_due_pending_job_an_expired_lease_and_a_due_unknown_job_count_from_when_they_became_due(self):
+        for state, kwargs, seconds in (('pending', {'due': -100}, 100), ('unknown', {'due': -250}, 250), ('running', {'due': -9000, 'lease': -400}, 400)):
+            with self.subTest(state):
+                with self.store.transaction() as c:
+                    c.execute('DELETE FROM memory.jobs')
+                self.job(state, **kwargs)
+                self.assertAlmostEqual(self.oldest(), seconds, delta=15)  # the database's own clock; the allowance is the time the test takes
+
+    def test_the_oldest_of_several_wins_and_a_waiting_retry_does_not_hide_a_stuck_job(self):
+        self.job('pending', due=-30)
+        self.job('running', due=-1, lease=-700, destination='extract')
+        self.job('pending', due=7200)
+        self.assertAlmostEqual(self.oldest(), 700, delta=15)
+
+
 class CutDatabaseTests(IsolatedDatabase, unittest.TestCase):
     """The database behind a `FaultProxy` (CA-34): the probe says where it stopped."""
 
@@ -1161,6 +1327,21 @@ class DocumentationTests(unittest.TestCase):
         plan = (ROOT / 'docs' / 'roadmap' / '2026-11-15-reliable-operations' / 'improvement-plan.md')
         if plan.exists():  # the image of the tests does not carry the plan
             self.assertIn('como mucho 25 s más', plan.read_text(encoding='utf-8'))
+
+    def test_fix1_the_manual_says_what_the_loop_the_healthcheck_the_volume_and_the_deployment_do(self):
+        """Phase 12 review, items 1, 2, 4, 6 and 7: the periodo is duration + interval, the stop ends with `probe_interrupted` at any point, the healthcheck reads the heartbeat, the service sees
+        only its subdirectory, and the deployment recreates it."""
+        for text in ('el periodo real es la duración de la ejecución más el intervalo', '`probe_interrupted` (salida 1) en **cualquier punto del ciclo**', 'conserva el resultado ya escrito', 'latido del bucle',
+                     '`kairos-probe.heartbeat`', '`MEMORY_PROBE_HEARTBEAT_FILE`', '`--heartbeat-file`', 'python -m memory_platform.probe health', 'subdirectorio `probe` del volumen `memory-backups`',
+                     '`volume.subpath`', 'Sobre `memory_dsn`', '`probe_recreated`', '--force-recreate', 'migración desde la Fase 11'):
+            with self.subTest(text=text):
+                self.assertIn(text, self.section)
+        self.assertIn('`MEMORY_PROBE_HEARTBEAT_FILE`', self.configuration)
+        self.assertIn(probe.DEFAULT_HEARTBEAT_FILE, self.configuration)
+        for minutes in ('MEMORY_PROBE_TIMEOUT` + 20 s de retirada + 10 s de conexión + 15 s de purga + 2 s de lectura de la cola',):  # the margin of the healthcheck, from the same budgets as the code
+            self.assertIn(minutes, self.operations)
+        self.assertEqual((probe.RETIRE_BUDGET, probe.CONNECT_BUDGET, probe.PURGE_BUDGET, observability.QUEUE_STATEMENT_TIMEOUT_MS), (20.0, 10.0, 15.0, 2000))
+        self.assertNotIn('tres intervalos más 300 s', self.operations)
 
     def test_the_log_field_of_the_event_is_documented_and_real(self):
         self.assertIn('`exc_type`, `stage`', self.operations)

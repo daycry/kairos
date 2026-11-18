@@ -356,7 +356,8 @@ def main(argv=None):
     probe.add_argument('--url', default=None, help='Where /v1 answers (default MEMORY_PROBE_URL or http://memory-api:8790)')
     probe.add_argument('--key-file', default=os.environ.get('MEMORY_PROBE_KEY_FILE', round_trip.DEFAULT_KEY_FILE), help='The probe key written by probe-provision')
     probe.add_argument('--metrics-file', default=os.environ.get('MEMORY_PROBE_METRICS_FILE', round_trip.DEFAULT_METRICS_FILE), help='Where kairos_probe_* are written for a textfile collector (empty: nowhere)')
-    probe.add_argument('--loop', action='store_true', help='Repeat the probe every MEMORY_PROBE_INTERVAL seconds (default 300): what the memory-probe service runs. A failed run is reported (probe_failed, queue_stuck) and the next one runs; only a stop of the service ends it')
+    probe.add_argument('--loop', action='store_true', help='Repeat the probe: one run, then MEMORY_PROBE_INTERVAL seconds (default 300) of wait, so the period is the duration of a run plus the interval: what the memory-probe service runs. A failed run is reported (probe_failed, queue_stuck) and the next one runs; only a stop of the service ends it (probe_interrupted)')
+    probe.add_argument('--heartbeat-file', default=None, help='With --loop: the file the loop touches at the start and the end of every cycle, which the healthcheck of memory-probe reads (default MEMORY_PROBE_HEARTBEAT_FILE, else next to the metrics file with the suffix .heartbeat)')
     commands.add_parser('inspect')
     commands.add_parser('content-manifest')
     backup = commands.add_parser('backup', help='pg_dump to a new file with its manifest <file>.json (sha256, bytes, schema version, time, counts)')
@@ -441,16 +442,26 @@ def main(argv=None):
             interval = round_trip.probe_interval()
         except round_trip.ProbeError as error:
             raise SystemExit('%s: %s' % (error.code, error)) from None
-        done = 0
-        while LOOP_CYCLES is None or done < LOOP_CYCLES:
-            done += 1
-            report, verdict = run_once()
-            if verdict:
-                print(verdict, file=sys.stderr, flush=True)  # the service stays up: the metric, the event and this line are the alert; the next run retries
-            if report.get('code') == 'interrupted':  # a stop of the service reached the run: it has retired its note and written the metrics, and now it ends
-                raise SystemExit('probe_interrupted: the service was stopped')
-            if LOOP_CYCLES is None or done < LOOP_CYCLES:
-                time.sleep(interval)
+        beat = round_trip.heartbeat_path(args.metrics_file, args.heartbeat_file)
+        done, stopped = 0, False
+        try:
+            with round_trip.terminate_as_interrupt():  # SIGTERM is Ctrl-C for the whole life of the loop, the wait between runs included (it is where the loop spends nearly all its time)
+                while LOOP_CYCLES is None or done < LOOP_CYCLES:
+                    done += 1
+                    round_trip.write_heartbeat(beat)  # the healthcheck reads this file, which only the loop writes (a manual `admin probe` also writes the .prom)
+                    report, verdict = run_once()
+                    round_trip.write_heartbeat(beat)
+                    if verdict:
+                        print(verdict, file=sys.stderr, flush=True)  # the service stays up: the metric, the event and this line are the alert; the next run retries
+                    if report.get('code') == 'interrupted' or report.get('interrupted'):  # a stop reached the run or what follows it: the note is retired and the result is in the file
+                        stopped = True
+                        break
+                    if LOOP_CYCLES is None or done < LOOP_CYCLES:
+                        time.sleep(interval)
+        except KeyboardInterrupt:  # a stop of the service in the wait, or between two lines of the loop
+            stopped = True
+        if stopped:
+            raise SystemExit('probe_interrupted: the service was stopped')
         return
     try:
         settings = Settings.from_env()

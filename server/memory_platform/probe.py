@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import sys
 import threading
 import time
 import uuid
@@ -46,8 +47,12 @@ DEFAULT_INTERVAL = 300
 INTERVAL_RANGE = (10, 86400)
 DEFAULT_URL = 'http://memory-api:8790'
 DEFAULT_POLL_SECONDS = 2.0
-DEFAULT_KEY_FILE = '/backups/kairos-probe.key'  # the volume of memory-admin: the key never goes in the repository, the image or a log
-DEFAULT_METRICS_FILE = '/backups/kairos-probe.prom'
+PROBE_DIRECTORY = '/backups/probe'  # the one directory of the volume `memory-backups` the memory-probe service mounts (compose `volume.subpath`): never the encrypted copies next to it
+DEFAULT_KEY_FILE = PROBE_DIRECTORY + '/kairos-probe.key'  # the volume of memory-admin: the key never goes in the repository, the image or a log
+DEFAULT_METRICS_FILE = PROBE_DIRECTORY + '/kairos-probe.prom'
+DEFAULT_HEARTBEAT_FILE = PROBE_DIRECTORY + '/kairos-probe.heartbeat'  # what the loop touches at the start and the end of every cycle: the healthcheck reads it (a `.prom` is also written by an `admin probe` by hand)
+CONNECT_BUDGET = 10.0  # the connection to the database of the purge and the queue read
+HEALTH_SLACK = 60.0  # what the healthcheck allows on top of a whole cycle (a slow disk, a loaded host)
 LOCK_SUFFIX = '.lock'  # next to the key file: `kairos-probe.key.lock`, which is no name of a backup copy
 CALL_TIMEOUT = 30.0  # the longest one request may take (never more than what is left of the budget)
 RETIRE_CALL_TIMEOUT = 10.0  # one retiring request (also after a failure) never waits longer than this
@@ -399,6 +404,66 @@ def terminate_as_interrupt():
         signal.signal(signal.SIGTERM, previous)
 
 
+def heartbeat_path(metrics_file=None, explicit=None, environ=None):
+    """Where the loop beats: `explicit` (`--heartbeat-file`) or `MEMORY_PROBE_HEARTBEAT_FILE`, else the metrics file with the suffix `.heartbeat` (next to it, and never a `.prom`), else the default."""
+    environ = os.environ if environ is None else environ
+    chosen = explicit or environ.get('MEMORY_PROBE_HEARTBEAT_FILE')
+    if chosen:
+        return chosen
+    metrics = environ.get('MEMORY_PROBE_METRICS_FILE', DEFAULT_METRICS_FILE) if metrics_file is None else metrics_file
+    return str(Path(metrics).with_suffix('.heartbeat')) if metrics else DEFAULT_HEARTBEAT_FILE
+
+
+def write_heartbeat(path):
+    """Touch the heartbeat file (its modification time is the beat). A failure is logged (`probe_heartbeat_failed`) and never stops the loop: the healthcheck is what notices it."""
+    try:
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        write_atomic(target, b'beat\n', 0o644)
+    except Exception as error:
+        observability.log_failure('probe_heartbeat_failed', error, 'warning', stage=SETUP)
+        return False
+    return True
+
+
+def cycle_bound(timeout):
+    """The longest one cycle of the loop can last: the run (MEMORY_PROBE_TIMEOUT, the wait for the lock included) + the retirement + the connection + the purge + the queue read."""
+    return timeout + RETIRE_BUDGET + CONNECT_BUDGET + PURGE_BUDGET + observability.QUEUE_STATEMENT_TIMEOUT_MS / 1000
+
+
+def heartbeat_max_age(interval, timeout):
+    """How old the heartbeat may be while the loop is alive: it beats at the start and at the end of a cycle, so the gap is the longer of the wait (`interval`) and the cycle; the sum is
+    always more than that, and a dead loop is noticed within about one cycle."""
+    return interval + cycle_bound(timeout) + HEALTH_SLACK
+
+
+def healthy(environ=None, now=None):
+    """The healthcheck of the memory-probe service: the heartbeat of the loop is younger than `heartbeat_max_age` for THIS container's MEMORY_PROBE_INTERVAL and MEMORY_PROBE_TIMEOUT.
+    A bad interval is a loop that never started (unhealthy); a bad timeout fails every run but the loop beats, so the largest allowed timeout sets the margin."""
+    environ = os.environ if environ is None else environ
+    try:
+        interval = probe_interval(environ)
+    except ProbeError:
+        return False
+    try:
+        timeout = probe_timeout(environ)
+    except ProbeError:
+        timeout = TIMEOUT_RANGE[1]
+    try:
+        age = (time.time() if now is None else now) - os.stat(heartbeat_path(None, None, environ)).st_mtime
+    except OSError:
+        return False
+    return age < heartbeat_max_age(interval, timeout)
+
+
+def main(argv=None):
+    """`python -m memory_platform.probe health`: exit 0 when `healthy()`, 1 when not (the healthcheck of the compose service, which imports nothing but this)."""
+    argv = sys.argv[1:] if argv is None else argv
+    if argv != ['health']:
+        raise SystemExit('usage: python -m memory_platform.probe health')
+    return 0 if healthy() else 1
+
+
 def open_lock(paths):
     """The first of `paths` that can be opened for writing (created if missing) WITHOUT following a link (a planted link would lock, and create, a file of somebody else's), or None."""
     flags = os.O_RDWR | os.O_CREAT | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_CLOEXEC', 0)
@@ -553,9 +618,14 @@ def run_command(url, key_file, metrics_file, environ, api_factory, store_factory
             finally:
                 close = getattr(api, 'close', None)
                 if close:
-                    close()
+                    try:
+                        close()
+                    except KeyboardInterrupt:  # the run is over: closing the connection is no reason to lose its result
+                        report = locals().get('report')
+                        if report is not None:
+                            report['interrupted'] = True
             if metrics_file:
-                report['metrics_written'] = write_metrics(metrics_file)
+                report['metrics_written'] = write_metrics_kept(report, metrics_file)
     except ProbeError as error:
         return failed_setup(error.code, previous_success(metrics_file))
     report['queue'] = None
@@ -563,10 +633,28 @@ def run_command(url, key_file, metrics_file, environ, api_factory, store_factory
         if report.get('code') in ('unauthorized', 'interrupted'):
             report['purged'] = None
         else:
-            shared = memoized(store_factory)
-            report['queue'] = queue_check(shared, environ)
-            report['purged'] = purge_after(shared, report)
+            report['purged'] = None
+            try:
+                shared = memoized(store_factory)
+                report['queue'] = queue_check(shared, environ)
+                report['purged'] = purge_after(shared, report)
+            except KeyboardInterrupt:  # a stop of the service while the queue is read or the notes purged: the round trip is over and its result is already in the file, so it stays
+                report['interrupted'] = True
+                observability.log_event('probe_interrupted', 'warning', stage='retire', code='interrupted')
     return report
+
+
+def write_metrics_kept(report, metrics_file):
+    """`write_metrics` for a report that already has its result: a signal that arrives while the file is written marks the report `interrupted` and writes it once more (the result is the
+    one of the run, never `setup/interrupted`); a second signal there gives up and says the file was not written."""
+    try:
+        return write_metrics(metrics_file)
+    except KeyboardInterrupt:
+        report['interrupted'] = True
+    try:
+        return write_metrics(metrics_file)
+    except KeyboardInterrupt:
+        return False
 
 
 def write_metrics(path):
@@ -738,3 +826,7 @@ def provision_locked(store, path, project_id, operator):
     for key_id in older:
         store.revoke_key(actor, key_id)
     return {'status': 'provisioned', 'project': project, 'key': 'created', 'key_id': created['id'], 'key_file': str(path), 'actor': SERVICE_USERNAME}
+
+
+if __name__ == '__main__':
+    sys.exit(main())

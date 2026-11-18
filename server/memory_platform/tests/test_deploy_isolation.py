@@ -172,7 +172,7 @@ class IsolatedDeploymentTests(unittest.TestCase):
             self.assertIn('needs its own', str(raised.exception))
             self.assertFalse(any('config' in command for command in commands))
 
-    def migrate_run(self, backfill_answer=None, fail_stop=False, fail_when=None, verify_answer=None, restore_answer=None, expect_failure=False, project='kairos-rehearsal', **changes):
+    def migrate_run(self, backfill_answer=None, fail_stop=False, fail_when=None, verify_answer=None, restore_answer=None, expect_failure=False, project='kairos-rehearsal', probe_running=None, **changes):
         """Run the isolated apply() with a fake runner; returns (instance, ordered compose/operator commands)."""
         with workspace() as root:
             secrets = self.secrets(root)
@@ -196,6 +196,8 @@ class IsolatedDeploymentTests(unittest.TestCase):
                     raise RuntimeError('stop failed')
                 if fail_when and fail_when(command):
                     raise deploy.DeploymentError('simulated failure')
+                if command[-1] == '--services':  # `compose ps --status running --services`: which services of the project are up (fix1 of phase 12: a running memory-probe is recreated)
+                    return '\n'.join(['memory-api', 'memory-worker'] + (['memory-probe'] if probe_running else []))
                 if any('restore-check' in part for part in command):
                     return restore_answer or '{"status":"restored_and_content_verified","tables":{"actors":{"rows":1,"sha256":"a"}}}'
                 if command[-3:] == ['config', '--format', 'json']:

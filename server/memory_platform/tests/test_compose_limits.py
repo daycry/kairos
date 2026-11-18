@@ -1,5 +1,6 @@
 """C-04 / CA-20..CA-22, CA-25: what `docker-compose.yml` declares for every service (limits, log rotation, healthchecks, `extra_hosts`), read from the YAML
 and from the documentation, never from a running Docker. The deployed installation picks any of it up only at its next `up`."""
+import os
 from pathlib import Path
 import re
 import unittest
@@ -258,9 +259,22 @@ class ProbeServiceTests(unittest.TestCase):
             if variable.startswith('MEMORY_PROBE_') and self.CREDENTIAL.search(variable):
                 self.assertIn(f'`{variable}`', documented, variable)  # the probe's own variables are documented
         self.assertEqual(self.probe['secrets'], ['memory_dsn'])
-        self.assertEqual(self.probe['volumes'], ['memory-backups:/backups'])  # the volume where `probe-provision` leaves the key file: no host path at all
-        self.assertNotIn('MEMORY_PROBE_KEY_FILE', self.probe['environment'])  # the command reads /backups/kairos-probe.key by default: no key path in the compose file
+        self.assertNotIn('MEMORY_PROBE_KEY_FILE', self.probe['environment'])  # the command reads /backups/probe/kairos-probe.key by default: no key path in the compose file
         self.assertNotIn('--key-file', self.probe['command'])
+
+    def test_fix1_it_mounts_only_its_own_subdirectory_of_the_backup_volume_never_the_copies(self):
+        """Least privilege (CWE-250/732): the service needs its key and its .prom, not the encrypted copies of `memory-backup`. Compose `volume.subpath` mounts one directory of the volume, at the
+        path the defaults of the command already use, so the command line and the variables do not change."""
+        from memory_platform import probe
+        self.assertEqual(self.probe['volumes'], [{'type': 'volume', 'source': 'memory-backups', 'target': '/backups/probe', 'volume': {'subpath': 'probe'}}])
+        for default in (probe.DEFAULT_KEY_FILE, probe.DEFAULT_METRICS_FILE, probe.DEFAULT_HEARTBEAT_FILE):
+            self.assertEqual(os.path.dirname(default), '/backups/probe', default)  # all three live inside the one directory the service can see
+        self.assertEqual(self.services['memory-admin']['volumes'], ['memory-backups:/backups'])  # `probe-provision` writes /backups/probe/kairos-probe.key through the whole volume
+
+    def test_fix1_the_healthcheck_asks_the_heartbeat_of_the_loop_with_the_margin_of_the_code(self):
+        self.assertEqual(self.probe['healthcheck']['test'], ['CMD', 'python', '-m', 'memory_platform.probe', 'health'])  # not a .prom that `admin probe` by hand also writes
+        for name in ('MEMORY_PROBE_INTERVAL', 'MEMORY_PROBE_TIMEOUT'):
+            self.assertIn(name, self.probe['environment'])  # the margin is computed from the same variables the loop runs with
 
     def test_the_files_the_installation_mounts_do_not_change(self):
         host = {str(v) for name, service in self.services.items() if name != 'memory-probe' for v in service.get('volumes', []) if str(v).startswith(('.', '$', '/'))}

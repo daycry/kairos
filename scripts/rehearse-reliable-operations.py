@@ -70,7 +70,7 @@ POLL_PAUSE_SECONDS = 3  # the pause between two polls of the health: it lengthen
 UNHEALTHY_EXTRA_SECONDS, RECOVER_SECONDS, HEALTHY_SECONDS = 240, 240, 300
 PROBE_TIMEOUT_SECONDS = 30  # MEMORY_PROBE_TIMEOUT of the probe runs: short, so that the stopped-worker case does not wait the 120 s of the default
 PROBE_STUCK_SECONDS = 10  # MEMORY_QUEUE_STUCK_SECONDS of the stopped-worker run: below the 30 s that the embed job waits, so `queue_stuck` is the verdict
-PROBE_METRICS_FILE = '/backups/kairos-probe.prom'  # the default of `admin probe`, in the volume of the isolated project
+PROBE_METRICS_FILE = '/backups/probe/kairos-probe.prom'  # the default of `admin probe`, in the volume of the isolated project
 FINGERPRINT_CODE = '''
 import json, time
 from memory_platform.config import Settings
