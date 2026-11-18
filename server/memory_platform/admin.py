@@ -7,7 +7,9 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
+import time
 import hashlib
 
 from . import observability
@@ -354,6 +356,7 @@ def main(argv=None):
     probe.add_argument('--url', default=None, help='Where /v1 answers (default MEMORY_PROBE_URL or http://memory-api:8790)')
     probe.add_argument('--key-file', default=os.environ.get('MEMORY_PROBE_KEY_FILE', round_trip.DEFAULT_KEY_FILE), help='The probe key written by probe-provision')
     probe.add_argument('--metrics-file', default=os.environ.get('MEMORY_PROBE_METRICS_FILE', round_trip.DEFAULT_METRICS_FILE), help='Where kairos_probe_* are written for a textfile collector (empty: nowhere)')
+    probe.add_argument('--loop', action='store_true', help='Repeat the probe every MEMORY_PROBE_INTERVAL seconds (default 300): what the memory-probe service runs. A failed run is reported (probe_failed, queue_stuck) and the next one runs; only a stop of the service ends it')
     commands.add_parser('inspect')
     commands.add_parser('content-manifest')
     backup = commands.add_parser('backup', help='pg_dump to a new file with its manifest <file>.json (sha256, bytes, schema version, time, counts)')
@@ -418,14 +421,36 @@ def main(argv=None):
         def open_store():  # the retired notes of kairos-probe are purged through the database this command already has settings for; no database is no failure of the probe
             settings = Settings.from_env()
             return Store(guarded_dsn(settings.dsn), project_maps=settings.project_maps, embedding_enabled=True)
-        report = round_trip.probe_command(args.url, args.key_file, args.metrics_file, store_factory=open_store)
-        print(json.dumps(report, sort_keys=True))
-        if report['status'] != 'probe_ok':
-            raise SystemExit('probe_failed: stage=%s code=%s' % (report['stage'], report['code']))
-        if report.get('metrics_written') is False:  # the probe worked but the file a monitor reads did not change: that is a failure of the check
-            raise SystemExit('probe_metrics_failed: the metrics file could not be written')
-        if (report.get('queue') or {}).get('stuck'):  # the round trip worked but the jobs queue holds a job that has waited longer than MEMORY_QUEUE_STUCK_SECONDS
-            raise SystemExit('queue_stuck: oldest_pending_seconds=%s threshold_seconds=%s' % (report['queue']['oldest_pending_seconds'], report['queue']['threshold_seconds']))
+        def run_once():
+            """One probe: its report is printed and the verdict is the message an exit would carry (None: all fine)."""
+            report = round_trip.probe_command(args.url, args.key_file, args.metrics_file, store_factory=open_store)
+            print(json.dumps(report, sort_keys=True), flush=True)
+            if report['status'] != 'probe_ok':
+                return report, 'probe_failed: stage=%s code=%s' % (report['stage'], report['code'])
+            if report.get('metrics_written') is False:  # the probe worked but the file a monitor reads did not change: that is a failure of the check
+                return report, 'probe_metrics_failed: the metrics file could not be written'
+            if (report.get('queue') or {}).get('stuck'):  # the round trip worked but the jobs queue holds a job that has waited longer than MEMORY_QUEUE_STUCK_SECONDS
+                return report, 'queue_stuck: oldest_pending_seconds=%s threshold_seconds=%s' % (report['queue']['oldest_pending_seconds'], report['queue']['threshold_seconds'])
+            return report, None
+        if not args.loop:
+            report, verdict = run_once()
+            if verdict:
+                raise SystemExit(verdict)
+            return
+        try:
+            interval = round_trip.probe_interval()
+        except round_trip.ProbeError as error:
+            raise SystemExit('%s: %s' % (error.code, error)) from None
+        done = 0
+        while LOOP_CYCLES is None or done < LOOP_CYCLES:
+            done += 1
+            report, verdict = run_once()
+            if verdict:
+                print(verdict, file=sys.stderr, flush=True)  # the service stays up: the metric, the event and this line are the alert; the next run retries
+            if report.get('code') == 'interrupted':  # a stop of the service reached the run: it has retired its note and written the metrics, and now it ends
+                raise SystemExit('probe_interrupted: the service was stopped')
+            if LOOP_CYCLES is None or done < LOOP_CYCLES:
+                time.sleep(interval)
         return
     try:
         settings = Settings.from_env()

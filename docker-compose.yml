@@ -282,6 +282,39 @@ services:
     init: true
     stop_grace_period: 60s
 
+  # Round-trip probe (C-06), opt-in: `docker compose --profile probe up -d memory-probe` (the installed project picks it up only at its next `up`).
+  # `probe --loop` writes a synthetic note through /v1 with the probe key, waits for its embed receipt, searches for it and retires it, every MEMORY_PROBE_INTERVAL seconds, and writes
+  # kairos_probe_* to the textfile of the volume (it also warns with `queue_stuck` above MEMORY_QUEUE_STUCK_SECONDS). The key is the FILE `probe-provision` leaves in /backups (the default of the command, never a variable);
+  # the DSN secret only purges the retired notes of the `kairos-probe` project. No ports: nothing reaches it, and it reaches memory-api over the internal database network.
+  memory-probe:
+    <<: *process
+    image: kairos-operator:latest
+    mem_limit: ${MEMORY_PROBE_MEM_LIMIT:-256m}
+    cpus: ${MEMORY_PROBE_CPUS:-0}
+    build: {context: ., dockerfile: server/memory_platform/Dockerfile, target: operator}
+    profiles: [probe]
+    restart: unless-stopped
+    environment:
+      <<: *memory-environment
+      MEMORY_PROBE_URL: ${MEMORY_PROBE_URL:-http://memory-api:8790}
+      MEMORY_PROBE_INTERVAL: ${MEMORY_PROBE_INTERVAL:-300}
+      MEMORY_PROBE_TIMEOUT: ${MEMORY_PROBE_TIMEOUT:-120}
+      MEMORY_QUEUE_STUCK_SECONDS: ${MEMORY_QUEUE_STUCK_SECONDS:-900}
+    secrets: [memory_dsn]
+    entrypoint: [python, -m, memory_platform.admin]
+    command: [probe, --loop]
+    volumes: [memory-backups:/backups]
+    networks: [memory-data]
+    init: true
+    # Healthy while the metrics file is fresh (a run writes it even when it fails): older than three intervals plus 300 s (the timeout of a run and its retirement) means the loop is not running.
+    healthcheck:
+      test: [CMD, python, -c, "import os, sys, time; sys.exit(0 if time.time() - os.stat(os.environ.get('MEMORY_PROBE_METRICS_FILE', '/backups/kairos-probe.prom')).st_mtime < 3 * float(os.environ['MEMORY_PROBE_INTERVAL']) + 300 else 1)"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+    stop_grace_period: 15s  # the retirement after a SIGTERM has 8 s (docs/operations.md, "Sonda de ida y vuelta")
+
 networks:
   memory-data: {internal: true}
   inference: {driver: bridge, internal: true, name: knowledge-graphs_inference}

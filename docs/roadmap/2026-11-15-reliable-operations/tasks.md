@@ -51,12 +51,12 @@ test-plan: n/a (sin UI)
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 7 | 7 | 100% | 0 / 19.8h | 0.27 / 2.6h | 0 / 0.7h | 0 / 660 k |
 | Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 7 | 7 | 100.0% | 0 / 34.2h | 5.48 / 4.6h | 0 / 1.1h | 0 / 1140 k |
 | Fase 11 — Sonda de ida y vuelta (C-06) | 6 | 6 | 100.0% | 0 / 23.4h | 4.95 / 3.1h | 0 / 0.8h | 0 / 780 k |
-| Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 1 | 7 | 14.3% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
+| Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 2 | 7 | 28.6% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 0 | 6 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **74** | **98** | **75.5%** | **0 / 412.8h** | **15.68 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **75** | **98** | **76.5%** | **0 / 412.8h** | **15.68 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2336,30 +2336,32 @@ RED: `test_probe.py::CommandTests::test_t74_a_queue_older_than_the_threshold_is_
 ### T-75 — Servicio Compose `memory-probe` (perfil propio)
 
 - **Descripción**: Añadir el servicio opcional `memory-probe` (perfil propio, sin puertos publicados) que ejecuta la sonda cada `MEMORY_PROBE_INTERVAL` (300 s). Aviso: la instalación desplegada lo recoge solo en su próximo `up`. Fuente: CA-30; M-06.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Servicio opcional `memory-probe` (`docker compose --profile probe up -d memory-probe`): ejecuta `admin probe --loop` cada `MEMORY_PROBE_INTERVAL` (300 s) sin publicar puertos; la instalación desplegada lo recoge en su próximo `up`.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 3h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.24h (medido)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 110 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: T-74
 - **Tipo**: devops
-- **Archivos**: `docker-compose.yml`, `server/memory_platform/tests/test_compose_limits.py`, `docs/configuration.md`
+- **Archivos**: `docker-compose.yml`, `server/memory_platform/admin.py` (`probe --loop`), `server/memory_platform/probe.py` (`probe_interval`), `server/memory_platform/tests/test_compose_limits.py`, `server/memory_platform/tests/test_probe.py`, `scripts/deploy-memory.py` (imagen del servicio en el override aislado), `docs/configuration.md`, `docs/operations.md` (fila del healthcheck)
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_compose_limits|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] `memory-probe` define perfil propio, `MEMORY_PROBE_INTERVAL`, límites, healthcheck y rotación de logs como el resto, sin puertos publicados
-- [ ] La prueba sobre el YAML confirma que ningún servicio monta credenciales fuera de las variables documentadas
-- [ ] Ningún fichero que monta la instalación desplegada cambia
+- [x] `memory-probe` define perfil propio, `MEMORY_PROBE_INTERVAL`, límites, healthcheck y rotación de logs como el resto, sin puertos publicados
+- [x] La prueba sobre el YAML confirma que ningún servicio monta credenciales fuera de las variables documentadas
+- [x] Ningún fichero que monta la instalación desplegada cambia
 
 **Subtareas**
-- [ ] Escribir primero la prueba (rojo)
-- [ ] Añadir el servicio
-- [ ] Documentar variables
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero la prueba (rojo)
+- [x] Añadir el servicio
+- [x] Documentar variables
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 0.24h (medido), 14m.
 
-**Notas**: Patrón: `memory-backup` de la Fase 7 y `docker-compose.yml:31-85`.
+**Notas**: Perfil `probe`, red `memory-data`, sin puertos, `init: true`, `stop_grace_period: 15s`, volumen `memory-backups:/backups` y solo el secreto `memory_dsn`; sin variable de ruta de clave (rige el defecto del comando) y sin ficheros del host montados. Hizo falta `admin probe --loop` (el servicio necesita bucle; SIGTERM durante una ejecución la termina y el bucle sale con `probe_interrupted`) y `MEMORY_PROBE_INTERVAL` entero 10-86400 s (`interval_invalid`; el healthcheck lee el mismo número: fichero de métricas más viejo que 3 intervalos + 300 s = no sano). Aviso: el despliegue del cliente lo recoge solo en su próximo `up`. Verificación: módulos test_compose_limits (26), test_probe.CommandTests (24), test_backup_service, test_deploy*: 199 OK en la imagen de pruebas; `docker compose --profile probe config` válido; suite completa en T-79.
 
 ### T-76 — `kairos doctor`: aviso de cola en disco del cliente
 

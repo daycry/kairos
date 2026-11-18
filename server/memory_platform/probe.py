@@ -42,6 +42,8 @@ PROBE_SCOPES = ('read', 'write')  # never publish, validate or admin: the probe 
 PROBE_POLICY = {'capture_mode': 'summary', 'temporal_projection': False}  # capture off refuses notes; `summary` is the least that accepts them
 DEFAULT_TIMEOUT = 120.0
 TIMEOUT_RANGE = (1.0, 3600.0)
+DEFAULT_INTERVAL = 300
+INTERVAL_RANGE = (10, 86400)
 DEFAULT_URL = 'http://memory-api:8790'
 DEFAULT_POLL_SECONDS = 2.0
 DEFAULT_KEY_FILE = '/backups/kairos-probe.key'  # the volume of memory-admin: the key never goes in the repository, the image or a log
@@ -91,6 +93,15 @@ def probe_timeout(environ=None):
     if not TIMEOUT_RANGE[0] <= value <= TIMEOUT_RANGE[1]:  # also false for nan and inf
         raise ProbeError('timeout_invalid', 'MEMORY_PROBE_TIMEOUT must be between %g and %g seconds' % TIMEOUT_RANGE)
     return value
+
+
+def probe_interval(environ=None):
+    """`MEMORY_PROBE_INTERVAL` seconds (default 300, whole seconds from 10 to 86400): the time between two runs of `admin probe --loop` (the `memory-probe` service)."""
+    environ = os.environ if environ is None else environ
+    text = str(environ.get('MEMORY_PROBE_INTERVAL', '') or DEFAULT_INTERVAL).strip()
+    if not text.isascii() or not text.isdigit() or not INTERVAL_RANGE[0] <= int(text) <= INTERVAL_RANGE[1]:
+        raise ProbeError('interval_invalid', 'MEMORY_PROBE_INTERVAL must be a whole number of seconds between %d and %d' % INTERVAL_RANGE)
+    return int(text)
 
 
 def probe_url(environ=None, override=None):

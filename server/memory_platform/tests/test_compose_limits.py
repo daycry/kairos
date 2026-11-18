@@ -82,7 +82,7 @@ class LimitTests(unittest.TestCase):
 
     def test_the_vps_column_asks_for_no_more_cpus_than_the_vps_has_and_memory_mcp_gets_a_whole_one(self):
         rows = {m['name']: m['vps'].strip().strip('`') for m in (re.match(r'\| `(?P<name>MEMORY_[A-Z]+_CPUS)` \| `[^`]*` \| (?P<vps>[^|]*)\|', l) for l in CONFIGURATION.read_text(encoding='utf-8').splitlines()) if m}
-        self.assertEqual(len(rows), 11, 'one per service')
+        self.assertEqual(len(rows), 12, 'one per service')
         for name, value in rows.items():
             self.assertLessEqual(float(value), 2, f'{name}: the VPS column assumes 2 vCPU')
         self.assertGreaterEqual(float(rows['MEMORY_MCP_CPUS']), 1, 'memory-mcp reserializes up to 64 MiB in its event loop: half a CPU doubles the stall')
@@ -205,7 +205,7 @@ class DocumentedHealthchecksTests(unittest.TestCase):
             self.assertIn(str(check['interval']).replace('s', ' s'), cells[1:], (name, 'interval'))
             self.assertIn(str(check['timeout']).replace('s', ' s'), cells[1:], (name, 'timeout'))
             self.assertIn(str(check['retries']), cells[1:], (name, 'retries'))
-        self.assertEqual(checked, 6, 'ollama, memory-postgres, memory-api, memory-mcp, memory-web and memory-worker')
+        self.assertEqual(checked, 7, 'ollama, memory-postgres, memory-api, memory-mcp, memory-web, memory-worker and memory-probe')
 
     def test_the_unhealthy_time_is_interval_times_retries(self):
         for name, service in compose()['services'].items():
@@ -214,3 +214,63 @@ class DocumentedHealthchecksTests(unittest.TestCase):
                 seconds = int(check['interval'].rstrip('s'))*check['retries']
                 line = next(l for l in healthcheck_section().splitlines() if l.startswith(f'| `{name}` |'))
                 self.assertIn(f'{seconds} s', line, name)
+
+
+class ProbeServiceTests(unittest.TestCase):
+    """T-75 (CA-30): the `memory-probe` service is optional (a profile of its own), publishes nothing, holds no credential of its own and changes no file the installation mounts."""
+    CREDENTIAL = re.compile(r'PASSWORD|TOKEN|SECRET|KEY', re.I)
+    # The host files the installation mounts today (the proxy's template, the nginx configuration, the secrets): the probe adds none and changes none.
+    MOUNTED_BEFORE = {'./ollama-proxy/default.conf.template:/etc/nginx/templates/default.conf.template:ro'}
+
+    def setUp(self):
+        self.document = compose()
+        self.services = self.document['services']
+        self.probe = self.services['memory-probe']
+
+    def test_it_has_a_profile_of_its_own_and_the_common_hardening_limits_logs_and_a_healthcheck(self):
+        self.assertEqual(self.probe['profiles'], ['probe'])
+        self.assertEqual([name for name, service in self.services.items() if 'probe' in service.get('profiles', [])], ['memory-probe'])
+        for key in ('read_only', 'cap_drop', 'security_opt', 'tmpfs', 'logging', 'restart', 'init', 'stop_grace_period', 'healthcheck'):
+            self.assertIn(key, self.probe, key)
+        self.assertEqual(self.probe['stop_grace_period'], '15s')  # the retirement after a signal has 8 s (docs/operations.md)
+        self.assertEqual(self.probe['command'], ['probe', '--loop'])
+        self.assertEqual(self.probe['environment']['MEMORY_PROBE_INTERVAL'], '${MEMORY_PROBE_INTERVAL:-300}')
+        self.assertEqual(self.probe['environment']['MEMORY_QUEUE_STUCK_SECONDS'], '${MEMORY_QUEUE_STUCK_SECONDS:-900}')
+        self.assertEqual(self.probe['environment']['MEMORY_PROBE_TIMEOUT'], '${MEMORY_PROBE_TIMEOUT:-120}')
+
+    def test_it_publishes_no_port_and_is_only_on_the_database_network(self):
+        self.assertNotIn('ports', self.probe)
+        self.assertNotIn('expose', self.probe)
+        self.assertEqual(self.probe['networks'], ['memory-data'])  # internal: it reaches memory-api there, and nothing reaches it
+
+    def test_no_service_mounts_a_credential_outside_the_documented_variables(self):
+        documented = CONFIGURATION.read_text(encoding='utf-8')
+        declared = set(self.document['secrets'])
+        for name, service in self.services.items():
+            self.assertLessEqual(set(service.get('secrets', [])), declared, name)
+            for variable in service.get('environment', {}):
+                if self.CREDENTIAL.search(variable):
+                    self.assertTrue(variable.endswith('_FILE'), f'{name}: {variable} carries a credential in a variable, not a file')
+            for volume in service.get('volumes', []):
+                source = str(volume).split(':')[0]
+                self.assertFalse(re.search(r'secret|\.key|\.pem|credential|id_rsa|\.ssh', source, re.I), f'{name}: {volume}')
+        for variable in self.probe['environment']:
+            if variable.startswith('MEMORY_PROBE_') and self.CREDENTIAL.search(variable):
+                self.assertIn(f'`{variable}`', documented, variable)  # the probe's own variables are documented
+        self.assertEqual(self.probe['secrets'], ['memory_dsn'])
+        self.assertEqual(self.probe['volumes'], ['memory-backups:/backups'])  # the volume where `probe-provision` leaves the key file: no host path at all
+        self.assertNotIn('MEMORY_PROBE_KEY_FILE', self.probe['environment'])  # the command reads /backups/kairos-probe.key by default: no key path in the compose file
+        self.assertNotIn('--key-file', self.probe['command'])
+
+    def test_the_files_the_installation_mounts_do_not_change(self):
+        host = {str(v) for name, service in self.services.items() if name != 'memory-probe' for v in service.get('volumes', []) if str(v).startswith(('.', '$', '/'))}
+        self.assertTrue(self.MOUNTED_BEFORE <= host)
+        self.assertFalse([v for v in self.probe.get('volumes', []) if str(v).startswith(('.', '$', '/'))], 'the probe mounts no host file')
+        self.assertEqual(self.services['ollama']['volumes'], ['./ollama-proxy/default.conf.template:/etc/nginx/templates/default.conf.template:ro'])
+
+    def test_the_variables_of_the_service_are_documented_with_the_defaults_of_the_compose_file(self):
+        text = CONFIGURATION.read_text(encoding='utf-8')
+        for name, default in (('MEMORY_PROBE_INTERVAL', '300'), ('MEMORY_QUEUE_STUCK_SECONDS', '900'), ('MEMORY_PROBE_TIMEOUT', '120')):
+            row = next((line for line in text.splitlines() if line.startswith(f'| `{name}`')), None)
+            self.assertIsNotNone(row, name)
+            self.assertIn(f'`{default}`', row, name)

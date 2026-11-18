@@ -489,6 +489,7 @@ Todos los servicios del Compose (también `ollama`, `memory-postgres` y `memory-
 | `memory-api` | `GET /health/ready` (base incluida) | 15 s | 5 s | 6 | 90 s |
 | `memory-mcp` | `GET /health/live` | 15 s | 5 s | 6 | 90 s |
 | `memory-web` | `GET /health/live` del propio proxy nginx (no llama a `memory-api`) | 15 s | 5 s | 6 | 90 s |
+| `memory-probe` | el fichero de métricas de la sonda (`MEMORY_PROBE_METRICS_FILE`) se ha escrito hace menos de tres intervalos más 300 s (una ejecución lo escribe aunque falle); `start_period: 120s` | 60 s | 5 s | 3 | 180 s |
 | `memory-worker` | el plazo del latido de `/tmp/kairos-worker-heartbeat` (el segundo antes del cual toca el siguiente) no ha pasado; `start_period: 60s` | 30 s | 5 s | 3 | 90 s tras el plazo del último latido |
 
 «`unhealthy` tras» es `interval × retries` desde la primera sonda que falla, más la duración de las sondas (Docker espera `interval` después de que una sonda termina). `memory-web` y `memory-worker` son los dos healthchecks que añadió la iniciativa de operación fiable: una instalación ya desplegada los recoge, igual que los límites de memoria y CPU ([configuración](configuration.md#límites-de-memoria-y-cpu-de-los-servicios)), solo en su próximo `up`. `memory-web` depende de `memory-api` y `memory-mcp` sanos, por lo que un `unhealthy` de la web con ambos sanos apunta al propio nginx. Detalle del latido del worker: ver «El worker sin base de datos y los trabajos agotados».

@@ -749,6 +749,46 @@ class CommandTests(unittest.TestCase):
         self.assertIsNone(report['queue'])  # no database settings: nothing to read, and no failure of the probe
         self.assertEqual(report['status'], 'probe_ok')
 
+    # -- T-75: `admin probe --loop`, what the memory-probe service runs ---------------------------------------------------------------
+
+    def test_t75_the_loop_runs_every_interval_keeps_going_after_a_failure_and_stops_when_the_service_is_stopped(self):
+        self.key.write_text('mp_token\n', encoding='utf-8')
+        clock = Clock()
+        servers = iter([FakeServer(clock), FakeServer(clock, write_status=500), FakeServer(clock, raises=('status', KeyboardInterrupt())), FakeServer(clock)])
+        current = []
+
+        class Rotating:
+            def __init__(self, url, token):
+                current.append(next(servers))
+
+            def call(self, *arguments, **options):
+                return current[-1].call(*arguments, **options)
+        sleeps = []
+        out, err = io.StringIO(), io.StringIO()
+        with patch.object(admin, 'LOOP_CYCLES', None), patch('memory_platform.admin.time', SimpleNamespace(sleep=sleeps.append)), patch('memory_platform.probe.time', SimpleNamespace(monotonic=clock, sleep=clock.sleep)), \
+                patch.dict(os.environ, {'MEMORY_PROBE_INTERVAL': '45'}), patch.object(probe, 'HttpApi', Rotating), patch.object(probe, 'purge_after', lambda *arguments: None), \
+                patch.object(probe, 'queue_check', lambda *arguments: None), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            with self.assertRaises(SystemExit) as stop:
+                admin.main(['probe', '--loop', '--metrics-file', str(self.metrics), '--key-file', str(self.key)])
+        self.assertEqual(stop.exception.code, 'probe_interrupted: the service was stopped')
+        self.assertEqual(sleeps, [45, 45])  # three runs: ok, failed (the loop goes on), interrupted (it ends); a sleep between runs only
+        reports = [json.loads(line) for line in out.getvalue().splitlines() if line.startswith('{"')]
+        self.assertEqual([r['status'] for r in reports], ['probe_ok', 'probe_failed', 'probe_failed'])
+        self.assertIn('probe_failed: stage=write code=server_error', err.getvalue())
+        self.assertEqual(len(current), 3)
+
+    def test_t75_the_interval_is_whole_seconds_from_10_to_86400_and_a_bad_one_stops_before_any_run(self):
+        self.assertEqual((probe.probe_interval({}), probe.probe_interval({'MEMORY_PROBE_INTERVAL': '300'}), probe.probe_interval({'MEMORY_PROBE_INTERVAL': '10'})), (300, 300, 10))
+        for bad in ('9', '86401', '5m', '1.5', '-5', 'x', '٣٠٠'):
+            with self.subTest(bad):
+                with self.assertRaises(probe.ProbeError) as error:
+                    probe.probe_interval({'MEMORY_PROBE_INTERVAL': bad})
+                self.assertEqual(error.exception.code, 'interval_invalid')
+        self.key.write_text('mp_token\n', encoding='utf-8')
+        code, out, _ = self.command('--loop', api=object(), environ={'MEMORY_PROBE_INTERVAL': '5m'})
+        self.assertTrue(str(code).startswith('interval_invalid: '), code)
+        self.assertEqual(out, '')
+
     def test_a_purge_that_fails_is_logged_and_does_not_change_the_result_of_the_probe(self):
         self.key.write_text('mp_token\n', encoding='utf-8')
         clock = Clock()
