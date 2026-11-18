@@ -2392,3 +2392,112 @@ SHA-256: `64b36a89bce37edcb3e826986c0a998f3725bf473ca1a3acad22f4ca1183b9d5`.
 ### T-93 (cierre)
 
 **Notas** (2026-11-18): Cerrada en el intento 2. Intento 1: lentes A, B y C; 0 Critical, 2 Important (meta del simulado sin enmienda; meta sin prueba que la fije) y 9 Minor; decisión del usuario sobre A1, «12 de 24 en la CI»; fix1 `819035c`..`3a347f0`. Intento 2: A, B y C en un solo revisor; 10 de 11 gaps corregidos, A6 a medias y 2 Minor nuevos (N1, N2: punteros), corregidos por el orquestador al cerrar. Suite 1553 en verde (`kairos-test:i3p14f`, 0 fallos, errores y omitidos); `scope-check.py --base main` exit 0. Mutantes: la Lente A mató los 6 de `thresholds.json` en el intento 2; B1 con 3000 conjuntos aleatorios, 0 violaciones. usage-meter no se abrió para la revisión: las horas son la duración medida de los revisores (intento 1: 0.40h, tres lentes en paralelo; intento 2: 0.33h) más 0.22h estimadas del cierre. Tablas en `execution-history.md` (compactaciones 27 y 29, con SHA-256); resumen en `review.md`.
+
+## Compactación 2026-11-18 (30) — resúmenes de revisión de las fases 6 a 11
+
+Secciones de revisión de `tasks.md` movidas literalmente aquí antes de la fase 15, para mantener `tasks.md` por debajo del límite de lectura. El SHA-256 de cada bloque es sobre su texto literal en `tasks.md` (cabecera incluida).
+
+### Revisión de dos lentes — intento 1: Fase 6 (T-35..T-42) (T-35, T-36, T-37, T-38, T-39, T-40, T-41, T-42)
+
+SHA-256: `f2371b5e425bf09096355d773cc1552b70948600e03132f77827dab5bd250af5`.
+
+
+Archivada en `execution-history.md` (sección «Compactación 2026-11-17 — notas de las fases 8 y 9 y revisiones de las fases 6 y 7»); resumen de la fase en `review.md`.
+
+### Revisión de dos lentes — intento 2: Fase 6 tras fix1 (T-35, T-36, T-37, T-39)
+
+SHA-256: `f67b8d02188be455dbbede50d645aff0085319fe0f4ec5ea568fe834028ffdfa`.
+
+
+Archivada en `execution-history.md` (sección «Compactación 2026-11-17 — notas de las fases 8 y 9 y revisiones de las fases 6 y 7»); resumen de la fase en `review.md`.
+
+### Revisión de dos lentes — intento 3: Fase 6 tras fix2 (T-35, T-36, T-37, T-39, T-40, T-42)
+
+SHA-256: `c4dc7a63a978505503f9c45a1ca685f88b2bcfb8972727eb78627d1a3e71cd0b`.
+
+
+Archivada en `execution-history.md` (sección «Compactación 2026-11-17 — notas de las fases 8 y 9 y revisiones de las fases 6 y 7»); resumen de la fase en `review.md`.
+
+### Revisión de dos lentes — intento 2: Fase 7 tras fix1 (T-44, T-45, T-46, T-47, T-48)
+
+SHA-256: `f21ccfba04e34a65d6277adb064f82a6b2ff44277986454f3e570fda66c4d7d7`.
+
+
+Archivada en `execution-history.md` (sección «Compactación 2026-11-17 — notas de las fases 8 y 9 y revisiones de las fases 6 y 7»); resumen de la fase en `review.md`.
+
+### Revisión de dos lentes — intento 1: Fase 9 (T-54..T-59) (T-54, T-55, T-56, T-57, T-58, T-59)
+
+SHA-256: `3716afb0d274896bae6e5374f78ff80e90b73190c030577ab43c474043d7e377`.
+
+
+Archivada en `execution-history.md` (sección «Compactación 2026-11-17 (2) — revisiones de la fase 9, intentos 1 a 3»); resumen de la fase en `review.md`.
+
+### Revisión de dos lentes — intento 2: Fase 9 tras fix1 (T-54, T-55, T-56, T-59)
+
+SHA-256: `d3fafd16885b360d0b0dea7fff01448433b0d9b224b0cdb67ac3c37866d1304a`.
+
+
+Archivada en `execution-history.md` (sección «Compactación 2026-11-17 (2) — revisiones de la fase 9, intentos 1 a 3»); resumen de la fase en `review.md`.
+
+### Revisión de dos lentes — intento 3: Fase 9 tras fix2 (T-54, T-55, T-56, T-59)
+
+SHA-256: `08bf0244c86434e7a5705f334bab6aa495ea0cd4a477a41aeb8329ec97ee9c3f`.
+
+
+Archivada en `execution-history.md` (sección «Compactación 2026-11-17 (2) — revisiones de la fase 9, intentos 1 a 3»); resumen de la fase en `review.md`.
+
+### Revisión de dos lentes — intento 4: Fase 9 tras fix3 — ciclo 2, abierto con OK del usuario: «Las preguntas toma la mejor decisión» (T-54, T-55, T-56)
+
+SHA-256: `5b029e5126663f1034f11118691d85f8cf08ef0e04d09a6cfe58cfec7dbf1552`.
+
+
+Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (23) — notas de T-81 a T-85», Fase 9, intento 4).
+
+### Revisión de dos lentes — intento 1: Fase 10 (T-61 a T-65) (T-61, T-62, T-63, T-64, T-65)
+
+SHA-256: `961791e70067bded47b6ec6de81e8d6e5eef5b9ec3355dc7034a13606182e8ed`.
+
+
+Archivada en `execution-history.md` (sección «Compactación 2026-11-17 (5) — revisión de la fase 10, intento 1»). Resumen: lentes A+B+C+D; 1 Important (etiquetado desde `:latest`) y 10 Minor; n.º 1-8 y 10 corregidos en fix1 (`1b46eb4`, `508f209`), n.º 9 descartado (rebatido), n.º 11 deuda → T-66.
+
+### Revisión de dos lentes — intento 2: Fase 10 tras fix1 (T-61, T-62, T-63, T-64, T-65)
+
+SHA-256: `fc3b982692514fc8bfe21fb1a2cf74ab9f9b4765385cc3738e0950de1f2b54e2`.
+
+
+Archivada en `execution-history.md` (sección «Compactación 2026-11-17 (7) — revisión de la fase 10, intento 2»). Resumen: lentes B y A+C; 2 Important (destino del retroceso tomado de lo que corría antes y no del último despliegue bueno) y 6 Minor (bloqueo con ventana, Windows, JSON no objeto, gramática de tags, veredicto del ensayo, `.broken` huérfano); todos corregidos en fix2 (`c0764e5`, `9585bf3`, `9582280`, `16e2b51`).
+
+### Revisión de dos lentes — intento 3: Fase 10 tras fix2 (T-61, T-62, T-63, T-64, T-65)
+
+SHA-256: `754c6a06ae7d42601d23cd38df42b3fe9bfd1832a8ae2ad059cca6bf7ed91a3c`.
+
+
+Archivada en `execution-history.md` (sección «Compactación 2026-11-17 (8) — revisión de la fase 10, intento 3»). Resumen: lentes B y A+C; 2 Important (`:latest` desfasado tras `already_at_previous`; despliegue interrumpido sin registro de etiquetas) y 7 Minor (bloqueo: ventana tras `is_current`, TOCTOU de `remove_foreign`, `O_NOFOLLOW`; validación de ids y `TAG_MARK`; aviso de despliegue interrumpido; CA-21 como enmienda). Ciclo 2 abierto por el orquestador con la delegación del usuario («Las preguntas toma la mejor decisión»); fix3 corrige todo.
+
+### Revisión de dos lentes — intento 4: Fase 10 tras fix3 — ciclo 2, abierto con OK del usuario: «Las preguntas toma la mejor decisión» (T-61, T-62, T-63, T-64, T-65)
+
+SHA-256: `a5f5f4005e93e2c04edcfa825b3aa1b67f314e212ebbbfe6a4da5b4b8ec4bfb2`.
+
+
+Archivada en `execution-history.md` (sección «Compactación 2026-11-17 (10) — revisión de la fase 10, intento 4»). Resumen: lentes B y A+C; 1 Important (instalación sin `images.good`: una interrupción o fallo temprano pierde la referencia a la versión buena) y 8 Minor (señales en los manejadores, `migrate` huérfano, mensajes y notas de `--break-lock`, `interrupted` en `engine`, escapes de terminal, enlace duro); fix4 corrige todo.
+
+### Revisión de dos lentes — intento 5: Fase 10 tras fix4 (T-61, T-62, T-63, T-65)
+
+SHA-256: `5ebb8fcdd9d5fa6f12576187f732bee5f8c7abeb7378d4bb563df4819e404dfe`.
+
+
+Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (23) — notas de T-81 a T-85», Fase 10, intento 5).
+
+### Revisión de dos lentes — intento 1: Fase 11 (T-68 a T-71) (T-68, T-69, T-70, T-71)
+
+SHA-256: `e0cf942f69acba2e119caba3f23c47ae977a3fdf8414fe8816efc532369d2e48`.
+
+
+Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (14) — revisión de la fase 11, intento 1»). Resumen: lentes A, B y C+D; 3 Important (falso verde semántico, reutilización de una clave con el dueño deshabilitado, restos retirados con vector sin podar) y 9 Minor; fix1 corrige todo.
+
+### Revisión de dos lentes — intento 2: Fase 11 tras fix1 (T-68, T-69, T-70, T-71)
+
+SHA-256: `f99e8e1957bdabb4f917b351c650fa0d4c53f4c3057a420505583b2a1c821a49`.
+
+
+Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (16) — revisión de la fase 11, intento 2»). Resumen: lentes A, B y C+D; 0 Critical, 0 Important, 7 Minor; la fase cierra con fix2.
