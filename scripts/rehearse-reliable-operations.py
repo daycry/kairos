@@ -30,7 +30,15 @@ Stage `rollback` (closing of C-04: CA-24 and the rehearsal case of CA-21) runs o
 
 and ends with `rollback_ok`, with the measurements under `rollback` and `worker_unhealthy`. It never touches `knowledge-graphs-*`, the Ollama of the host or any other project: the whole run is the
 project given with --project-name (`kairos-ops-<name>`) and the resources the restore rehearsal names by exact name (the tagged images and the faulty ones included, removed by exact
-reference or id at the end). `all` runs stage `a` and then the `rollback` steps on the same project.
+reference or id at the end). 
+Stage `probe` (C-06, closing criterion 3) runs on ONE isolated project: the deployment, `probe-provision`, then `admin probe` with the definition of the `memory-probe` service:
+
+  1. probe_healthy         ends 0 with `probe_ok`, `kairos_probe_success 1` in the metrics file and a queue read that is not stuck
+  2. probe_worker_stopped  with `memory-worker` stopped (and started again at the end, whatever happens) it fails at stage `index` with `timeout` within MEMORY_PROBE_TIMEOUT, exits non-zero,
+                           writes `kairos_probe_success 0` and, with MEMORY_QUEUE_STUCK_SECONDS lowered, reports `queue_stuck`
+  3. probe_recovered       with the worker back and the queue drained the probe ends `probe_ok` again
+
+and ends with `probe_rehearsal_ok`. `all` runs stage `a`, then the `rollback` steps and then the `probe` ones on the same project.
 """
 from __future__ import annotations
 
@@ -47,7 +55,7 @@ import uuid
 from datetime import datetime, timezone
 
 ROOT = Path(__file__).resolve().parents[1]
-STAGES = ('a', 'rollback', 'all')
+STAGES = ('a', 'rollback', 'probe', 'all')
 PROJECT_ID = 'rehearsal'  # the project the deployment's own round trip creates (capture on)
 SEED_MODEL, SEED_DIMS = 'rehearsal-seed', 768  # a model no index covers; the dimension of the usual embedding models
 DEFAULT_SEED_ROWS, DEFAULT_QUEUE_JOBS = 30000, 300
@@ -60,6 +68,9 @@ FAULTY_LABEL = 'com.kairos.rehearsal=faulty-release'
 HEALTH_SLACK_SECONDS = 10  # only the margin of the WAIT, so that a late `unhealthy` can still be measured and reported; the verdict (`within_bound`) is strict and never uses it
 POLL_PAUSE_SECONDS = 3  # the pause between two polls of the health: it lengthens the wait only; the instant that counts is the one `State.Health.Log` holds, reported apart
 UNHEALTHY_EXTRA_SECONDS, RECOVER_SECONDS, HEALTHY_SECONDS = 240, 240, 300
+PROBE_TIMEOUT_SECONDS = 30  # MEMORY_PROBE_TIMEOUT of the probe runs: short, so that the stopped-worker case does not wait the 120 s of the default
+PROBE_STUCK_SECONDS = 10  # MEMORY_QUEUE_STUCK_SECONDS of the stopped-worker run: below the 30 s that the embed job waits, so `queue_stuck` is the verdict
+PROBE_METRICS_FILE = '/backups/kairos-probe.prom'  # the default of `admin probe`, in the volume of the isolated project
 FINGERPRINT_CODE = '''
 import json, time
 from memory_platform.config import Settings
@@ -444,6 +455,71 @@ class OperationsRehearsal(restore_module.Rehearsal):
             return result
         return ('incomplete: ' if result == 'complete' else result + ', ') + ', '.join(extra)
 
+    # -- stage `probe` (T-77, criterion of closing 3): the round trip healthy and with memory-worker stopped ------------------------------------------
+
+    def probe_run(self, label, timeout, stuck=None):
+        """One `admin probe` with the definition of the `memory-probe` service (profile `probe`: its image, secret, volume and network) and the command of a single run. Returns (exit code, the report
+        it printed, the metrics file it left). The probe key and the metrics file live in the volume of the isolated project, never in the host."""
+        settings = ['-e', f'MEMORY_PROBE_TIMEOUT={timeout}'] + (['-e', f'MEMORY_QUEUE_STUCK_SECONDS={stuck}'] if stuck else [])
+        out = self.run(self.compose() + ['--profile', 'probe', 'run', '--rm', '--no-deps', '-T', '--name', self.container(label)] + settings + ['memory-probe', 'probe'],
+                       timeout=restore_module.DEPLOY_TIMEOUT, environment=self.compose_environment(), check=False)
+        code = self.last_code
+        lines = [line for line in out.splitlines() if line.startswith('{')]
+        report = self.json(lines[-1] if lines else '')
+        metrics = self.compose_run('run', '--rm', '--no-deps', '-T', '--name', self.container(label + '-metrics'), '--entrypoint', 'cat', 'memory-admin', PROBE_METRICS_FILE)
+        return code, report, metrics
+
+    def probe_provision(self):
+        self.step('probe_provision')
+        out = self.compose_run('run', '--rm', '--no-deps', '-T', '--name', self.container('probe-provision'), 'memory-admin', 'probe-provision')
+        lines = [line for line in out.splitlines() if line.startswith('{')]
+        self.report['probe_provision'] = {'status': self.json(lines[-1] if lines else '').get('status')}
+
+    def probe_healthy(self):
+        """A healthy installation: the probe ends with 0, `probe_ok` and `kairos_probe_success 1`; the queue it read (through the database of the project) is not stuck."""
+        self.step('probe_healthy')
+        code, report, metrics = self.probe_run('probe-ok', PROBE_TIMEOUT_SECONDS)
+        if code != 0 or report.get('status') != 'probe_ok' or not re.search(r'^kairos_probe_success 1\.0$', metrics, re.M):
+            raise RehearsalError('The probe of a healthy installation did not end probe_ok with kairos_probe_success 1: ' + json.dumps({'exit': code, 'status': report.get('status'), 'stage': report.get('stage'), 'code': report.get('code')}))
+        if not report.get('queue') or report['queue'].get('stuck'):
+            raise RehearsalError('The probe of a healthy installation did not read a queue that is not stuck: ' + json.dumps(report.get('queue')))
+        self.report['probe_healthy'] = {'exit': code, 'status': report['status'], 'stages': report.get('stages'), 'total_seconds': report.get('total_seconds'), 'queue': report['queue'], 'kairos_probe_success': 1}
+
+    def probe_worker_stopped(self):
+        """`memory-worker` stopped (a plain `docker stop`, as in the other stages): the probe must fail at stage `index` with `timeout` within MEMORY_PROBE_TIMEOUT, exit non-zero, write
+        `kairos_probe_success 0` and, with the threshold lowered, report `queue_stuck` (the embed job it wrote waits for a worker that is not there). The worker is started again at the end, always."""
+        self.step('probe_worker_stopped')
+        self.stop('memory-worker')
+        try:
+            code, report, metrics = self.probe_run('probe-stopped', PROBE_TIMEOUT_SECONDS, stuck=PROBE_STUCK_SECONDS)
+        finally:
+            self.start('memory-worker')
+        spent = round((report.get('stages') or {}).get('write', 0) + (report.get('stages') or {}).get('index', 0), 3)
+        if code == 0 or (report.get('status'), report.get('stage'), report.get('code')) != ('probe_failed', 'index', 'timeout') or not re.search(r'^kairos_probe_success 0\.0$', metrics, re.M):
+            raise RehearsalError('The probe with memory-worker stopped did not fail at stage index with timeout and kairos_probe_success 0: ' + json.dumps({'exit': code, 'status': report.get('status'), 'stage': report.get('stage'), 'code': report.get('code')}))
+        if spent > PROBE_TIMEOUT_SECONDS + 1:
+            raise RehearsalError(f'The probe failed after {spent} s of write and index, above MEMORY_PROBE_TIMEOUT ({PROBE_TIMEOUT_SECONDS} s)')
+        if not (report.get('queue') or {}).get('stuck'):
+            raise RehearsalError('The probe did not report queue_stuck with the embed job waiting and the threshold at ' + str(PROBE_STUCK_SECONDS) + ' s: ' + json.dumps(report.get('queue')))
+        self.report['probe_worker_stopped'] = {'exit': code, 'status': report['status'], 'stage': report['stage'], 'code': report['code'], 'seconds_to_failure': spent, 'timeout_seconds': PROBE_TIMEOUT_SECONDS,
+                                               'retired': report.get('retired'), 'queue': report['queue'], 'kairos_probe_success': 0}
+
+    def probe_recovered(self):
+        """The worker is back: it drains what the failed probe left and the next probe ends `probe_ok` again."""
+        self.step('probe_recovered')
+        self.wait_for('the worker running', lambda: self.worker()[2], READY_SECONDS)
+        def drained():
+            states = self.job_states()
+            return not (states.get('pending', 0) + states.get('running', 0) + states.get('unknown', 0))
+        self.wait_for('the queue drained', drained, DRAIN_SECONDS, pause=5)
+        code, report, metrics = self.probe_run('probe-recovered', PROBE_TIMEOUT_SECONDS)
+        if code != 0 or report.get('status') != 'probe_ok' or not re.search(r'^kairos_probe_success 1\.0$', metrics, re.M):
+            raise RehearsalError('The probe did not end probe_ok once memory-worker was running again: ' + json.dumps({'exit': code, 'status': report.get('status'), 'stage': report.get('stage'), 'code': report.get('code')}))
+        self.report['probe_recovered'] = {'exit': code, 'status': report['status']}
+
+    def probe_steps(self):
+        return [self.probe_provision, self.probe_healthy, self.probe_worker_stopped, self.probe_recovered]
+
     # -- the rehearsal ----------------------------------------------------------------------------------------------------------
 
     def rollback_steps(self):
@@ -452,6 +528,8 @@ class OperationsRehearsal(restore_module.Rehearsal):
     def sequence(self):
         if self.args.stage == 'rollback':
             return [self.deploy] + self.rollback_steps()
+        if self.args.stage == 'probe':
+            return [self.deploy] + self.probe_steps()
         timings = self.report.setdefault('timings', {})
 
         def cycle():
@@ -460,7 +538,7 @@ class OperationsRehearsal(restore_module.Rehearsal):
         def restore():
             timings['restore_step_seconds'] = self.timed(super(OperationsRehearsal, self).restore)
         stage_a = [self.deploy, self.seed_embeddings, self.make_keys, cycle, self.download, self.verify, self.decrypt, restore, self.measure_fingerprints, self.queue_jobs, self.database_restart]
-        return stage_a + (self.rollback_steps() if self.args.stage == 'all' else [])
+        return stage_a + (self.rollback_steps() + self.probe_steps() if self.args.stage == 'all' else [])
 
     def rehearse(self):
         failure = None
@@ -486,7 +564,7 @@ class OperationsRehearsal(restore_module.Rehearsal):
             raise failure
         if cleanup != 'complete':
             raise RehearsalError('The rehearsal succeeded but its cleanup is ' + cleanup)
-        status = {'a': 'restored_and_content_verified', 'rollback': 'rollback_ok', 'all': 'rehearsal_ok'}[self.args.stage]
+        status = {'a': 'restored_and_content_verified', 'rollback': 'rollback_ok', 'probe': 'probe_rehearsal_ok', 'all': 'rehearsal_ok'}[self.args.stage]
         return dict(status=status, project=self.project, stage=self.args.stage, steps=self.steps, cleanup=cleanup, **self.report)
 
 
@@ -494,7 +572,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--project-name', required=True, help='kairos-ops-<name>: the isolated project of the rehearsal (created and removed here)')
     parser.add_argument('--embed-stub', action='store_true', help='Required: the simulated embedding provider; the Ollama of the host is never used')
-    parser.add_argument('--stage', choices=STAGES, default='all', help='a: the closing of milestone A (restore runbook, fingerprints, database restart); rollback: two tagged deployments, --rollback without migrating and the worker turning unhealthy with its loop stopped (C-04); all: every stage there is')
+    parser.add_argument('--stage', choices=STAGES, default='all', help='a: the closing of milestone A (restore runbook, fingerprints, database restart); probe: the round trip healthy and with memory-worker stopped (C-06); rollback: two tagged deployments, --rollback without migrating and the worker turning unhealthy with its loop stopped (C-04); all: every stage there is')
     parser.add_argument('--seed-rows', type=int, default=DEFAULT_SEED_ROWS, help='Rows of memory.embeddings seeded before the copy (default %(default)s)')
     parser.add_argument('--queue-jobs', type=int, default=DEFAULT_QUEUE_JOBS, help='Events written (one embed job each) before the database is stopped (default %(default)s)')
     parser.add_argument('--api-port', type=int, default=restore_module.DEFAULT_API_PORT)

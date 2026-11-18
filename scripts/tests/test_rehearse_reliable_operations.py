@@ -374,7 +374,7 @@ class RollbackStageTests(unittest.TestCase):
         stage_all = ops.OperationsRehearsal(arguments(stage='all'), root=ROOT, run=stack)
         names = [getattr(action, '__name__', '') for action in stage_all.sequence()]
         self.assertEqual(names[:1], ['deploy'])
-        self.assertEqual(names[-5:], ['second_deploy', 'tagged_images', 'faulty_release', 'rollback_deployment', 'worker_unhealthy'])
+        self.assertEqual(names[-9:-4], ['second_deploy', 'tagged_images', 'faulty_release', 'rollback_deployment', 'worker_unhealthy'])  # the probe steps of T-77 come after
         self.assertEqual([getattr(a, '__name__', '') for a in ops.OperationsRehearsal(arguments(stage='a'), root=ROOT, run=stack).sequence()].count('second_deploy'), 0)
         with patch.object(ops.OperationsRehearsal, 'apply', return_value={'status': 'rollback_ok'}):
             self.assertEqual(ops.main(['--project-name', PROJECT, '--embed-stub', '--stage', 'rollback']), 0)
@@ -596,6 +596,129 @@ class RollbackStageTests(unittest.TestCase):
                 self.assertEqual(command[command.index('-p') + 1], PROJECT)
             if command[:2] in (['docker', 'kill'], ['docker', 'commit'], ['docker', 'create']):
                 self.assertTrue(any(PROJECT in part or part.startswith('sha256:') or part == 'memory-worker-container' for part in command), command)
+
+
+class FakeProbeDocker(FakeDocker):
+    """`memory-probe` runs and the metrics file, answered the way the real ones would, in the order of the scenario (`runs`: a list of (exit code, report))."""
+
+    def __init__(self, runs, metrics=None, **faults):
+        super().__init__(**faults)
+        self.runs, self.metrics = list(runs), list(metrics or [])
+        self.stopped_when_run = []
+
+    def __call__(self, command, timeout=None, environment=None):
+        if 'memory-probe' in command and 'run' in command:
+            self.commands.append(list(command))
+            self.stopped_when_run.append(any(c[:2] == ['docker', 'stop'] for c in self.commands) and not any(c[:2] == ['docker', 'start'] for c in self.commands))
+            code, report = self.runs.pop(0)
+            return code, json.dumps(report) + chr(10), ('probe_failed: stage=index code=timeout' + chr(10) if code else '')
+        if 'cat' in command and ops.PROBE_METRICS_FILE in command:
+            self.commands.append(list(command))
+            return 0, self.metrics.pop(0), ''
+        if 'probe-provision' in command:
+            self.commands.append(list(command))
+            return 0, json.dumps({'status': 'provisioned'}) + chr(10), ''
+        return super().__call__(command, timeout, environment)
+
+
+OK = {'status': 'probe_ok', 'kairos_probe_success': 1, 'stages': {'write': 0.2, 'index': 4.0, 'search': 0.5, 'retire': 0.3}, 'total_seconds': 5.0, 'queue': {'oldest_pending_seconds': 0.0, 'threshold_seconds': 900.0, 'stuck': False}}
+STOPPED = {'status': 'probe_failed', 'stage': 'index', 'code': 'timeout', 'kairos_probe_success': 0, 'stages': {'write': 0.2, 'index': 29.7, 'retire': 0.4}, 'retired': True,
+           'queue': {'oldest_pending_seconds': 31.0, 'threshold_seconds': 10.0, 'stuck': True}}
+SUCCESS_1, SUCCESS_0 = 'kairos_probe_success 1.0' + chr(10), 'kairos_probe_success 0.0' + chr(10)
+
+
+class ProbeStageTests(unittest.TestCase):
+    """T-77 (criterion of closing 3): the probe healthy and with `memory-worker` stopped, pinned against a double of Docker (nothing here needs Docker)."""
+
+    def rehearsal(self, runs, metrics, **faults):
+        docker = FakeProbeDocker(runs, metrics, **faults)
+        rehearsal = ops.OperationsRehearsal(arguments(stage='probe'), root=ROOT, run=docker, portal=FakePortal)
+        rehearsal.sleep = lambda seconds: None
+        ticks = iter(range(0, 100_000, 1))
+        rehearsal.clock = lambda: next(ticks)
+        rehearsal.work = Path(ROOT / '.private' / 'unit-test-never-written')
+        return rehearsal, docker
+
+    def healthy_stopped_recovered(self):
+        return self.rehearsal([(0, OK), (1, STOPPED), (0, OK)], [SUCCESS_1, SUCCESS_0, SUCCESS_1])
+
+    def test_the_stage_is_chosen_with_the_command_line_and_runs_the_deployment_then_the_probe_steps_in_order(self):
+        rehearsal, _ = self.healthy_stopped_recovered()
+        self.assertIn('probe', ops.STAGES)
+        self.assertEqual([getattr(a, '__name__', '') for a in rehearsal.sequence()], ['deploy', 'probe_provision', 'probe_healthy', 'probe_worker_stopped', 'probe_recovered'])
+        everything = ops.OperationsRehearsal(arguments(stage='all'), root=ROOT, run=FakeDocker())
+        self.assertEqual([getattr(a, '__name__', '') for a in everything.sequence()][-4:], ['probe_provision', 'probe_healthy', 'probe_worker_stopped', 'probe_recovered'])
+        with patch.object(ops.OperationsRehearsal, 'apply', return_value={'status': 'probe_rehearsal_ok'}):
+            self.assertEqual(ops.main(['--project-name', PROJECT, '--embed-stub', '--stage', 'probe']), 0)
+
+    def test_a_healthy_probe_ends_zero_and_a_stopped_worker_fails_at_index_with_success_zero_and_queue_stuck_and_is_started_again(self):
+        rehearsal, docker = self.healthy_stopped_recovered()
+        rehearsal.probe_provision()
+        rehearsal.probe_healthy()
+        rehearsal.probe_worker_stopped()
+        rehearsal.probe_recovered()
+        self.assertEqual(docker.stopped_when_run, [False, True, False], 'only the second run happens with memory-worker stopped')
+        report = rehearsal.report
+        self.assertEqual((report['probe_healthy']['exit'], report['probe_healthy']['status']), (0, 'probe_ok'))
+        stopped = report['probe_worker_stopped']
+        self.assertEqual((stopped['exit'], stopped['status'], stopped['stage'], stopped['code'], stopped['kairos_probe_success']), (1, 'probe_failed', 'index', 'timeout', 0))
+        self.assertLessEqual(stopped['seconds_to_failure'], ops.PROBE_TIMEOUT_SECONDS)
+        self.assertTrue(stopped['queue']['stuck'])
+        self.assertEqual(report['probe_recovered']['status'], 'probe_ok')
+        starts = [c for c in docker.commands if c[:2] == ['docker', 'start']]
+        self.assertEqual([c[-1] for c in starts], ['memory-worker-container', 'memory-worker-container'][:len(starts)])
+        self.assertTrue(starts, 'the worker is started again')
+
+    def test_the_probe_runs_use_the_service_definition_a_short_timeout_and_the_isolated_project_only(self):
+        rehearsal, docker = self.healthy_stopped_recovered()
+        for step in rehearsal.probe_steps():
+            step()
+        runs = [c for c in docker.commands if 'memory-probe' in c and 'run' in c]
+        self.assertEqual(len(runs), 3)
+        for command in runs:
+            self.assertEqual(command[command.index('-p') + 1], PROJECT)
+            self.assertIn(['--profile', 'probe'], [command[i:i+2] for i in range(len(command) - 1)])  # the `probe` profile
+            self.assertEqual(command[-2:], ['memory-probe', 'probe'])
+            self.assertIn('MEMORY_PROBE_TIMEOUT=%d' % ops.PROBE_TIMEOUT_SECONDS, command)
+        self.assertIn('MEMORY_QUEUE_STUCK_SECONDS=%d' % ops.PROBE_STUCK_SECONDS, runs[1])
+        for command in docker.commands:
+            text = ' '.join(command)
+            self.assertNotIn('knowledge-graphs-', text)
+            self.assertNotIn('knowledge-graphs_', text)
+            self.assertNotIn('11434', text)
+
+    def test_a_probe_that_does_not_behave_fails_the_rehearsal_and_the_worker_is_started_anyway(self):
+        cases = {
+            'healthy probe exits non-zero': ([(1, dict(OK))], [SUCCESS_1], 'probe_healthy'),
+            'healthy probe leaves success 0': ([(0, dict(OK))], [SUCCESS_0], 'probe_healthy'),
+            'healthy probe finds the queue stuck': ([(0, dict(OK, queue={'stuck': True}))], [SUCCESS_1], 'probe_healthy'),
+            'healthy probe read no queue': ([(0, dict(OK, queue=None))], [SUCCESS_1], 'probe_healthy'),
+        }
+        for label, (runs, metrics, step) in cases.items():
+            with self.subTest(label):
+                rehearsal, _ = self.rehearsal(runs, metrics)
+                with self.assertRaises(ops.RehearsalError):
+                    getattr(rehearsal, step)()
+        stopped_cases = {
+            'stopped worker but the probe passes': ([(0, dict(OK))], [SUCCESS_1]),
+            'fails at another stage': ([(1, dict(STOPPED, stage='write'))], [SUCCESS_0]),
+            'fails with another code': ([(1, dict(STOPPED, code='server_error'))], [SUCCESS_0]),
+            'success stays 1 in the file': ([(1, dict(STOPPED))], [SUCCESS_1]),
+            'fails later than MEMORY_PROBE_TIMEOUT': ([(1, dict(STOPPED, stages={'write': 1.0, 'index': 45.0}))], [SUCCESS_0]),
+            'no queue_stuck': ([(1, dict(STOPPED, queue={'stuck': False}))], [SUCCESS_0]),
+            'exit zero with a failed report': ([(0, dict(STOPPED))], [SUCCESS_0]),
+        }
+        for label, (runs, metrics) in stopped_cases.items():
+            with self.subTest(label):
+                rehearsal, docker = self.rehearsal(runs, metrics)
+                with self.assertRaises(ops.RehearsalError):
+                    rehearsal.probe_worker_stopped()
+                self.assertTrue([c for c in docker.commands if c[:2] == ['docker', 'start']], 'the worker is started again')
+
+    def test_a_probe_that_does_not_recover_fails_the_rehearsal(self):
+        rehearsal, _ = self.rehearsal([(1, dict(STOPPED))], [SUCCESS_0])
+        with self.assertRaises(ops.RehearsalError):
+            rehearsal.probe_recovered()
 
 
 if __name__ == '__main__':

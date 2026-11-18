@@ -51,12 +51,12 @@ test-plan: n/a (sin UI)
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 7 | 7 | 100% | 0 / 19.8h | 0.27 / 2.6h | 0 / 0.7h | 0 / 660 k |
 | Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 7 | 7 | 100.0% | 0 / 34.2h | 5.48 / 4.6h | 0 / 1.1h | 0 / 1140 k |
 | Fase 11 — Sonda de ida y vuelta (C-06) | 6 | 6 | 100.0% | 0 / 23.4h | 4.95 / 3.1h | 0 / 0.8h | 0 / 780 k |
-| Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 3 | 7 | 42.9% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
+| Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 4 | 7 | 57.1% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 0 | 6 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **76** | **98** | **77.6%** | **0 / 412.8h** | **15.68 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **77** | **98** | **78.6%** | **0 / 412.8h** | **15.68 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2399,10 +2399,11 @@ RED: `client/tests/doctor-outbox.test.mjs (5 de 6)` falló con capture_queue und
 ### T-77 — Ensayo aislado: sonda con `memory-worker` parado
 
 - **Descripción**: Añadir al script de ensayo la etapa `probe` y ejecutarla: sonda sana y sonda con `memory-worker` parado (criterio de cierre 3). Fuente: CA-31 (ensayo); criterio de cierre 3.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: El script de ensayo tiene la etapa `probe`: comprueba en un proyecto aislado que la sonda sana sale con 0 y que, con `memory-worker` parado, falla en `index` con `timeout`, `kairos_probe_success 0` y `queue_stuck`.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 2h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real 0.29h (medido)
 - **Supervisión**: est. 0.07h (≈25 % IA) · real —
 - **Previsión IA**: 74 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-74, T-75
@@ -2414,16 +2415,17 @@ RED: `client/tests/doctor-outbox.test.mjs (5 de 6)` falló con capture_queue und
   - `docker ps --filter name=knowledge-graphs` → idéntico antes y después
 
 **Criterios de aceptación**
-- [ ] La sonda sana termina en 0; con `memory-worker` parado falla en ≤ `MEMORY_PROBE_TIMEOUT` con `stage=index`
-- [ ] Evidencia anotada en `Notas`; proyecto aislado retirado
+- [x] La sonda sana termina en 0; con `memory-worker` parado falla en ≤ `MEMORY_PROBE_TIMEOUT` con `stage=index`
+- [x] Evidencia anotada en `Notas`; proyecto aislado retirado
 
 **Subtareas**
-- [ ] Añadir la etapa `probe`
-- [ ] Ejecutar (primer plano, de uno en uno)
-- [ ] Retirar el proyecto
-- [ ] `usage-meter start/close` de la tarea
+- [x] Añadir la etapa `probe`
+- [x] Ejecutar (primer plano, de uno en uno)
+- [x] Retirar el proyecto
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 0.29h (medido), 17m.
 
-**Notas**: Patrón: etapas `a` y `rollback` del mismo script. Restricción dura: nada `knowledge-graphs-*`.
+**Notas**: Ensayo 2026-11-18 `--project-name kairos-ops-e --embed-stub --stage probe` → `probe_rehearsal_ok`, cleanup complete: sana exit 0 `probe_ok` (2.56 s, success 1, cola no atascada); worker parado exit 1 `probe_failed stage=index code=timeout` a los 29.7 s de 30, success 0, retired true, `queue_stuck` (31 s > 10 s); recuperada exit 0. `docker ps -a`/`volume ls`/`network ls` filtrados por knowledge-graphs idénticos antes y después; 0 recursos kairos-ops. Para la etapa hizo falta `memory-probe` en el override de `deploy-memory.py` (T-75). Pruebas: scripts/tests 36 OK (5 nuevas en ProbeStageTests).
 
 ### T-78 — Documentar cola atascada, reglas de ejemplo y `doctor`
 
