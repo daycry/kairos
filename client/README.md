@@ -87,6 +87,9 @@ La primera comprobación es local. `--online` añade únicamente `initialize`, `
 
 `ready` comprueba transporte, catálogo y autorización del proyecto. No prueba todas las escrituras, la extracción, el worker, la indexación ni la conexión nativa dentro de los tres programas. Después de configurar, abrir el cliente y revisar su inventario MCP; probar las escrituras únicamente en un proyecto autorizado para ello.
 
+**Cola de capturas atascada.** Con la captura automática activa, `doctor` (también sin `--online`) lee la cola en disco **en solo lectura**: no toma el bloqueo del dispatcher, no escribe y no envía nada al servidor. Si hay capturas sin entregar (`pending`, `unknown` o `accepted`) añade `capture_queue` con `pending`, `oldest_pending_seconds`, `threshold_seconds` y `stale`. Cuando la más antigua espera más que el umbral (900 s; `KAIROS_QUEUE_STALE_SECONDS` lo cambia, y un valor que no es un número positivo vuelve a 900) añade `"warnings": ["capture_queue_stale"]`, el estado pasa a `degraded` y el comando sale con 1: revisa `kairos status`, reintenta con `kairos queue-retry --event-id UUID --yes` o retira con `kairos queue-retire --event-id UUID --yes`. Sin capturas pendientes la salida es la de siempre; una cola ilegible aparece como `"capture_queue": {"status": "unreadable"}` y no cambia el estado.
+
+
 ## Recuperar una instalación interrumpida
 
 El instalador valida todos los destinos antes de escribir. Cada archivo se sustituye de forma atómica y el lote mantiene un diario. El lote completo no se presenta como una transacción multiarchivo: si falla una escritura pueden quedar cambios parciales, señalados por `partial_installation_recovery_required`.

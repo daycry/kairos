@@ -120,7 +120,7 @@ La clave privada `age` no se monta en ningún servicio ni está en la imagen: el
 
 ### Sonda de ida y vuelta (`admin probe`)
 
-Las lee `server/memory_platform/probe.py` (no `config.py`): el Compose no las propaga; con otro valor, pásalas al comando con `-e` o con las opciones de la línea de órdenes. Etapas, códigos de salida y aprovisionamiento: `docs/operations.md`, «Sonda de ida y vuelta».
+Las lee `server/memory_platform/probe.py` (no `config.py`): `memory-admin` no las propaga (el servicio `memory-probe`, perfil `probe`, sí propaga `MEMORY_PROBE_URL`, `MEMORY_PROBE_INTERVAL`, `MEMORY_PROBE_TIMEOUT` y `MEMORY_QUEUE_STUCK_SECONDS`); con otro valor, pásalas al comando con `-e` o con las opciones de la línea de órdenes. Etapas, códigos de salida y aprovisionamiento: `docs/operations.md`, «Sonda de ida y vuelta».
 
 | Variable | Predeterminado | Uso |
 |---|---|---|
@@ -222,6 +222,8 @@ Las categorías proceden de los metadatos del contenido; las etiquetas son lista
 ## Configuración de clientes
 
 El instalador necesita URL base, proyecto, raíz local y ruta a una clave privada. No introduce la clave en los archivos públicos del proyecto. La conexión MCP, la captura y la inyección de contexto son opciones separadas; el análisis local de código está apagado por defecto y requiere `--code-analysis on`.
+
+`kairos doctor` avisa de una cola de capturas en disco que lleva demasiado tiempo sin entregarse: el umbral es 900 s y la variable de entorno `KAIROS_QUEUE_STALE_SECONDS` del proceso que lo ejecuta lo cambia (`docs/operations.md`, «Sonda de ida y vuelta»).
 
 Consulta [instalación](install.md) para los archivos de Claude Code, Codex y OpenCode, actualización con `--replace`, consentimiento, outbox y recuperación. [Integración](integration.md) define las herramientas, identidades, recibos e idempotencia que debe respetar custom-agents.
 

@@ -51,12 +51,12 @@ test-plan: n/a (sin UI)
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 7 | 7 | 100% | 0 / 19.8h | 0.27 / 2.6h | 0 / 0.7h | 0 / 660 k |
 | Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 7 | 7 | 100.0% | 0 / 34.2h | 5.48 / 4.6h | 0 / 1.1h | 0 / 1140 k |
 | Fase 11 — Sonda de ida y vuelta (C-06) | 6 | 6 | 100.0% | 0 / 23.4h | 4.95 / 3.1h | 0 / 0.8h | 0 / 780 k |
-| Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 4 | 7 | 57.1% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
+| Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 5 | 7 | 71.4% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 0 | 6 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **77** | **98** | **78.6%** | **0 / 412.8h** | **15.68 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **78** | **98** | **79.6%** | **0 / 412.8h** | **15.68 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2430,26 +2430,28 @@ RED: `client/tests/doctor-outbox.test.mjs (5 de 6)` falló con capture_queue und
 ### T-78 — Documentar cola atascada, reglas de ejemplo y `doctor`
 
 - **Descripción**: Documentar `kairos_jobs_oldest_pending_seconds`, `MEMORY_QUEUE_STUCK_SECONDS`, el servicio `memory-probe`, las reglas de ejemplo y el aviso de `kairos doctor`. Fuente: CA-32 (documentación).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: La guía de operaciones y de configuración explican la cola atascada (`kairos_jobs_oldest_pending_seconds`, `MEMORY_QUEUE_STUCK_SECONDS`), el servicio `memory-probe`, las reglas Prometheus de ejemplo y el aviso de `kairos doctor`.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 1h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real 0.06h (medido)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 37 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: T-76, T-77
 - **Tipo**: docs
-- **Archivos**: `docs/operations.md`, `docs/configuration.md`, `client/README.md`
+- **Archivos**: `docs/operations.md`, `docs/configuration.md`, `client/README.md`, `server/memory_platform/tests/test_probe.py` (`DocumentationTests`: nombres y defaults del manual iguales al código)
 - **Cubre (tests)**: —
 - **Verificación**: lectura: los manuales describen la métrica, el umbral, el servicio y el aviso de `doctor` con nombres iguales al código
 
 **Criterios de aceptación**
-- [ ] Nombres y defaults iguales al código
+- [x] Nombres y defaults iguales al código
 
 **Subtareas**
-- [ ] Actualizar los manuales
-- [ ] `usage-meter start/close` de la tarea
+- [x] Actualizar los manuales
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 0.06h (medido), 4m (la mayor parte de la redacción corrió dentro de la ventana de T-77).
 
-**Notas**: Estilo: `docs/operations.md`.
+**Notas**: Sección de la sonda de `docs/operations.md`: cola atascada, servicio `memory-probe`, reglas de ejemplo y `doctor` (también la serie en el párrafo de `/metrics`); `configuration.md` y `client/README.md` (aviso, `KAIROS_QUEUE_STALE_SECONDS`, `capture_queue`). Prueba `DocumentationTests` nueva; ficheros con CRLF editados sin cambiar finales. Verificación: test_probe.DocumentationTests + test_compose_limits (32 OK).
 
 ### T-79 — Cierre de fase: suite completa y subida del mínimo
 

@@ -23,6 +23,7 @@ import unittest
 from unittest.mock import patch
 import uuid
 
+import yaml
 from fastapi.testclient import TestClient
 from prometheus_client.parser import text_string_to_metric_families
 
@@ -1164,6 +1165,25 @@ class DocumentationTests(unittest.TestCase):
     def test_the_log_field_of_the_event_is_documented_and_real(self):
         self.assertIn('`exc_type`, `stage`', self.operations)
         self.assertIn('stage', observability.FIELDS)
+
+    def test_t78_the_manuals_name_the_queue_metric_the_threshold_the_service_the_rules_and_the_doctor_warning_with_the_defaults_of_the_code(self):
+        for name in ('kairos_jobs_oldest_pending_seconds', 'MEMORY_QUEUE_STUCK_SECONDS', 'queue_stuck', 'probe_setting_ignored', 'memory-probe', '--profile probe', 'admin probe --loop', 'MEMORY_PROBE_INTERVAL',
+                     'interval_invalid', 'probe_interrupted', 'stop_grace_period: 15s', 'docs/examples/prometheus-rules.yml', 'KairosQueueStuck', 'KairosProbeFailing', 'KairosJobsFailed',
+                     'capture_queue_stale', 'KAIROS_QUEUE_STALE_SECONDS', 'MEMORY_PROBE_MEM_LIMIT', 'MEMORY_PROBE_CPUS'):
+            with self.subTest(name):
+                self.assertIn(name, self.section)
+        self.assertIn('%d s por defecto' % probe.DEFAULT_QUEUE_STUCK_SECONDS, self.section)
+        self.assertIn('%d por defecto' % probe.DEFAULT_INTERVAL, self.section)
+        self.assertIn('de %d a %d' % probe.INTERVAL_RANGE, self.section)
+        for name, default in (('MEMORY_QUEUE_STUCK_SECONDS', '`%d`' % probe.DEFAULT_QUEUE_STUCK_SECONDS), ('MEMORY_PROBE_INTERVAL', '`%d`' % probe.DEFAULT_INTERVAL)):
+            row = next((line for line in self.configuration.splitlines() if line.startswith('| `%s`' % name)), None)
+            with self.subTest(row=name):
+                self.assertIsNotNone(row, name)
+                self.assertIn(default, row)
+        self.assertIn('de %d a %d' % probe.INTERVAL_RANGE, self.configuration)
+        compose = yaml.safe_load((ROOT / 'docker-compose.yml').read_text(encoding='utf-8'))['services']['memory-probe']
+        self.assertEqual(compose['environment']['MEMORY_QUEUE_STUCK_SECONDS'], '${MEMORY_QUEUE_STUCK_SECONDS:-%d}' % probe.DEFAULT_QUEUE_STUCK_SECONDS)
+        self.assertEqual(compose['environment']['MEMORY_PROBE_INTERVAL'], '${MEMORY_PROBE_INTERVAL:-%d}' % probe.DEFAULT_INTERVAL)
 
 
 class IsolationTests(unittest.TestCase):
