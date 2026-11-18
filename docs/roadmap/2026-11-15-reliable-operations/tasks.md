@@ -2325,13 +2325,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - Excepción declarada: usage-meter start se ejecutó desde otro directorio y close no encontró el marcador (`fuente: estimado`); horas reales marcadas «(estimado)».
 
-**Notas**: Edad = `max(now - due)` en la misma consulta de conteos de `memory.jobs` (sin tercera lectura; `due` = `available_at` en pending/unknown, `lease_until` en running; solo lo ya vencido, FILTER); cola vacía = 0. La sonda lee la misma SQL (`observability.oldest_pending_seconds`) con la conexión que comparte con la purga (`memoized`), omite la lectura tras 401/señal, y `admin probe` sale con `queue_stuck: oldest_pending_seconds=… threshold_seconds=…` (ronda sana, cola vieja). `MEMORY_QUEUE_STUCK_SECONDS` inválido: aviso `probe_setting_ignored` y 900. Pruebas en test_metrics/test_probe (el plan nombraba test_observability, cuyo patrón de `jobs_store` vive en test_metrics). Verificación: módulos test_probe, test_observability, test_metrics y test_admin en la imagen de pruebas con el código montado: 161 pruebas OK, 37 omitidas = las que necesitan PostgreSQL (corren en la suite completa de T-79). Canal de alerta (P-06): métrica, evento y salida; el envío a personas es de la Iniciativa 5.
-
-
-RED: `test_metrics.py::test_t74_the_oldest_pending_age_is_published_and_is_zero_with_an_empty_queue` falló con AssertionError: 0.0 != 900.25 (sin kairos_jobs_oldest_pending_seconds); oldest_pending_seconds ausente (AttributeError) · 2026-11-18.
-
-
-RED: `test_probe.py::CommandTests::test_t74_a_queue_older_than_the_threshold_is_queue_stuck_with_the_event_and_the_default_900_seconds` falló con KeyError: 'queue' (el informe de la sonda no avisa de la cola atascada) · 2026-11-18.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-74).
 
 ### T-75 — Servicio Compose `memory-probe` (perfil propio)
 
@@ -2361,7 +2355,7 @@ RED: `test_probe.py::CommandTests::test_t74_a_queue_older_than_the_threshold_is_
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.24h (medido), 14m.
 
-**Notas**: Perfil `probe`, red `memory-data`, sin puertos, `init: true`, `stop_grace_period: 15s`, volumen `memory-backups:/backups` y solo el secreto `memory_dsn`; sin variable de ruta de clave (rige el defecto del comando) y sin ficheros del host montados. Hizo falta `admin probe --loop` (el servicio necesita bucle; SIGTERM durante una ejecución la termina y el bucle sale con `probe_interrupted`) y `MEMORY_PROBE_INTERVAL` entero 10-86400 s (`interval_invalid`; el healthcheck lee el mismo número: fichero de métricas más viejo que 3 intervalos + 300 s = no sano). Aviso: el despliegue del cliente lo recoge solo en su próximo `up`. Verificación: módulos test_compose_limits (26), test_probe.CommandTests (24), test_backup_service, test_deploy*: 199 OK en la imagen de pruebas; `docker compose --profile probe config` válido; suite completa en T-79.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-75).
 
 ### T-76 — `kairos doctor`: aviso de cola en disco del cliente
 
@@ -2391,10 +2385,7 @@ RED: `test_probe.py::CommandTests::test_t74_a_queue_older_than_the_threshold_is_
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.19h (medido), 11m.
 
-**Notas**: `queueAge` (outbox.mjs) reproduce snapshot+journal en solo lectura: sin bloqueo (el dispatcher lo tiene), sin escribir ni leer fuentes; pendientes = pending, unknown y accepted por `admitted_at`. `doctor` solo añade `capture_queue` si hay pendientes (reloj `now` inyectable); cola ilegible = `{status:'unreadable'}` sin fallar ni cambiar el estado; en línea, el aviso mantiene `degraded`. Umbral 900 s (igual que el servidor), `KAIROS_QUEUE_STALE_SECONDS` o `queueStaleSeconds`; valor no positivo = 900. Verificación: `cd client && npm test` = 97 pruebas, 0 fallos (6 de doctor-outbox).
-
-
-RED: `client/tests/doctor-outbox.test.mjs (5 de 6)` falló con capture_queue undefined: doctor no lee la cola en disco (TypeError: Cannot read properties of undefined reading threshold_seconds) · 2026-11-18.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-76).
 
 ### T-77 — Ensayo aislado: sonda con `memory-worker` parado
 
@@ -2425,7 +2416,7 @@ RED: `client/tests/doctor-outbox.test.mjs (5 de 6)` falló con capture_queue und
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.29h (medido), 17m.
 
-**Notas**: Ensayo 2026-11-18 `--project-name kairos-ops-e --embed-stub --stage probe` → `probe_rehearsal_ok`, cleanup complete: sana exit 0 `probe_ok` (2.56 s, success 1, cola no atascada); worker parado exit 1 `probe_failed stage=index code=timeout` a los 29.7 s de 30, success 0, retired true, `queue_stuck` (31 s > 10 s); recuperada exit 0. `docker ps -a`/`volume ls`/`network ls` filtrados por knowledge-graphs idénticos antes y después; 0 recursos kairos-ops. Para la etapa hizo falta `memory-probe` en el override de `deploy-memory.py` (T-75). Pruebas: scripts/tests 36 OK (5 nuevas en ProbeStageTests).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-77).
 
 ### T-78 — Documentar cola atascada, reglas de ejemplo y `doctor`
 
@@ -2451,7 +2442,7 @@ RED: `client/tests/doctor-outbox.test.mjs (5 de 6)` falló con capture_queue und
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.06h (medido), 4m (la mayor parte de la redacción corrió dentro de la ventana de T-77).
 
-**Notas**: Sección de la sonda de `docs/operations.md`: cola atascada, servicio `memory-probe`, reglas de ejemplo y `doctor` (también la serie en el párrafo de `/metrics`); `configuration.md` y `client/README.md` (aviso, `KAIROS_QUEUE_STALE_SECONDS`, `capture_queue`). Prueba `DocumentationTests` nueva; ficheros con CRLF editados sin cambiar finales. Verificación: test_probe.DocumentationTests + test_compose_limits (32 OK).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-78).
 
 ### T-79 — Cierre de fase: suite completa y subida del mínimo
 
@@ -3156,3 +3147,7 @@ Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (14) �
 
 Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (16) — revisión de la fase 11, intento 2»). Resumen: lentes A, B y C+D; 0 Critical, 0 Important, 7 Minor; la fase cierra con fix2.
 
+
+## Revisión de dos lentes — intento 1: Fase 12: cola atascada, servicio de sonda y kairos doctor (T-74, T-75, T-76, T-77, T-78, T-79)
+
+Pendiente de revisión; sin veredicto.

@@ -1319,3 +1319,46 @@ SHA-256: `d0089727fd41b9b666e025a2cbcf8fb7a126f8693442c07dc9f92424261b4002`.
 **Notas** (fix1, revisión de la fase 11, intento 1): suite completa sobre el árbol de trabajo de fix1 (`kairos-test:i3p11x`): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1442}` (+34 sobre 1408). Una primera construcción dio 1442 con 1 fallo (`test_observability.SwallowedFailureTests`: el `except BaseException` de `Probe.run` no registraba); corregido registrando `probe_aborted` con solo el tipo. `KAIROS_MIN_TESTS` y `MIN_FLOOR` 1442 con su historia; tabla de `docs/operations.md` y `README.md` igual; `test_ci_workflow.py` OK (45 pruebas).
 
 **Notas** (fix2, revisión de la fase 11, intento 2): suite completa (`kairos-test:i3p11z`): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1460}` (+18 sobre 1442). `KAIROS_MIN_TESTS`, `MIN_FLOOR`, tabla de `docs/operations.md` y `README.md` a 1460; `test_ci_workflow.py` OK.
+
+## Compactación 2026-11-18 (18) — notas de T-74 a T-79
+
+Notas de T-74 a T-79 (fase 12), movidas antes de su revisión, movidas tal cual desde `tasks.md` para mantenerlo por debajo del límite de lectura. Criterios, campos y estados siguen en `tasks.md`.
+
+### T-74
+
+SHA-256: `2cafe964776e4faa1d3cd69744e1010426dd40b1ec397c1a93826c2f80a3d1d5`.
+
+**Notas**: Edad = `max(now - due)` en la misma consulta de conteos de `memory.jobs` (sin tercera lectura; `due` = `available_at` en pending/unknown, `lease_until` en running; solo lo ya vencido, FILTER); cola vacía = 0. La sonda lee la misma SQL (`observability.oldest_pending_seconds`) con la conexión que comparte con la purga (`memoized`), omite la lectura tras 401/señal, y `admin probe` sale con `queue_stuck: oldest_pending_seconds=… threshold_seconds=…` (ronda sana, cola vieja). `MEMORY_QUEUE_STUCK_SECONDS` inválido: aviso `probe_setting_ignored` y 900. Pruebas en test_metrics/test_probe (el plan nombraba test_observability, cuyo patrón de `jobs_store` vive en test_metrics). Verificación: módulos test_probe, test_observability, test_metrics y test_admin en la imagen de pruebas con el código montado: 161 pruebas OK, 37 omitidas = las que necesitan PostgreSQL (corren en la suite completa de T-79). Canal de alerta (P-06): métrica, evento y salida; el envío a personas es de la Iniciativa 5.
+
+
+RED: `test_metrics.py::test_t74_the_oldest_pending_age_is_published_and_is_zero_with_an_empty_queue` falló con AssertionError: 0.0 != 900.25 (sin kairos_jobs_oldest_pending_seconds); oldest_pending_seconds ausente (AttributeError) · 2026-11-18.
+
+
+RED: `test_probe.py::CommandTests::test_t74_a_queue_older_than_the_threshold_is_queue_stuck_with_the_event_and_the_default_900_seconds` falló con KeyError: 'queue' (el informe de la sonda no avisa de la cola atascada) · 2026-11-18.
+
+### T-75
+
+SHA-256: `b38726d47353eb3188ac2e5a055d336417185b9ae660a70126bca5b953394b58`.
+
+**Notas**: Perfil `probe`, red `memory-data`, sin puertos, `init: true`, `stop_grace_period: 15s`, volumen `memory-backups:/backups` y solo el secreto `memory_dsn`; sin variable de ruta de clave (rige el defecto del comando) y sin ficheros del host montados. Hizo falta `admin probe --loop` (el servicio necesita bucle; SIGTERM durante una ejecución la termina y el bucle sale con `probe_interrupted`) y `MEMORY_PROBE_INTERVAL` entero 10-86400 s (`interval_invalid`; el healthcheck lee el mismo número: fichero de métricas más viejo que 3 intervalos + 300 s = no sano). Aviso: el despliegue del cliente lo recoge solo en su próximo `up`. Verificación: módulos test_compose_limits (26), test_probe.CommandTests (24), test_backup_service, test_deploy*: 199 OK en la imagen de pruebas; `docker compose --profile probe config` válido; suite completa en T-79.
+
+### T-76
+
+SHA-256: `810ea3424cc04595073ba6e9602c0f9297680bc554399e1f34e295b705cdfb61`.
+
+**Notas**: `queueAge` (outbox.mjs) reproduce snapshot+journal en solo lectura: sin bloqueo (el dispatcher lo tiene), sin escribir ni leer fuentes; pendientes = pending, unknown y accepted por `admitted_at`. `doctor` solo añade `capture_queue` si hay pendientes (reloj `now` inyectable); cola ilegible = `{status:'unreadable'}` sin fallar ni cambiar el estado; en línea, el aviso mantiene `degraded`. Umbral 900 s (igual que el servidor), `KAIROS_QUEUE_STALE_SECONDS` o `queueStaleSeconds`; valor no positivo = 900. Verificación: `cd client && npm test` = 97 pruebas, 0 fallos (6 de doctor-outbox).
+
+
+RED: `client/tests/doctor-outbox.test.mjs (5 de 6)` falló con capture_queue undefined: doctor no lee la cola en disco (TypeError: Cannot read properties of undefined reading threshold_seconds) · 2026-11-18.
+
+### T-77
+
+SHA-256: `036938a81b81efe72179fab477495286d2fa29f64bfafa9fcfc2243f42b7c378`.
+
+**Notas**: Ensayo 2026-11-18 `--project-name kairos-ops-e --embed-stub --stage probe` → `probe_rehearsal_ok`, cleanup complete: sana exit 0 `probe_ok` (2.56 s, success 1, cola no atascada); worker parado exit 1 `probe_failed stage=index code=timeout` a los 29.7 s de 30, success 0, retired true, `queue_stuck` (31 s > 10 s); recuperada exit 0. `docker ps -a`/`volume ls`/`network ls` filtrados por knowledge-graphs idénticos antes y después; 0 recursos kairos-ops. Para la etapa hizo falta `memory-probe` en el override de `deploy-memory.py` (T-75). Pruebas: scripts/tests 36 OK (5 nuevas en ProbeStageTests).
+
+### T-78
+
+SHA-256: `49041ba76f96d48956f5c0e9ead4d6c78239c88643d168565cdad63b2d29553f`.
+
+**Notas**: Sección de la sonda de `docs/operations.md`: cola atascada, servicio `memory-probe`, reglas de ejemplo y `doctor` (también la serie en el párrafo de `/metrics`); `configuration.md` y `client/README.md` (aviso, `KAIROS_QUEUE_STALE_SECONDS`, `capture_queue`). Prueba `DocumentationTests` nueva; ficheros con CRLF editados sin cambiar finales. Verificación: test_probe.DocumentationTests + test_compose_limits (32 OK).
