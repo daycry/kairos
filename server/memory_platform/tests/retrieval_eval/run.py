@@ -145,6 +145,26 @@ def evaluate_gate(report, thresholds, baseline=None):
     return failures
 
 
+class CachedQueries:
+    """Embeds each QUERY text once per run: the evaluation asks every question through several searches, and with a real model each embedding is a CPU run (T-89).
+
+    Only ``embed(text, query=True)`` is remembered; document embeddings (the worker's ``embed_many`` and ``embed`` without ``query``) and every other attribute go to the provider unchanged.
+    """
+
+    def __init__(self, provider):
+        self._provider, self._queries = provider, {}
+
+    async def embed(self, text, query=False):
+        if not query:
+            return await self._provider.embed(text, query=query)
+        if text not in self._queries:
+            self._queries[text] = await self._provider.embed(text, query=True)
+        return self._queries[text]
+
+    def __getattr__(self, name):
+        return getattr(self._provider, name)
+
+
 def abstention_threshold(thresholds, model, simulated):
     """The cosine threshold under test for ``model`` (CA-27): ``abstention.simulated.threshold`` with the offline provider, ``abstention.models[<model>]`` with a real one
     (``:latest`` is the same model); None when there is none, which the gate reports as ``threshold_missing:abstention.threshold`` instead of measuring blind."""
@@ -313,7 +333,9 @@ def make_provider(dsn):
     if choice != 'ollama':
         raise SystemExit('retrieval-eval: %s must be `fake` or `ollama`' % PROVIDER_ENV)
     from memory_platform.providers import Embeddings
-    settings = Settings(dsn, request_timeout=60.0, embedding_query_timeout=30.0, ollama_url=check_ollama_url(os.environ.get(OLLAMA_URL_ENV)))
+    # A disposable Ollama on a loaded CPU needs minutes, not the 60 s per batch of a production host, for the long documents (T-89: 4 of 72 embed jobs failed with the defaults).
+    settings = Settings(dsn, request_timeout=60.0, embedding_query_timeout=30.0, embedding_worker_timeout=300.0, embedding_batch_timeout=300.0, embedding_job_timeout_max=3000.0,
+                        ollama_url=check_ollama_url(os.environ.get(OLLAMA_URL_ENV)))
     return Embeddings(settings), 'ollama:' + settings.embedding_model, settings
 
 
@@ -522,6 +544,7 @@ def build_report(dsn, test_dsn, dataset_path, negatives_path=None, thresholds=No
     records, digest = load_dataset(dataset_path)
     negatives, negatives_digest = load_negatives(negatives_path or HERE / 'dataset-v1-negatives.jsonl', records)
     provider, label, settings = make_provider(dsn)
+    provider = CachedQueries(provider)
     threshold = abstention_threshold(thresholds or {}, settings.embedding_model, label == FAKE_LABEL)
     store, actor, project = _setup(dsn)
     ids, texts = _load_corpus(store, actor, project, records)
@@ -539,7 +562,7 @@ def build_report(dsn, test_dsn, dataset_path, negatives_path=None, thresholds=No
 
 
 def run(report_path=None, dataset=None, thresholds=None, baseline=None, dsn=None, test_dsn=None, negatives=None):
-    """Run the evaluation twice (determinism check), evaluate the gate and print/write the report."""
+    """Run the evaluation (twice with the simulated provider, as a determinism check), evaluate the gate and print/write the report."""
     dataset = Path(dataset or HERE / 'dataset-v1.jsonl')
     thresholds = json.loads(Path(thresholds or HERE / 'thresholds.json').read_text(encoding='utf-8'))
     negatives = Path(negatives or HERE / 'dataset-v1-negatives.jsonl')
@@ -547,10 +570,12 @@ def run(report_path=None, dataset=None, thresholds=None, baseline=None, dsn=None
     baseline_report = json.loads(baseline_file.read_text(encoding='utf-8')) if baseline_file.exists() else None
     dsn, test_dsn = dsn or os.environ.get('MEMORY_DSN'), test_dsn or os.environ.get('MEMORY_TEST_DSN')
     first = build_report(dsn, test_dsn, dataset, negatives, thresholds)
-    second = build_report(dsn, test_dsn, dataset, negatives, thresholds)
-    deterministic = all(first[k] == second[k] for k in STRUCTURAL_KEYS)
+    # Determinism is a property of the simulated provider. A real model is evaluated once (indexing the corpus twice on a CPU doubles an already long run, T-89) and `deterministic` is None.
+    real = first.get('embedding_provider') != FAKE_LABEL
+    second = None if real else build_report(dsn, test_dsn, dataset, negatives, thresholds)
+    deterministic = None if real else all(first[k] == second[k] for k in STRUCTURAL_KEYS)
     failures = evaluate_gate(first, thresholds, baseline_report) + evaluate_abstention(first, thresholds)
-    if not deterministic:
+    if deterministic is False:
         failures.append({'check': 'determinism', 'value': 'reports differ between two runs', 'required': 'identical'})
     first.update(network_observation())  # observed once, outside the determinism comparison
     first['deterministic'] = deterministic

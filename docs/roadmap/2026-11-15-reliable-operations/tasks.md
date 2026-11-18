@@ -53,10 +53,10 @@ test-plan: n/a (sin UI)
 | Fase 11 — Sonda de ida y vuelta (C-06) | 6 | 6 | 100.0% | 0 / 23.4h | 4.95 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 7 | 7 | 100.0% | 0 / 23.4h | 2.62 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 6 | 6 | 100.0% | 0 / 33.6h | 2.36 / 4.5h | 0 / 1.1h | 0 / 1120 k |
-| Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 2 | 7 | 28.6% | 0 / 33.6h | 0.70 / 4.5h | 0 / 1.1h | 0 / 1120 k |
+| Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 3 | 7 | 42.9% | 0 / 33.6h | 5.28 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **87** | **98** | **88.8%** | **0 / 412.8h** | **21.05 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **88** | **98** | **89.8%** | **0 / 412.8h** | **25.63 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2782,33 +2782,35 @@ test-plan: n/a (sin UI)
 ### T-89 — Medición del umbral de `nomic-embed-text` con un Ollama efímero y aislado (P-05)
 
 - **Descripción**: Medir el umbral real con un Ollama efímero (contenedor y volumen propios, puerto distinto, desechados al terminar; nunca el Ollama del host en 11434). Si la descarga del modelo falla, el umbral queda `uncalibrated` y se mide en la Iniciativa 5. Fuente: CA-27 (umbral real); P-05; R-07.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: con el modelo real de embeddings ningún umbral de abstención cumple 70 % correcta y 5 % falsa; queda sin calibrar (`uncalibrated`) y la tabla de medidas está en el manual.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 2.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.33h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.33h (estimado) · real 4.58h (medido)
 - **Supervisión**: est. 0.08h (≈25 % IA) · real —
 - **Previsión IA**: 92 k in / 8 k out tok · ⚠️ verificar €
 - **Dependencias**: T-88
 - **Tipo**: test
-- **Archivos**: `server/memory_platform/tests/retrieval_eval/measure_abstention.py`, `server/memory_platform/tests/retrieval_eval/thresholds.json`, `docs/configuration.md`
+- **Archivos**: `server/memory_platform/tests/retrieval_eval/measure_abstention.py`, `server/memory_platform/tests/retrieval_eval/thresholds.json`, `docs/configuration.md`, `server/memory_platform/tests/retrieval_eval/run.py`, `server/memory_platform/tests/retrieval_eval/test_metrics.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `python -m memory_platform.tests.retrieval_eval.measure_abstention --ollama-container kairos-ops-ollama-f --port 18434` (desde `server/`) → informe con el umbral por modelo, o `uncalibrated` si falla la descarga; `docker ps -a --filter name=kairos-ops-ollama` y `docker volume ls --filter name=kairos-ops-ollama` → vacíos al terminar
   - `curl -s http://127.0.0.1:11434/api/version` no se ejecuta ni se referencia en el script (`grep -n 11434` → solo para rechazarlo)
 
 **Criterios de aceptación**
-- [ ] El Ollama efímero usa nombre de contenedor y volumen propios, puerto distinto de 11434 y se elimina al terminar, incluso si falla
-- [ ] El resultado es el umbral de `nomic-embed-text` medido sobre el conjunto ampliado o `uncalibrated` con el motivo; en ambos casos queda anotado en `Notas` y en `docs/configuration.md`
-- [ ] Si queda `uncalibrated`, `MEMORY_ABSTAIN_THRESHOLDS` no incluye `nomic-embed-text` y la búsqueda devuelve `abstention: "uncalibrated"`
+- [x] El Ollama efímero usa nombre de contenedor y volumen propios, puerto distinto de 11434 y se elimina al terminar, incluso si falla
+- [x] El resultado es el umbral de `nomic-embed-text` medido sobre el conjunto ampliado o `uncalibrated` con el motivo; en ambos casos queda anotado en `Notas` y en `docs/configuration.md`
+- [x] Si queda `uncalibrated`, `MEMORY_ABSTAIN_THRESHOLDS` no incluye `nomic-embed-text` y la búsqueda devuelve `abstention: "uncalibrated"`
 
 **Subtareas**
-- [ ] Anotar `docker ps`/`volume ls` y confirmar que 11434 no se usa
-- [ ] Escribir el medidor con limpieza garantizada (`try/finally`)
-- [ ] Ejecutarlo (primer plano) y anotar el umbral o el motivo del fallo
-- [ ] Reflejar el valor en `config.py` y `docs/configuration.md`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Anotar `docker ps`/`volume ls` y confirmar que 11434 no se usa
+- [x] Escribir el medidor con limpieza garantizada (`try/finally`)
+- [x] Ejecutarlo (primer plano) y anotar el umbral o el motivo del fallo
+- [x] Reflejar el valor en `config.py` y `docs/configuration.md`
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 4.58h (medido).
 
-**Notas**: Restricción dura: no el Ollama del host. Descarga ≈ 270 MB solo en el contenedor desechable. Tarea de P-05 decidida por el orquestador (delegada por el usuario). Patrón: `tests/ollama_proxy_probe.py` (sondas aisladas de Ollama).
+**Notas**: RED: `test_metrics.MeasureAbstentionTests` falló con `FileNotFoundError` (sin `measure_abstention.py`); tres fallos reales de la primera medición, cada uno con su prueba en rojo antes de la corrección: `UnicodeDecodeError: 'charmap'` al leer la salida de Docker (se perdía el informe tras 15 min), recorrido de la medición demasiado largo (`CachedQueries`: una incrustación por pregunta; el modelo real se evalúa una vez) y `embed job states {"failed": 4, "succeeded": 68}` (plazos de 60 s por lote: 300 s con el modelo real). Medición real 2026-11-18 (contenedor `kairos-calib-ollama`, puerto 21434, imagen local `ollama/ollama:0.31.1`, modelo 274 MB descargado en <3 min): `uncalibrated` (ningún umbral cumple ≥ 70 % correcta y ≤ 5 % falsa); curva umbral -> correcta/falsa: 0.50 20.8/0, 0.55 33.3/1.4, 0.60 50.0/2.8, 0.65 62.5/8.3, 0.70 95.8/13.9 %; recall@5 1.0, MRR 0.993. Sin umbral por defecto (Compose, código y `abstention.models` vacíos); la búsqueda responde `abstention: "uncalibrated"`; la tabla y R-07 están en `docs/configuration.md`. Aislamiento: `docker ps -a`, `volume ls` y `network ls` filtrados por `knowledge-graphs` idénticos antes y después (15 contenedores, 7 volúmenes, 6 redes); `kairos-calib-*` sin restos (el script lo comprueba y sale con error si no); 11434 solo aparece en `DEPLOYED_PORT` para rechazarlo (una prueba lo exige). Dos ejecuciones previas se mataron a mano y sus recursos `kairos-calib-*` se retiraron con `docker rm -f`/`volume rm`/`network rm`. usage-meter 4.58h (medido) incluye la espera de la CPU (reloj 1h58m). JSON del usage-meter y de la medición en `execution-history.md`.
 
 ### T-90 — Pruebas de la puerta de abstención
 

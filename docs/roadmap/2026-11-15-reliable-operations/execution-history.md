@@ -1848,3 +1848,166 @@ SHA-256: `8079f38e0d2224aace9f5a805950f21de4cbd692cfd9d056be340485d9aa3d38`.
 SHA-256: `68d413e59c445aba1d09133c6026bbb4fb715abf5bc14f2ee075ecd059500881`.
 
 **Notas**: RED 2026-11-18: `test_metrics` no importaba (`ImportError: cannot import name '_measure_abstention'`) y 4 casos de `test_ci_workflow` fallaron (el paso de CI no exigía la medida de abstención); verde tras `evaluate_abstention`, `_measure_abstention`, `pick_threshold`, `load_negatives` y `abstention_threshold` en `run.py`, el bloque `abstention` de `thresholds.json` y 2 `grep` nuevos en `ci.yml`. Medida (docker run sobre `kairos-test:i3p13f` con `server/` montado, `--network=none`): con el proveedor simulado y umbral 0.2022, abstención correcta 0.50 (12/24; cercanas 1/12) y falsa 0.0417 (3/72), recall@5 1.0, MRR 0.9715, puerta `passed: true`, determinista. Con umbral 0.99 (edición temporal, revertida): correcta 0.9583, falsa 0.3194, `passed: false` (`abstention_false`), exit 1. DECISIÓN ABIERTA (R-07): con los embeddings simulados NO existe umbral que cumpla ≥ 70 % y ≤ 5 % a la vez (0.30 da 91.7 % y 11.1 %; 70.8 % exige 6.9 % de falsa: 5 positivas sin coincidencia léxica tienen coseno < 0.235); `thresholds.json` lleva por eso metas propias del simulado (`abstention.simulated`: correcta ≥ 0.50, falsa ≤ 0.05, umbral 0.2022 = centro de la ventana 0.198-0.207) y deja las de CA-27 (0.70/0.05) en el nivel superior para un modelo real (`abstention.models.<modelo>`; T-89). `evaluate_abstention` falla con `threshold_missing:abstention.*`, `abstention_missing`, `abstention_items`, `abstention_negatives_too_few`. CI: el paso «The gate really ran» exige además `abstention` con `correct_abstention`/`false_abstention` y `abstained_with_items: 0` (comprobado con 5 informes sintéticos en bash). Las 3 pruebas de DSN de `test_metrics` no corren en el host (sin `psycopg`), sí en la imagen. JSON de usage-meter en `execution-history.md` («Mediciones de la fase 14», T-88). Patrón original: Patrón: `tests/retrieval_eval/run.py:109-120` (`threshold_missing`/`subset_missing`), `thresholds.json`, `fake_embeddings.py:1-8` (embeddings simulados) y `ci.yml` (trabajo `retrieval-eval`).
+
+### T-89
+
+```json
+{
+  "artefacto": "reliable-operations/T-89",
+  "inicio": "2026-11-18T11:24:01Z",
+  "fin": "2026-11-18T13:22:28Z",
+  "fuente": "medido",
+  "tokens_reales": {
+    "entrada": 152,
+    "salida": 48533,
+    "cache_creacion": 1325309,
+    "cache_lectura": 12792353,
+    "respuestas": 76
+  },
+  "eur": null,
+  "horas_ia": 4.58,
+  "duracion": "4h 35m",
+  "duracion_reloj": "1h 58m",
+  "ratio_usado": 300000,
+  "ratio_origen": "default no calibrado (300000)",
+  "tokens_procedencia": "transcript",
+  "tokens_cobertura": "completa",
+  "transcripts_leidos": 2,
+  "transcripts_subagente": 1,
+  "transcripts_con_error": 0,
+  "coste_procedencia": "sin_coste",
+  "coste_cobertura": "sin_coste",
+  "coste_sin_precio": [],
+  "tarifa_verificada_el": null,
+  "medicion_persistida": true,
+  "fuente_id": "src-8ffaaac4e3b9a11805b5148dbea387f65be01b42fba05cbf3ca54c4b799a95c8",
+  "ventana_id": "win-2a6cf7205b694dbc8fb91ed985d77f74",
+  "revision_medicion": 1,
+  "avisos": [
+    "CALIBRATION: fila marcada (estimado); fuera de la mediana",
+    "CALIBRATION: fila marcada (estimado); fuera de la mediana",
+    "precioTokens no fiable (0/ausente/viejo) → eur=null; ejecuta la skill rates-verify"
+  ]
+}
+```
+
+**Resultado de `measure_abstention` (literal):**
+
+```json
+{
+  "container": "kairos-calib-ollama",
+  "curve": [
+    [
+      0.05,
+      0.0,
+      0.0
+    ],
+    [
+      0.1,
+      0.0,
+      0.0
+    ],
+    [
+      0.15,
+      0.0,
+      0.0
+    ],
+    [
+      0.2,
+      0.0,
+      0.0
+    ],
+    [
+      0.25,
+      0.0,
+      0.0
+    ],
+    [
+      0.3,
+      0.0,
+      0.0
+    ],
+    [
+      0.35,
+      0.0,
+      0.0
+    ],
+    [
+      0.4,
+      0.0,
+      0.0
+    ],
+    [
+      0.45,
+      0.0417,
+      0.0
+    ],
+    [
+      0.5,
+      0.2083,
+      0.0
+    ],
+    [
+      0.55,
+      0.3333,
+      0.0139
+    ],
+    [
+      0.6,
+      0.5,
+      0.0278
+    ],
+    [
+      0.65,
+      0.625,
+      0.0833
+    ],
+    [
+      0.7,
+      0.9583,
+      0.1389
+    ],
+    [
+      0.75,
+      0.9583,
+      0.1667
+    ],
+    [
+      0.8,
+      0.9583,
+      0.2361
+    ],
+    [
+      0.85,
+      0.9583,
+      0.3194
+    ],
+    [
+      0.9,
+      0.9583,
+      0.3194
+    ],
+    [
+      0.95,
+      0.9583,
+      0.3194
+    ]
+  ],
+  "fused": {
+    "mrr": 0.993056,
+    "n": 72,
+    "recall@1": 0.986111,
+    "recall@10": 1.0,
+    "recall@5": 1.0
+  },
+  "goals": {
+    "max_false_rate": 0.05,
+    "min_correct_rate": 0.7
+  },
+  "leftovers": [],
+  "model": "nomic-embed-text",
+  "port": 21434,
+  "reason": "no threshold reaches the goals (correct abstention >= 0.7 and false abstention <= 0.05) with this model on this set",
+  "status": "uncalibrated"
+}
+```

@@ -214,7 +214,20 @@ El Compose las propaga desde `.env` con estos mismos valores por defecto (`MEMOR
 
 ### Abstención
 
-El parámetro `abstain` de la búsqueda responde «nada relevante» (`items: []`, `abstained: true`) cuando la mejor similitud semántica queda por debajo del umbral del modelo de embeddings y ninguna capa léxica aportó nada. La señal y sus reglas están en [arquitectura](architecture.md#abstención-la-señal-diseño-de-t-81). Está apagada por defecto y no hay umbrales hasta que la calibración los fije.
+El parámetro `abstain` de la búsqueda responde «nada relevante» (`items: []`, `abstained: true`) cuando la mejor similitud semántica queda por debajo del umbral del modelo de embeddings y ninguna capa léxica aportó nada. La señal y sus reglas están en [arquitectura](architecture.md#abstención-la-señal-diseño-de-t-81). Está apagada por defecto y, tras la calibración de abajo, tampoco hay un umbral por defecto para ningún modelo: `nomic-embed-text` queda `uncalibrated`.
+
+#### Calibración de `nomic-embed-text` (T-89, 2026-11-18)
+
+Medida con el modelo real en un Ollama efímero y aislado (contenedor, volumen y red propios `kairos-calib-*`, puerto 21434, nunca el Ollama del host ni nada del Compose desplegado; todo se retira al terminar), con `python -m memory_platform.tests.retrieval_eval.measure_abstention` desde `server/`, sobre las 72 preguntas con respuesta de `dataset-v1` y las 24 sin respuesta de `dataset-v1-negatives`. Abstención **correcta** = fracción de las 24 sin respuesta que reciben `abstained: true`; **falsa** = fracción de las 72 con respuesta que también abstienen:
+
+| Umbral | 0,45 | 0,50 | 0,55 | 0,60 | 0,65 | 0,70 | 0,75 |
+|---|---|---|---|---|---|---|---|
+| Correcta | 4,2 % | 20,8 % | 33,3 % | 50,0 % | 62,5 % | 95,8 % | 95,8 % |
+| Falsa | 0 % | 0 % | 1,4 % | 2,8 % | 8,3 % | 13,9 % | 16,7 % |
+
+Ningún umbral logra a la vez las metas acordadas (correcta ≥ 70 % y falsa ≤ 5 %): al pasar de 0,65 a 0,70 la correcta salta del 62,5 % al 95,8 %, pero la falsa ya es del 13,9 %. Por eso el resultado es **`uncalibrated`**: `MEMORY_ABSTAIN_THRESHOLDS` no trae `nomic-embed-text` (ni en el Compose ni en el código), una petición con `abstain` responde normal con `abstention: "uncalibrated"` y se vuelve a medir en la Iniciativa 5 con un conjunto mayor. Con el modelo real recall@5 es 1,0 y MRR 0,993 en la fusión. Un operador que acepte el compromiso puede fijar su punto de la tabla, por ejemplo `MEMORY_ABSTAIN_THRESHOLDS=nomic-embed-text=0.60` (50,0 % de correcta y 2,8 % de falsa); es una decisión suya, no un valor recomendado.
+
+**Riesgo R-07 (embeddings simulados frente a reales).** La puerta `retrieval-eval` de la CI usa embeddings simulados y mide con su propio umbral (`thresholds.json`, `abstention.simulated`: 0,2022, con metas propias de ≥ 50 % de correcta y ≤ 5 % de falsa porque con esos coseno no existe un umbral que cumpla 70 %/5 %). Los coseno del simulado y del modelo real no son comparables: ese umbral no vale para el modelo real y no se usa fuera de la puerta. Los umbrales de modelos reales viven en `abstention.models` de `thresholds.json` (hoy vacío, para medirlos con `measure_abstention`) y el despliegue los fija con `MEMORY_ABSTAIN_THRESHOLDS`. El conjunto es sintético y pequeño (96 preguntas): la tabla orienta, no garantiza.
 
 | Variable | Predeterminado | Efecto |
 |---|---|---|
