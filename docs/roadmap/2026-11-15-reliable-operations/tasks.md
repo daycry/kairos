@@ -3135,3 +3135,7 @@ Lentes: B; A+C (diff `af7df9b..64f3861`, fix4). 133 OK en el anfitrión (2 omiti
 
 Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (14) — revisión de la fase 11, intento 1»). Resumen: lentes A, B y C+D; 3 Important (falso verde semántico, reutilización de una clave con el dueño deshabilitado, restos retirados con vector sin podar) y 9 Minor; fix1 corrige todo.
 
+
+## Revisión de dos lentes — intento 2: Fase 11 tras fix1 (T-68, T-69, T-70, T-71)
+
+Pendiente de revisión; sin veredicto.
