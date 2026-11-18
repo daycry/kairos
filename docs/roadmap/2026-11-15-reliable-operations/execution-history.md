@@ -1675,6 +1675,24 @@ SHA-256: `ed0fa83310fa407b63376725a856102b14f8477e1d237be9cbe105fcb493506a`.
 
 **Notas** (fix1): suite 2026-11-18 (`kairos-test:i3p13f`, tras fix1 de la fase 13): `MEMORY_TEST_RESULT` `{"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1519}`; mínimo 1511 a 1519 en `ci.yml` (con historia), `MIN_FLOOR`, `docs/operations.md` y `README.md:252`; `test_ci_workflow`: 45 OK. Enmienda al tercer criterio (revisión de la fase 13, n.º 6): el resumen de las mediciones sustituye al JSON literal de usage-meter de T-81..T-85; motivo: `usage-meter close` imprimió el JSON en la sesión de entonces y no se conservó (`.claude/usage-state.json` guarda solo marcadores, y repetir `close` emitiría otra medición, no la original), así que las horas medidas de cada tarea (`real … (medido)`) son el único dato que sobrevive; las de fix1 sí se pegan en `execution-history.md` (compactación 23, mediciones de fix1).
 
+### T-89
+
+SHA-256: `58b30277c2226dc2313de003b4ee172577482f2cc12a9cf62c6cfc4beaa7ec1d`.
+
+**Notas**: RED: `test_metrics.MeasureAbstentionTests` falló con `FileNotFoundError` (sin `measure_abstention.py`); tres fallos reales de la primera medición, cada uno con su prueba en rojo antes de la corrección: `UnicodeDecodeError: 'charmap'` al leer la salida de Docker (se perdía el informe tras 15 min), recorrido de la medición demasiado largo (`CachedQueries`: una incrustación por pregunta; el modelo real se evalúa una vez) y `embed job states {"failed": 4, "succeeded": 68}` (plazos de 60 s por lote: 300 s con el modelo real). Medición real 2026-11-18 (contenedor `kairos-calib-ollama`, puerto 21434, imagen local `ollama/ollama:0.31.1`, modelo 274 MB descargado en <3 min): `uncalibrated` (ningún umbral cumple ≥ 70 % correcta y ≤ 5 % falsa); curva umbral -> correcta/falsa: 0.50 20.8/0, 0.55 33.3/1.4, 0.60 50.0/2.8, 0.65 62.5/8.3, 0.70 95.8/13.9 %; recall@5 1.0, MRR 0.993. Sin umbral por defecto (Compose, código y `abstention.models` vacíos); la búsqueda responde `abstention: "uncalibrated"`; la tabla y R-07 están en `docs/configuration.md`. Aislamiento: `docker ps -a`, `volume ls` y `network ls` filtrados por `knowledge-graphs` idénticos antes y después (15 contenedores, 7 volúmenes, 6 redes); `kairos-calib-*` sin restos (el script lo comprueba y sale con error si no); 11434 solo aparece en `DEPLOYED_PORT` para rechazarlo (una prueba lo exige). Dos ejecuciones previas se mataron a mano y sus recursos `kairos-calib-*` se retiraron con `docker rm -f`/`volume rm`/`network rm`. usage-meter 4.58h (medido) incluye la espera de la CPU (reloj 1h58m). JSON del usage-meter y de la medición en `execution-history.md`.
+
+### T-90
+
+SHA-256: `5fa0d5b86610a958e140ce8b78b1ebf2980cf9666fd635d6153971f54dd0c1e5`.
+
+**Notas**: RED: 3 mutantes del paso de CI sobrevivían (la mutación tocaba el trabajo `server`, que tiene líneas iguales) hasta acotarlos al trabajo `retrieval-eval`; la prueba de `structural_keys` falló con la clave quitada. Mutantes comprobados (8 en `run.py`/`thresholds.json` con `test_metrics`, todos MUERTOS: quitar `evaluate_abstention` de `run()`, los controles `abstention_false`/`abstention_correct`/`abstained_with_items`/mínimo de negativas, la clave `abstention` de `STRUCTURAL_KEYS`, las metas y el umbral simulado de `thresholds.json`; y 7 del paso de CI con `test_ci_workflow`, todos detectados: borrar o `|| true` en cada `grep`, `set +e`). `test_metrics` pasó de 24 a 45 pruebas (21 nuevas; la prueba de la clave estructural y las de T-88/T-89 se entregaron en sus commits); `test_ci_workflow` ejecuta el script del paso sobre 5 informes sintéticos. `retrieval-eval` sigue fuera de la suite (no lo descubre `run_postgres`). Las 3 pruebas de DSN de `test_metrics` no corren en el host (sin `psycopg`) y sí en la imagen. JSON de usage-meter en `execution-history.md`.
+
+### T-91
+
+SHA-256: `791539ce3b4b709a81f9790506e16ad3515ab6ab54854563481b1c5dcadd8e0e`.
+
+**Notas**: RED: `test_abstention_docs` (nuevo, 4 pruebas, corre en el host) no se cumple sobre el HEAD anterior (0 apariciones de `measure_abstention` en `operations.md` ni de la frase de `custom-agents` en los CHANGELOG); verde con los textos nuevos. `docs/configuration.md` (tabla de variables con `off` y vacío, igual que `config.py`, y la calibración medida con R-07), `docs/operations.md` (métricas de la puerta, metas y cómo calibrar un modelo real) y ambos CHANGELOG (abstención apagada por defecto, `nomic-embed-text` `uncalibrated`, activarla cambia lo que ve `custom-agents`). `docs/manual.md` no cambia: es el manual del portal y el portal no expone `abstain`. Cambio visible (23) añadido a la frase Coordinación de `improvement-plan.md` (sin cambio de contrato ni de comportamiento por defecto). Ficheros fuera del Archivos original, declarados: `test_abstention_docs.py` e `improvement-plan.md`. JSON de usage-meter en `execution-history.md`.
+
 ## Mediciones de la fase 14 (usage-meter, JSON literal)
 
 Salida de `usage-meter.py close` de cada tarea de la fase 14 (clave `reliable-operations/T-XX`), pegada sin editar.
@@ -2045,6 +2063,48 @@ SHA-256: `68d413e59c445aba1d09133c6026bbb4fb715abf5bc14f2ee075ecd059500881`.
   "medicion_persistida": true,
   "fuente_id": "src-8ffaaac4e3b9a11805b5148dbea387f65be01b42fba05cbf3ca54c4b799a95c8",
   "ventana_id": "win-a8697671e47b48bca9971b23800e0f0e",
+  "revision_medicion": 1,
+  "avisos": [
+    "CALIBRATION: fila marcada (estimado); fuera de la mediana",
+    "CALIBRATION: fila marcada (estimado); fuera de la mediana",
+    "precioTokens no fiable (0/ausente/viejo) → eur=null; ejecuta la skill rates-verify"
+  ]
+}
+```
+
+### T-91
+
+```json
+{
+  "artefacto": "reliable-operations/T-91",
+  "inicio": "2026-11-18T13:36:28Z",
+  "fin": "2026-11-18T13:37:46Z",
+  "fuente": "medido",
+  "tokens_reales": {
+    "entrada": 8,
+    "salida": 2028,
+    "cache_creacion": 3616,
+    "cache_lectura": 979232,
+    "respuestas": 4
+  },
+  "eur": null,
+  "horas_ia": 0.02,
+  "duracion": "1m",
+  "duracion_reloj": "1m",
+  "ratio_usado": 300000,
+  "ratio_origen": "default no calibrado (300000)",
+  "tokens_procedencia": "transcript",
+  "tokens_cobertura": "completa",
+  "transcripts_leidos": 2,
+  "transcripts_subagente": 1,
+  "transcripts_con_error": 0,
+  "coste_procedencia": "sin_coste",
+  "coste_cobertura": "sin_coste",
+  "coste_sin_precio": [],
+  "tarifa_verificada_el": null,
+  "medicion_persistida": true,
+  "fuente_id": "src-8ffaaac4e3b9a11805b5148dbea387f65be01b42fba05cbf3ca54c4b799a95c8",
+  "ventana_id": "win-a2e72e19f54841e58f8642922f559394",
   "revision_medicion": 1,
   "avisos": [
     "CALIBRATION: fila marcada (estimado); fuera de la mediana",

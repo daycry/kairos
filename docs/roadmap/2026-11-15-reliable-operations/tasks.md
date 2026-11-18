@@ -53,10 +53,10 @@ test-plan: n/a (sin UI)
 | Fase 11 — Sonda de ida y vuelta (C-06) | 6 | 6 | 100.0% | 0 / 23.4h | 4.95 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 7 | 7 | 100.0% | 0 / 23.4h | 2.62 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 6 | 6 | 100.0% | 0 / 33.6h | 2.36 / 4.5h | 0 / 1.1h | 0 / 1120 k |
-| Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 4 | 7 | 57.1% | 0 / 33.6h | 5.35 / 4.5h | 0 / 1.1h | 0 / 1120 k |
+| Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 5 | 7 | 71.4% | 0 / 33.6h | 5.37 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **89** | **98** | **90.8%** | **0 / 412.8h** | **25.70 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **90** | **98** | **91.8%** | **0 / 412.8h** | **25.72 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2810,7 +2810,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 4.58h (medido).
 
-**Notas**: RED: `test_metrics.MeasureAbstentionTests` falló con `FileNotFoundError` (sin `measure_abstention.py`); tres fallos reales de la primera medición, cada uno con su prueba en rojo antes de la corrección: `UnicodeDecodeError: 'charmap'` al leer la salida de Docker (se perdía el informe tras 15 min), recorrido de la medición demasiado largo (`CachedQueries`: una incrustación por pregunta; el modelo real se evalúa una vez) y `embed job states {"failed": 4, "succeeded": 68}` (plazos de 60 s por lote: 300 s con el modelo real). Medición real 2026-11-18 (contenedor `kairos-calib-ollama`, puerto 21434, imagen local `ollama/ollama:0.31.1`, modelo 274 MB descargado en <3 min): `uncalibrated` (ningún umbral cumple ≥ 70 % correcta y ≤ 5 % falsa); curva umbral -> correcta/falsa: 0.50 20.8/0, 0.55 33.3/1.4, 0.60 50.0/2.8, 0.65 62.5/8.3, 0.70 95.8/13.9 %; recall@5 1.0, MRR 0.993. Sin umbral por defecto (Compose, código y `abstention.models` vacíos); la búsqueda responde `abstention: "uncalibrated"`; la tabla y R-07 están en `docs/configuration.md`. Aislamiento: `docker ps -a`, `volume ls` y `network ls` filtrados por `knowledge-graphs` idénticos antes y después (15 contenedores, 7 volúmenes, 6 redes); `kairos-calib-*` sin restos (el script lo comprueba y sale con error si no); 11434 solo aparece en `DEPLOYED_PORT` para rechazarlo (una prueba lo exige). Dos ejecuciones previas se mataron a mano y sus recursos `kairos-calib-*` se retiraron con `docker rm -f`/`volume rm`/`network rm`. usage-meter 4.58h (medido) incluye la espera de la CPU (reloj 1h58m). JSON del usage-meter y de la medición en `execution-history.md`.
+**Notas**: RED: `FileNotFoundError` (sin `measure_abstention.py`) y 3 fallos reales de la medición (`UnicodeDecodeError` de la salida de Docker, `embed job states failed: 4`, run demasiado largo). `uncalibrated`: con el modelo real ningún umbral da ≥ 70 % correcta y ≤ 5 % falsa (0.60: 50.0/2.8 %; 0.65: 62.5/8.3 %; 0.70: 95.8/13.9 %); recall@5 1.0, MRR 0.993; sin umbral por defecto. Listados `knowledge-graphs` (contenedores, volúmenes, redes) idénticos antes y después; `kairos-calib-*` sin restos. Detalle completo en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-89).
 
 ### T-90 — Pruebas de la puerta de abstención
 
@@ -2840,31 +2840,33 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.07h (medido).
 
-**Notas**: RED: 3 mutantes del paso de CI sobrevivían (la mutación tocaba el trabajo `server`, que tiene líneas iguales) hasta acotarlos al trabajo `retrieval-eval`; la prueba de `structural_keys` falló con la clave quitada. Mutantes comprobados (8 en `run.py`/`thresholds.json` con `test_metrics`, todos MUERTOS: quitar `evaluate_abstention` de `run()`, los controles `abstention_false`/`abstention_correct`/`abstained_with_items`/mínimo de negativas, la clave `abstention` de `STRUCTURAL_KEYS`, las metas y el umbral simulado de `thresholds.json`; y 7 del paso de CI con `test_ci_workflow`, todos detectados: borrar o `|| true` en cada `grep`, `set +e`). `test_metrics` pasó de 24 a 45 pruebas (21 nuevas; la prueba de la clave estructural y las de T-88/T-89 se entregaron en sus commits); `test_ci_workflow` ejecuta el script del paso sobre 5 informes sintéticos. `retrieval-eval` sigue fuera de la suite (no lo descubre `run_postgres`). Las 3 pruebas de DSN de `test_metrics` no corren en el host (sin `psycopg`) y sí en la imagen. JSON de usage-meter en `execution-history.md`.
+**Notas**: RED: 3 mutantes del paso de CI sobrevivían hasta acotarlos al trabajo `retrieval-eval`. 8 mutantes de `run.py`/`thresholds.json` y 7 del paso de CI, todos detectados; `test_metrics` pasó de 24 a 45 pruebas; `retrieval-eval` sigue fuera de la suite. Detalle completo en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-90).
 
 ### T-91 — Documentar la abstención y avisar a la Iniciativa 7
 
 - **Descripción**: Documentar la abstención (parámetro, variables, umbral por modelo, `uncalibrated`) y dejar la nota para la Iniciativa 7 sobre el cambio visible y la activación futura por defecto. Fuente: CA-29 (documentación); P-04.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: La abstención sigue apagada por defecto y sin umbral para ningún modelo (`uncalibrated`); el manual recoge la medida con el modelo real y los CHANGELOG avisan de lo que cambia al activarla.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 1.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real 0.02h (medido)
 - **Supervisión**: est. 0.05h (≈25 % IA) · real —
 - **Previsión IA**: 55 k in / 5 k out tok · ⚠️ verificar €
 - **Dependencias**: T-90
 - **Tipo**: docs
-- **Archivos**: `docs/configuration.md`, `docs/operations.md`, `docs/manual.md`, `CHANGELOG.md`, `CHANGELOG.es.md`
+- **Archivos**: `docs/configuration.md`, `docs/operations.md`, `docs/manual.md`, `CHANGELOG.md`, `CHANGELOG.es.md`, `server/memory_platform/tests/test_abstention_docs.py`, `docs/roadmap/2026-11-15-reliable-operations/improvement-plan.md`
 - **Cubre (tests)**: —
 - **Verificación**: lectura: `docs/configuration.md` lista `MEMORY_ABSTAIN_THRESHOLDS` y `MEMORY_ABSTAIN_DEFAULT` con defaults iguales a `config.py`, y los CHANGELOG llevan la nota para la Iniciativa 7
 
 **Criterios de aceptación**
-- [ ] La nota dice que la abstención sigue apagada por defecto y que activarla cambia lo que ve `custom-agents`
+- [x] La nota dice que la abstención sigue apagada por defecto y que activarla cambia lo que ve `custom-agents`
 
 **Subtareas**
-- [ ] Actualizar manuales y CHANGELOG
-- [ ] `usage-meter start/close` de la tarea
+- [x] Actualizar manuales y CHANGELOG
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 0.02h (medido).
 
-**Notas**: Estilo: CHANGELOG de la Iniciativa 2.
+**Notas**: RED: `test_abstention_docs` no se cumplía sobre el HEAD anterior. `docs/configuration.md`, `docs/operations.md` y ambos CHANGELOG actualizados; `test_abstention_docs` (4 pruebas); `manual.md` sin cambio (el portal no expone `abstain`); ítem (23) en `improvement-plan.md`. Detalle completo en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-91).
 
 ### T-92 — Cierre de fase: suite completa y subida del mínimo
 
