@@ -2325,7 +2325,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - Excepción declarada: usage-meter start se ejecutó desde otro directorio y close no encontró el marcador (`fuente: estimado`); horas reales marcadas «(estimado)».
 
-**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-74).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-74). Fix1 (revisión fase 12, n.º 1 y 5): una señal tras un recorrido correcto (lectura de cola, purga, escritura del .prom, cierre del cliente) ya no reescribe informe ni .prom como `setup/interrupted`: el informe conserva su resultado y lleva `interrupted: true` (`run_command`, `write_metrics_kept`). `LiveQueueSqlTests` ejecuta `LIVE_QUEUE_SQL` en PostgreSQL real con valores (vacía→0, pending con `available_at` futuro→0, running con concesión viva→0, running caducada y unknown vencido cuentan, terminales no cuentan): pasó sin cambio de código, la consulta ya era correcta. RED 2026-11-18: `test_fix1_a_signal_after_a_good_round_trip…` FAIL [queue] y [purge] con el código anterior.
 
 ### T-75 — Servicio Compose `memory-probe` (perfil propio)
 
@@ -2339,7 +2339,7 @@ test-plan: n/a (sin UI)
 - **Previsión IA**: 110 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: T-74
 - **Tipo**: devops
-- **Archivos**: `docker-compose.yml`, `server/memory_platform/admin.py` (`probe --loop`), `server/memory_platform/probe.py` (`probe_interval`), `server/memory_platform/tests/test_compose_limits.py`, `server/memory_platform/tests/test_probe.py`, `scripts/deploy-memory.py` (imagen del servicio en el override aislado), `docs/configuration.md`, `docs/operations.md` (fila del healthcheck)
+- **Archivos**: `docker-compose.yml`, `server/memory_platform/admin.py` (`probe --loop`), `server/memory_platform/probe.py` (`probe_interval`), `server/memory_platform/tests/test_compose_limits.py`, `server/memory_platform/tests/test_probe.py`, `scripts/deploy-memory.py` (imagen del servicio en el override aislado; fix1: `refresh_probe`), `server/memory_platform/tests/test_deploy.py`, `server/memory_platform/tests/test_deploy_isolation.py` (fix1: recreación tras el despliegue), `docs/configuration.md`, `docs/operations.md` (fila del healthcheck)
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_compose_limits|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
@@ -2355,7 +2355,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.24h (medido), 14m.
 
-**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-75).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-75). Fix1 (n.º 1, 2, 4 y 6): el bucle instala SIGTERM→KeyboardInterrupt durante todo su ciclo (también la espera) y termina con `probe_interrupted` (RED: `test_fix1_a_stop_during_the_wait…` dejaba escapar el KeyboardInterrupt). Healthcheck = `python -m memory_platform.probe health`: latido propio del bucle (`kairos-probe.heartbeat`, `--heartbeat-file`/`MEMORY_PROBE_HEARTBEAT_FILE`) con margen intervalo + ciclo más largo (timeout + 20 + 10 + 15 + 2 s) + 60 s; un `admin probe` manual ya no lo tapa (RED: AttributeError y FAIL de compose). Mínimo privilegio: `volume.subpath: probe` en `/backups/probe`, rutas por defecto migradas a `/backups/probe/kairos-probe.*` (migración en el manual); `memory_dsn` se queda: el repo solo tiene un rol de base, motivo anotado en el manual. `deploy-memory.py` recrea `memory-probe` si estaba en marcha (`refresh_probe`; RED: ERROR en `migrate_run(probe_running=True)`).
 
 ### T-76 — `kairos doctor`: aviso de cola en disco del cliente
 
@@ -2385,7 +2385,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.19h (medido), 11m.
 
-**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-76).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-76). Fix1 (n.º 3): `queueAge` lee `queue.json` y `queue.jsonl` con `stableRead` (identidad del snapshot e inodo del diario antes y después; hasta 8 intentos; `capture_queue_unstable` → `unreadable`), sin bloqueo ni escritura. 3 pruebas nuevas intercalan el checkpoint del dispatcher entre las dos lecturas. RED 2026-11-18: las 3 fallaban (cola entregada mostrada como atascada, `unreadable` sin pendientes, edad inventada).
 
 ### T-77 — Ensayo aislado: sonda con `memory-worker` parado
 
@@ -2416,7 +2416,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.29h (medido), 17m.
 
-**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-77).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-77). Fix1: `PROBE_METRICS_FILE` pasa a `/backups/probe/kairos-probe.prom` (nueva ruta por defecto, n.º 4); sin re-ensayo del despliegue en esta corrección (prohibido); `scripts/tests` en verde.
 
 ### T-78 — Documentar cola atascada, reglas de ejemplo y `doctor`
 
@@ -2442,7 +2442,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.06h (medido), 4m (la mayor parte de la redacción corrió dentro de la ventana de T-77).
 
-**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-78).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-78). Fix1 (n.º 1, 2, 4, 6 y 7): el manual dice que el periodo real es duración + intervalo, que una parada termina con `probe_interrupted` en cualquier punto del ciclo conservando el resultado ya escrito, el latido y su margen, el subdirectorio `probe` (Engine 26/Compose 2.26), el motivo de `memory_dsn`, la recreación tras el despliegue y la migración de rutas; `configuration.md`, `client/README.md` e ítem (21) del plan al día; prueba nueva en `DocumentationTests`.
 
 ### T-79 — Cierre de fase: suite completa y subida del mínimo
 
@@ -2473,7 +2473,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.04h (medido), 2m (el build de ~14 min corrió en segundo plano).
 
-**Notas**: Suite 2026-11-18 (`kairos-test:i3p12`): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1477}`. Mínimo 1460→1477 en `ci.yml` (con su historia), `MIN_FLOOR`, tabla de operations.md y README.md:252; test_ci_workflow 45 OK; `cd client && npm test` 97 OK.
+**Notas**: Suite 2026-11-18 (`kairos-test:i3p12`): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1477}`. Mínimo 1460→1477 en `ci.yml` (con su historia), `MIN_FLOOR`, tabla de operations.md y README.md:252; test_ci_workflow 45 OK; `cd client && npm test` 97 OK. Fix1: suite `kairos-test:i3p12f` 2026-11-18: `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1494}`; mínimo 1477→1494 en `ci.yml` (con historia), `MIN_FLOOR`, operations.md y README.md:252. Las dos pruebas de tiempo que un revisor vio fallar fuera del arnés (`test_the_providers_own_timeout_is_counted_once`, `test_with_a_stored_vector_of_other_dimensions_the_extra_call_still_fits`) pasan en la suite completa.
 
 ### T-80 — Revisión adversarial de la fase (dos lentes)
 
