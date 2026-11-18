@@ -197,6 +197,9 @@ JOB_CODES = CODES | {'destination_retired', 'superseded', 'attempts_exhausted', 
 OTHER = 'other'
 QUEUE_CACHE_SECONDS = 10.0  # a loop of scrapes reads the database at most this often
 QUEUE_STATEMENT_TIMEOUT_MS = 2000
+DUE_AT = "CASE WHEN state='running' THEN lease_until ELSE available_at END"  # when a live job became the worker's to take: a pending/unknown job at `available_at`, a running one when its lease ran out
+LIVE_QUEUE_SQL = ("SELECT state, destination, count(*) AS n, COALESCE(max(EXTRACT(EPOCH FROM clock_timestamp()-(%s))) FILTER (WHERE (%s) <= clock_timestamp()), 0) AS oldest "
+                  "FROM memory.jobs WHERE state IN ('pending','running','unknown') GROUP BY state, destination") % (DUE_AT, DUE_AT)  # the live rows only, never the terminal bulk
 _QUEUE_CACHE = {'at': None, 'ok': False}
 
 LAYER_SECONDS = Histogram('kairos_retrieval_layer_seconds', 'Latency of each retrieval layer of a search', ['layer'], registry=REGISTRY,
@@ -206,6 +209,8 @@ QUEUE_DEPTH = Gauge('kairos_jobs_queue_depth', 'Jobs in memory.jobs by state and
 QUEUE_SCRAPE_SUCCESS = Gauge('kairos_jobs_queue_scrape_success', '1 when the last read of memory.jobs worked, 0 when it failed (the queue values are then the last good ones)', registry=REGISTRY)
 JOBS_FAILED = Gauge('kairos_jobs_failed', 'Jobs of memory.jobs in state failed by destination and error code, read when /metrics is served (covers the worker process)',
                     ['destination', 'code'], registry=REGISTRY)
+OLDEST_PENDING = Gauge('kairos_jobs_oldest_pending_seconds', 'Seconds the oldest job of memory.jobs has been waiting for a worker (pending or unknown and due, or running with an expired lease; 0 with an empty queue), read when /metrics is served',
+                       registry=REGISTRY)
 EMBED_WAIT = Histogram('kairos_embedding_wait_seconds', 'Time spent waiting for the shared embeddings slot, by caller', ['caller'], registry=REGISTRY,
                        buckets=(0.005, 0.05, 0.25, 1, 5, 15, 60, 120))
 EMBED_IN_USE = Gauge('kairos_embedding_slots_in_use', 'Embeddings slots held right now, by caller', ['caller'], registry=REGISTRY)
@@ -291,6 +296,23 @@ def _read(store, sql, event):
         return None
 
 
+def oldest_of(rows):
+    """The largest `oldest` of the rows of `LIVE_QUEUE_SQL` (0.0 for no rows, a missing or a malformed age): an empty queue is never stuck."""
+    oldest = 0.0
+    for row in rows:
+        try:
+            oldest = max(oldest, float(row.get('oldest') or 0))
+        except (TypeError, ValueError, AttributeError):
+            continue
+    return oldest
+
+
+def oldest_pending_seconds(store):
+    """How long the oldest waiting job has waited, in seconds (0.0: none), or None (logged, never raised) when the read failed: the probe compares it with MEMORY_QUEUE_STUCK_SECONDS."""
+    rows = _read(store, LIVE_QUEUE_SQL, 'queue_age_unavailable')
+    return None if rows is None else oldest_of(rows)
+
+
 def refresh_queue_depth(store):
     """Set `kairos_jobs_queue_depth` and `kairos_jobs_failed` from memory.jobs as they are now, at most every QUEUE_CACHE_SECONDS.
 
@@ -303,7 +325,7 @@ def refresh_queue_depth(store):
     if _QUEUE_CACHE['at'] is not None and now-_QUEUE_CACHE['at'] < QUEUE_CACHE_SECONDS:
         return _QUEUE_CACHE['ok']
     _QUEUE_CACHE['at'], _QUEUE_CACHE['ok'] = now, False
-    rows = _read(store, "SELECT state, destination, count(*) AS n FROM memory.jobs WHERE state IN ('pending','running','unknown') GROUP BY state, destination", 'metrics_queue_unavailable')
+    rows = _read(store, LIVE_QUEUE_SQL, 'metrics_queue_unavailable')
     failed = _read(store, "SELECT destination, error_code, count(*) AS n FROM memory.jobs WHERE state='failed' GROUP BY destination, error_code", 'metrics_failed_unavailable')
     if rows is not None:
         counts = {(state, destination): 0 for state in QUEUE_STATES for destination in DESTINATIONS}
@@ -316,6 +338,7 @@ def refresh_queue_depth(store):
         for (state, destination), value in counts.items():
             if state != 'failed':
                 QUEUE_DEPTH.labels(state, destination).set(value)
+        OLDEST_PENDING.set(oldest_of(rows))
     if failed is not None:
         failed_depth = {destination: 0 for destination in DESTINATIONS+(OTHER,)}  # `other` lives in `kairos_jobs_failed`; the queue series `other` is for the live read
         by_code = {(destination, code): 0 for destination in DESTINATIONS+(OTHER,) for code in tuple(sorted(JOB_CODES))+(OTHER,)}

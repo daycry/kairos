@@ -415,10 +415,10 @@ class CommandTests(unittest.TestCase):
         self.key = self.directory / 'kairos-probe.key'
         self.addCleanup(observability.remove_logging)  # `admin probe` configures the JSON logs of the process
 
-    def command(self, *arguments, api=None, environ=None):
+    def command(self, *arguments, api=None, environ=None, queue=False):
         out, err = io.StringIO(), io.StringIO()
         factory = (lambda url, token: api) if api is not None else probe.HttpApi
-        with patch.dict(os.environ, environ or {}, clear=False), patch.object(probe, 'HttpApi', factory), patch.object(probe, 'purge_after', lambda *arguments: None),                 contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        with patch.dict(os.environ, environ or {}, clear=False), patch.object(probe, 'HttpApi', factory), patch.object(probe, 'purge_after', lambda *arguments: None), patch.object(probe, 'queue_check', probe.queue_check if queue else (lambda *arguments: None)),                 contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
                 admin.main(['probe', '--metrics-file', str(self.metrics), '--key-file', str(self.key)] + list(arguments))
                 code = 0
@@ -682,6 +682,73 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(report['status'], 'probe_ok')
         self.assertEqual(target.read_text(encoding='utf-8'), 'keep')
 
+    # -- T-74: a queue that does not drain -------------------------------------------------------------------------------------------
+
+    def queue_store(self, clock, enqueued=None):
+        """A store whose queue holds one job enqueued at `enqueued` on the injected clock (None: an empty queue), so its age is what the clock says."""
+        from unittest.mock import MagicMock
+        connection = MagicMock()
+
+        def execute(sql, *arguments):
+            result = MagicMock()
+            result.fetchall.return_value = [] if enqueued is None else [{'state': 'pending', 'destination': 'embed', 'n': 1, 'oldest': clock.now-enqueued}]
+            return result
+        connection.execute.side_effect = execute
+        store = MagicMock()
+        store.transaction.return_value.__enter__.return_value = connection
+        return store
+
+    def test_t74_a_queue_older_than_the_threshold_is_queue_stuck_with_the_event_and_the_default_900_seconds(self):
+        self.key.write_text('mp_token\n', encoding='utf-8')
+        clock = Clock()
+        enqueued = clock.now-901
+        with patch.object(probe, 'purge_after', lambda *arguments: None):
+            report, lines = self.probe_command(FakeServer(clock), clock, lambda: self.queue_store(clock, enqueued))
+        self.assertEqual(report['status'], 'probe_ok')  # the round trip worked: the stuck queue is its own alert
+        self.assertTrue(report['queue']['stuck'])
+        self.assertEqual((report['queue']['threshold_seconds'], report['queue']['oldest_pending_seconds'] > 900), (900.0, True))
+        self.assertEqual([(line['event'], line['level'], line['code']) for line in lines if line['event'] == 'queue_stuck'], [('queue_stuck', 'warning', 'queue_stuck')])
+
+    def test_t74_the_threshold_is_the_setting_and_a_queue_below_it_or_empty_is_not_stuck(self):
+        self.key.write_text('mp_token\n', encoding='utf-8')
+        for label, enqueued_ago, environ, stuck in (('below', 600, {}, False), ('empty', None, {}, False), ('custom', 100, {'MEMORY_QUEUE_STUCK_SECONDS': '60'}, True),
+                                                    ('custom-below', 100, {'MEMORY_QUEUE_STUCK_SECONDS': '120'}, False), ('invalid', 1000, {'MEMORY_QUEUE_STUCK_SECONDS': 'soon'}, True)):
+            with self.subTest(label):
+                clock = Clock()
+                enqueued = None if enqueued_ago is None else clock.now-enqueued_ago
+                out, err = io.StringIO(), io.StringIO()
+                with patch('memory_platform.probe.time', SimpleNamespace(monotonic=clock, sleep=clock.sleep)), patch.object(probe, 'purge_after', lambda *arguments: None),                         contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                    observability.configure_logging()
+                    report = probe.probe_command(None, str(self.key), str(self.metrics), environ=environ, api_factory=lambda url, token: FakeServer(clock), store_factory=lambda: self.queue_store(clock, enqueued))
+                self.assertEqual(report['queue']['stuck'], stuck)
+                events = [json.loads(line)['event'] for line in err.getvalue().splitlines() if line.startswith('{')]
+                self.assertEqual('queue_stuck' in events, stuck)
+
+    def test_t74_admin_probe_exits_non_zero_with_queue_stuck_and_keeps_the_probe_result_in_the_report(self):
+        self.key.write_text('mp_token\n', encoding='utf-8')
+        clock = Clock()
+        stuck = clock.now-5000
+        with patch.object(probe, 'purge_after', lambda *arguments: None), patch('memory_platform.admin.Store', lambda *arguments, **options: self.queue_store(clock, stuck)),                 patch('memory_platform.admin.guarded_dsn', lambda dsn: dsn), patch('memory_platform.admin.Settings') as settings:
+            settings.from_env.return_value = SimpleNamespace(dsn='postgresql://fixture', project_maps={})
+            code, out, _ = self.command(api=FakeServer(clock), environ={'MEMORY_PROBE_TIMEOUT': '120'}, queue=True)
+        self.assertTrue(str(code).startswith('queue_stuck: oldest_pending_seconds='), code)
+        self.assertEqual(json.loads(out)['status'], 'probe_ok')
+
+    def test_t74_no_check_without_a_database_after_401_or_after_a_signal(self):
+        self.key.write_text('mp_token\n', encoding='utf-8')
+
+        def factory():
+            raise AssertionError('the database must not be opened')
+        for label, options in (('401', {'write_status': 401}), ('interrupt', {'raises': ('status', KeyboardInterrupt())})):
+            with self.subTest(label):
+                clock = Clock()
+                report, _ = self.probe_command(FakeServer(clock, **options), clock, factory)
+                self.assertIsNone(report['queue'])
+        clock = Clock()
+        report, _ = self.probe_command(FakeServer(clock), clock, None)
+        self.assertIsNone(report['queue'])  # no database settings: nothing to read, and no failure of the probe
+        self.assertEqual(report['status'], 'probe_ok')
+
     def test_a_purge_that_fails_is_logged_and_does_not_change_the_result_of_the_probe(self):
         self.key.write_text('mp_token\n', encoding='utf-8')
         clock = Clock()
@@ -695,7 +762,7 @@ class CommandTests(unittest.TestCase):
                 report = probe.probe_command(None, str(self.key), str(self.metrics), environ={}, api_factory=lambda url, token: FakeServer(clock), store_factory=no_store)
         self.assertEqual((report['status'], report['purged']), ('probe_ok', None))
         lines = [json.loads(line) for line in err.getvalue().splitlines() if line.startswith('{')]
-        self.assertEqual([(line['event'], line['exc_type']) for line in lines], [('probe_purge_failed', 'ConnectionError')])
+        self.assertEqual([(line['event'], line['exc_type']) for line in lines], [('probe_queue_failed', 'ConnectionError'), ('probe_purge_failed', 'ConnectionError')])  # the factory failed once, each check says so
         self.assertNotIn('secret', err.getvalue())
 
 

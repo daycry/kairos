@@ -424,6 +424,8 @@ def main(argv=None):
             raise SystemExit('probe_failed: stage=%s code=%s' % (report['stage'], report['code']))
         if report.get('metrics_written') is False:  # the probe worked but the file a monitor reads did not change: that is a failure of the check
             raise SystemExit('probe_metrics_failed: the metrics file could not be written')
+        if (report.get('queue') or {}).get('stuck'):  # the round trip worked but the jobs queue holds a job that has waited longer than MEMORY_QUEUE_STUCK_SECONDS
+            raise SystemExit('queue_stuck: oldest_pending_seconds=%s threshold_seconds=%s' % (report['queue']['oldest_pending_seconds'], report['queue']['threshold_seconds']))
         return
     try:
         settings = Settings.from_env()

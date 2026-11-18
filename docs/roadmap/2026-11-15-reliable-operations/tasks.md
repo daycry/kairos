@@ -51,12 +51,12 @@ test-plan: n/a (sin UI)
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 7 | 7 | 100% | 0 / 19.8h | 0.27 / 2.6h | 0 / 0.7h | 0 / 660 k |
 | Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 7 | 7 | 100.0% | 0 / 34.2h | 5.48 / 4.6h | 0 / 1.1h | 0 / 1140 k |
 | Fase 11 — Sonda de ida y vuelta (C-06) | 6 | 6 | 100.0% | 0 / 23.4h | 4.95 / 3.1h | 0 / 0.8h | 0 / 780 k |
-| Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 0 | 7 | 0% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
+| Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 1 | 7 | 14.3% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 0 | 6 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **73** | **98** | **74.5%** | **0 / 412.8h** | **15.68 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **74** | **98** | **75.5%** | **0 / 412.8h** | **15.68 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2300,30 +2300,38 @@ test-plan: n/a (sin UI)
 ### T-74 — `kairos_jobs_oldest_pending_seconds` y aviso de cola atascada
 
 - **Descripción**: Publicar `kairos_jobs_oldest_pending_seconds` en `/metrics` y hacer que la sonda avise cuando supera `MEMORY_QUEUE_STUCK_SECONDS` (900 s). Añadir un fichero de reglas Prometheus de ejemplo. Fuente: CA-32; M-06; P-06.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: `/metrics` publica `kairos_jobs_oldest_pending_seconds` y `admin probe` avisa con `queue_stuck` (evento, `queue` en el informe y salida ≠ 0) si un trabajo espera más de `MEMORY_QUEUE_STUCK_SECONDS` (900 s); hay reglas Prometheus de ejemplo.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 3h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.30h (estimado)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 110 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/observability.py`, `server/memory_platform/admin.py`, `server/memory_platform/tests/test_observability.py`, `docs/examples/prometheus-rules.yml`
+- **Archivos**: `server/memory_platform/observability.py`, `server/memory_platform/probe.py`, `server/memory_platform/admin.py`, `server/memory_platform/Dockerfile` (COPY de las reglas para la prueba), `server/memory_platform/tests/test_observability.py`, `server/memory_platform/tests/test_metrics.py`, `server/memory_platform/tests/test_probe.py`, `docs/examples/prometheus-rules.yml`
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_observability|test_probe|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] `/metrics` publica `kairos_jobs_oldest_pending_seconds` (0 con la cola vacía) leyendo solo `pending`, `running` y `unknown`, sin recorrer filas terminales
-- [ ] La sonda avisa con `queue_stuck` cuando la antigüedad supera `MEMORY_QUEUE_STUCK_SECONDS` (prueba con reloj inyectado)
-- [ ] `docs/examples/prometheus-rules.yml` contiene reglas de ejemplo para `kairos_probe_success`, antigüedad de cola y `kairos_jobs_failed`
+- [x] `/metrics` publica `kairos_jobs_oldest_pending_seconds` (0 con la cola vacía) leyendo solo `pending`, `running` y `unknown`, sin recorrer filas terminales
+- [x] La sonda avisa con `queue_stuck` cuando la antigüedad supera `MEMORY_QUEUE_STUCK_SECONDS` (prueba con reloj inyectado)
+- [x] `docs/examples/prometheus-rules.yml` contiene reglas de ejemplo para `kairos_probe_success`, antigüedad de cola y `kairos_jobs_failed`
 
 **Subtareas**
-- [ ] Escribir primero las pruebas (rojo)
-- [ ] Añadir la métrica con el índice parcial de la Fase 3
-- [ ] Añadir el aviso a la sonda y el fichero de reglas
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero las pruebas (rojo)
+- [x] Añadir la métrica con el índice parcial de la Fase 3
+- [x] Añadir el aviso a la sonda y el fichero de reglas
+- [x] `usage-meter start/close` de la tarea
+  - Excepción declarada: usage-meter start se ejecutó desde otro directorio y close no encontró el marcador (`fuente: estimado`); horas reales marcadas «(estimado)».
 
-**Notas**: Patrón: `observability.py:189-213` y `:205-208` (`kairos_jobs_queue_depth`, `kairos_jobs_failed`) y `tests/test_observability.py`. Canal de alerta (P-06): métrica, evento y código de salida; el envío a personas es de la Iniciativa 5.
+**Notas**: Edad = `max(now - due)` en la misma consulta de conteos de `memory.jobs` (sin tercera lectura; `due` = `available_at` en pending/unknown, `lease_until` en running; solo lo ya vencido, FILTER); cola vacía = 0. La sonda lee la misma SQL (`observability.oldest_pending_seconds`) con la conexión que comparte con la purga (`memoized`), omite la lectura tras 401/señal, y `admin probe` sale con `queue_stuck: oldest_pending_seconds=… threshold_seconds=…` (ronda sana, cola vieja). `MEMORY_QUEUE_STUCK_SECONDS` inválido: aviso `probe_setting_ignored` y 900. Pruebas en test_metrics/test_probe (el plan nombraba test_observability, cuyo patrón de `jobs_store` vive en test_metrics). Verificación: módulos test_probe, test_observability, test_metrics y test_admin en la imagen de pruebas con el código montado: 161 pruebas OK, 37 omitidas = las que necesitan PostgreSQL (corren en la suite completa de T-79). Canal de alerta (P-06): métrica, evento y salida; el envío a personas es de la Iniciativa 5.
+
+
+RED: `test_metrics.py::test_t74_the_oldest_pending_age_is_published_and_is_zero_with_an_empty_queue` falló con AssertionError: 0.0 != 900.25 (sin kairos_jobs_oldest_pending_seconds); oldest_pending_seconds ausente (AttributeError) · 2026-11-18.
+
+
+RED: `test_probe.py::CommandTests::test_t74_a_queue_older_than_the_threshold_is_queue_stuck_with_the_event_and_the_default_900_seconds` falló con KeyError: 'queue' (el informe de la sonda no avisa de la cola atascada) · 2026-11-18.
 
 ### T-75 — Servicio Compose `memory-probe` (perfil propio)
 

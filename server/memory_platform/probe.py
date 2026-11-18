@@ -56,6 +56,7 @@ SWEEP_LIMIT = 20
 PURGE_AFTER_SECONDS = 600  # a retired note of `kairos-probe` older than this is deleted for good by `admin probe`
 PURGE_BATCH = 200
 PURGE_BUDGET = 15.0  # ALL the statements of one purge share these seconds (each is limited by what is left); once spent the transaction is rolled back and nothing is deleted
+DEFAULT_QUEUE_STUCK_SECONDS = 900.0  # MEMORY_QUEUE_STUCK_SECONDS: a job that has waited longer than this for a worker is a queue that does not drain
 PROVISION_LOCK = 688090884127  # advisory lock: two `probe-provision` at once never revoke each other's key
 STAGES = observability.PROBE_STAGES
 SETUP = 'setup'  # not a stage of the round trip: the configuration of the command (an unreadable key, a bad URL) failed before any request
@@ -451,6 +452,57 @@ def purge_after(store_factory, report):
         return None
 
 
+def queue_stuck_threshold(environ=None):
+    """`MEMORY_QUEUE_STUCK_SECONDS` (default 900): how long the oldest waiting job may wait. A value that is not a positive number is logged and the default applies (a typo never switches the alert off)."""
+    environ = os.environ if environ is None else environ
+    text = str(environ.get('MEMORY_QUEUE_STUCK_SECONDS', '') or '').strip()
+    if not text:
+        return DEFAULT_QUEUE_STUCK_SECONDS
+    try:
+        value = float(text)
+    except ValueError:
+        value = 0.0
+    if not 0 < value < float('inf'):  # also false for nan
+        observability.log_event('probe_setting_ignored', 'warning', code='queue_stuck_seconds_invalid')
+        return DEFAULT_QUEUE_STUCK_SECONDS
+    return value
+
+
+def queue_check(store_factory, environ=None):
+    """The age of the oldest waiting job against the threshold: `{'oldest_pending_seconds', 'threshold_seconds', 'stuck'}`, or None when there is no database to ask or the read failed (the
+    probe does not fail for it: the read logs its own cause). A stuck queue is logged as `queue_stuck` (warning). An empty queue is 0 seconds, never stuck."""
+    try:
+        store = store_factory()
+    except Exception as error:  # the purge that shares this factory logs it too: the two checks are separate
+        observability.log_failure('probe_queue_failed', error, 'warning', stage=SETUP)
+        return None
+    threshold = queue_stuck_threshold(environ)
+    oldest = observability.oldest_pending_seconds(store)
+    if oldest is None:
+        return None
+    stuck = oldest > threshold
+    if stuck:
+        observability.log_event('queue_stuck', 'warning', code='queue_stuck')
+    return {'oldest_pending_seconds': round(oldest, 1), 'threshold_seconds': threshold, 'stuck': stuck}
+
+
+def memoized(factory):
+    """`factory` called at most once (its result, or its exception, is reused): the queue check and the purge share one database connection of the run."""
+    made, failed = [], []
+
+    def once():
+        if failed:
+            raise failed[0]
+        if not made:
+            try:
+                made.append(factory())
+            except Exception as error:
+                failed.append(error)
+                raise
+        return made[0]
+    return once
+
+
 def probe_command(url, key_file, metrics_file, environ=None, api_factory=None, store_factory=None, **options):
     """`admin probe`: settings, one run, the metrics file, the purge. Returns the report (a setting that is wrong is a `probe_failed` at stage `setup`, with success 0 in the file as well).
     Whatever happens inside, the metrics file is written with the result (success 0 for an interrupt or an unexpected error); `metrics_written` says whether it was."""
@@ -495,8 +547,14 @@ def run_command(url, key_file, metrics_file, environ, api_factory, store_factory
                 report['metrics_written'] = write_metrics(metrics_file)
     except ProbeError as error:
         return failed_setup(error.code, previous_success(metrics_file))
+    report['queue'] = None
     if store_factory:
-        report['purged'] = None if report.get('code') in ('unauthorized', 'interrupted') else purge_after(store_factory, report)
+        if report.get('code') in ('unauthorized', 'interrupted'):
+            report['purged'] = None
+        else:
+            shared = memoized(store_factory)
+            report['queue'] = queue_check(shared, environ)
+            report['purged'] = purge_after(shared, report)
     return report
 
 
