@@ -463,7 +463,7 @@ class EveryTransactionTests(unittest.TestCase):
         readers = re.compile(r'FROM\s+memory\.(project_grants|api_keys)\b', re.I)
         allowed = {('store_auth.py', '_load_active'), ('store_auth.py', '_require'), ('store_auth.py', 'list_users'), ('store_auth.py', 'list_keys'), ('store_auth.py', 'revoke_key'),
                    ('store_auth.py', 'list_projects'), ('auth.py', '_actor'), ('auth.py', 'authenticate_bearer'),
-                   ('probe.py', 'provision_locked')}  # the probe provisioning is an operator command: it reads the grants of its project (is it ours?) and api_keys to rotate its own keys; whether a key still WORKS goes through `Auth` (`valid_key` reads no table)
+                   ('probe.py', 'provision_locked'), ('probe.py', 'probe_state')}  # `probe_state`: the one "is this project the probe's?" check that provisioning and purge share (grants of that project)  # the probe provisioning is an operator command: it reads the grants of its project (is it ours?) and api_keys to rotate its own keys; whether a key still WORKS goes through `Auth` (`valid_key` reads no table)
         found = set()
         for path in sorted(PACKAGE.glob('*.py')):
             for node in ast.walk(ast.parse(path.read_text(encoding='utf-8'))):

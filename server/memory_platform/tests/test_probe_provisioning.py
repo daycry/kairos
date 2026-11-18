@@ -386,6 +386,89 @@ class ProvisioningTests(IsolatedDatabase, unittest.TestCase):
         self.assertEqual(probe.valid_key(self.store, token, probe.PROBE_PROJECT, self.service_actor()['id']), active[0]['id'])
         self.assertEqual({result['key_id'] for result in results}, {active[0]['id']})
 
+    def retired_note(self, project_id):
+        """A retired note (a `delete` at version 2) of `project_id` with its jobs finished, so nothing but the owner check can keep the purge from deleting it."""
+        item = str(uuid.uuid4())
+        note = {'event_id': str(uuid.uuid4()), 'project_id': project_id, 'session_id': 's', 'agent_id': 'a', 'event_type': 'note', 'occurred_at': '2026-11-17T10:00:00Z', 'item_id': item,
+                'version': 1, 'generate': False, 'payload': {'title': 'Old note', 'content': 'A retired note', 'source': {'uri': 'fixture://old'}}}
+        self.store.ingest_event(self.actor, note)
+        self.store.ingest_event(self.actor, dict(note, event_id=str(uuid.uuid4()), event_type='delete', version=2))
+        with self.store.transaction() as c:
+            c.execute("UPDATE memory.jobs SET state='succeeded' WHERE project_id=%s", (project_id,))
+        return item
+
+    def test_the_purge_of_a_project_named_kairos_probe_that_is_not_the_probes_deletes_nothing(self):
+        """fix2 item 1: the same check as the provisioning (title and grants) runs before any row is deleted; a foreign project is `project_foreign`, never purged."""
+        self.store.create_project(self.actor, {'id': probe.PROBE_PROJECT, 'title': 'made by hand'})
+        self.store.set_policy(self.actor, probe.PROBE_PROJECT, {'capture_mode': 'summary', 'temporal_projection': False})
+        item = self.retired_note(probe.PROBE_PROJECT)
+        count = lambda: self.rows('SELECT (SELECT count(*) FROM memory.memory_items WHERE project_id=%s) AS items, (SELECT count(*) FROM memory.events WHERE project_id=%s) AS events',
+                                  probe.PROBE_PROJECT, probe.PROBE_PROJECT)[0]
+        before = count()
+        self.assertEqual(before['items'], 1)
+        with self.assertRaises(probe.ProbeError) as raised:
+            probe.purge_retired(self.store, [item], older_than=0)
+        self.assertEqual(raised.exception.code, 'project_foreign')
+        self.assertIsNone(probe.purge_after(lambda: self.store, {'item_id': item}))  # the command logs the code and goes on
+        self.assertEqual(count(), before)
+        with self.store.transaction() as c:  # control: with the title of the probe (and no other grantee) the same call does purge, so the test above is not vacuous
+            c.execute('UPDATE memory.projects SET title=%s WHERE id=%s', (probe.PROBE_TITLE, probe.PROBE_PROJECT))
+        self.assertEqual(probe.purge_retired(self.store, [item], older_than=0), 1)
+
+    def test_a_grant_to_a_user_makes_the_project_foreign_for_the_purge_too(self):
+        with self.store.transaction() as c:
+            c.execute('INSERT INTO memory.projects(id,title) VALUES(%s,%s)', (probe.PROBE_PROJECT, probe.PROBE_TITLE))
+            c.execute('INSERT INTO memory.project_grants(actor_id,project_id,permission) VALUES(%s,%s,%s)', (self.actor['id'], probe.PROBE_PROJECT, 'read'))
+        with self.assertRaises(probe.ProbeError) as raised:
+            probe.purge_retired(self.store, older_than=0)
+        self.assertEqual(raised.exception.code, 'project_foreign')
+
+    def test_the_rotation_never_revokes_the_key_of_a_human_administrator(self):
+        """fix2 item 2: only the keys of the service account (and the one in the key file) are rotated; an administrator's key with the same name and reach stays active."""
+        first = self.provision()
+        human = self.store.create_key(self.actor, {'name': probe.PROBE_KEY_NAME, 'project_ids': [probe.PROBE_PROJECT], 'scopes': list(probe.PROBE_SCOPES)})
+        self.key_file.write_text('mp_' + 'x' * 64 + '\n', encoding='utf-8')  # the file is no longer valid: the key is rotated
+        second = self.provision()
+        self.assertEqual(second['key'], 'created')
+        self.assertIsNone(self.rows('SELECT revoked_at FROM memory.api_keys WHERE id=%s', human['id'])[0]['revoked_at'])
+        self.assertIsNotNone(self.rows('SELECT revoked_at FROM memory.api_keys WHERE id=%s', first['key_id'])[0]['revoked_at'])  # the service account's own previous key does go
+
+    def audit(self):
+        return self.rows('SELECT action,actor_id,project_id,resource_id FROM memory.audit_events ORDER BY id')
+
+    def test_the_service_account_and_its_grants_are_audited_as_the_operator_and_a_second_run_adds_nothing(self):
+        """fix2 item 3 (CWE-778): the creation of the actor and of its three grants, and the issuing of the key, leave rows through the same `_audit` as `store_auth`."""
+        report = self.provision()
+        service = self.service_actor()
+        rows = self.audit()
+        created = [row for row in rows if row['action'] == 'user.created']
+        self.assertEqual([(row['actor_id'], row['resource_id']) for row in created], [(self.actor['id'], service['id'])])
+        grants = [row for row in rows if row['action'] == 'grant.created']
+        self.assertEqual(len(grants), len(probe.SERVICE_GRANTS))
+        self.assertEqual({(row['actor_id'], row['project_id'], row['resource_id']) for row in grants}, {(self.actor['id'], probe.PROBE_PROJECT, service['id'])})
+        issued = [row for row in rows if row['action'] == 'probe.key_issued']
+        self.assertEqual([(row['actor_id'], row['project_id'], row['resource_id']) for row in issued], [(self.actor['id'], probe.PROBE_PROJECT, report['key_id'])])
+        self.assertEqual(self.provision()['key'], 'reused')
+        self.assertEqual(self.audit(), rows)
+
+    def test_as_is_always_validated_and_a_rotation_is_attributed_to_the_operator(self):
+        """fix2 item 3: `--as` was ignored when the project already existed; now an unknown one is refused, and a given one signs the rotation."""
+        with self.store.transaction() as c:
+            c.execute('INSERT INTO memory.actors(id,username,password_hash,is_admin) VALUES(%s,%s,%s,true)', (str(uuid.uuid4()), 'zz-operator', hash_password('fixture-password-123')))
+            c.execute('INSERT INTO memory.actors(id,username,password_hash,is_admin) VALUES(%s,%s,%s,false)', (str(uuid.uuid4()), 'plain-user', hash_password('fixture-password-123')))
+        self.provision()  # the project exists from now on
+        self.key_file.write_text('mp_' + 'x' * 64 + '\n', encoding='utf-8')
+        before = self.audit()
+        for name in ('plain-user', 'nobody'):
+            with self.subTest(name), self.assertRaises(probe.ProbeError) as raised:
+                probe.provision(self.store, self.key_file, operator=name)
+            self.assertEqual(raised.exception.code, 'operator_unknown')
+        self.assertEqual(self.audit(), before)
+        report = probe.provision(self.store, self.key_file, operator='zz-operator')
+        zz = self.rows('SELECT id FROM memory.actors WHERE username=%s', 'zz-operator')[0]['id']
+        issued = [row for row in self.audit() if row['action'] == 'probe.key_issued' and row['resource_id'] == report['key_id']]
+        self.assertEqual([row['actor_id'] for row in issued], [zz])
+
     def test_probe_provision_takes_as_and_reports_the_actor(self):
         out = io.StringIO()
         with patch('memory_platform.admin.Settings.from_env', return_value=Settings(self.store.dsn)), patch('memory_platform.admin.Store', return_value=self.store), \

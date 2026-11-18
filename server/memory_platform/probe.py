@@ -50,10 +50,12 @@ LOCK_SUFFIX = '.lock'  # next to the key file: `kairos-probe.key.lock`, which is
 CALL_TIMEOUT = 30.0  # the longest one request may take (never more than what is left of the budget)
 RETIRE_CALL_TIMEOUT = 10.0  # one retiring request (also after a failure) never waits longer than this
 RETIRE_BUDGET = 20.0  # ALL the requests that retire a note (after a failure or at the end) share these seconds, outside the budget of the other stages: a run lasts at most MEMORY_PROBE_TIMEOUT + this
-SWEEP_QUERY = 'synthetic probe memory'  # what every note of the probe says; the run starts by retiring the active ones an earlier run left
+INTERRUPT_RETIRE_BUDGET = 8.0  # the same, after Ctrl-C or SIGTERM: `docker stop` waits 10 s by default, so the retirement and the metrics file must fit in it (the manual gives `stop_grace_period`)
+SWEEP_QUERY ='synthetic probe memory'  # what every note of the probe says; the run starts by retiring the active ones an earlier run left
 SWEEP_LIMIT = 20
 PURGE_AFTER_SECONDS = 600  # a retired note of `kairos-probe` older than this is deleted for good by `admin probe`
 PURGE_BATCH = 200
+PURGE_BUDGET = 15.0  # ALL the statements of one purge share these seconds (each is limited by what is left); once spent the transaction is rolled back and nothing is deleted
 PROVISION_LOCK = 688090884127  # advisory lock: two `probe-provision` at once never revoke each other's key
 STAGES = observability.PROBE_STAGES
 SETUP = 'setup'  # not a stage of the round trip: the configuration of the command (an unreadable key, a bad URL) failed before any request
@@ -197,18 +199,16 @@ class Probe:
     # -- stages ---------------------------------------------------------------------------------------------------------------------
 
     def write(self, started, state):
-        try:
-            status, data = self.call('write', 'POST', '/v1/events', state['event'], self.budget('write', started))
-        except StageFailed as failure:
-            state['ambiguous'] = failure.code == 'unreachable'  # a request that died on the wire (a timeout, a reset) may have landed; one refused before it was sent is retired in vain, harmlessly
-            raise
+        timeout = self.budget('write', started)  # no budget left: nothing is sent and nothing is retired
+        state['ambiguous'] = True  # from here on the note may have landed, also when a signal ends the run before the answer: the retirement is tried (harmless when it did not)
+        status, data = self.call('write', 'POST', '/v1/events', state['event'], timeout)  # a request that died on the wire (a timeout, a reset) stays ambiguous
         if status not in (200, 202):
             state['ambiguous'] = status >= 500  # a 5xx may have landed before it failed: the retirement tries both versions
             raise StageFailed('write', classify(status), status)
         if not isinstance(data, dict) or not isinstance(data.get('jobs'), list):
             state['ambiguous'] = True
             raise StageFailed('write', 'bad_answer', status)
-        state['written'] = True
+        state['written'], state['ambiguous'] = True, False
 
     def index(self, started, state):
         path = '/v1/projects/%s/events/%s/status' % (self.project, state['event']['event_id'])
@@ -252,13 +252,14 @@ class Probe:
         if found(data['items'], state['item_id']):
             raise StageFailed('search', 'semantic_unavailable', status)
 
-    def retire(self, started, state, versions=(2,)):
-        """A `delete` event for the note (version 2, or the versions given), then a lexical search that must not return it. All its requests share RETIRE_BUDGET seconds
-        (each at most RETIRE_CALL_TIMEOUT): `started` is the run's and is not used, the retirement runs outside the budget of the stages."""
+    def retire(self, started, state, versions=(2,), budget=RETIRE_BUDGET):
+        """A `delete` event for the note (version 2, or the versions given), then a lexical search that must not return it. All its requests share `budget` seconds (RETIRE_BUDGET;
+        INTERRUPT_RETIRE_BUDGET after a signal; each request at most RETIRE_CALL_TIMEOUT): `started` is the run's and is not used, the retirement runs outside the budget of the stages.
+        When no version is accepted, the note carrying the unique marker of THIS run is looked up and retired at the version the server says it has."""
         began = self.clock()
 
         def left():
-            remaining = RETIRE_BUDGET - (self.clock() - began)
+            remaining = budget - (self.clock() - began)
             if remaining <= 0:
                 raise StageFailed('retire', 'timeout')
             return min(RETIRE_CALL_TIMEOUT, remaining)
@@ -271,9 +272,18 @@ class Probe:
                 break
             if status != 409:
                 raise StageFailed('retire', classify(status), status)
+        query = {'project_ids': [self.project], 'q': state['query'], 'limit': 5, 'semantic': False}  # `q` carries the marker of this run, which no other note has
         if not done:
-            raise StageFailed('retire', 'rejected', 409)
-        status, data = self.call('retire', 'POST', '/v1/search', {'project_ids': [self.project], 'q': state['query'], 'limit': 5, 'semantic': False}, left())
+            status, data = self.call('retire', 'POST', '/v1/search', query, left())
+            if status != 200 or not isinstance(data, dict) or not isinstance(data.get('items'), list):
+                raise StageFailed('retire', classify(status) if status != 200 else 'bad_answer', status)
+            for item in data['items']:
+                if isinstance(item, dict) and item.get('item_id') == state['item_id'] and isinstance(item.get('version'), int):
+                    status, _ = self.call('retire', 'POST', '/v1/events', self.event('delete', item['item_id'], item['version'] + 1, 'Probe retired', 'retired'), left())
+                    done = status in (200, 202)
+            if not done:
+                raise StageFailed('retire', 'rejected', 409)
+        status, data = self.call('retire', 'POST', '/v1/search', query, left())
         if status != 200 or not isinstance(data, dict) or not isinstance(data.get('items'), list):
             raise StageFailed('retire', classify(status) if status != 200 else 'bad_answer', status)
         if found(data['items'], state['item_id']):
@@ -318,21 +328,22 @@ class Probe:
                       'error_type': name if SAFE_NAME.fullmatch(name) else 'Exception'}
         else:
             return self.finish({'status': 'probe_ok', 'kairos_probe_success': 1}, started, item_id, swept)
-        report['retired'] = self.clean_up(state, failed_stage)
+        report['retired'] = self.clean_up(state, failed_stage, report['code'] == 'interrupted')
         return self.finish(report, started, item_id, swept)
 
-    def clean_up(self, state, failed_stage):
-        """After a failure: retire what was written. None when nothing was written; True when the attempt worked; False when it did not (or when the retire stage itself is what failed).
-        Never raises and never hides the failure that came first."""
+    def clean_up(self, state, failed_stage, interrupted=False):
+        """After a failure: retire what was written (or may have been: a write in flight when a signal came). None when nothing was sent; True when the attempt worked; False when it did not
+        (or when the retire stage itself is what failed). After a signal the budget is INTERRUPT_RETIRE_BUDGET. Never raises, not even on a second signal, and never hides the failure
+        that came first."""
         if not (state['written'] or state['ambiguous']):
             return None
         if failed_stage == 'retire':
             return False
         versions = (2, 1) if state['ambiguous'] and not state['written'] else (2,)  # a write that may not have landed: version 2 if it did, else a tombstone at version 1
         try:
-            self.timed('retire', self.retire, self.clock(), state, versions)
+            self.timed('retire', self.retire, self.clock(), state, versions, budget=INTERRUPT_RETIRE_BUDGET if interrupted else RETIRE_BUDGET)
             return True
-        except Exception as error:  # the failure that came first is the one reported; this one is logged (its type only) and `retired` says False
+        except BaseException as error:  # the failure that came first is the one reported (also when a second signal arrives here); this one is logged (its type only) and `retired` says False
             observability.log_failure('probe_retire_failed', error, 'warning', stage='retire')
             return False
 
@@ -376,27 +387,45 @@ def terminate_as_interrupt():
         signal.signal(signal.SIGTERM, previous)
 
 
+def open_lock(paths):
+    """The first of `paths` that can be opened for writing (created if missing) WITHOUT following a link (a planted link would lock, and create, a file of somebody else's), or None."""
+    flags = os.O_RDWR | os.O_CREAT | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_CLOEXEC', 0)
+    for path in paths:
+        try:
+            return os.open(path, flags, 0o600)
+        except OSError:
+            continue
+    return None
+
+
 @contextlib.contextmanager
-def run_lock(path, wait, clock, sleep):
-    """One run at a time (an exclusive lock on `path`, released when the process ends whatever way): two runs would sweep and retire each other's note. Waits up to `wait`
-    seconds and then refuses with `busy`. No lock on a host without `fcntl` (Windows)."""
-    if fcntl is None:
-        yield
-        return
-    handle = open(path, 'a')
+def run_lock(paths, wait, clock, sleep):
+    """One run at a time (an exclusive lock on the first of `paths` that can be opened, released when the process ends whatever way): two runs would sweep and retire each other's note.
+    The key file's own directory may be read-only (a key mounted read-only is the right way to mount it), so the lock then goes next to the metrics file; when no path can be opened
+    or the file system refuses the lock, the run goes on WITHOUT it and says so (`probe_lock_unavailable`, a warning): a configuration problem, never `internal_error`. Waits up to
+    `wait` seconds and then refuses with `busy`. No lock on a host without `fcntl` (Windows)."""
+    handle = None if fcntl is None else open_lock([paths] if isinstance(paths, (str, os.PathLike)) else paths)
+    locked = False
     try:
-        deadline = clock() + wait
-        while True:
-            try:
-                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except OSError:
-                if clock() >= deadline:
-                    raise ProbeError('busy', 'another probe run holds the lock') from None
-                sleep(max(0.0, min(1.0, deadline - clock())))
+        if handle is not None:
+            deadline = clock() + wait
+            while True:
+                try:
+                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    locked = True
+                    break
+                except BlockingIOError:
+                    if clock() >= deadline:
+                        raise ProbeError('busy', 'another probe run holds the lock') from None
+                    sleep(max(0.0, min(1.0, deadline - clock())))
+                except OSError:  # a file system without locks (some network mounts)
+                    break
+        if fcntl is not None and not locked:
+            observability.log_event('probe_lock_unavailable', 'warning', stage=SETUP, code='lock_unavailable')
         yield
     finally:
-        handle.close()
+        if handle is not None:
+            os.close(handle)
 
 
 def previous_success(path):
@@ -411,38 +440,49 @@ def previous_success(path):
 
 def purge_after(store_factory, report):
     """Delete for good the retired notes of `kairos-probe`: this run's (when it retired it) and every one older than PURGE_AFTER_SECONDS. A failure (no database settings, the
-    database down) is logged and does not change the result of the probe. Returns the number of notes purged, or None."""
+    database down, a project that is not the probe's, the budget spent) is logged with its code and does not change the result of the probe. Returns the number of notes purged, or None."""
     try:
         return purge_retired(store_factory(), [report['item_id']] if report.get('item_id') else [])
+    except ProbeError as error:  # `project_foreign`, `purge_timeout`: nothing was deleted
+        observability.log_failure('probe_purge_failed', error, 'warning', stage='retire', code=error.code)
+        return None
     except Exception as error:
         observability.log_failure('probe_purge_failed', error, 'warning', stage='retire')
         return None
 
 
 def probe_command(url, key_file, metrics_file, environ=None, api_factory=None, store_factory=None, **options):
-    """`admin probe`: settings, one run, the purge, the metrics file. Returns the report (a setting that is wrong is a `probe_failed` at stage `setup`, with success 0 in the file as well).
+    """`admin probe`: settings, one run, the metrics file, the purge. Returns the report (a setting that is wrong is a `probe_failed` at stage `setup`, with success 0 in the file as well).
     Whatever happens inside, the metrics file is written with the result (success 0 for an interrupt or an unexpected error); `metrics_written` says whether it was."""
-    last_success = previous_success(metrics_file)
     try:
         with terminate_as_interrupt():
-            report = run_command(url, key_file, environ, api_factory, store_factory, last_success, options)
-    except BaseException as error:  # an interrupt or an error outside the run itself (the lock, the transport): same ending as inside it
+            report = run_command(url, key_file, metrics_file, environ, api_factory, store_factory, options)
+    except BaseException as error:  # an interrupt or an error outside the run itself (the transport): same ending as inside it
         observability.log_failure('probe_aborted', error, 'error', stage=SETUP)
-        report = failed_setup('internal_error' if isinstance(error, Exception) else 'interrupted', last_success)
-    if metrics_file:
+        report = failed_setup('internal_error' if isinstance(error, Exception) else 'interrupted', previous_success(metrics_file))
+    if metrics_file and 'metrics_written' not in report:  # a run that held the lock already wrote them inside it
         report['metrics_written'] = write_metrics(metrics_file)
     return report
 
 
-def run_command(url, key_file, environ, api_factory, store_factory, last_success, options):
+def lock_paths(key_file, metrics_file):
+    """Where the run lock may live: next to the key (as always), else next to the metrics file."""
+    return [str(key_file) + LOCK_SUFFIX] + ([str(metrics_file) + LOCK_SUFFIX] if metrics_file else [])
+
+
+def run_command(url, key_file, metrics_file, environ, api_factory, store_factory, options):
+    """One run under the lock. The `last_success` of the metrics file is read INSIDE the lock and the file is written before the lock is released, so a run that waited never
+    writes a value older than the one the run before it left. The purge comes after (it needs the database, not the lock) and only when this run knows who owns the project: not after a
+    key the server refuses (`unauthorized`) and not after a signal (the container has seconds left)."""
     try:
         timeout, address, token = probe_timeout(environ), probe_url(environ, url), read_key(key_file)
     except ProbeError as error:
-        return failed_setup(error.code, last_success)
+        return failed_setup(error.code, previous_success(metrics_file))
     clock, sleep = options.get('clock') or time.monotonic, options.get('sleep') or time.sleep
     began = clock()
     try:
-        with run_lock(str(key_file) + LOCK_SUFFIX, timeout / 2, clock, sleep):
+        with run_lock(lock_paths(key_file, metrics_file), timeout / 2, clock, sleep):
+            last_success = previous_success(metrics_file)
             api = None
             try:
                 api = (api_factory or HttpApi)(address, token)  # looked up now, so a test can replace HttpApi
@@ -451,10 +491,12 @@ def run_command(url, key_file, environ, api_factory, store_factory, last_success
                 close = getattr(api, 'close', None)
                 if close:
                     close()
+            if metrics_file:
+                report['metrics_written'] = write_metrics(metrics_file)
     except ProbeError as error:
-        return failed_setup(error.code, last_success)
+        return failed_setup(error.code, previous_success(metrics_file))
     if store_factory:
-        report['purged'] = purge_after(store_factory, report)
+        report['purged'] = None if report.get('code') in ('unauthorized', 'interrupted') else purge_after(store_factory, report)
     return report
 
 
@@ -473,27 +515,48 @@ def write_metrics(path):
 
 # -- the retired notes, deleted for good (n.o 3 of the review) ----------------------------------------------------------------------
 
-def purge_retired(store, item_ids=(), *, older_than=PURGE_AFTER_SECONDS, project_id=PROBE_PROJECT, batch=PURGE_BATCH):
+def probe_state(connection, project_id):
+    """(service actor row or None, project row or None, foreign?) in one place: the provisioning and the purge ask the same question. A project is FOREIGN when it exists and either has
+    another title than PROBE_TITLE or has a grant to an actor other than the service account: it is somebody else's, never adopted and never purged."""
+    service = connection.execute('SELECT id,is_admin,disabled,password_hash FROM memory.actors WHERE username=%s', (SERVICE_USERNAME,)).fetchone()
+    existing = connection.execute('SELECT title,policy FROM memory.projects WHERE id=%s', (project_id,)).fetchone()
+    foreign = bool(existing) and (existing['title'] != PROBE_TITLE or connection.execute(
+        'SELECT 1 FROM memory.project_grants WHERE project_id=%s AND actor_id IS DISTINCT FROM %s LIMIT 1', (project_id, service['id'] if service else None)).fetchone() is not None)
+    return service, existing, foreign
+
+
+def purge_retired(store, item_ids=(), *, older_than=PURGE_AFTER_SECONDS, project_id=PROBE_PROJECT, batch=PURGE_BATCH, budget=PURGE_BUDGET, clock=time.monotonic):
     """Delete the ROWS (never a table, a column or a volume) of retired notes of the probe project: the note, its versions, its events, its jobs and receipts, its vectors and fragments.
 
     Selects the notes of `project_id` (only that project: every statement carries it) that are retired (`deleted`) and either are one of `item_ids` or were retired longer ago than
-    `older_than` seconds, and that have no job still waiting or running (a worker may be holding it). At most `batch` notes per call. Returns the number of notes deleted."""
+    `older_than` seconds, and that have no job still waiting or running (a worker may be holding it). At most `batch` notes per call. Returns the number of notes deleted.
+
+    Nothing is deleted from a project that is not the probe's (`project_foreign`, the check of the provisioning). One transaction with ONE budget of `budget` seconds: every
+    statement is limited by what is left of it, and when it is spent (`purge_timeout`) the transaction is rolled back, so the whole purge lasts about `budget` seconds."""
+    began = clock()
     with store.transaction() as c:
-        c.execute("SET LOCAL statement_timeout = '15s'")
-        rows = c.execute("SELECT i.id FROM memory.memory_items i WHERE i.project_id=%s AND i.deleted AND (i.id=ANY(%s) OR i.occurred_at < clock_timestamp() - make_interval(secs => %s)) "
-                         "AND NOT EXISTS (SELECT 1 FROM memory.jobs j WHERE j.project_id=i.project_id AND j.item_id=i.id AND j.state IN ('pending','running','unknown')) "
-                         "ORDER BY i.id LIMIT %s FOR UPDATE OF i SKIP LOCKED", (project_id, list(item_ids), float(older_than), batch)).fetchall()
+        def step(sql, parameters):
+            left = budget - (clock() - began)
+            if left <= 0:
+                raise ProbeError('purge_timeout', 'the purge used its whole budget')
+            c.execute("SET LOCAL statement_timeout = '%dms'" % max(1, int(left * 1000)))
+            return c.execute(sql, parameters)
+        if probe_state(c, project_id)[2]:
+            raise ProbeError('project_foreign', 'a project named kairos-probe exists and is not the probe project: nothing is purged')
+        rows = step("SELECT i.id FROM memory.memory_items i WHERE i.project_id=%s AND i.deleted AND (i.id=ANY(%s) OR i.occurred_at < clock_timestamp() - make_interval(secs => %s)) "
+                    "AND NOT EXISTS (SELECT 1 FROM memory.jobs j WHERE j.project_id=i.project_id AND j.item_id=i.id AND j.state IN ('pending','running','unknown')) "
+                    "ORDER BY i.id LIMIT %s FOR UPDATE OF i SKIP LOCKED", (project_id, list(item_ids), float(older_than), batch)).fetchall()
         ids = [row['id'] for row in rows]
         if not ids:
             return 0
         scope = (project_id, ids)  # every statement below carries the project: no other project's row can match
-        c.execute('DELETE FROM memory.projection_receipts WHERE project_id=%s AND item_id=ANY(%s)', scope)  # before `jobs`: the receipt references the job
-        c.execute('DELETE FROM memory.embedding_chunks WHERE project_id=%s AND item_id=ANY(%s)', scope)
-        c.execute('DELETE FROM memory.embeddings WHERE project_id=%s AND item_id=ANY(%s)', scope)
-        c.execute('DELETE FROM memory.jobs WHERE project_id=%s AND item_id=ANY(%s)', scope)
-        c.execute('DELETE FROM memory.item_versions WHERE project_id=%s AND item_id=ANY(%s)', scope)
-        c.execute("DELETE FROM memory.events WHERE project_id=%s AND body->>'item_id'=ANY(%s)", (project_id, ids))
-        c.execute('DELETE FROM memory.memory_items WHERE project_id=%s AND id=ANY(%s)', (project_id, ids))
+        step('DELETE FROM memory.projection_receipts WHERE project_id=%s AND item_id=ANY(%s)', scope)  # before `jobs`: the receipt references the job
+        step('DELETE FROM memory.embedding_chunks WHERE project_id=%s AND item_id=ANY(%s)', scope)
+        step('DELETE FROM memory.embeddings WHERE project_id=%s AND item_id=ANY(%s)', scope)
+        step('DELETE FROM memory.jobs WHERE project_id=%s AND item_id=ANY(%s)', scope)
+        step('DELETE FROM memory.item_versions WHERE project_id=%s AND item_id=ANY(%s)', scope)
+        step("DELETE FROM memory.events WHERE project_id=%s AND body->>'item_id'=ANY(%s)", (project_id, ids))
+        step('DELETE FROM memory.memory_items WHERE project_id=%s AND id=ANY(%s)', (project_id, ids))
     return len(ids)
 
 
@@ -556,33 +619,34 @@ def provision_locked(store, path, project_id, operator):
     from .auth_scope import invalidate_auth
     from .store_common import new_id
     with store.transaction() as connection:
-        service = connection.execute('SELECT id,is_admin,disabled,password_hash FROM memory.actors WHERE username=%s', (SERVICE_USERNAME,)).fetchone()
-        existing = connection.execute('SELECT title,policy FROM memory.projects WHERE id=%s', (project_id,)).fetchone()
-        foreign = bool(existing) and (existing['title'] != PROBE_TITLE or connection.execute(
-            'SELECT 1 FROM memory.project_grants WHERE project_id=%s AND actor_id IS DISTINCT FROM %s LIMIT 1', (project_id, service['id'] if service else None)).fetchone() is not None)
+        service, existing, foreign = probe_state(connection, project_id)
     if service and (service['is_admin'] or service['password_hash'] != SERVICE_PASSWORD_HASH):
         raise ProbeError('actor_foreign', 'a user named kairos-probe exists and is not the probe service account: rename or remove it')
     if foreign:
         raise ProbeError('project_foreign', 'a project named kairos-probe exists and is not the probe project: rename or remove it')
     if service and service['disabled']:
         raise ProbeError('actor_disabled', 'the probe service account kairos-probe is disabled: enable it or remove it')
-    operator_actor = admin_actor(store, operator) if existing is None else None  # only the creation of the project needs a global administrator
+    operator_actor = admin_actor(store, operator)  # always: `--as` is validated also when the project exists, and every change below is audited as this administrator
     if existing is None:
-        store.create_project(operator_actor, {'id': project_id, 'title': PROBE_TITLE})
+        store.create_project(operator_actor, {'id': project_id, 'title': PROBE_TITLE})  # audited by the store as `project.created`
     with store.transaction() as connection:
         if service is None:
             service = connection.execute('INSERT INTO memory.actors(id,username,password_hash,is_admin) VALUES(%s,%s,%s,false) RETURNING id', (new_id(), SERVICE_USERNAME, SERVICE_PASSWORD_HASH)).fetchone()
+            store._audit(connection, operator_actor, 'user.created', resource_id=service['id'])  # the same path and action as `create_user` in store_auth
         granted = [permission for permission in SERVICE_GRANTS if connection.execute('INSERT INTO memory.project_grants(actor_id,project_id,permission) VALUES(%s,%s,%s) ON CONFLICT DO NOTHING RETURNING 1',
                                                                                     (service['id'], project_id, permission)).fetchone()]
+        for _ in granted:
+            store._audit(connection, operator_actor, 'grant.created', project_id, service['id'])
         if granted:
             invalidate_auth(connection)
     actor = {'id': service['id'], 'credential_type': 'bootstrap'}
     if existing is None or existing['policy'] != PROBE_POLICY:
         store.set_policy(actor, project_id, PROBE_POLICY)
-    kept = None
+    kept, file_token = None, None
     if path.is_file():
         try:
-            kept = valid_key(store, path.read_text(encoding='utf-8').strip(), project_id, service['id'])
+            file_token = path.read_text(encoding='utf-8').strip()
+            kept = valid_key(store, file_token, project_id, service['id'])
         except (OSError, ValueError):
             kept = None
     project = 'created' if existing is None else 'present'
@@ -596,8 +660,12 @@ def provision_locked(store, path, project_id, operator):
         store.revoke_key(actor, created['id'])  # a key nobody can read is not left active
         raise
     with store.transaction() as connection:
-        older = [row['id'] for row in connection.execute('SELECT id,project_ids FROM memory.api_keys WHERE name=%s AND revoked_at IS NULL AND id<>%s', (PROBE_KEY_NAME, created['id'])).fetchall()
-                 if list(row['project_ids']) == [project_id]]
+        store._audit(connection, operator_actor, 'probe.key_issued', project_id, created['id'])  # who ran the rotation (the key itself is signed by the service account)
+        # Only what is the probe's own is rotated: the keys of the service account, and the key the file held (a key of an earlier provisioning, made by an administrator, named like
+        # this one and with this reach). Any other key an administrator made with the same name stays active: it is not ours to revoke.
+        file_key = connection.execute('SELECT id FROM memory.api_keys WHERE token_hash=%s', (token_hash(file_token),)).fetchone() if file_token else None
+        older = [row['id'] for row in connection.execute('SELECT id,actor_id,project_ids FROM memory.api_keys WHERE name=%s AND revoked_at IS NULL AND id<>%s', (PROBE_KEY_NAME, created['id'])).fetchall()
+                 if list(row['project_ids']) == [project_id] and (row['actor_id'] == service['id'] or (file_key and row['id'] == file_key['id']))]
     for key_id in older:
         store.revoke_key(actor, key_id)
     return {'status': 'provisioned', 'project': project, 'key': 'created', 'key_id': created['id'], 'key_file': str(path), 'actor': SERVICE_USERNAME}
