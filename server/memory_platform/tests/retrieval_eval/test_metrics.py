@@ -206,6 +206,46 @@ class MetricTests(unittest.TestCase):
         self.assertEqual((parts['hostaddr'], parts['host'], parts['port'], parts['dbname']), ('127.0.0.1', 'localhost', '55432', 'memory_test'))
 
 
+class NegativeDatasetTests(unittest.TestCase):
+    """T-87 (CA-26): the questions without an answer live in their own file; dataset-v1.jsonl stays frozen."""
+
+    def records(self):
+        return [json.loads(line) for line in (HERE / 'dataset-v1-negatives.jsonl').read_text(encoding='utf-8').splitlines() if line.strip()]
+
+    def test_the_negative_file_is_valid_bilingual_and_has_questions_close_to_existing_topics(self):
+        from memory_platform.tests.retrieval_eval.check_dataset import validate_negatives
+        records = self.records()
+        self.assertEqual(validate_negatives(records, load_dataset(HERE / 'dataset-v1.jsonl')[0])[2], [])
+        self.assertGreaterEqual(len(records), 20)
+        self.assertTrue(all(r['expected'] == [] for r in records))
+        self.assertGreaterEqual(sum(r['lang'] == 'es' for r in records), 8)
+        self.assertGreaterEqual(sum(r['lang'] == 'en' for r in records), 8)
+        self.assertGreaterEqual(sum(r['near'] for r in records), 8)
+
+    def test_validate_negatives_refuses_what_would_weaken_the_set(self):
+        from memory_platform.tests.retrieval_eval.check_dataset import validate_negatives
+        corpus = load_dataset(HERE / 'dataset-v1.jsonl')[0]
+        good = self.records()
+        def errors(records):
+            return validate_negatives(records, corpus)[2]
+        self.assertTrue(errors(good[:19]))                                                  # fewer than 20
+        self.assertTrue(errors([dict(good[0], expected=['m-en-01'])] + good[1:]))           # it has an answer
+        self.assertTrue(errors([dict(good[0], subset='es')] + good[1:]))                    # not a negative subset
+        self.assertTrue(errors([dict(good[0], near='yes')] + good[1:]))                     # near must be a boolean
+        self.assertTrue(errors([dict(good[0], id=good[1]['id'])] + good[1:]))               # duplicate id
+        self.assertTrue(errors([dict(good[0], id='q-001')] + good[1:]))                     # id of a question of dataset-v1
+        self.assertTrue(errors([dict(r, near=False) for r in good]))                        # none close to a topic
+        self.assertTrue(errors([dict(r, lang='en') for r in good]))                         # one language only
+        self.assertTrue(errors([dict(good[0], type='memory')] + good[1:]))                  # a corpus record in the negative set
+        self.assertTrue(errors([dict(good[0], q=' ')] + good[1:]))
+
+    def test_dataset_v1_is_frozen(self):
+        from memory_platform.tests.retrieval_eval.check_dataset import load
+        records, digest = load(HERE / 'dataset-v1.jsonl')
+        self.assertEqual(digest, json.loads((HERE / 'baseline.json').read_text(encoding='utf-8'))['dataset_sha256'])
+        self.assertEqual(sum(r['type'] == 'question' for r in records), 72)
+
+
 class ProviderSelectionTests(unittest.TestCase):
     """T-36: the gate can run with a real Ollama, but only one that the operator names for the evaluation and never the deployed one."""
 

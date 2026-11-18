@@ -53,7 +53,7 @@ test-plan: n/a (sin UI)
 | Fase 11 — Sonda de ida y vuelta (C-06) | 6 | 6 | 100.0% | 0 / 23.4h | 4.95 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 7 | 7 | 100.0% | 0 / 23.4h | 2.62 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 6 | 6 | 100.0% | 0 / 33.6h | 2.36 / 4.5h | 0 / 1.1h | 0 / 1120 k |
-| Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
+| Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 1 | 7 | 14.3% | 0 / 33.6h | 0.31 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
 | **TOTAL** | **86** | **98** | **87.8%** | **0 / 412.8h** | **20.66 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
@@ -2712,15 +2712,16 @@ test-plan: n/a (sin UI)
 
 ## Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05)
 
-**Estado**: borrador · **Hito**: B · **Estimado**: 33.6h (28.0h base, de ellas 14.0h de revisión adversarial) · **Real**: — · **Coste est.**: 1.680 € · **Tokens est.**: 1120 k
+**Estado**: en-progreso · **Hito**: B · **Estimado**: 33.6h (28.0h base, de ellas 14.0h de revisión adversarial) · **Real**: — · **Coste est.**: 1.680 € · **Tokens est.**: 1120 k
 
 ### T-87 — Conjunto `dataset-v1-negatives` (≥ 20 preguntas sin respuesta) y validación
 
 - **Descripción**: Crear `dataset-v1-negatives.jsonl` (≥ 20 preguntas ES/EN sin respuesta, incluidas cercanas al tema de un recuerdo existente), versionado aparte de `dataset-v1.jsonl`, que no cambia, y validarlo con `check_dataset.py`. Fuente: CA-26; M-01.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: conjunto de 24 preguntas sin respuesta (ES y EN, 12 cercanas a temas existentes) para medir cuándo la búsqueda debe abstenerse; no cambia el comportamiento del producto.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 4h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.53h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.53h (estimado) · real 0.31h (medido)
 - **Supervisión**: est. 0.13h (≈25 % IA) · real —
 - **Previsión IA**: 147 k in / 13 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
@@ -2732,17 +2733,18 @@ test-plan: n/a (sin UI)
   - `git diff --stat -- server/memory_platform/tests/retrieval_eval/dataset-v1.jsonl` → sin cambios
 
 **Criterios de aceptación**
-- [ ] Hay ≥ 20 preguntas con `expected: []`, en ES y EN, y al menos 8 cercanas al tema de un recuerdo existente
-- [ ] `dataset-v1.jsonl` (72 preguntas) no cambia y `check_dataset.py` valida ambos ficheros
-- [ ] La procedencia y criterios de redacción quedan en el README de la puerta
+- [x] Hay ≥ 20 preguntas con `expected: []`, en ES y EN, y al menos 8 cercanas al tema de un recuerdo existente
+- [x] `dataset-v1.jsonl` (72 preguntas) no cambia y `check_dataset.py` valida ambos ficheros
+- [x] La procedencia y criterios de redacción quedan en el README de la puerta
 
 **Subtareas**
-- [ ] Redactar las preguntas
-- [ ] Extender `check_dataset.py`
-- [ ] Documentar la procedencia
-- [ ] `usage-meter start/close` de la tarea
+- [x] Redactar las preguntas
+- [x] Extender `check_dataset.py`
+- [x] Documentar la procedencia
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 0.31h (medido).
 
-**Notas**: Patrón: `tests/retrieval_eval/dataset-v1.jsonl` (formato, 0 `expected: []`), `check_dataset.py` y `README.md`.
+**Notas**: RED 2026-11-18: 3 pruebas nuevas de `NegativeDatasetTests` (`test_metrics`) fallaron con `ImportError: cannot import name validate_negatives`; verde tras `validate_negatives` en `check_dataset.py` (2 errores y 1 prueba de congelación ya en verde). Conjunto: 24 preguntas (12 ES, 12 EN, 12 cercanas; sha256 `6f8a0e92…`), `check_dataset` valida los dos ficheros (`OK es=24 en=24 typo_id=12 long=12 total=72` y `OK negatives es=12 en=12 near=12 total=24`) y `git diff --stat -- dataset-v1.jsonl` vacío. Verificado con `docker run` sobre `kairos-test:i3p13f` con `server/` montado (la suite completa, con su `MEMORY_TEST_RESULT`, es T-92). JSON de usage-meter en `execution-history.md` («Mediciones de la fase 14», T-87).
 
 ### T-88 — Métricas de abstención, `thresholds.json` y prueba de rojo en la CI
 

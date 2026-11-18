@@ -1674,3 +1674,41 @@ SHA-256: `0dcf99d148ad4182b6bd4a6eed036663768a4fcb1f54467d2e1c38d282c43fd6`.
 SHA-256: `ed0fa83310fa407b63376725a856102b14f8477e1d237be9cbe105fcb493506a`.
 
 **Notas** (fix1): suite 2026-11-18 (`kairos-test:i3p13f`, tras fix1 de la fase 13): `MEMORY_TEST_RESULT` `{"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1519}`; mínimo 1511 a 1519 en `ci.yml` (con historia), `MIN_FLOOR`, `docs/operations.md` y `README.md:252`; `test_ci_workflow`: 45 OK. Enmienda al tercer criterio (revisión de la fase 13, n.º 6): el resumen de las mediciones sustituye al JSON literal de usage-meter de T-81..T-85; motivo: `usage-meter close` imprimió el JSON en la sesión de entonces y no se conservó (`.claude/usage-state.json` guarda solo marcadores, y repetir `close` emitiría otra medición, no la original), así que las horas medidas de cada tarea (`real … (medido)`) son el único dato que sobrevive; las de fix1 sí se pegan en `execution-history.md` (compactación 23, mediciones de fix1).
+
+## Mediciones de la fase 14 (usage-meter, JSON literal)
+
+Salida de `usage-meter.py close` de cada tarea de la fase 14 (clave `reliable-operations/T-XX`), pegada sin editar.
+
+### T-87
+
+```json
+{
+  "artefacto": "reliable-operations/T-87",
+  "inicio": "2026-11-18T07:10:45Z",
+  "fin": "2026-11-18T07:18:53Z",
+  "fuente": "medido",
+  "tokens_reales": {
+    "entrada": 36,
+    "salida": 19498,
+    "cache_creacion": 74484,
+    "cache_lectura": 1597223,
+    "respuestas": 18
+  },
+  "eur": null,
+  "horas_ia": 0.31,
+  "duracion": "19m",
+  "duracion_reloj": "8m",
+  "ratio_usado": 300000,
+  "ratio_origen": "default no calibrado (300000)",
+  "tokens_procedencia": "transcript",
+  "tokens_cobertura": "completa",
+  "transcripts_leidos": 1,
+  "transcripts_subagente": 1,
+  "transcripts_con_error": 0,
+  "medicion_persistida": true,
+  "fuente_id": "src-8ffaaac4e3b9a11805b5148dbea387f65be01b42fba05cbf3ca54c4b799a95c8",
+  "ventana_id": "win-aef06d3b9b3349cd95cced17cbb4a8a9"
+}
+
+(campos de coste vacíos omitidos: eur null, sin_coste)
+```

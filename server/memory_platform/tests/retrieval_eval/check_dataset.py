@@ -1,7 +1,8 @@
 """Validate the synthetic retrieval dataset (schema, minimum counts) and print its SHA-256.
 
 Standard library only: it runs on the host and inside the test container.
-Usage: python -m memory_platform.tests.retrieval_eval.check_dataset <dataset.jsonl>
+Usage: python -m memory_platform.tests.retrieval_eval.check_dataset <dataset.jsonl> [<dataset-v1-negatives.jsonl>]
+A file made only of questions is read as the set of questions without an answer (T-87, CA-26) and checked with validate_negatives.
 """
 from __future__ import annotations
 
@@ -13,6 +14,10 @@ from pathlib import Path
 MINIMUMS = {'es': 20, 'en': 20, 'typo_id': 10, 'long': 10}
 TOTAL_MINIMUM = 60
 LONG_OFFSET = 8000
+NEGATIVE_SUBSET = 'negative'
+NEGATIVE_MINIMUM = 20
+NEGATIVE_LANGUAGE_MINIMUM = 8
+NEGATIVE_NEAR_MINIMUM = 8
 
 
 def load(path):
@@ -58,18 +63,68 @@ def validate(records):
     return counts, len(questions), errors
 
 
+def validate_negatives(records, corpus_records=()):
+    """Return (counts, total, errors) of the questions without an answer (T-87, CA-26): at least 20, in Spanish and English, at least 8 of them
+    near the topic of a memory or document that exists, expected: [], subset negative, and no id shared with corpus_records (dataset-v1)."""
+    errors, counts, seen = [], {'es': 0, 'en': 0, 'near': 0}, {r.get('id') for r in corpus_records}
+    for record in records:
+        key = record.get('id')
+        if record.get('type') != 'question' or not isinstance(key, str) or key in seen:
+            errors.append(f'invalid, duplicate or corpus record: {key!r}')
+            continue
+        seen.add(key)
+        if record.get('subset') != NEGATIVE_SUBSET:
+            errors.append(f'{key}: subset must be {NEGATIVE_SUBSET!r}')
+        if record.get('expected') != []:
+            errors.append(f'{key}: a question without an answer needs expected: []')
+        if not isinstance(record.get('q'), str) or not record['q'].strip():
+            errors.append(f'{key}: empty question')
+        if record.get('lang') not in ('es', 'en'):
+            errors.append(f'{key}: lang must be es or en')
+        else:
+            counts[record['lang']] += 1
+        if not isinstance(record.get('near'), bool):
+            errors.append(f'{key}: near must be true or false')
+        elif record['near']:
+            counts['near'] += 1
+    if len(records) < NEGATIVE_MINIMUM:
+        errors.append(f'total: {len(records)} < {NEGATIVE_MINIMUM}')
+    for lang in ('es', 'en'):
+        if counts[lang] < NEGATIVE_LANGUAGE_MINIMUM:
+            errors.append(f'language {lang}: {counts[lang]} < {NEGATIVE_LANGUAGE_MINIMUM}')
+    if counts['near'] < NEGATIVE_NEAR_MINIMUM:
+        errors.append(f'near the topic of an existing record: {counts["near"]} < {NEGATIVE_NEAR_MINIMUM}')
+    return counts, len(records), errors
+
+
+def is_negative_set(records):
+    return bool(records) and all(record.get('type') == 'question' for record in records)
+
+
 def main(argv):
-    if len(argv) != 2:
-        raise SystemExit('usage: check_dataset <dataset.jsonl>')
-    records, digest = load(argv[1])
-    counts, total, errors = validate(records)
-    if errors:
-        print('INVALID')
-        for error in errors:
-            print(' -', error)
+    if len(argv) < 2:
+        raise SystemExit('usage: check_dataset <dataset.jsonl> [<dataset-v1-negatives.jsonl>]')
+    corpus = []
+    invalid = False
+    for path in argv[1:]:
+        records, digest = load(path)
+        if is_negative_set(records):
+            counts, total, errors = validate_negatives(records, corpus)
+            summary = 'OK negatives es=%(es)d en=%(en)d near=%(near)d' % counts + f' total={total}'
+        else:
+            corpus = records
+            counts, total, errors = validate(records)
+            summary = 'OK es=%(es)d en=%(en)d typo_id=%(typo_id)d long=%(long)d' % counts + f' total={total}'
+        if errors:
+            invalid = True
+            print(f'INVALID {path}')
+            for error in errors:
+                print(' -', error)
+            continue
+        print(summary)
+        print('sha256 ' + digest)
+    if invalid:
         raise SystemExit(1)
-    print('OK es=%(es)d en=%(en)d typo_id=%(typo_id)d long=%(long)d' % counts + f' total={total}')
-    print('sha256 ' + digest)
 
 
 if __name__ == '__main__':

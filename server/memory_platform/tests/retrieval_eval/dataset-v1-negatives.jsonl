@@ -1,0 +1,24 @@
+{"expected": [], "id": "n-001", "lang": "en", "near": false, "q": "chocolate cake recipe oven temperature", "subset": "negative", "type": "question"}
+{"expected": [], "id": "n-002", "lang": "en", "near": false, "q": "football world cup winner 1998", "subset": "negative", "type": "question"}
+{"expected": [], "id": "n-003", "lang": "en", "near": false, "q": "flight tickets Madrid Lisbon price", "subset": "negative", "type": "question"}
+{"expected": [], "id": "n-004", "lang": "en", "near": false, "q": "photosynthesis chlorophyll light reaction", "subset": "negative", "type": "question"}
+{"expected": [], "id": "n-005", "lang": "en", "near": false, "q": "knitting scarf pattern wool needles", "subset": "negative", "type": "question"}
+{"expected": [], "id": "n-006", "lang": "en", "near": false, "q": "volcano eruption lava Iceland", "subset": "negative", "type": "question"}
+{"expected": [], "id": "n-007", "lang": "en", "near": true, "q": "mobile push notification delivery receipts", "subset": "negative", "type": "question"}
+{"expected": [], "id": "n-008", "lang": "en", "near": true, "q": "who approves production database schema changes", "subset": "negative", "type": "question"}
+{"expected": [], "id": "n-009", "lang": "en", "near": true, "q": "maximum attachment size allowed in the portal", "subset": "negative", "type": "question"}
+{"expected": [], "id": "n-010", "lang": "en", "near": true, "q": "how many replicas run the cache", "subset": "negative", "type": "question"}
+{"expected": [], "id": "n-011", "lang": "en", "near": true, "q": "password complexity rules for portal accounts", "subset": "negative", "type": "question"}
+{"expected": [], "id": "n-012", "lang": "en", "near": true, "q": "email alert sent when a backup fails", "subset": "negative", "type": "question"}
+{"expected": [], "id": "n-013", "lang": "es", "near": false, "q": "receta de tortilla de patatas con cebolla", "subset": "negative", "type": "question"}
+{"expected": [], "id": "n-014", "lang": "es", "near": false, "q": "resultado del partido de la liga ayer", "subset": "negative", "type": "question"}
+{"expected": [], "id": "n-015", "lang": "es", "near": false, "q": "horario del tren Madrid Sevilla", "subset": "negative", "type": "question"}
+{"expected": [], "id": "n-016", "lang": "es", "near": false, "q": "capital de Australia y su poblacion", "subset": "negative", "type": "question"}
+{"expected": [], "id": "n-017", "lang": "es", "near": false, "q": "como plantar tomates en una maceta", "subset": "negative", "type": "question"}
+{"expected": [], "id": "n-018", "lang": "es", "near": false, "q": "precio de la gasolina esta semana", "subset": "negative", "type": "question"}
+{"expected": [], "id": "n-019", "lang": "es", "near": true, "q": "tamaño maximo de un archivo adjunto en el portal", "subset": "negative", "type": "question"}
+{"expected": [], "id": "n-020", "lang": "es", "near": true, "q": "quien aprueba los cambios de esquema de la base de datos en produccion", "subset": "negative", "type": "question"}
+{"expected": [], "id": "n-021", "lang": "es", "near": true, "q": "cuantas replicas tiene la cache", "subset": "negative", "type": "question"}
+{"expected": [], "id": "n-022", "lang": "es", "near": true, "q": "reglas de complejidad de la contraseña de las cuentas", "subset": "negative", "type": "question"}
+{"expected": [], "id": "n-023", "lang": "es", "near": true, "q": "aviso por correo cuando falla una copia de seguridad", "subset": "negative", "type": "question"}
+{"expected": [], "id": "n-024", "lang": "es", "near": true, "q": "facturacion mensual y coste por proyecto", "subset": "negative", "type": "question"}
