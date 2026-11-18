@@ -53,10 +53,10 @@ test-plan: n/a (sin UI)
 | Fase 11 — Sonda de ida y vuelta (C-06) | 6 | 6 | 100.0% | 0 / 23.4h | 4.95 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 7 | 7 | 100.0% | 0 / 23.4h | 2.62 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 6 | 6 | 100.0% | 0 / 33.6h | 2.36 / 4.5h | 0 / 1.1h | 0 / 1120 k |
-| Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 6 | 7 | 85.7% | 0 / 33.6h | 9.12 / 4.5h | 0 / 1.1h | 0 / 1120 k |
+| Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 6 | 7 | 85.7% | 0 / 33.6h | 9.41 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **91** | **98** | **92.9%** | **0 / 412.8h** | **29.47 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **92** | **98** | **93.9%** | **0 / 412.8h** | **30.07 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2726,7 +2726,7 @@ test-plan: n/a (sin UI)
 - **Previsión IA**: 147 k in / 13 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
 - **Tipo**: test
-- **Archivos**: `server/memory_platform/tests/retrieval_eval/dataset-v1-negatives.jsonl`, `server/memory_platform/tests/retrieval_eval/check_dataset.py`, `server/memory_platform/tests/retrieval_eval/README.md`
+- **Archivos**: `server/memory_platform/tests/retrieval_eval/dataset-v1-negatives.jsonl`, `server/memory_platform/tests/retrieval_eval/check_dataset.py`, `server/memory_platform/tests/retrieval_eval/README.md`, `server/memory_platform/tests/retrieval_eval/test_metrics.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "check_dataset|MEMORY_TEST_RESULT"` → la validación del conjunto ampliado pasa y `MEMORY_TEST_RESULT` sin fallos
@@ -2744,11 +2744,11 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.31h (medido).
 
-**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-87).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (25) — notas fix1 de T-81 a T-85», subsección T-87; JSON de usage-meter en «Mediciones de la fase 14»). fix1 (B4): RED `test_the_check_dataset_cli_validates_the_id_overlap_whatever_the_order_of_the_arguments` (`SystemExit not raised` con las negativas antes del corpus); el CLI carga todos los ficheros y valida los ids contra todo el corpus sea cual sea el orden; verde. Medición del fix1 compartida con T-89 (una sola ventana, 0.29h).
 
 ### T-88 — Métricas de abstención, `thresholds.json` y prueba de rojo en la CI
 
-- **Descripción**: Ampliar `retrieval-eval` con abstención correcta en negativas y abstención falsa en positivas, con umbrales en `thresholds.json` (metas: ≥ 70 % y ≤ 5 %), mientras recall@5 ≥ 0,80 y MRR ≥ 0,60 siguen cumpliéndose; el trabajo de CI las exige y un umbral absurdo lo deja en rojo. Fuente: CA-27, CA-28; M-01; P-05.
+- **Descripción**: Ampliar `retrieval-eval` con abstención correcta en negativas y abstención falsa en positivas, con umbrales en `thresholds.json` (metas por proveedor: modelo real ≥ 70 % y ≤ 5 %; proveedor simulado de la CI ≥ 50 % y ≤ 5 %, decisión del usuario del 2026-11-18 «12 de 24 en la CI», enmienda de P-05/CA-27), mientras recall@5 ≥ 0,80 y MRR ≥ 0,60 siguen cumpliéndose; el trabajo de CI las exige y un umbral absurdo lo deja en rojo. Fuente: CA-27, CA-28; M-01; P-05.
 - **Changelog**: Interno: la puerta de calidad de búsqueda mide también la abstención (acierta al no responder y no abstiene de más) y la CI falla si no cumple sus metas.
 - **Estado**: completado
 - **Cerrada**: 2026-11-18
@@ -2758,7 +2758,7 @@ test-plan: n/a (sin UI)
 - **Previsión IA**: 147 k in / 13 k out tok · ⚠️ verificar €
 - **Dependencias**: T-87, T-82
 - **Tipo**: test
-- **Archivos**: `server/memory_platform/tests/retrieval_eval/run.py`, `server/memory_platform/tests/retrieval_eval/thresholds.json`, `server/memory_platform/tests/retrieval_eval/test_metrics.py`, `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`
+- **Archivos**: `server/memory_platform/tests/retrieval_eval/run.py`, `server/memory_platform/tests/retrieval_eval/thresholds.json`, `server/memory_platform/tests/retrieval_eval/test_metrics.py`, `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `server/memory_platform/tests/retrieval_eval/README.md`, `docs/roadmap/2026-11-15-reliable-operations/spec.md`, `docs/roadmap/2026-11-15-reliable-operations/improvement-plan.md`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build -f server/memory_platform/Dockerfile --target retrieval-eval --progress=plain . 2>&1 | grep -E "abstention|gate"` → métricas de abstención dentro de los umbrales y la puerta `passed`
@@ -2766,7 +2766,7 @@ test-plan: n/a (sin UI)
   - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
 
 **Criterios de aceptación**
-- [x] Con el umbral del proveedor simulado, la puerta responde `items: []` y `abstained: true` en al menos el porcentaje acordado de las negativas y la abstención falsa en positivas no supera el tope, con recall@5 ≥ 0,80 y MRR ≥ 0,60
+- [x] Con el umbral del proveedor simulado, la puerta responde `items: []` y `abstained: true` en al menos el porcentaje acordado de las negativas y la abstención falsa en positivas no supera el tope, con recall@5 ≥ 0,80 y MRR ≥ 0,60 (enmienda 2026-11-18, decisión del usuario «12 de 24 en la CI»: el porcentaje acordado del simulado es 50 %, 12 de 24; el de un modelo real, 70 %)
 - [x] El trabajo `retrieval-eval` de la CI exige las métricas de abstención; un umbral absurdo lo deja en rojo en una ejecución de prueba, anotada en `Notas`
 - [x] Un umbral o subconjunto ausente falla la puerta (`threshold_missing`/`subset_missing`, patrón existente)
 
@@ -2777,7 +2777,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.39h (medido).
 
-**Notas**: RED: `ImportError` de `_measure_abstention` y 4 casos de `test_ci_workflow`. Medida con el simulado y umbral 0.2022: correcta 0.50 (12/24), falsa 0.0417 (3/72), recall@5 1.0, MRR 0.9715, `passed: true`; con 0.99: correcta 0.9583, falsa 0.3194, `passed: false` (`abstention_false`), exit 1. DECISIÓN ABIERTA (R-07): con el simulado no existe umbral con ≥ 70 % y ≤ 5 % a la vez, así que `thresholds.json` lleva metas propias del simulado (`abstention.simulated`: ≥ 0.50 y ≤ 0.05) y deja 0.70/0.05 para un modelo real (`abstention.models.<modelo>`). Notas completas, JSON de usage-meter y detalle en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-88; «Mediciones de la fase 14»).
+**Notas**: original archivado en `execution-history.md` (sección «Compactación 2026-11-18 (28) — notas de T-88 y T-92 y fix1 de la fase 14», T-88) y detalle en `execution-history.md` (sección «Compactación 2026-11-18 (25) — notas fix1 de T-81 a T-85», subsección T-88; JSON de usage-meter en «Mediciones de la fase 14»). Medida con el simulado (umbral 0.2022): correcta 0.50 (12/24), falsa 0.0417, recall@5 1.0, MRR 0.9715, `passed: true`; con 0.99, `passed: false`. Decisión tomada (usuario, 2026-11-18, «12 de 24 en la CI»; R-07): metas por proveedor, simulado ≥ 0.50/≤ 0.05 (guarda de regresión) y modelo real ≥ 0.70/≤ 0.05; P-05, CA-27, go y R-07 enmendados con fecha. fix1 (A1, A3): README de la puerta documenta el bloque `abstention` y el motivo; `abstention_measurement_errors` añadido a la puerta (B3). Medición del fix1 compartida con T-89.
 
 ### T-89 — Medición del umbral de `nomic-embed-text` con un Ollama efímero y aislado (P-05)
 
@@ -2786,12 +2786,12 @@ test-plan: n/a (sin UI)
 - **Estado**: completado
 - **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 2.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.33h (estimado) · real 4.58h (medido)
+- **Tiempo IA (ejec.)**: est. 0.33h (estimado) · real 4.87h (medido; 4.58 + 0.29 del fix1)
 - **Supervisión**: est. 0.08h (≈25 % IA) · real —
 - **Previsión IA**: 92 k in / 8 k out tok · ⚠️ verificar €
 - **Dependencias**: T-88
 - **Tipo**: test
-- **Archivos**: `server/memory_platform/tests/retrieval_eval/measure_abstention.py`, `server/memory_platform/tests/retrieval_eval/thresholds.json`, `docs/configuration.md`, `server/memory_platform/tests/retrieval_eval/run.py`, `server/memory_platform/tests/retrieval_eval/test_metrics.py`
+- **Archivos**: `server/memory_platform/tests/retrieval_eval/measure_abstention.py`, `server/memory_platform/tests/retrieval_eval/thresholds.json`, `docs/configuration.md`, `server/memory_platform/tests/retrieval_eval/run.py`, `server/memory_platform/tests/retrieval_eval/test_metrics.py`, `docs/operations.md`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `python -m memory_platform.tests.retrieval_eval.measure_abstention --ollama-container kairos-ops-ollama-f --port 18434` (desde `server/`) → informe con el umbral por modelo, o `uncalibrated` si falla la descarga; `docker ps -a --filter name=kairos-ops-ollama` y `docker volume ls --filter name=kairos-ops-ollama` → vacíos al terminar
@@ -2810,7 +2810,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 4.58h (medido).
 
-**Notas**: RED: `FileNotFoundError` (sin `measure_abstention.py`) y 3 fallos reales de la medición (`UnicodeDecodeError` de la salida de Docker, `embed job states failed: 4`, run demasiado largo). `uncalibrated`: con el modelo real ningún umbral da ≥ 70 % correcta y ≤ 5 % falsa (0.60: 50.0/2.8 %; 0.65: 62.5/8.3 %; 0.70: 95.8/13.9 %); recall@5 1.0, MRR 0.993; sin umbral por defecto. Listados `knowledge-graphs` (contenedores, volúmenes, redes) idénticos antes y después; `kairos-calib-*` sin restos. Detalle completo en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-89).
+**Notas**: RED: `FileNotFoundError` (sin `measure_abstention.py`) y 3 fallos reales de la medición (`UnicodeDecodeError` de la salida de Docker, `embed job states failed: 4`, run demasiado largo). `uncalibrated`: con el modelo real ningún umbral da ≥ 70 % correcta y ≤ 5 % falsa (0.60: 50.0/2.8 %; 0.65: 62.5/8.3 %; 0.70: 95.8/13.9 %); recall@5 1.0, MRR 0.993; sin umbral por defecto. Listados `knowledge-graphs` (contenedores, volúmenes, redes) idénticos antes y después; `kairos-calib-*` sin restos. Detalle completo en `execution-history.md` (sección «Compactación 2026-11-18 (25) — notas fix1 de T-81 a T-85», subsección T-89; JSON de usage-meter en «Mediciones de la fase 14»). fix1 (B1, B2, B3, A7, Lente C; RED y detalle en «Compactación 2026-11-18 (28)» de `execution-history.md`): `pick_threshold` recalcula las metas tras redondear; restos `kairos-calib-*` informados también en el error y listado fallido = «no verificable»; `measurement_errors` y `abstention_measurement_errors` en la puerta; `deterministic: null` documentado en `docs/operations.md`; imagen del Ollama por digest. Medición compartida por T-87, T-88, T-89, T-90 y T-92 (0.29h medido, una ventana).
 
 ### T-90 — Pruebas de la puerta de abstención
 
@@ -2840,7 +2840,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.07h (medido).
 
-**Notas**: RED: 3 mutantes del paso de CI sobrevivían hasta acotarlos al trabajo `retrieval-eval`. 8 mutantes de `run.py`/`thresholds.json` y 7 del paso de CI, todos detectados; `test_metrics` pasó de 24 a 45 pruebas; `retrieval-eval` sigue fuera de la suite. Detalle completo en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-90).
+**Notas**: RED: 3 mutantes del paso de CI sobrevivían hasta acotarlos al trabajo `retrieval-eval`. 8 mutantes de `run.py`/`thresholds.json` y 7 del paso de CI, todos detectados; `test_metrics` pasó de 24 a 45 pruebas; `retrieval-eval` sigue fuera de la suite. Detalle completo en `execution-history.md` (sección «Compactación 2026-11-18 (25) — notas fix1 de T-81 a T-85», subsección T-90; JSON de usage-meter en «Mediciones de la fase 14»). fix1 (A2): mutantes de `thresholds.json`: con la prueba previa SOBREVIVÍAN `simulated.min_correct_rate`=0.0 y la clave borrada (RED); con `test_the_simulated_abstention_goals_are_fixed_and_cannot_be_lowered_or_removed` caen los 6 (0.0, clave borrada, `max_false_rate`=0.5, `threshold` borrado, `simulated` borrado, meta de primer nivel 0.5).
 
 ### T-91 — Documentar la abstención y avisar a la Iniciativa 7
 
@@ -2866,12 +2866,12 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.02h (medido).
 
-**Notas**: RED: `test_abstention_docs` no se cumplía sobre el HEAD anterior. `docs/configuration.md`, `docs/operations.md` y ambos CHANGELOG actualizados; `test_abstention_docs` (4 pruebas); `manual.md` sin cambio (el portal no expone `abstain`); ítem (23) en `improvement-plan.md`. Detalle completo en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-91).
+**Notas**: RED: `test_abstention_docs` no se cumplía sobre el HEAD anterior. `docs/configuration.md`, `docs/operations.md` y ambos CHANGELOG actualizados; `test_abstention_docs` (4 pruebas); `manual.md` sin cambio (el portal no expone `abstain`); ítem (23) en `improvement-plan.md`. Detalle completo en `execution-history.md` (sección «Compactación 2026-11-18 (25) — notas fix1 de T-81 a T-85», subsección T-91; JSON de usage-meter en «Mediciones de la fase 14»).
 
 ### T-92 — Cierre de fase: suite completa y subida del mínimo
 
 - **Descripción**: Ejecuta la suite completa del servidor, anota el recuento `MEMORY_TEST_RESULT` y sube `KAIROS_MIN_TESTS` y `MIN_FLOOR` al número observado (la suite solo crece).  Fuente: Puerta de fase; CA-38 (suite con 0 fallos y 0 omitidos).
-- **Changelog**: Interno: la suite del servidor pasa de 1519 a 1547 pruebas, todas en verde y sin omitidas, y la CI exige ese mínimo.
+- **Changelog**: Interno: la suite del servidor pasa de 1519 a 1553 pruebas, todas en verde y sin omitidas, y la CI exige ese mínimo.
 - **Estado**: completado
 - **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 1h (base) · real —
@@ -2897,7 +2897,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 3.75h (medido).
 
-**Notas**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain -t kairos-test:i3p14 .` (2377 s): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1547}`. Mínimo 1519 -> 1547 en `KAIROS_MIN_TESTS` (con su comentario de historia), `MIN_FLOOR`, `docs/operations.md` y `README.md:252` (declarado en Archivos); `python -m unittest scripts.tests.test_ci_workflow` -> `OK`. El trabajo `retrieval-eval` de la CI ya exige las metas de abstención (T-88: paso con 5 informes sintéticos y 7 mutantes; umbral 0.99 -> `passed: false`). Puerta con el simulado (docker run con `server/` montado): `passed: true`, correcta 0.50, falsa 0.0417, recall@5 1.0, MRR 0.9715. JSON de usage-meter (3.75h medido, reloj 44 min) en `execution-history.md`.
+**Notas**: TDD n/a: ejecución de la suite y subida del mínimo, sin código que probar antes. Original archivado en `execution-history.md` (sección «Compactación 2026-11-18 (28) — notas de T-88 y T-92 y fix1 de la fase 14», T-92; 1547 pruebas en verde, 2377 s). fix1: suite repetida con las 6 pruebas nuevas del fix: `MEMORY_TEST_RESULT {"database": "PostgreSQL", "environment": "isolated-container-build", "errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1553}`; mínimo 1547 -> 1553 en `KAIROS_MIN_TESTS` (con su comentario), `MIN_FLOOR`, `docs/operations.md` y `README.md:252`; `python -m unittest scripts.tests.test_ci_workflow` -> `OK`. Puerta con el simulado: `passed: true`, correcta 0.50, falsa 0.0417, recall@5 1.0, MRR 0.9715. Medición del fix1 compartida con T-89.
 
 ### T-93 — Revisión adversarial de la fase (dos lentes)
 

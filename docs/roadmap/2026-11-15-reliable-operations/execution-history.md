@@ -2275,3 +2275,69 @@ Lentes: A, B y C (C por `.github/workflows/ci.yml`; D no aplica). Diff `9b23aaf.
 | B2 | Minor | En la ruta de error no se informa de restos `kairos-calib-*`, y un fallo de `docker ps/volume ls/network ls` se lee como «sin restos» | T-89 | pendiente (fix1) | Lente B; `measure_abstention.py:113-119` |
 | B3 | Minor | `except Exception: scores = []` silencia fallos del coseno; la fila cuenta como «no abstiene» y la causa queda oculta | T-89 | pendiente (fix1) | Lente B; `run.py:480-481` |
 | B4 | Minor | El CLI de `check_dataset` no valida el solapamiento de ids si las negativas van antes que el corpus | T-87 | pendiente (fix1) | Lente B; `check_dataset.py:107-115`; reproducido |
+
+## Compactación 2026-11-18 (28) — notas de T-88 y T-92 y fix1 de la fase 14
+
+Notas originales de T-88 y T-92 movidas tal cual desde `tasks.md` (para mantenerlo por debajo del límite de lectura) y evidencia del fix1 de la revisión de la fase 14 (intento 1), sin reescribir la sección (27).
+
+### T-88
+
+SHA-256: `61c4973dd5f5f4c02e4e195bd7d5451b8e6eea6db1f367ddc4bdc4b41756680d`.
+
+**Notas**: RED: `ImportError` de `_measure_abstention` y 4 casos de `test_ci_workflow`. Medida con el simulado y umbral 0.2022: correcta 0.50 (12/24), falsa 0.0417 (3/72), recall@5 1.0, MRR 0.9715, `passed: true`; con 0.99: correcta 0.9583, falsa 0.3194, `passed: false` (`abstention_false`), exit 1. Decisión tomada (usuario, 2026-11-18, «12 de 24 en la CI»; R-07): con el simulado no existe umbral con ≥ 70 % y ≤ 5 % a la vez, así que `thresholds.json` lleva metas propias del simulado (`abstention.simulated`: ≥ 0.50 y ≤ 0.05, guarda de regresión) y deja 0.70/0.05 para un modelo real (`abstention.models.<modelo>`); enmendadas P-05, CA-27, la decisión de go y R-07. Notas completas, JSON de usage-meter y detalle en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-88; «Mediciones de la fase 14»).
+
+### T-92
+
+SHA-256: `91bf70d9c221deb2575b31a986c68f1e6f18cd511679722ecbba54efebf9a375`.
+
+**Notas**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain -t kairos-test:i3p14 .` (2377 s): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1547}`. Mínimo 1519 -> 1547 en `KAIROS_MIN_TESTS` (con su comentario de historia), `MIN_FLOOR`, `docs/operations.md` y `README.md:252` (declarado en Archivos); `python -m unittest scripts.tests.test_ci_workflow` -> `OK`. El trabajo `retrieval-eval` de la CI ya exige las metas de abstención (T-88: paso con 5 informes sintéticos y 7 mutantes; umbral 0.99 -> `passed: false`). Puerta con el simulado (docker run con `server/` montado): `passed: true`, correcta 0.50, falsa 0.0417, recall@5 1.0, MRR 0.9715. JSON de usage-meter (3.75h medido, reloj 44 min) en `execution-history.md`.
+
+### fix1 de la revisión de la fase 14, intento 1 — evidencia
+
+- Decisión del usuario (2026-11-18, «12 de 24 en la CI») aplicada como enmienda fechada en `spec.md` (CA-27, decisión de go y P-05), `improvement-plan.md` (R-07) y `tasks.md` (T-88); `thresholds.json` no cambia.
+- A2 (mutantes de `thresholds.json`, prueba previa frente a la nueva): `simulated.min_correct_rate`=0.0: previa sobrevive, nueva cae; clave borrada: previa sobrevive, nueva cae; `simulated.max_false_rate`=0.5, `simulated.threshold` borrado, `simulated` borrado y `min_correct_rate` de primer nivel 0.5: caen las dos.
+- Qué cambió: B1 `pick_threshold` recalcula correcta y falsa en el umbral redondeado y, si no cumple, usa 5 y 6 decimales o el valor exacto (si ninguno cumple devuelve None); B2 los restos `kairos-calib-*` se informan en stderr también en la ruta de error y un `docker ps/volume ls/network ls` con código ≠ 0 se anota como `leftovers_unverifiable` («no verificable», exit ≠ 0); B3 `measurement_errors` en el informe (aditivo), fallo `abstention_measurement_errors` en la puerta y calibración `uncalibrated` con ese motivo; B4 `check_dataset` carga todos los ficheros y valida los ids contra el corpus sea cual sea el orden; A7 `docs/operations.md` explica `deterministic: null`; A3 README de la puerta.
+- RED de B1-B4 (pruebas escritas antes del arreglo, `python -m unittest memory_platform.tests.retrieval_eval.test_metrics` desde `server/`): B1 `AssertionError: 0.6 not greater than or equal to 0.7`; B2 `AssertionError: 'kairos-calib-ollama' not found in ''`; B3 `KeyError: 'measurement_errors'` y `'calibrated' != 'uncalibrated'`; B4 `AssertionError: SystemExit not raised`. Tras el arreglo: 51 pruebas, solo los 3 errores conocidos de `psycopg` ausente en el host.
+- C (Lente C): `OLLAMA_IMAGE` fijada por digest `sha256:f1a705f2bd11…` (`docker image inspect ollama/ollama:0.31.1@sha256:…` en local, sin descargas).
+- Suite: `MEMORY_TEST_RESULT {"database": "PostgreSQL", "environment": "isolated-container-build", "errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1553}`. `python -m unittest scripts.tests.test_ci_workflow` -> OK.
+- usage-meter (una ventana compartida por T-87, T-88, T-89, T-90 y T-92 del fix1; las cinco claves `reliable-operations/T-XX-fix1` devolvieron la misma medición, 0.29h; se imputa una sola vez, a T-89). Salida de `close` de T-89-fix1:
+
+```json
+{
+  "artefacto": "reliable-operations/T-89-fix1",
+  "inicio": "2026-11-18T15:13:05Z",
+  "fin": "2026-11-18T15:35:30Z",
+  "fuente": "medido",
+  "tokens_reales": {
+    "entrada": 74,
+    "salida": 31766,
+    "cache_creacion": 53891,
+    "cache_lectura": 3715235,
+    "respuestas": 37
+  },
+  "eur": null,
+  "horas_ia": 0.29,
+  "duracion": "17m",
+  "duracion_reloj": "22m",
+  "ratio_usado": 300000,
+  "ratio_origen": "default no calibrado (300000)",
+  "tokens_procedencia": "transcript",
+  "tokens_cobertura": "completa",
+  "transcripts_leidos": 2,
+  "transcripts_subagente": 1,
+  "transcripts_con_error": 0,
+  "coste_procedencia": "sin_coste",
+  "coste_cobertura": "sin_coste",
+  "coste_sin_precio": [],
+  "tarifa_verificada_el": null,
+  "medicion_persistida": true,
+  "fuente_id": "src-8ffaaac4e3b9a11805b5148dbea387f65be01b42fba05cbf3ca54c4b799a95c8",
+  "ventana_id": "win-e5e3cbaf487a4ed3b9f5032e31e1f695",
+  "revision_medicion": 1,
+  "avisos": [
+    "CALIBRATION: fila marcada (estimado); fuera de la mediana",
+    "CALIBRATION: fila marcada (estimado); fuera de la mediana",
+    "precioTokens no fiable (0/ausente/viejo) → eur=null; ejecuta la skill rates-verify"
+  ]
+}
+```
