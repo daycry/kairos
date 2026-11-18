@@ -309,6 +309,35 @@ class RoundTripTests(unittest.TestCase):
         self.assertEqual((report['stage'], report['code']), ('index', 'timeout'))
         self.assertLessEqual(report['total_seconds'], 10.0 + probe.RETIRE_BUDGET + extra)
 
+    def test_ctrl_c_with_the_write_in_flight_still_retires_the_note_by_its_marker(self):
+        """fix2 item 5: the write may have landed when the signal arrives; the run does not know it, so the retirement is tried (version 2, then 1) and `retired` says so."""
+        server = FakeServer(self.clock, raises=('write', KeyboardInterrupt()))
+        report = run(server, self.clock)
+        self.assertEqual((report['stage'], report['code'], report['retired']), ('write', 'interrupted', True))
+        self.assertIn('delete', server.kinds())
+
+    def test_a_refused_write_is_still_not_retired(self):
+        report = run(FakeServer(self.clock, write_status=400), self.clock)
+        self.assertEqual((report['stage'], report['retired']), ('write', None))
+
+    def test_a_second_signal_inside_the_cleanup_does_not_lose_the_report(self):
+        """fix2 item 5: a KeyboardInterrupt in `clean_up` used to leave the run (and the command's report) at stage `setup`; now the first failure is reported and `retired` is False."""
+        server = FakeServer(self.clock, status_code=500, raises=('delete', KeyboardInterrupt()))
+        report = run(server, self.clock)
+        self.assertEqual((report['stage'], report['code'], report['retired']), ('index', 'server_error', False))
+
+    def test_the_retirement_after_a_signal_fits_in_the_stop_grace_period_of_a_container(self):
+        """fix2 item 5: `docker stop` gives 10 s; the retirement after a signal has a budget of its own below that, and the manual states the grace period to configure."""
+        self.assertLess(probe.INTERRUPT_RETIRE_BUDGET, 10.0)
+        server = FakeServer(self.clock, raises=('status', KeyboardInterrupt()), hang_deletes=True)
+        report = run(server, self.clock)
+        self.assertEqual(report['code'], 'interrupted')
+        self.assertLessEqual(report['stages']['retire'], probe.INTERRUPT_RETIRE_BUDGET + 1e-6)
+        self.assertLessEqual(sum(timeout for kind, _, timeout in server.requests if kind == 'delete'), probe.INTERRUPT_RETIRE_BUDGET)
+        failed = FakeServer(self.clock, status_code=500, hang_deletes=True)  # a failure that is no signal keeps the whole budget
+        run(failed, self.clock)
+        self.assertEqual(max(timeout for kind, _, timeout in failed.requests if kind == 'delete'), probe.RETIRE_CALL_TIMEOUT)
+
 
 class HttpApiTests(unittest.TestCase):
     """The real transport of `admin probe` (`HttpApi`, httpx) against a stub server on the loopback of the test container: what it sends, what it refuses to follow and how it fails."""
@@ -546,6 +575,113 @@ class CommandTests(unittest.TestCase):
             code, _, _ = self.command(api=FakeServer(clock))
         self.assertEqual(code, 0)
 
+    def probe_command(self, server, clock, store_factory=None):
+        out, err = io.StringIO(), io.StringIO()
+        with patch('memory_platform.probe.time', SimpleNamespace(monotonic=clock, sleep=clock.sleep)), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            observability.configure_logging()
+            report = probe.probe_command(None, str(self.key), str(self.metrics), environ={}, api_factory=lambda url, token: server, store_factory=store_factory)
+        return report, [json.loads(line) for line in err.getvalue().splitlines() if line.startswith('{')]
+
+    def test_no_purge_after_a_key_the_server_refuses_or_after_a_signal(self):
+        """fix2 items 1 and 5: with a 401 nothing is known about who owns the project, and after a SIGTERM there is no time for a purge of its own."""
+        self.key.write_text('mp_token\n', encoding='utf-8')
+        opened = []
+
+        def factory():
+            opened.append(1)
+            raise AssertionError('the database must not be opened')
+        for label, options in (('401', {'write_status': 401}), ('interrupt', {'raises': ('status', KeyboardInterrupt())})):
+            with self.subTest(label):
+                clock = Clock()
+                report, _ = self.probe_command(FakeServer(clock, **options), clock, factory)
+                self.assertEqual((report['status'], report['purged']), ('probe_failed', None))
+        self.assertEqual(opened, [])
+
+    def test_the_last_success_is_read_inside_the_lock_so_an_older_run_never_overwrites_a_newer_one(self):
+        """fix2 item 6: the run that waited for the lock reads the file AFTER the other run wrote it; the metrics are written before the lock is released."""
+        self.key.write_text('mp_token\n', encoding='utf-8')
+        clock = Clock()
+        with patch('memory_platform.probe.time', SimpleNamespace(monotonic=clock, sleep=clock.sleep)), patch('memory_platform.observability.time.time', return_value=1000.0):
+            self.command(api=FakeServer(clock))
+        self.assertEqual(self.metric('kairos_probe_last_success_timestamp_seconds'), 1000.0)
+        real = probe.run_lock
+
+        @contextlib.contextmanager
+        def lock_after_a_newer_run(*arguments, **options):
+            with real(*arguments, **options):
+                observability.PROBE_LAST_SUCCESS.set(0)  # a new process
+                with patch('memory_platform.observability.time.time', return_value=5000.0):
+                    observability.record_probe(True, {}, last_success=None)
+                probe.write_metrics(str(self.metrics))  # the other run finished while this one waited for the lock
+                observability.PROBE_LAST_SUCCESS.set(0)
+                yield
+        observability.PROBE_LAST_SUCCESS.set(0)
+        with patch.object(probe, 'run_lock', lock_after_a_newer_run), patch('memory_platform.observability.time.time', return_value=2000.0):
+            code, _, _ = self.command(api=FakeServer(clock, write_status=500))
+        self.assertTrue(code.startswith('probe_failed'))
+        self.assertEqual(self.metric('kairos_probe_last_success_timestamp_seconds'), 5000.0)
+        self.assertEqual(self.metric('kairos_probe_success'), 0.0)
+
+    def test_the_metrics_are_written_before_the_lock_is_released(self):
+        self.key.write_text('mp_token\n', encoding='utf-8')
+        clock = Clock()
+        seen = []
+        real = probe.run_lock
+
+        @contextlib.contextmanager
+        def watching(*arguments, **options):
+            with real(*arguments, **options):
+                yield
+            seen.append(self.metrics.exists())  # on release the file of this run is already there
+        with patch.object(probe, 'run_lock', watching):
+            self.command(api=FakeServer(clock), environ={})
+        self.assertEqual(seen, [True])
+
+    @unittest.skipUnless(os.name == 'posix' and hasattr(os, 'geteuid') and os.geteuid() != 0, 'permissions of a directory are enforced for a user that is not root')
+    def test_a_key_in_a_read_only_directory_does_not_break_the_probe_and_the_lock_moves_next_to_the_metrics(self):
+        """fix2 item 7: a key mounted read-only used to end every run in `internal_error`; the lock then goes next to the metrics file."""
+        locked = self.directory / 'ro'
+        locked.mkdir()
+        key = locked / 'kairos-probe.key'
+        key.write_text('mp_token\n', encoding='utf-8')
+        locked.chmod(0o500)
+        self.addCleanup(locked.chmod, 0o700)
+        clock = Clock()
+        with patch('memory_platform.probe.time', SimpleNamespace(monotonic=clock, sleep=clock.sleep)), contextlib.redirect_stderr(io.StringIO()):
+            report = probe.probe_command(None, str(key), str(self.metrics), environ={}, api_factory=lambda url, token: FakeServer(clock))
+        self.assertEqual((report['status'], report['metrics_written']), ('probe_ok', True))
+        self.assertFalse(Path(str(key) + probe.LOCK_SUFFIX).exists())
+        self.assertTrue(Path(str(self.metrics) + probe.LOCK_SUFFIX).exists())
+        self.assertEqual(self.metric('kairos_probe_success'), 1.0)
+
+    @unittest.skipUnless(os.name == 'posix', 'the run lock is a POSIX file lock')
+    def test_without_any_place_for_the_lock_the_run_goes_on_with_a_warning_never_internal_error(self):
+        self.key.write_text('mp_token\n', encoding='utf-8')
+        clock = Clock()
+
+        real = os.open
+
+        def refuse(path, *arguments, **options):
+            if str(path).endswith(probe.LOCK_SUFFIX):
+                raise OSError(30, 'Read-only file system')
+            return real(path, *arguments, **options)
+        with patch.object(probe.os, 'open', refuse):
+            report, lines = self.probe_command(FakeServer(clock), clock)
+        self.assertEqual(report['status'], 'probe_ok')
+        self.assertEqual([(line['event'], line['code']) for line in lines if line['event'] == 'probe_lock_unavailable'], [('probe_lock_unavailable', 'lock_unavailable')])
+        self.assertTrue(self.metrics.exists())
+
+    @unittest.skipUnless(os.name == 'posix' and hasattr(os, 'O_NOFOLLOW'), 'O_NOFOLLOW')
+    def test_a_link_in_place_of_the_lock_file_is_never_followed(self):
+        self.key.write_text('mp_token\n', encoding='utf-8')
+        target = self.directory / 'elsewhere'
+        target.write_text('keep', encoding='utf-8')
+        os.symlink(target, str(self.key) + probe.LOCK_SUFFIX)
+        clock = Clock()
+        report, _ = self.probe_command(FakeServer(clock), clock)
+        self.assertEqual(report['status'], 'probe_ok')
+        self.assertEqual(target.read_text(encoding='utf-8'), 'keep')
+
     def test_a_purge_that_fails_is_logged_and_does_not_change_the_result_of_the_probe(self):
         self.key.write_text('mp_token\n', encoding='utf-8')
         clock = Clock()
@@ -738,6 +874,47 @@ class ChainTests(IsolatedDatabase, unittest.TestCase):
         self.assertEqual(self.footprint(user), before)
         self.assertEqual(self.rows('SELECT count(*) AS n FROM memory.projects')[0]['n'], 2)  # no table, no project, no key went
 
+    def test_the_purge_shares_one_budget_among_its_statements_and_a_slow_database_rolls_it_back(self):
+        """fix2 item 4: eight statements of 15 s each made 130 s; now every statement gets what is left of PURGE_BUDGET and, once it is spent, the transaction is rolled back."""
+        report = self.probe(self.sleep_while_the_worker_runs)
+        ticks = iter([0.0, 0.0])
+
+        def slow():
+            return next(ticks, 1000.0)  # the first two readings are at 0 s (start, select); after them the budget is gone
+        with self.assertRaises(probe.ProbeError) as raised:
+            probe.purge_retired(self.store, [report['item_id']], older_than=0, clock=slow)
+        self.assertEqual(raised.exception.code, 'purge_timeout')
+        self.assertEqual(self.memories(), (0, 1))  # nothing was deleted: one transaction
+        self.assertEqual(probe.purge_retired(self.store, [report['item_id']]), 1)
+
+    def test_every_statement_of_the_purge_is_limited_by_what_is_left_of_the_budget(self):
+        report = self.probe(self.sleep_while_the_worker_runs)
+        limits = []
+
+        class Spy:
+            def __init__(self, store):
+                self.store = store
+
+            def transaction(self):
+                manager = self.store.transaction()
+
+                class Wrapped:
+                    def __enter__(wrapped):
+                        wrapped.connection = manager.__enter__()
+
+                        def execute(sql, parameters=None):
+                            if sql.startswith('SET LOCAL statement_timeout'):
+                                limits.append(sql)
+                            return wrapped.connection.execute(sql, parameters)
+                        return SimpleNamespace(execute=execute)
+
+                    def __exit__(wrapped, *exc):
+                        return manager.__exit__(*exc)
+                return Wrapped()
+        self.assertEqual(probe.purge_retired(Spy(self.store), [report['item_id']], older_than=0, clock=lambda: 0.0, budget=9.0), 1)
+        self.assertGreater(len(limits), 5)
+        self.assertEqual(set(limits), {"SET LOCAL statement_timeout = '9000ms'"})
+
     def test_the_rows_of_the_probe_project_do_not_grow_over_many_runs_when_each_purges_its_note(self):
         counts = []
         for _ in range(4):
@@ -864,6 +1041,19 @@ class DocumentationTests(unittest.TestCase):
         self.assertIn('hace más de 10 minutos', self.section)
         self.assertIn('`MEMORY_PROBE_TIMEOUT` + 20 s', self.configuration)
 
+    def test_the_manual_gives_the_budgets_of_the_purge_and_of_the_stop_and_the_figure_for_the_container(self):
+        """fix2: the total bound (retirement + purge + connection), the budget after a signal and the `stop_grace_period` that T-75 copies into the compose service."""
+        self.assertEqual((probe.PURGE_BUDGET, probe.INTERRUPT_RETIRE_BUDGET), (15.0, 8.0))
+        self.assertLess(probe.INTERRUPT_RETIRE_BUDGET, 10.0)
+        for text in ('**15 s para toda la purga**', 'tope total propio de **25 s**', '**8 s**', '`stop_grace_period: 15s`', '`purge_timeout`', '`probe_lock_unavailable`', '`lock_unavailable`',
+                     '`probe.key_issued`', '`user.created`', '`grant.created`'):
+            with self.subTest(text=text):
+                self.assertIn(text, self.section)
+        self.assertIn('como mucho 25 s en total', self.configuration)
+        plan = (ROOT / 'docs' / 'roadmap' / '2026-11-15-reliable-operations' / 'improvement-plan.md')
+        if plan.exists():  # the image of the tests does not carry the plan
+            self.assertIn('como mucho 25 s más', plan.read_text(encoding='utf-8'))
+
     def test_the_log_field_of_the_event_is_documented_and_real(self):
         self.assertIn('`exc_type`, `stage`', self.operations)
         self.assertIn('stage', observability.FIELDS)
@@ -922,13 +1112,13 @@ class MutantTests(IsolatedDatabase, unittest.TestCase):
         self.clock.advance(seconds)
 
     def test_mutant_without_the_final_retirement_leaves_an_active_memory_which_the_healthy_check_reports(self):
-        with patch.object(probe.Probe, 'retire', lambda self, started, state, versions=(2,): None):
+        with patch.object(probe.Probe, 'retire', lambda self, started, state, versions=(2,), budget=None: None):
             report = probe.Probe(self.api, timeout=60.0, poll=2.0, clock=self.clock, sleep=self.drain_and_advance).run()
         self.assertEqual(report['status'], 'probe_ok')  # the probe itself cannot tell...
         self.assertEqual(self.active(), 1)  # ...and `ChainTests.test_healthy_*` asserts (0, 1): it would be red
 
     def test_mutant_without_the_cleanup_after_a_failure_leaves_the_note_the_stopped_worker_check_reports(self):
-        with patch.object(probe.Probe, 'clean_up', lambda self, state, stage: None):
+        with patch.object(probe.Probe, 'clean_up', lambda self, state, stage, interrupted=False: None):
             report = probe.Probe(self.api, timeout=10.0, poll=2.0, clock=self.clock, sleep=self.clock.sleep).run()
         self.assertEqual((report['stage'], report.get('retired')), ('index', None))  # `retired` is the field the stopped-worker check asserts to be True
         self.assertEqual(self.active(), 1)
