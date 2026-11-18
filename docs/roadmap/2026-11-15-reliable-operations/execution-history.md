@@ -2011,3 +2011,45 @@ SHA-256: `68d413e59c445aba1d09133c6026bbb4fb715abf5bc14f2ee075ecd059500881`.
   "status": "uncalibrated"
 }
 ```
+
+### T-90
+
+```json
+{
+  "artefacto": "reliable-operations/T-90",
+  "inicio": "2026-11-18T13:28:26Z",
+  "fin": "2026-11-18T13:35:54Z",
+  "fuente": "medido",
+  "tokens_reales": {
+    "entrada": 24,
+    "salida": 7736,
+    "cache_creacion": 14359,
+    "cache_lectura": 2815331,
+    "respuestas": 12
+  },
+  "eur": null,
+  "horas_ia": 0.07,
+  "duracion": "4m",
+  "duracion_reloj": "7m",
+  "ratio_usado": 300000,
+  "ratio_origen": "default no calibrado (300000)",
+  "tokens_procedencia": "transcript",
+  "tokens_cobertura": "completa",
+  "transcripts_leidos": 2,
+  "transcripts_subagente": 1,
+  "transcripts_con_error": 0,
+  "coste_procedencia": "sin_coste",
+  "coste_cobertura": "sin_coste",
+  "coste_sin_precio": [],
+  "tarifa_verificada_el": null,
+  "medicion_persistida": true,
+  "fuente_id": "src-8ffaaac4e3b9a11805b5148dbea387f65be01b42fba05cbf3ca54c4b799a95c8",
+  "ventana_id": "win-a8697671e47b48bca9971b23800e0f0e",
+  "revision_medicion": 1,
+  "avisos": [
+    "CALIBRATION: fila marcada (estimado); fuera de la mediana",
+    "CALIBRATION: fila marcada (estimado); fuera de la mediana",
+    "precioTokens no fiable (0/ausente/viejo) → eur=null; ejecuta la skill rates-verify"
+  ]
+}
+```

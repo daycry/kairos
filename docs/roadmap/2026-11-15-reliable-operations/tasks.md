@@ -53,10 +53,10 @@ test-plan: n/a (sin UI)
 | Fase 11 — Sonda de ida y vuelta (C-06) | 6 | 6 | 100.0% | 0 / 23.4h | 4.95 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 7 | 7 | 100.0% | 0 / 23.4h | 2.62 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 6 | 6 | 100.0% | 0 / 33.6h | 2.36 / 4.5h | 0 / 1.1h | 0 / 1120 k |
-| Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 3 | 7 | 42.9% | 0 / 33.6h | 5.28 / 4.5h | 0 / 1.1h | 0 / 1120 k |
+| Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 4 | 7 | 57.1% | 0 / 33.6h | 5.35 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **88** | **98** | **89.8%** | **0 / 412.8h** | **25.63 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **89** | **98** | **90.8%** | **0 / 412.8h** | **25.70 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2815,10 +2815,11 @@ test-plan: n/a (sin UI)
 ### T-90 — Pruebas de la puerta de abstención
 
 - **Descripción**: Pruebas unitarias de las métricas de abstención y de la prueba de rojo, para que la puerta no se pueda debilitar sin que falle una prueba. Fuente: CA-28.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: la puerta de abstención ya no se puede debilitar sin que falle una prueba: se comprobaron mutantes de la puerta y del paso de la CI y todos quedan en rojo.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 1h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real 0.07h (medido)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 37 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: T-89
@@ -2830,15 +2831,16 @@ test-plan: n/a (sin UI)
   - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
 
 **Criterios de aceptación**
-- [ ] Mutantes comprobados: quitar la métrica de abstención de `run.py` o del umbral deja `test_metrics.py` o `test_ci_workflow.py` en rojo
-- [ ] El recuento de `test_metrics` sube y `retrieval-eval` sigue fuera de la suite
+- [x] Mutantes comprobados: quitar la métrica de abstención de `run.py` o del umbral deja `test_metrics.py` o `test_ci_workflow.py` en rojo
+- [x] El recuento de `test_metrics` sube y `retrieval-eval` sigue fuera de la suite
 
 **Subtareas**
-- [ ] Escribir pruebas
-- [ ] Aplicar mutantes
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir pruebas
+- [x] Aplicar mutantes
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 0.07h (medido).
 
-**Notas**: Patrón: `tests/retrieval_eval/test_metrics.py` (14 pruebas) y `scripts/tests/test_ci_workflow.py:272-326` (mutantes de CI).
+**Notas**: RED: 3 mutantes del paso de CI sobrevivían (la mutación tocaba el trabajo `server`, que tiene líneas iguales) hasta acotarlos al trabajo `retrieval-eval`; la prueba de `structural_keys` falló con la clave quitada. Mutantes comprobados (8 en `run.py`/`thresholds.json` con `test_metrics`, todos MUERTOS: quitar `evaluate_abstention` de `run()`, los controles `abstention_false`/`abstention_correct`/`abstained_with_items`/mínimo de negativas, la clave `abstention` de `STRUCTURAL_KEYS`, las metas y el umbral simulado de `thresholds.json`; y 7 del paso de CI con `test_ci_workflow`, todos detectados: borrar o `|| true` en cada `grep`, `set +e`). `test_metrics` pasó de 24 a 45 pruebas (21 nuevas; la prueba de la clave estructural y las de T-88/T-89 se entregaron en sus commits); `test_ci_workflow` ejecuta el script del paso sobre 5 informes sintéticos. `retrieval-eval` sigue fuera de la suite (no lo descubre `run_postgres`). Las 3 pruebas de DSN de `test_metrics` no corren en el host (sin `psycopg`) y sí en la imagen. JSON de usage-meter en `execution-history.md`.
 
 ### T-91 — Documentar la abstención y avisar a la Iniciativa 7
 

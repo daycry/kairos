@@ -186,24 +186,19 @@ class AuxiliaryJobsTests(unittest.TestCase):
     def test_the_retrieval_eval_check_fails_without_the_abstention_measurement_or_with_a_red_gate(self):
         if BASH is None:
             self.skipTest('bash not found: the behavioural check of the retrieval-eval step runs in CI')
-        step = re.search(r'(?s)      - name: The gate really ran and passed\n        run: \|\n(.*?)(?=\n\n|\Z)', self.jobs['retrieval-eval'])
-        self.assertIsNotNone(step)
-        script = '\n'.join(line[10:] for line in step.group(1).splitlines())
-        gate = '"gate": {"baseline_compared": true, "failures": [], "passed": %s}'
-        ok_abstention = '"abstention": {"abstained_with_items": 0, "correct_abstention": 0.5, "false_abstention": 0.04, "model": "m"}'
-        cases = (('good', ok_abstention + ', ' + gate % 'true', True),
-                 ('red gate', ok_abstention + ', ' + gate % 'false', False),
-                 ('no abstention measurement', gate % 'true', False),
-                 ('abstention without false rate', '"abstention": {"abstained_with_items": 0, "correct_abstention": 0.5}, ' + gate % 'true', False),
-                 ('an abstention that kept its items', ok_abstention.replace('"abstained_with_items": 0', '"abstained_with_items": 2') + ', ' + gate % 'true', False))
-        for name, body, passes in cases:
-            with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
-                log = Path(tmp) / 'eval.log'
-                log.write_text('noise\nRETRIEVAL_EVAL_RESULT {' + body + '}\n', encoding='utf-8')
-                file = Path(tmp) / 'step.sh'
-                file.write_text('set -euo pipefail\n' + script.replace('/tmp/eval.log', log.as_posix()) + '\n', encoding='utf-8')
-                result = subprocess.run([BASH, '--noprofile', '--norc', file.as_posix()], capture_output=True, text=True)
-                self.assertEqual(result.returncode == 0, passes, result.stdout + result.stderr)
+        self.assertEqual(eval_step_problems(read()), [])
+
+    def test_every_mutant_of_the_retrieval_eval_step_is_detected(self):
+        # T-90: the step is protected by running its own script over synthetic reports, so weakening it must make one of the cases misbehave.
+        if BASH is None:
+            self.skipTest('bash not found: the behavioural check of the retrieval-eval step runs in CI')
+        original = read()
+        for name, mutate in EVAL_MUTANTS:
+            with self.subTest(mutant=name):
+                block = jobs(original)['retrieval-eval']  # the mutation only touches this job: `server` has steps that look alike
+                mutant = original.replace(block, mutate(block), 1)
+                self.assertNotEqual(mutant, original, 'the mutation changed nothing')
+                self.assertTrue(eval_step_problems(mutant), 'mutant survived: ' + name)
 
     def test_client_job_runs_tests_and_release_check_in_the_package(self):
         self.assertIn('client', self.jobs)
@@ -530,6 +525,45 @@ MUTANTS = (
     ('job continue-on-error', lambda t: t.replace('    timeout-minutes: 45\n', '    timeout-minutes: 45\n    continue-on-error: true\n', 1)),
     ('delete the step', lambda t: re.sub(r'(?s)      - name: ' + GATE_STEP + r'.*?(?=\n  retrieval-eval:)', '', t)),
 )
+
+
+
+EVAL_STEP = 'The gate really ran and passed'
+EVAL_GATE = '"gate": {"baseline_compared": true, "failures": [], "passed": %s}'
+EVAL_ABSTENTION = '"abstention": {"abstained_with_items": 0, "correct_abstention": 0.5, "false_abstention": 0.04, "model": "m"}'
+EVAL_CASES = (('good', EVAL_ABSTENTION + ', ' + EVAL_GATE % 'true', True),
+              ('red gate', EVAL_ABSTENTION + ', ' + EVAL_GATE % 'false', False),
+              ('no abstention measurement', EVAL_GATE % 'true', False),
+              ('abstention without false rate', '"abstention": {"abstained_with_items": 0, "correct_abstention": 0.5}, ' + EVAL_GATE % 'true', False),
+              ('an abstention that kept its items', EVAL_ABSTENTION.replace('"abstained_with_items": 0', '"abstained_with_items": 2') + ', ' + EVAL_GATE % 'true', False))
+EVAL_MUTANTS = (
+    ('delete the passed check', lambda t: re.sub(r'(?m)^.*"passed": true.*\n', '', t, count=1)),
+    ('delete the abstention measurement check', lambda t: re.sub(r'(?m)^.*"correct_abstention.*\n', '', t, count=1)),
+    ('delete the no-items check', lambda t: re.sub(r'(?m)^.*abstained_with_items.*\n', '', t, count=1)),
+    ('passed check || true', lambda t: t.replace("\"passed\": true'\n", "\"passed\": true' || true\n", 1)),
+    ('measurement check || true', lambda t: re.sub(r"(grep -q '\"abstention\": \{\[\^\}\]\*\"correct_abstention[^\n]*')", r'\1 || true', t, count=1)),
+    ('no-items check || true', lambda t: t.replace("\"abstained_with_items\": 0,'\n", "\"abstained_with_items\": 0,' || true\n", 1)),
+    ('step without set -e', lambda t: t.replace('          line="$(grep -o', '          set +e\n          line="$(grep -o', 1)),
+)
+
+
+def eval_step_problems(text):
+    """Run the script of the retrieval-eval step over synthetic reports; the cases whose outcome is not the expected one."""
+    step = re.search(r'(?s)      - name: ' + EVAL_STEP + r'\n        run: \|\n(.*?)(?=\n\n|\Z)', jobs(text)['retrieval-eval'])
+    if step is None:
+        return ['the step is missing']
+    script = '\n'.join(line[10:] for line in step.group(1).splitlines())
+    problems = []
+    for name, body, passes in EVAL_CASES:
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / 'eval.log'
+            log.write_text('noise\nRETRIEVAL_EVAL_RESULT {' + body + '}\n', encoding='utf-8')
+            file = Path(tmp) / 'step.sh'
+            file.write_text('set -euo pipefail\n' + script.replace('/tmp/eval.log', log.as_posix()) + '\n', encoding='utf-8')
+            result = subprocess.run([BASH, '--noprofile', '--norc', file.as_posix()], capture_output=True, text=True)
+            if (result.returncode == 0) != passes:
+                problems.append(name)
+    return problems
 
 
 class SuiteGateStepTests(unittest.TestCase):
