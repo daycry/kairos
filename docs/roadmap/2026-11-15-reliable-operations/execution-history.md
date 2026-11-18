@@ -1438,3 +1438,78 @@ Lentes: A; B; C+D en un solo revisor (`review-lens-select --base 2d3e57d`: C por
 | 5 | Minor | El CHANGELOG no avisa de que con `MEMORY_ABSTAIN_DEFAULT=on` `/v1/context` y la herramienta `context` también ganan `abstained`/`abstention` y pueden devolver `context: ''` | T-83 | pendiente (fix1) | Lente A n.º 3, Lente C+D (fuera de lente); `retrieval.py:265,280` |
 | 6 | Minor | Criterio de T-85 pide el JSON de usage-meter en Notas y solo hay la línea de resumen | T-85 | pendiente (orquestador: pegar el JSON o enmienda) | Lente A n.º 4; `tasks.md:2658,2664` |
 | 7 | Minor | El umbral se busca por el nombre exacto del modelo: `nomic-embed-text:latest` frente a la clave `nomic-embed-text` queda siempre `uncalibrated` sin aviso | T-82 | pendiente (fix1: normalizar `:latest` o avisar al arrancar) | Lente A (fuera de lente) |
+
+## Compactación 2026-11-18 (23) — notas de T-81 a T-85
+
+Notas de la fase 13 movidas tal cual desde `tasks.md` para mantenerlo por debajo del límite de lectura.
+
+### T-81
+
+SHA-256: `bd68adfd5d1fcd25a89b5a3cfc15bd17ba9e9bba3c41029c8ebb9ddf5899b40f`.
+
+**Notas**: Diseño en `docs/architecture.md` («Abstención: la señal»), con el prototipo y las métricas de la puerta. Decisión abierta (la más conservadora): coincidencia léxica = cualquier acierto de capa léxica, no solo `lexical_match: trigram`; semántica `partial` = sin señal.
+
+### T-82
+
+SHA-256: `d115a75a0aa7ef8384dd413f736c7a90965e872062d606992f66c9de5a04d8db`.
+
+**Notas**: RED 2026-11-18: `test_abstention` falló con `ImportError: abstain_from_env`; luego 12 pruebas OK en local. Código en `retrieval.py` (`_abstain`), `config.py` y `models.py`; `app.py` y `store_vectors.py` sin cambios (la similitud ya viaja en `score`). Con `abstain` activo la respuesta lleva siempre `abstained`. Pendiente (fase 14, documentación): pasar las variables por `docker-compose.yml` y listarlas en `docs/configuration.md`.
+
+### T-83
+
+SHA-256: `d62683f4b1eee4311943a232826772aa03087d130aaf892bb4246ecffa3394c5`.
+
+**Notas**: RED 2026-11-18: `test_contract_additive` falló en 2 pruebas y `test_mcp_contract_copy` en la copia; verde tras `export-contracts.py` (solo líneas añadidas) y copiar a `mcp/contract/`. La herramienta `search` gana `abstain` (`context` no). Añadidos al alcance: `mcp.py`, `mcp/tests/test_contract_identity.py`, `mcp/tests/test_tools_t41.py`. `test_tool_endpoint_parity` necesita PostgreSQL: corre en T-85.
+
+### T-84
+
+SHA-256: `b7e30380fd04a9dfb12dca7feaf75598edaa5c6fda6353232d2e5aeec47f40b5`.
+
+**Notas**: 96 combinaciones por servicio y por API (`/v1/search` y `/v1/context`), con la regla escrita aparte del código; 16 pruebas OK en local. Mutantes 2026-11-18, cada uno deja pruebas en rojo: quitar `lexical` (7 fallos), `degraded`/estado semántico (19), umbral (8) y `uncalibrated` (25). `test_retrieval.py` y `test_chunk_search.py` sin tocar. Excepción: `test_chunk_search` necesita PostgreSQL, corre en T-85. Nota: el tiempo de la escritura inicial de las pruebas corrió dentro de la ventana de T-83.
+
+### T-85
+
+SHA-256: `be3f214dc90e03de6af0039df749f16ccc086052de966990af6ed6b05e93618c`.
+
+**Notas**: Suite 2026-11-18 (`kairos-test:i3p13`, ~14 min): `MEMORY_TEST_RESULT` `{"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1511}` (incluye `test_tool_endpoint_parity` y `test_chunk_search` en PostgreSQL). Mínimo 1494 a 1511 en `ci.yml`, `MIN_FLOOR`, `docs/operations.md` y `README.md`; `test_ci_workflow.py`: 45 pruebas OK. El cliente no se tocó (sin `npm test`); pruebas de `mcp/` afectadas (`test_contract_identity`, `test_tools_t41`) OK en local.
+
+## Compactación 2026-11-18 (23) — texto adicional movido de tasks.md
+
+Notas de T-73 y T-79 y veredictos de las revisiones de las fases 9 (intento 4) y 10 (intento 5), movidos tal cual para mantener `tasks.md` por debajo del límite de lectura.
+
+### T-73 (notas)
+
+SHA-256: `8dd900175b3f38b6950924e9a321e81e844ed49821ea2ca49989eacfd432b424`.
+
+**Notas** (2026-11-18): Cerrada en el intento 2 (intento 1: A, B y C+D, 3 Important y 9 Minor, corregidos en fix1 `4be915a`..`428b4e3`; intento 2: A, B y C+D, 0 Critical, 0 Important y 7 Minor, corregidos en fix2 `448c4da`..`e29ff07`). Tablas en `execution-history.md` (compactaciones 14 y 16, con SHA-256); resumen en `review.md`. Suite 1460 en verde tras fix2 (`kairos-test:i3p11z`, 0 fallos, errores y omitidos); `scope-check.py --base main` exit 0. Mutantes: cada corrección se registró con RED de comportamiento sobre el código anterior (notas de fix1 y fix2 de T-68..T-71) y las lentes reprodujeron los hallazgos en PostgreSQL aislado (`kairos-test:i3p11x`); la Lente A del intento 1 mató 4 mutantes propios. Excepción declarada al segundo criterio: no se mutó en memoria cada control nuevo uno por uno; la evidencia es el RED por corrección. usage-meter no medido (horas estimadas). Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+
+### T-79 (notas)
+
+SHA-256: `dea379c5efcd04039c66062343d9cb20f30ab91a74bb99613469349bfab999c0`.
+
+**Notas**: Suite 2026-11-18 (`kairos-test:i3p12`): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1477}`. Mínimo 1460→1477 en `ci.yml` (con su historia), `MIN_FLOOR`, tabla de operations.md y README.md:252; test_ci_workflow 45 OK; `cd client && npm test` 97 OK. Fix1: suite `kairos-test:i3p12f` 2026-11-18: `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1494}`; mínimo 1477→1494 en `ci.yml` (con historia), `MIN_FLOOR`, operations.md y README.md:252. Las dos pruebas de tiempo que un revisor vio fallar fuera del arnés (`test_the_providers_own_timeout_is_counted_once`, `test_with_a_stored_vector_of_other_dimensions_the_extra_call_still_fits`) pasan en la suite completa.
+
+### Fase 9, intento 4 (veredicto)
+
+SHA-256: `495edcc4e73a374aa7b95732d8c73ea5c4b57561c4cbc6313bb565b7fc354b1a`.
+
+Lentes: A+C en un solo revisor (re-evalúan lo corregido en fix3). Diff `ce3b035..e71b70d`. Veredicto: n.º 1-5 del intento 3 cerrados; la aserción nueva sale `FAILED (failures=1)` sobre el manual de `ce3b035` y 21 OK sobre el actual; la receta de Linux es segura tal como está escrita (un solo socket IPv4 en la pasarela de `docker0`, orden lo → subred → descarte, `ufw` con aceptar antes de denegar); deuda n.º 6-7 en las Notas de T-64. Sin Critical ni Important: **fase cerrada en el intento 4** (primer intento del ciclo 2), salvo T-56, que espera su criterio de T-64. Suite 1241, 0 fallos (tras fix2; fix3 solo cambia el manual y una aserción, verificados con las pruebas que leen los manuales).
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Minor | La mitigación de fijar la regla a la IP del contenedor `ollama` no pide volver a aplicarla al recrearlo (la IP vieja puede pasar a `memory-backup`) | T-55 | corregido (orquestador, en el cierre) | Lentes A+C N1 (CWE-1327 residual); `operations.md:407` |
+
+### Fase 10, intento 5 (veredicto)
+
+SHA-256: `98dbbf74d09ad45372f7a873dc21062d6641fcceb708d2dc15bf0e5bd9baa0c4`.
+
+Lentes: B; A+C (diff `af7df9b..64f3861`, fix4). 133 OK en el anfitrión (2 omitidas); legacy 2×300×8 sin problemas atribuibles a fix4; `reap` con docker colgado vuelve a los 120 s; OneDrive y montajes de Docker Desktop dan `nlink` 1. Intento 4: n.º 1-6, 8 y 9 ✓; n.º 7 parcial. Sin Critical ni Important: **fase cerrada en el intento 5** (segundo del ciclo 2). Minor, todos corregidos en el cierre (fix5):
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Minor | Sin registro y con servicios sin contenedor, `good` parcial: `--rollback` informa éxito con esos servicios en la build fallida y la marca `good` | T-62, T-63 | corregido (fix5) | Lente B n.º 3 (`rb4/legacy5.py`) |
+| 2 | Minor | Señal entre el fin de `settle`/`apply` y `disarm()`: escapa de `main` sin liberar | T-61 | corregido (fix5) | Lente B n.º 1 (`rb4/signals5.py`) |
+| 3 | Minor | Señal antes del SIG_IGN de `ignoring_signals` cancela el `reap` sin aviso | T-61 | corregido (fix5) | Lente B n.º 2 |
+| 4 | Minor | Manual: en `engine` ya se guardó `in_progress` | T-65 | corregido (fix5) | Lente A n.º A-1 |
+| 5 | Minor | Ítem (19): «antes de cualquier fase» frente a «tras `engine`» | T-65 | corregido (fix5) | Lente A n.º A-2 |
+| 6 | Minor | `status` del estado sin escapar en stderr y `warnings` | T-62, T-63 | corregido (fix5) | Lente C n.º C-1 (CWE-150) |

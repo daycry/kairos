@@ -2289,7 +2289,7 @@ test-plan: n/a (sin UI)
 - [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
 - [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas** (2026-11-18): Cerrada en el intento 2 (intento 1: A, B y C+D, 3 Important y 9 Minor, corregidos en fix1 `4be915a`..`428b4e3`; intento 2: A, B y C+D, 0 Critical, 0 Important y 7 Minor, corregidos en fix2 `448c4da`..`e29ff07`). Tablas en `execution-history.md` (compactaciones 14 y 16, con SHA-256); resumen en `review.md`. Suite 1460 en verde tras fix2 (`kairos-test:i3p11z`, 0 fallos, errores y omitidos); `scope-check.py --base main` exit 0. Mutantes: cada corrección se registró con RED de comportamiento sobre el código anterior (notas de fix1 y fix2 de T-68..T-71) y las lentes reprodujeron los hallazgos en PostgreSQL aislado (`kairos-test:i3p11x`); la Lente A del intento 1 mató 4 mutantes propios. Excepción declarada al segundo criterio: no se mutó en memoria cada control nuevo uno por uno; la evidencia es el RED por corrección. usage-meter no medido (horas estimadas). Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (23) — notas de T-81 a T-85», T-73 (notas)).
 
 ---
 
@@ -2473,7 +2473,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.04h (medido), 2m (el build de ~14 min corrió en segundo plano).
 
-**Notas**: Suite 2026-11-18 (`kairos-test:i3p12`): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1477}`. Mínimo 1460→1477 en `ci.yml` (con su historia), `MIN_FLOOR`, tabla de operations.md y README.md:252; test_ci_workflow 45 OK; `cd client && npm test` 97 OK. Fix1: suite `kairos-test:i3p12f` 2026-11-18: `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1494}`; mínimo 1477→1494 en `ci.yml` (con historia), `MIN_FLOOR`, operations.md y README.md:252. Las dos pruebas de tiempo que un revisor vio fallar fuera del arnés (`test_the_providers_own_timeout_is_counted_once`, `test_with_a_stored_vector_of_other_dimensions_the_extra_call_still_fits`) pasan en la suite completa.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (23) — notas de T-81 a T-85», T-79 (notas)).
 
 ### T-80 — Revisión adversarial de la fase (dos lentes)
 
@@ -2540,7 +2540,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.04h (medido).
 
-**Notas**: Diseño en `docs/architecture.md` («Abstención: la señal»), con el prototipo y las métricas de la puerta. Decisión abierta (la más conservadora): coincidencia léxica = cualquier acierto de capa léxica, no solo `lexical_match: trigram`; semántica `partial` = sin señal.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (23) — notas de T-81 a T-85», T-81).
 
 ### T-82 — Implementación: `abstain`, `MEMORY_ABSTAIN_THRESHOLDS` y `MEMORY_ABSTAIN_DEFAULT`
 
@@ -2572,7 +2572,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.13h (medido).
 
-**Notas**: RED 2026-11-18: `test_abstention` falló con `ImportError: abstain_from_env`; luego 12 pruebas OK en local. Código en `retrieval.py` (`_abstain`), `config.py` y `models.py`; `app.py` y `store_vectors.py` sin cambios (la similitud ya viaja en `score`). Con `abstain` activo la respuesta lleva siempre `abstained`. Pendiente (fase 14, documentación): pasar las variables por `docker-compose.yml` y listarlas en `docs/configuration.md`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (23) — notas de T-81 a T-85», T-82).
 
 ### T-83 — Contratos aditivos: `abstain`, `abstained` y `abstention`
 
@@ -2602,7 +2602,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.21h (medido).
 
-**Notas**: RED 2026-11-18: `test_contract_additive` falló en 2 pruebas y `test_mcp_contract_copy` en la copia; verde tras `export-contracts.py` (solo líneas añadidas) y copiar a `mcp/contract/`. La herramienta `search` gana `abstain` (`context` no). Añadidos al alcance: `mcp.py`, `mcp/tests/test_contract_identity.py`, `mcp/tests/test_tools_t41.py`. `test_tool_endpoint_parity` necesita PostgreSQL: corre en T-85.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (23) — notas de T-81 a T-85», T-83).
 
 ### T-84 — Pruebas de abstención y de no regresión por clase
 
@@ -2632,7 +2632,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.07h (medido).
 
-**Notas**: 96 combinaciones por servicio y por API (`/v1/search` y `/v1/context`), con la regla escrita aparte del código; 16 pruebas OK en local. Mutantes 2026-11-18, cada uno deja pruebas en rojo: quitar `lexical` (7 fallos), `degraded`/estado semántico (19), umbral (8) y `uncalibrated` (25). `test_retrieval.py` y `test_chunk_search.py` sin tocar. Excepción: `test_chunk_search` necesita PostgreSQL, corre en T-85. Nota: el tiempo de la escritura inicial de las pruebas corrió dentro de la ventana de T-83.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (23) — notas de T-81 a T-85», T-84).
 
 ### T-85 — Cierre de fase: suite completa y subida del mínimo
 
@@ -2663,7 +2663,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.07h (medido).
 
-**Notas**: Suite 2026-11-18 (`kairos-test:i3p13`, ~14 min): `MEMORY_TEST_RESULT` `{"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1511}` (incluye `test_tool_endpoint_parity` y `test_chunk_search` en PostgreSQL). Mínimo 1494 a 1511 en `ci.yml`, `MIN_FLOOR`, `docs/operations.md` y `README.md`; `test_ci_workflow.py`: 45 pruebas OK. El cliente no se tocó (sin `npm test`); pruebas de `mcp/` afectadas (`test_contract_identity`, `test_tools_t41`) OK en local.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (23) — notas de T-81 a T-85», T-85).
 
 ### T-86 — Revisión adversarial de la fase (dos lentes)
 
@@ -3109,11 +3109,7 @@ Archivada en `execution-history.md` (sección «Compactación 2026-11-17 (2) —
 
 ## Revisión de dos lentes — intento 4: Fase 9 tras fix3 — ciclo 2, abierto con OK del usuario: «Las preguntas toma la mejor decisión» (T-54, T-55, T-56)
 
-Lentes: A+C en un solo revisor (re-evalúan lo corregido en fix3). Diff `ce3b035..e71b70d`. Veredicto: n.º 1-5 del intento 3 cerrados; la aserción nueva sale `FAILED (failures=1)` sobre el manual de `ce3b035` y 21 OK sobre el actual; la receta de Linux es segura tal como está escrita (un solo socket IPv4 en la pasarela de `docker0`, orden lo → subred → descarte, `ufw` con aceptar antes de denegar); deuda n.º 6-7 en las Notas de T-64. Sin Critical ni Important: **fase cerrada en el intento 4** (primer intento del ciclo 2), salvo T-56, que espera su criterio de T-64. Suite 1241, 0 fallos (tras fix2; fix3 solo cambia el manual y una aserción, verificados con las pruebas que leen los manuales).
-
-| # | Grado | Gap | Tarea | Corrección | Evidencia |
-|---|---|---|---|---|---|
-| 1 | Minor | La mitigación de fijar la regla a la IP del contenedor `ollama` no pide volver a aplicarla al recrearlo (la IP vieja puede pasar a `memory-backup`) | T-55 | corregido (orquestador, en el cierre) | Lentes A+C N1 (CWE-1327 residual); `operations.md:407` |
+Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (23) — notas de T-81 a T-85», Fase 9, intento 4).
 
 ## Revisión de dos lentes — intento 1: Fase 10 (T-61 a T-65) (T-61, T-62, T-63, T-64, T-65)
 
@@ -3137,16 +3133,7 @@ Archivada en `execution-history.md` (sección «Compactación 2026-11-17 (10) �
 
 ## Revisión de dos lentes — intento 5: Fase 10 tras fix4 (T-61, T-62, T-63, T-65)
 
-Lentes: B; A+C (diff `af7df9b..64f3861`, fix4). 133 OK en el anfitrión (2 omitidas); legacy 2×300×8 sin problemas atribuibles a fix4; `reap` con docker colgado vuelve a los 120 s; OneDrive y montajes de Docker Desktop dan `nlink` 1. Intento 4: n.º 1-6, 8 y 9 ✓; n.º 7 parcial. Sin Critical ni Important: **fase cerrada en el intento 5** (segundo del ciclo 2). Minor, todos corregidos en el cierre (fix5):
-
-| # | Grado | Gap | Tarea | Corrección | Evidencia |
-|---|---|---|---|---|---|
-| 1 | Minor | Sin registro y con servicios sin contenedor, `good` parcial: `--rollback` informa éxito con esos servicios en la build fallida y la marca `good` | T-62, T-63 | corregido (fix5) | Lente B n.º 3 (`rb4/legacy5.py`) |
-| 2 | Minor | Señal entre el fin de `settle`/`apply` y `disarm()`: escapa de `main` sin liberar | T-61 | corregido (fix5) | Lente B n.º 1 (`rb4/signals5.py`) |
-| 3 | Minor | Señal antes del SIG_IGN de `ignoring_signals` cancela el `reap` sin aviso | T-61 | corregido (fix5) | Lente B n.º 2 |
-| 4 | Minor | Manual: en `engine` ya se guardó `in_progress` | T-65 | corregido (fix5) | Lente A n.º A-1 |
-| 5 | Minor | Ítem (19): «antes de cualquier fase» frente a «tras `engine`» | T-65 | corregido (fix5) | Lente A n.º A-2 |
-| 6 | Minor | `status` del estado sin escapar en stderr y `warnings` | T-62, T-63 | corregido (fix5) | Lente C n.º C-1 (CWE-150) |
+Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (23) — notas de T-81 a T-85», Fase 10, intento 5).
 
 ## Revisión de dos lentes — intento 1: Fase 11 (T-68 a T-71) (T-68, T-69, T-70, T-71)
 
