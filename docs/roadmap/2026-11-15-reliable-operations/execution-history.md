@@ -2251,3 +2251,27 @@ SHA-256: `68d413e59c445aba1d09133c6026bbb4fb715abf5bc14f2ee075ecd059500881`.
   ]
 }
 ```
+
+## Compactación 2026-11-18 (27) — revisión de la fase 14, intento 1
+
+Veredicto del intento 1, escrito directamente aquí para mantener `tasks.md` por debajo del límite de lectura.
+
+### Revisión de dos lentes — intento 1: Fase 14: calibración de la abstención y puerta retrieval-eval (T-87, T-88, T-89, T-90, T-91, T-92)
+
+SHA-256: `26539e7af6f6b5cbe67993e7749fd935c7e21b8c9421359d8b5ff8b825625fbc`.
+
+Lentes: A, B y C (C por `.github/workflows/ci.yml`; D no aplica). Diff `9b23aaf..0347e1c` (18 ficheros). `scope-check --base main` exit 0; `ledger-lint` exit 0; `test_ci_workflow` OK. Lente C: sin hallazgos (observación no contada: `measure_abstention.py:25` fija `ollama/ollama:0.31.1` por etiqueta, no por digest; herramienta manual, solo loopback, fuera de la CI). Resultado: 0 Critical, 2 Important y 9 Minor. Decisión del usuario (2026-11-18) sobre el gap A1: «12 de 24 en la CI», metas por proveedor (simulado ≥ 0,50 correcta y ≤ 0,05 falsa como guarda de regresión; modelos reales ≥ 0,70 y ≤ 0,05), con enmienda de P-05/CA-27 y una prueba que impida rebajarla. Todo va a fix1.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| A1 | Important | La puerta exige al simulado 0,50 de abstención correcta, no el 70 % adoptado en P-05/CA-27; la tarea cerró con una DECISIÓN ABIERTA dentro y sin enmienda en spec ni plan | T-88 | pendiente (fix1): enmendar P-05, CA-27, la decisión de go y R-07 con la decisión del usuario; quitar la DECISIÓN ABIERTA de T-88 | Lente A; `thresholds.json:8`, `spec.md:219,253,261`, `improvement-plan.md:315`, `tasks.md:2780` |
+| A2 | Important | Ninguna prueba fija `abstention.simulated.min_correct_rate`: con 0,0 o sin la clave, `test_metrics` y `test_ci_workflow` siguen verdes | T-90 | pendiente (fix1): prueba que fije 0,50/0,05 y la presencia de las claves; mutantes 0,0 y borrado en rojo | Lente A; mutantes en memoria sobre `thresholds.json` |
+| A3 | Minor | El README de la puerta no documenta el bloque `abstention` ni las metas por proveedor | T-88 | pendiente (fix1) | Lente A; `retrieval_eval/README.md:19` |
+| A4 | Minor | Fila TOTAL 91/98 y 29,47 h; debe ser 92/98, 93,9 % y 29,78 h (falta T-87) | T-92 | pendiente (fix1) | Lente A; `tasks.md:59` |
+| A5 | Minor | T-92 cerrada sin `RED:` ni `TDD n/a` | T-92 | pendiente (fix1) | Lente A; `tasks.md:2900` |
+| A6 | Minor | Punteros de T-87, T-89, T-90 y T-91 a la compactación 26, pero las notas están bajo la 25 | T-87, T-89, T-90, T-91 | pendiente (fix1) | Lente A; `execution-history.md:1678-1790` frente a `:1872` |
+| A7 | Minor | Con proveedor real, una sola ejecución y `deterministic: null`; `operations.md` no lo dice | T-89 | pendiente (fix1) | Lente A; `run.py:573-576`, `docs/operations.md:305` |
+| B1 | Minor | `pick_threshold` redondea a 4 decimales sin volver a comprobar las metas: `calibrated` con 60 % frente a 70 % exigido | T-89 | pendiente (fix1) | Lente B; `run.py:209`, `measure_abstention.py:106-108`; reproducido |
+| B2 | Minor | En la ruta de error no se informa de restos `kairos-calib-*`, y un fallo de `docker ps/volume ls/network ls` se lee como «sin restos» | T-89 | pendiente (fix1) | Lente B; `measure_abstention.py:113-119` |
+| B3 | Minor | `except Exception: scores = []` silencia fallos del coseno; la fila cuenta como «no abstiene» y la causa queda oculta | T-89 | pendiente (fix1) | Lente B; `run.py:480-481` |
+| B4 | Minor | El CLI de `check_dataset` no valida el solapamiento de ids si las negativas van antes que el corpus | T-87 | pendiente (fix1) | Lente B; `check_dataset.py:107-115`; reproducido |

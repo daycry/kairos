@@ -3182,3 +3182,7 @@ Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (22) �
 
 Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (24) — revisión de la fase 13, intento 2»). Resumen: lentes A, B y C; 7 gaps del intento 1 corregidos; 0 Critical, 0 Important y 1 Minor, corregido por el orquestador; la fase cierra.
 
+
+## Revisión de dos lentes — intento 1: Fase 14: calibración de la abstención y puerta retrieval-eval (T-87, T-88, T-89, T-90, T-91, T-92)
+
+Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (27) — revisión de la fase 14, intento 1»). Resumen: lentes A, B y C; 0 Critical, 2 Important (meta del simulado sin enmienda; meta sin prueba que la fije) y 9 Minor; decisión del usuario: metas por proveedor (simulado 0,50/0,05); fix1 corrige todo.
