@@ -2583,7 +2583,7 @@ test-plan: n/a (sin UI)
 - **Estado**: completado
 - **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 2h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real 0.21h (medido)
+- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real 0.23h (medido; 0.21h + 0.02h de fix1)
 - **Supervisión**: est. 0.07h (≈25 % IA) · real —
 - **Previsión IA**: 74 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-82
@@ -2605,6 +2605,7 @@ test-plan: n/a (sin UI)
   - usage-meter close: 0.21h (medido).
 
 **Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (23) — notas de T-81 a T-85», T-83).
+**Notas** (fix1): revisión de la fase 13, n.º 5. Ambos CHANGELOG avisan (nota para la Iniciativa 7) de que con `MEMORY_ABSTAIN_DEFAULT=on` `POST /v1/context` y la herramienta `context` también llevan `abstained`/`abstention` y pueden devolver `context: ''`, y de que una capa léxica caída o con plazo vencido tampoco abstiene. Sin cambio de contrato. usage-meter `reliable-operations/T-83-fix1`: 0.02h (medido).
 
 ### T-84 — Pruebas de abstención y de no regresión por clase
 
