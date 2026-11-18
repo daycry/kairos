@@ -173,3 +173,18 @@ Cada fase cierra con su revisión adversarial. El detalle de cada intento está 
 | 4 | Important | Instalación sin `images.good`: una interrupción temprana perdía la referencia a la versión buena | Corregido en fix4 (registro desde los contenedores antes de `configuration`) |
 | 4 | Minor | Señales en los manejadores, `migrate` huérfano, mensajes de otro equipo, notas de `--break-lock`, escapes de terminal, enlace duro | Corregidos en fix4 |
 | 5 | Minor | `good` parcial sin contenedores, dos ventanas de señales, manual e ítem (19) en `engine`, `status` sin escapar | Corregidos en fix5 |
+
+## Fase 11 — Sonda de ida y vuelta (T-68 a T-73)
+
+- **Fecha**: 2026-11-18
+- **Lentes**: intentos 1 y 2, A, B y C+D en un solo revisor (C por la clave de la sonda y `test_auth_cache.py`; D por el `sleep` de la sonda y la purga).
+- **Veredicto**: cerrada en el intento 2 sin hallazgos Critical ni Important; los 7 Minor del intento 2, corregidos en fix2.
+- **Evidencia**: suite del servidor 1460 tests, 0 fallos, errores y omitidos; `KAIROS_MIN_TESTS` y `MIN_FLOOR` 1460; `scope-check.py --base main` exit 0 sin criterios alterados; contrato MCP, `schema.sql`, `ollama-proxy/default.conf.template` y `web/nginx.conf` sin cambios; purga comprobada en PostgreSQL aislado (filas de la sonda a 0, cada sentencia por índice que empieza por `project_id`).
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Important | Falso verde: cualquier nota activa de `kairos-probe` satisfacía la búsqueda semántica y nada barría los restos | Corregido en fix1: éxito solo con la nota de esta ejecución por la vía semántica, búsqueda de control y barrido inicial |
+| 1 | Important | `valid_key` reutilizaba la clave con el dueño deshabilitado (comprobación duplicada a mano) | Corregido en fix1: misma vía que la API |
+| 1 | Important | Notas retiradas con vector sin podar (~8 GB/año) | Corregido en fix1: purga de filas solo de `kairos-probe` |
+| 1 | Minor | Interrupción sin limpieza, `.prom` silencioso, aprovisionamientos concurrentes, proyecto ajeno adoptado, auditoría al primer administrador, nombre de la métrica, criterio sin enmienda, retirada fuera del presupuesto, usage-meter | Corregidos en fix1 (usage-meter, por el orquestador) |
+| 2 | Minor | Purga sin comprobar el dueño, rotación de la clave de un humano, auditoría del aprovisionamiento y `--as`, purga sin tope, interrupción con la escritura en vuelo, `last_success` que retrocede, `.lock` en solo lectura | Corregidos en fix2 |

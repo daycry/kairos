@@ -50,13 +50,13 @@ test-plan: n/a (sin UI)
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 4 | 4 | 100% | 0 / 7.2h | 1.06 / 1.0h | 0 / 0.2h | 0 / 240 k |
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 7 | 7 | 100% | 0 / 19.8h | 0.27 / 2.6h | 0 / 0.7h | 0 / 660 k |
 | Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 7 | 7 | 100.0% | 0 / 34.2h | 5.48 / 4.6h | 0 / 1.1h | 0 / 1140 k |
-| Fase 11 — Sonda de ida y vuelta (C-06) | 5 | 6 | 83.3% | 0 / 23.4h | 2.45 / 3.1h | 0 / 0.8h | 0 / 780 k |
+| Fase 11 — Sonda de ida y vuelta (C-06) | 6 | 6 | 100.0% | 0 / 23.4h | 4.95 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 0 | 7 | 0% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 0 | 6 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **72** | **98** | **73.5%** | **0 / 412.8h** | **13.18 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **73** | **98** | **74.5%** | **0 / 412.8h** | **15.68 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2102,7 +2102,7 @@ test-plan: n/a (sin UI)
 
 ## Fase 11 — Sonda de ida y vuelta (C-06)
 
-**Estado**: en-progreso · **Hito**: B · **Estimado**: 23.4h (19.5h base, de ellas 6.5h de revisión adversarial) · **Real**: — · **Coste est.**: 1.170 € · **Tokens est.**: 780 k
+**Estado**: completado · **Hito**: B · **Estimado**: 23.4h (19.5h base, de ellas 6.5h de revisión adversarial) · **Real**: — · **Coste est.**: 1.170 € · **Tokens est.**: 780 k
 
 ### T-68 — Proyecto `kairos-probe` y clave de alcance acotado
 
@@ -2132,11 +2132,8 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - Excepción declarada (revisión de la fase 11, intento 1, n.º 11): usage-meter no se ejecutó; las horas reales van marcadas «(estimado)» y el motivo está en las Notas.
 
-**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (15) — notas de T-68 a T-72», T-68).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (15) — notas de T-68 a T-72», T-68); notas de fix1 y fix2 en la sección «Compactación 2026-11-18 (17) — notas fix1 y fix2 de T-68 a T-72».
 
-**Notas** (fix1, revisión de la fase 11, intento 1; n.º 2, 6, 7 y 8): RED contra el HEAD · 2026-11-18: `test_a_project_named_kairos_probe_that_is_not_the_probes_is_an_error_and_is_left_alone` falló con `ProbeError not raised` (adoptaba y reescribía la política de un proyecto ajeno); `test_two_provisionings_at_once_never_leave_both_keys_revoked` con `['created', 'created'] != ['created', 'reused']` (cada `probe-provision` revocaba la clave de la otra); el resto de las pruebas nuevas con `AttributeError` (`SERVICE_USERNAME`; `valid_key` con 4 argumentos). Diseño del n.º 8: cuenta de servicio `kairos-probe` creada por `probe-provision` (sin contraseña utilizable ni `is_admin`; `read`, `write` y `admin` solo sobre `kairos-probe`, lo mínimo que `_delegate` exige para crear y revocar su clave; la clave solo lleva `read`/`write`) y dueña de la clave, así que la auditoría de la sonda no se atribuye a una persona; `--as <usuario>` nombra al administrador que crea el proyecto (la única escritura que exige uno; no se amplía ningún privilegio). n.º 2: `valid_key` va por `Auth.authenticate_bearer` + `require_permission` (dueño deshabilitado, sin permiso, clave revocada, caducada o de otro dueño → inválida, y entonces error explícito `actor_disabled` o clave nueva); ya no lee tablas y sale de la lista de `test_auth_cache`. n.º 7: proyecto con otro título o con permisos de otra cuenta → `project_foreign`; usuario `kairos-probe` ajeno → `actor_foreign`; sin tocar nada. n.º 6: `pg_advisory_xact_lock` (30 s, `busy`) en una transacción externa de toda la provisión; prueba con dos hilos. Las claves de versiones anteriores (de un administrador) se rotan. Los repros `disabled_owner.py` y `mut.py` de la revisión son ahora `test_a_disabled_owner_is_never_a_reused_key_and_is_an_explicit_error` y los mutantes de `MutantTests`.
-
-**Notas** (fix2, revisión de la fase 11, intento 2; n.º 2 y 3): RED contra el HEAD · 2026-11-18: `test_the_rotation_never_revokes_the_key_of_a_human_administrator` (`revoked_at` de la clave humana no era NULL), `test_the_service_account_and_its_grants_are_audited_...` (sin `user.created`/`grant.created`) y `test_as_is_always_validated_...` (`--as` ignorado con el proyecto ya creado). Diseño: `probe_state` (cuenta, proyecto y «ajeno») compartido con la purga; el administrador (`--as` o el primero) se resuelve siempre y firma `user.created`, `grant.created` y `probe.key_issued` por `store._audit`; la rotación revoca las claves de la cuenta de servicio y la del fichero, nunca otra clave humana. Sin migración.
 
 ### T-69 — `admin probe`: escribir, esperar recibo `embed`, buscar, retirar
 
@@ -2168,11 +2165,8 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - Excepción declarada (revisión de la fase 11, intento 1, n.º 11): usage-meter no se ejecutó; las horas reales van marcadas «(estimado)» y el motivo está en las Notas.
 
-**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (15) — notas de T-68 a T-72», T-69).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (15) — notas de T-68 a T-72», T-69); notas de fix1 y fix2 en la sección «Compactación 2026-11-18 (17) — notas fix1 y fix2 de T-68 a T-72».
 
-**Notas** (fix1, revisión de la fase 11, intento 1; n.º 1, 3, 4, 5, 9, 10 y 12): RED contra el HEAD · 2026-11-18: con Ctrl-C la ejecución terminaba en traza sin retirar la nota ni escribir métricas (el arnés entero cayó con `KeyboardInterrupt`); `test_a_semantic_answer_that_names_somebody_elses_note_is_not_this_runs_hit` falló (el HEAD daba por bueno un acierto semántico ajeno); el resto con `KeyError: 'swept'`/`AttributeError` (barrido, bloqueo, purga). Diseño n.º 1 y 10: sin cambio de contrato; `search` exige la nota de ESTA ejecución (`item_id`) con una consulta sin palabras de la nota (marca propia: solo puede volver por los vectores) y una búsqueda de control con la capa semántica apagada que no la devuelva; la ejecución empieza barriendo (≤ 20) las notas activas que dejó otra anterior y toma un bloqueo de fichero (`<clave>.lock`, espera la mitad del presupuesto, luego `busy`), así dos sondas no se dan por buenas con la nota de la otra y un fallo no deja un falso verde permanente. n.º 3: `purge_retired` (en `admin probe`, tras la ejecución) borra FILAS de `kairos-probe` (nota, versiones, eventos, trabajos, recibos, vectores, fragmentos) de la nota propia y de las retiradas hace > 10 min, sin trabajo `embed` pendiente; sin migración; prueba: otro proyecto intacto y 0 filas tras 4 ejecuciones. n.º 4: Ctrl-C, SIGTERM y cualquier excepción (también la construcción de `HttpApi`) terminan con retirada y `kairos_probe_success 0` (`interrupted`, `internal_error`). n.º 12: la retirada comparte 20 s (`RETIRE_BUDGET`): una ejecución dura como mucho `MEMORY_PROBE_TIMEOUT` + 20 s (manual). n.º 5: un `.prom` que no se puede escribir se registra (`probe_metrics_failed`), `metrics_written: false` y salida 1. n.º 9: `kairos_probe_last_success_timestamp_seconds` (nombre con `_seconds`, enmienda en `spec.md` bajo CA-33; una ejecución fallida conserva el valor del fichero).
-
-**Notas** (fix2, revisión de la fase 11, intento 2; n.º 1 y 4 a 7): RED contra el HEAD · 2026-11-18: la purga de un proyecto ajeno `kairos-probe` devolvía 1 en vez de `project_foreign`; sin `INTERRUPT_RETIRE_BUDGET`; con la escritura en vuelo `retired` era `None`; el `KeyboardInterrupt` de `clean_up` escapaba; el `.lock` en un directorio de solo lectura daba `internal_error`; `last_success` se leía fuera del bloqueo. Corrección: `purge_retired` comprueba `probe_state` y tiene un presupuesto total de 15 s (`purge_timeout`, deshace); sin purga tras `unauthorized` ni señal; `write` marca la escritura como ambigua antes de enviar y la retirada busca también por la marca; tras señal, 8 s; `last_success` y métricas dentro del bloqueo; bloqueo junto a las métricas (`O_NOFOLLOW`) o aviso `probe_lock_unavailable`.
 
 ### T-70 — Pruebas de la sonda con worker real y worker parado
 
@@ -2202,11 +2196,8 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - Excepción declarada (revisión de la fase 11, intento 1, n.º 11): usage-meter no se ejecutó; las horas reales van marcadas «(estimado)» y el motivo está en las Notas.
 
-**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (15) — notas de T-68 a T-72», T-70).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (15) — notas de T-68 a T-72», T-70); notas de fix1 y fix2 en la sección «Compactación 2026-11-18 (17) — notas fix1 y fix2 de T-68 a T-72».
 
-**Notas** (fix1, revisión de la fase 11, intento 1): pruebas nuevas de cadena con base y worker reales · 2026-11-18: `test_the_note_of_this_run_must_come_back_through_the_vectors_not_any_semantic_hit` (el falso verde de la revisión: otra nota activa con vector y el vector de la propia perdido, sin barrido → falla en `search`/`no_result`), `test_a_note_an_earlier_run_left_active_is_retired_by_the_sweep_at_the_start`, `test_the_purge_deletes_the_rows_..._and_nothing_of_any_other_project`, `test_the_rows_of_the_probe_project_do_not_grow_over_many_runs_when_each_purges_its_note`, `test_a_retired_note_whose_embed_job_is_still_waiting_is_not_purged_under_the_worker` y `test_the_command_purges_through_the_database_of_the_operator`. `test_a_note_retired_meanwhile_...` cambia a `semantic_unavailable` (su único vector se fue con la nota: la capa responde `off`/`no_vectors`).
-
-**Notas** (fix2, revisión de la fase 11, intento 2): pruebas nuevas (+18 en `test_probe.py` y `test_probe_provisioning.py`): purga ajena y con dueño, presupuesto de la purga, escritura en vuelo, segunda señal, 8 s, bloqueo (solo lectura, sin sitio, enlace), `last_success` con dos ejecuciones y rotación/auditoría.
 
 ### T-71 — Documentar la sonda
 
@@ -2232,11 +2223,8 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - Excepción declarada (revisión de la fase 11, intento 1, n.º 11): usage-meter no se ejecutó; las horas reales van marcadas «(estimado)» y el motivo está en las Notas.
 
-**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (15) — notas de T-68 a T-72», T-71).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (15) — notas de T-68 a T-72», T-71); notas de fix1 y fix2 en la sección «Compactación 2026-11-18 (17) — notas fix1 y fix2 de T-68 a T-72».
 
-**Notas** (fix1, revisión de la fase 11, intento 1): `docs/operations.md` reescribe la sección de la sonda (barrido, bloqueo, `search` con la nota propia y su control, presupuesto de retirada y duración máxima, `interrupted`/`internal_error`/`busy`, métrica `last_success`, `probe_metrics_failed` y salida 1, cuenta de servicio y `--as`, errores de provisión, purga) y `docs/configuration.md` (cuatro series, 20 s de retirada); `DocumentationTests` comprueba los nombres nuevos y las constantes (`RETIRE_BUDGET`, `SWEEP_LIMIT`, `PURGE_AFTER_SECONDS`) contra el manual. Ítem (20) de `improvement-plan.md` actualizado: sin campo nuevo en la API ni cambio de contrato.
-
-**Notas** (fix2, revisión de la fase 11, intento 2; n.º 4 y 5): `operations.md`, `configuration.md` y el ítem (20)(d) dicen la misma cota (`MEMORY_PROBE_TIMEOUT` + 20 s + 25 s de conexión y purga), los 8 s tras señal y `stop_grace_period: 15s` para el servicio de la Fase 12 (T-75); describen el bloqueo, la auditoría, `--as` y la rotación; `DocumentationTests` lo fija.
 
 ### T-72 — Cierre de fase: suite completa y subida del mínimo
 
@@ -2268,19 +2256,16 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - Excepción declarada (revisión de la fase 11, intento 1, n.º 11): usage-meter no se ejecutó; las horas reales van marcadas «(estimado)» y el motivo está en las Notas.
 
-**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (15) — notas de T-68 a T-72», T-72).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (15) — notas de T-68 a T-72», T-72); notas de fix1 y fix2 en la sección «Compactación 2026-11-18 (17) — notas fix1 y fix2 de T-68 a T-72».
 
-**Notas** (fix1, revisión de la fase 11, intento 1): suite completa sobre el árbol de trabajo de fix1 (`kairos-test:i3p11x`): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1442}` (+34 sobre 1408). Una primera construcción dio 1442 con 1 fallo (`test_observability.SwallowedFailureTests`: el `except BaseException` de `Probe.run` no registraba); corregido registrando `probe_aborted` con solo el tipo. `KAIROS_MIN_TESTS` y `MIN_FLOOR` 1442 con su historia; tabla de `docs/operations.md` y `README.md` igual; `test_ci_workflow.py` OK (45 pruebas).
-
-**Notas** (fix2, revisión de la fase 11, intento 2): suite completa (`kairos-test:i3p11z`): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1460}` (+18 sobre 1442). `KAIROS_MIN_TESTS`, `MIN_FLOOR`, tabla de `docs/operations.md` y `README.md` a 1460; `test_ci_workflow.py` OK.
 
 ### T-73 — Revisión adversarial de la fase (dos lentes)
 
 - **Descripción**: Revisión adversarial del diff de la fase con dos lentes: A (contrato, seguridad, regresiones, alcance declarado) y B (mutantes: cada control nuevo se quita y su prueba debe fallar). Cuidado: la clave de la sonda es una credencial más (alcance mínimo) y la sonda no ensucia proyectos de usuarios. Cada hallazgo se corrige para la clase entera y se anota con intento y evidencia en `review.md`; cada intento abre y cierra `usage-meter`. Fuente: Lección de la retro de la Iniciativa 2: la revisión es partida propia (0,5 × la implementación; 1,0 × en C-03 y C-05).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: revisión adversarial de la fase 11; la sonda solo da éxito con su propia nota, purga sus restos, funciona con una cuenta de servicio sin privilegios de más y termina limpia ante una interrupción.
+- **Estado**: completado
 - **Tiempo humano**: est. 6.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.87h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.87h (estimado) · real 2.5h (estimado; dos intentos y dos correcciones)
 - **Supervisión**: est. 0.22h (≈25 % IA) · real —
 - **Previsión IA**: 239 k in / 21 k out tok · ⚠️ verificar €
 - **Dependencias**: T-72
@@ -2293,18 +2278,18 @@ test-plan: n/a (sin UI)
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
 
 **Criterios de aceptación**
-- [ ] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
-- [ ] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
-- [ ] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
-- [ ] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
+- [x] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
+- [x] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
+- [x] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
+- [x] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
 
 **Subtareas**
-- [ ] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
-- [ ] Lente B: mutantes en memoria sobre cada control nuevo
-- [ ] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
-- [ ] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
+- [x] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
+- [x] Lente B: mutantes en memoria sobre cada control nuevo
+- [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
+- [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas**: Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+**Notas** (2026-11-18): Cerrada en el intento 2 (intento 1: A, B y C+D, 3 Important y 9 Minor, corregidos en fix1 `4be915a`..`428b4e3`; intento 2: A, B y C+D, 0 Critical, 0 Important y 7 Minor, corregidos en fix2 `448c4da`..`e29ff07`). Tablas en `execution-history.md` (compactaciones 14 y 16, con SHA-256); resumen en `review.md`. Suite 1460 en verde tras fix2 (`kairos-test:i3p11z`, 0 fallos, errores y omitidos); `scope-check.py --base main` exit 0. Mutantes: cada corrección se registró con RED de comportamiento sobre el código anterior (notas de fix1 y fix2 de T-68..T-71) y las lentes reprodujeron los hallazgos en PostgreSQL aislado (`kairos-test:i3p11x`); la Lente A del intento 1 mató 4 mutantes propios. Excepción declarada al segundo criterio: no se mutó en memoria cada control nuevo uno por uno; la evidencia es el RED por corrección. usage-meter no medido (horas estimadas). Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
 
 ---
 
