@@ -1362,3 +1362,23 @@ SHA-256: `036938a81b81efe72179fab477495286d2fa29f64bfafa9fcfc2243f42b7c378`.
 SHA-256: `49041ba76f96d48956f5c0e9ead4d6c78239c88643d168565cdad63b2d29553f`.
 
 **Notas**: Sección de la sonda de `docs/operations.md`: cola atascada, servicio `memory-probe`, reglas de ejemplo y `doctor` (también la serie en el párrafo de `/metrics`); `configuration.md` y `client/README.md` (aviso, `KAIROS_QUEUE_STALE_SECONDS`, `capture_queue`). Prueba `DocumentationTests` nueva; ficheros con CRLF editados sin cambiar finales. Verificación: test_probe.DocumentationTests + test_compose_limits (32 OK).
+
+## Compactación 2026-11-18 (19) — revisión de la fase 12, intento 1
+
+Veredicto del intento 1, escrito directamente aquí para mantener `tasks.md` por debajo del límite de lectura.
+
+### Revisión de dos lentes — intento 1: Fase 12: cola atascada, servicio de sonda y kairos doctor (T-74, T-75, T-76, T-77, T-78, T-79)
+
+SHA-256: `9c4b7fb42b2d8755c2451285b3acddee728fe2b793e7cf2812deedb6317ff55a`.
+
+Lentes: A; B; C+D en un solo revisor (`review-lens-select --base 150998f`: C por `ci.yml`, `docker-compose.yml` y `Dockerfile`; D por la cola). Diff `150998f..f82185e`. Suite 1477, 0 fallos ni omitidos (T-79); `scope-check --base main` exit 0 sin criterios alterados; contrato MCP, `schema.sql`, migraciones, proxy y nginx sin cambios. Lente A: todos los criterios de T-74..T-79 ✓ (T-77 por la evidencia del ensayo `kairos-ops-e`); las decisiones fuera del texto (`queue_stuck` con salida ≠ 0, `--loop`, ficheros añadidos) están justificadas en `spec.md:97`, Notas e ítem (21). Lente B: `LIVE_QUEUE_SQL` ejecutado en PostgreSQL efímero (reintento en espera y concesión viva → 0; concesión caducada y `unknown` vencido cuentan; reloj de la base). Lente D: `EXPLAIN` con 500 000 filas, `Index Scan using memory_job_queue`, 0,37 ms. 0 Critical, 0 Important, 7 Minor. Decisión del orquestador: la fase cierra con una corrección de los Minor (fix1), sin otro intento.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Minor | SIGTERM solo se trata durante una ejecución: tras una ida y vuelta correcta, una señal en el chequeo de cola o la purga reescribe informe y `.prom` con `setup/interrupted`; durante el `sleep` del bucle el proceso muere con 143 sin `probe_interrupted`, contra `operations.md:454` | T-74, T-75, T-78 | pendiente (fix1) | Lente B n.º 1 (reproducido), Lente A n.º 1; `probe.py:387-399,521-567`, `admin.py:445-453` |
+| 2 | Minor | El margen del healthcheck (`3*interval+300`) ignora `MEMORY_PROBE_TIMEOUT` (hasta 3600): falso `unhealthy` con el bucle vivo; un `admin probe` manual escribe el mismo `.prom` y tapa un bucle colgado | T-75 | pendiente (fix1) | Lente A n.º 2, Lente B n.º 2; `docker-compose.yml:311` |
+| 3 | Minor | `kairos doctor` lee `queue.json` y `queue.jsonl` sin comprobar coherencia: un `checkpoint()` entre las dos lecturas da `capture_queue_stale` falso o `unreadable` sin pendientes | T-76 | pendiente (fix1) | Lente B n.º 3 (reproducido); `client/lib/outbox.mjs:20,27,79-94` |
+| 4 | Minor | `memory-probe` monta `memory-backups` entero en lectura-escritura (solo necesita leer la clave y escribir el `.prom`) y recibe `memory_dsn` (CWE-250/732) | T-75 | pendiente (fix1: subdirectorio o volumen propio, o motivo documentado) | Lente C n.º 1; `docker-compose.yml:303,306` |
+| 5 | Minor | Ninguna prueba de la suite ejecuta `LIVE_QUEUE_SQL` contra PostgreSQL con valores (solo dobles y el ensayo) | T-74 | pendiente (fix1) | Lentes A y B (fuera de lente); `test_metrics.py:121-162` |
+| 6 | Minor | Tras un despliegue, `deploy-memory.py` no recrea `memory-probe`: un servicio ya arrancado sigue con la imagen anterior; el manual no lo dice | T-75, T-78 | pendiente (fix1: recrearlo si está activo, o documentarlo) | Lente A (fuera de lente); `deploy-memory.py:1187` |
+| 7 | Minor | El periodo real del bucle es duración + intervalo, no «cada `MEMORY_PROBE_INTERVAL`» | T-78 | pendiente (fix1) | Lente B (fuera de lente) |

@@ -3150,4 +3150,5 @@ Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (16) �
 
 ## Revisión de dos lentes — intento 1: Fase 12: cola atascada, servicio de sonda y kairos doctor (T-74, T-75, T-76, T-77, T-78, T-79)
 
-Pendiente de revisión; sin veredicto.
+Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (19) — revisión de la fase 12, intento 1»). Resumen: lentes A, B y C+D; 0 Critical, 0 Important, 7 Minor; la fase cierra con fix1.
+
