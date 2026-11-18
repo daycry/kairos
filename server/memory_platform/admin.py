@@ -349,6 +349,7 @@ def main(argv=None):
     prune.add_argument('--table', action='append', choices=sorted(RETENTION_TABLES), help='Only this table (repeatable); default: every table that has a window')
     provision = commands.add_parser('probe-provision', help='Make the project kairos-probe and a key that reaches only it (read and write), idempotent; the token goes to --key-file, never to the output')
     provision.add_argument('--key-file', default=os.environ.get('MEMORY_PROBE_KEY_FILE', round_trip.DEFAULT_KEY_FILE), help='Where the token of the probe key is kept (0600)')
+    provision.add_argument('--as', dest='operator', default=None, help='Username of the administrator that makes the project kairos-probe (default: the first enabled administrator); the key is owned by the service account kairos-probe, never by this user')
     probe = commands.add_parser('probe', help='Round trip through /v1 with the probe key: write a synthetic note, wait for its embed receipt, search for it, retire it; exit 1 with probe_failed and the stage when any fails')
     probe.add_argument('--url', default=None, help='Where /v1 answers (default MEMORY_PROBE_URL or http://memory-api:8790)')
     probe.add_argument('--key-file', default=os.environ.get('MEMORY_PROBE_KEY_FILE', round_trip.DEFAULT_KEY_FILE), help='The probe key written by probe-provision')
@@ -414,10 +415,15 @@ def main(argv=None):
         return
     if args.command == 'probe':  # needs no database: it only speaks /v1 with its own key
         observability.configure_logging()  # `probe_failed` goes to stderr as one JSON line
-        report = round_trip.probe_command(args.url, args.key_file, args.metrics_file)
+        def open_store():  # the retired notes of kairos-probe are purged through the database this command already has settings for; no database is no failure of the probe
+            settings = Settings.from_env()
+            return Store(guarded_dsn(settings.dsn), project_maps=settings.project_maps, embedding_enabled=True)
+        report = round_trip.probe_command(args.url, args.key_file, args.metrics_file, store_factory=open_store)
         print(json.dumps(report, sort_keys=True))
         if report['status'] != 'probe_ok':
             raise SystemExit('probe_failed: stage=%s code=%s' % (report['stage'], report['code']))
+        if report.get('metrics_written') is False:  # the probe worked but the file a monitor reads did not change: that is a failure of the check
+            raise SystemExit('probe_metrics_failed: the metrics file could not be written')
         return
     try:
         settings = Settings.from_env()
@@ -437,7 +443,7 @@ def main(argv=None):
             print(json.dumps(dict(backfill_chunks(store, settings.embedding_model, batch=args.batch, max_jobs=args.max_jobs, project=args.project, retry_failed=args.retry_failed), status='backfilled'), sort_keys=True))
     elif args.command == 'probe-provision':
         try:
-            print(json.dumps(round_trip.provision(store, args.key_file), sort_keys=True))
+            print(json.dumps(round_trip.provision(store, args.key_file, operator=args.operator), sort_keys=True))
         except round_trip.ProbeError as error:
             raise SystemExit(f'{error.code}: {error}') from None
     elif args.command == 'prune-tables':

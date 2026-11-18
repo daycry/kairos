@@ -220,6 +220,7 @@ PROBE_STAGES = ('write', 'index', 'search', 'retire')
 PROBE_SUCCESS = Gauge('kairos_probe_success', '1 when the last `admin probe` wrote, indexed, found and retired its synthetic memory, 0 when any stage failed', registry=PROBE_REGISTRY)
 PROBE_STAGE_SECONDS = Gauge('kairos_probe_stage_seconds', 'Seconds each stage of the last `admin probe` took (a stage that did not run has no series)', ['stage'], registry=PROBE_REGISTRY)
 PROBE_LAST_RUN = Gauge('kairos_probe_last_run_timestamp_seconds', 'Unix time at which the last `admin probe` finished, whatever its result', registry=PROBE_REGISTRY)
+PROBE_LAST_SUCCESS = Gauge('kairos_probe_last_success_timestamp_seconds', 'Unix time at which the last `admin probe` that succeeded finished (0: none yet); a failed run keeps the value of the file it read', registry=PROBE_REGISTRY)
 BACKUP_OFFSITE_LAST_RUN = Gauge('kairos_backup_offsite_last_run_timestamp_seconds', 'Unix time at which the last `backup-cycle` finished its offsite stage, whatever its result', registry=OFFSITE_REGISTRY)
 
 
@@ -338,17 +339,23 @@ def record_offsite(ok, now=None):
     BACKUP_OFFSITE_LAST_RUN.set(time.time() if now is None else now)
 
 
-def record_probe(ok, stages, now=None):
-    """The result of one `admin probe`: `kairos_probe_success` 1 or 0, the seconds of every stage that ran (`stages` {stage: seconds}) and the time it finished."""
+def record_probe(ok, stages, now=None, last_success=None):
+    """The result of one `admin probe`: `kairos_probe_success` 1 or 0, the seconds of every stage that ran (`stages` {stage: seconds}), the time it finished and, when it succeeded,
+    the time of the last success (a failure keeps `last_success`, the value the previous run left in the metrics file, when there is one)."""
     PROBE_SUCCESS.set(1 if ok else 0)
     PROBE_STAGE_SECONDS.clear()
     for stage, seconds in stages.items():
         PROBE_STAGE_SECONDS.labels(closed(stage, PROBE_STAGES)).set(max(0.0, float(seconds)))
-    PROBE_LAST_RUN.set(time.time() if now is None else now)
+    finished = time.time() if now is None else now
+    PROBE_LAST_RUN.set(finished)
+    if ok:
+        PROBE_LAST_SUCCESS.set(finished)
+    elif last_success is not None:
+        PROBE_LAST_SUCCESS.set(last_success)
 
 
 def render_probe_metrics():
-    """Only the three probe series, in the text exposition format (`admin probe --metrics-file` writes them; a textfile collector reads them)."""
+    """Only the four probe series, in the text exposition format (`admin probe --metrics-file` writes them; a textfile collector reads them)."""
     return generate_latest(PROBE_REGISTRY)
 
 

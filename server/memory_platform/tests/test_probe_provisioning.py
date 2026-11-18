@@ -19,7 +19,8 @@ from fastapi.testclient import TestClient
 
 from memory_platform import admin, probe
 from memory_platform.app import create_app
-from memory_platform.auth import Auth, hash_password
+from memory_platform.auth import Auth, hash_password, verify_password
+from memory_platform.errors import Unauthorized
 from memory_platform.config import Settings
 from memory_platform.retrieval import Retrieval
 from memory_platform.store import Store
@@ -228,12 +229,169 @@ class ProvisioningTests(IsolatedDatabase, unittest.TestCase):
         self.assertEqual(raised.exception.code, 'no_admin')
         self.assertFalse(self.key_file.exists())
 
-    def test_a_project_that_exists_with_the_off_policy_is_adopted_not_created_again(self):
-        """The provisioning asks first (a restart of a half-done provisioning finds the project and goes on); a policy that refuses notes is set to the one the probe needs."""
-        self.store.create_project(self.actor, {'id': probe.PROBE_PROJECT, 'title': 'made by hand'})  # every new project starts with capture off
+    def test_a_half_done_provisioning_is_adopted_not_created_again(self):
+        """The provisioning asks first (a restart of a half-done provisioning finds the project it made, with its title, and goes on); a policy that refuses notes is set to the one the probe needs."""
+        self.store.create_project(self.actor, {'id': probe.PROBE_PROJECT, 'title': probe.PROBE_TITLE})  # every new project starts with capture off
         report = self.provision()
         self.assertEqual(report['project'], 'present')
         self.assertEqual(self.rows('SELECT policy FROM memory.projects WHERE id=%s', probe.PROBE_PROJECT)[0]['policy'], probe.PROBE_POLICY)
+    # -- fix1 of the review of phase 11 (items 2, 6, 7, 8) ----------------------------------------------------------------------------
+
+    def service_actor(self):
+        return self.rows('SELECT id,is_admin,disabled,password_hash FROM memory.actors WHERE username=%s', probe.SERVICE_USERNAME)[0]
+
+    def test_the_key_belongs_to_a_service_actor_that_is_no_administrator_and_cannot_log_in(self):
+        """Item 8: the audit of a run names `kairos-probe`, not the first administrator by name; the actor has no global role, no usable password and the least grants on one project."""
+        report = self.provision()
+        service = self.service_actor()
+        self.assertEqual((service['is_admin'], service['disabled'], report['actor']), (False, False, probe.SERVICE_USERNAME))
+        self.assertEqual(self.rows('SELECT actor_id FROM memory.api_keys WHERE id=%s', report['key_id'])[0]['actor_id'], service['id'])
+        grants = self.rows('SELECT project_id,permission FROM memory.project_grants WHERE actor_id=%s ORDER BY permission', service['id'])
+        self.assertEqual([(g['project_id'], g['permission']) for g in grants], [(probe.PROBE_PROJECT, 'admin'), (probe.PROBE_PROJECT, 'read'), (probe.PROBE_PROJECT, 'write')])
+        auth = Auth(self.store, [ORIGIN])
+        for password in ('', '!service-account', 'fixture-password-123', 'a-password-of-twelve+'):
+            with self.subTest(password=password), self.assertRaises(Unauthorized):
+                auth.login(probe.SERVICE_USERNAME, password)
+        self.assertFalse(verify_password('anything-at-all-12', service['password_hash']))
+
+    def test_what_a_run_writes_is_audited_as_the_service_actor_and_provisioning_as_the_operator(self):
+        report = self.provision()
+        token = self.key_file.read_text(encoding='utf-8').strip()
+        service = self.service_actor()
+        with TestClient(self.make_app(self.store), base_url=ORIGIN, raise_server_exceptions=False) as client:
+            self.assertEqual(ClientApi(client, token).call('POST', '/v1/events', user_event(probe.PROBE_PROJECT))[0], 202)
+        by = {row['action']: row['actor_id'] for row in self.rows('SELECT action,actor_id FROM memory.audit_events WHERE actor_id IS NOT NULL ORDER BY id')}
+        self.assertEqual(by['event.accepted'], service['id'])
+        self.assertEqual(by['project.created'], self.actor['id'])  # one-off: the administrator that made the project
+        self.assertEqual(by['key.created'], service['id'])
+        self.assertEqual(report['key'], 'created')
+
+    def test_as_names_the_administrator_that_makes_the_project_and_an_unknown_one_is_refused_before_any_write(self):
+        with self.store.transaction() as c:
+            c.execute('INSERT INTO memory.actors(id,username,password_hash,is_admin) VALUES(%s,%s,%s,true)', (str(uuid.uuid4()), 'zz-operator', hash_password('fixture-password-123')))
+            c.execute('INSERT INTO memory.actors(id,username,password_hash,is_admin) VALUES(%s,%s,%s,false)', (str(uuid.uuid4()), 'plain-user', hash_password('fixture-password-123')))
+        for name in ('plain-user', 'nobody'):
+            with self.subTest(name), self.assertRaises(probe.ProbeError) as raised:
+                probe.provision(self.store, self.key_file, operator=name)
+            self.assertEqual(raised.exception.code, 'operator_unknown')
+        self.assertEqual(self.rows('SELECT count(*) AS n FROM memory.projects WHERE id=%s', probe.PROBE_PROJECT)[0]['n'], 0)
+        probe.provision(self.store, self.key_file, operator='zz-operator')
+        zz = self.rows('SELECT id FROM memory.actors WHERE username=%s', 'zz-operator')[0]['id']
+        self.assertEqual(self.rows("SELECT actor_id FROM memory.audit_events WHERE action='project.created' AND project_id=%s", probe.PROBE_PROJECT)[0]['actor_id'], zz)
+
+    def test_a_disabled_owner_is_never_a_reused_key_and_is_an_explicit_error(self):
+        """Item 2, the repro of the review: with the owner disabled the API answers 401, so provisioning must not say `reused`."""
+        first = self.provision()
+        with self.store.transaction() as c:
+            c.execute('UPDATE memory.actors SET disabled=true WHERE username=%s', (probe.SERVICE_USERNAME,))
+        token = self.key_file.read_text(encoding='utf-8').strip()
+        with TestClient(self.make_app(self.store), base_url=ORIGIN, raise_server_exceptions=False) as client:
+            self.assertEqual(ClientApi(client, token).call('POST', '/v1/events', user_event(probe.PROBE_PROJECT))[0], 401)
+        self.assertIsNone(probe.valid_key(self.store, token, probe.PROBE_PROJECT, self.service_actor()['id']))
+        with self.assertRaises(probe.ProbeError) as raised:
+            self.provision()
+        self.assertEqual(raised.exception.code, 'actor_disabled')
+        self.assertEqual(self.key_file.read_text(encoding='utf-8').strip(), token)
+        self.assertEqual(self.rows('SELECT id FROM memory.api_keys WHERE revoked_at IS NULL')[0]['id'], first['key_id'])
+        with self.store.transaction() as c:
+            c.execute('UPDATE memory.actors SET disabled=false WHERE username=%s', (probe.SERVICE_USERNAME,))
+        self.assertEqual(self.provision()['key'], 'reused')
+
+    def test_valid_key_is_what_the_api_says_the_owner_without_a_grant_or_a_revoked_or_expired_key_are_not_valid(self):
+        """The predicate is the API's own (`Auth.authenticate_bearer` and `require_permission`): every way the API refuses a key makes `valid_key` None."""
+        report = self.provision()
+        token = self.key_file.read_text(encoding='utf-8').strip()
+        owner = self.service_actor()['id']
+        self.assertEqual(probe.valid_key(self.store, token, probe.PROBE_PROJECT, owner), report['key_id'])
+        self.assertIsNone(probe.valid_key(self.store, token, probe.PROBE_PROJECT, 'somebody-else'))
+        self.assertIsNone(probe.valid_key(self.store, 'mp_nothing', probe.PROBE_PROJECT, owner))
+        with self.store.transaction() as c:
+            c.execute('DELETE FROM memory.project_grants WHERE actor_id=%s AND permission=%s', (owner, 'write'))
+            from memory_platform.auth_scope import invalidate_auth
+            invalidate_auth(c)
+        self.assertIsNone(probe.valid_key(self.store, token, probe.PROBE_PROJECT, owner))  # an owner without the role the key needs
+        with self.store.transaction() as c:
+            c.execute('INSERT INTO memory.project_grants(actor_id,project_id,permission) VALUES(%s,%s,%s)', (owner, probe.PROBE_PROJECT, 'write'))
+            c.execute("UPDATE memory.api_keys SET expires_at=clock_timestamp()-interval '1 second' WHERE id=%s", (report['key_id'],))
+        self.assertIsNone(probe.valid_key(self.store, token, probe.PROBE_PROJECT, owner))
+        with self.store.transaction() as c:
+            c.execute('UPDATE memory.api_keys SET expires_at=NULL, revoked_at=clock_timestamp() WHERE id=%s', (report['key_id'],))
+        self.assertIsNone(probe.valid_key(self.store, token, probe.PROBE_PROJECT, owner))
+
+    def test_a_key_of_an_earlier_provisioning_owned_by_an_administrator_is_rotated_to_the_service_actor(self):
+        """The keys made before this change belong to an administrator; they are replaced (and revoked), so the audit stops naming a human."""
+        self.store.create_project(self.actor, {'id': probe.PROBE_PROJECT, 'title': probe.PROBE_TITLE})
+        legacy = self.store.create_key(self.actor, {'name': probe.PROBE_KEY_NAME, 'project_ids': [probe.PROBE_PROJECT], 'scopes': list(probe.PROBE_SCOPES)})
+        self.key_file.parent.mkdir(parents=True)
+        self.key_file.write_text(legacy['token'] + '\n', encoding='utf-8')
+        report = self.provision()
+        self.assertEqual(report['key'], 'created')
+        self.assertIsNotNone(self.rows('SELECT revoked_at FROM memory.api_keys WHERE id=%s', legacy['id'])[0]['revoked_at'])
+        self.assertEqual(self.rows('SELECT actor_id FROM memory.api_keys WHERE id=%s', report['key_id'])[0]['actor_id'], self.service_actor()['id'])
+
+    def test_a_project_named_kairos_probe_that_is_not_the_probes_is_an_error_and_is_left_alone(self):
+        """Item 7: another title, or a grant to somebody else, means somebody else's project: no policy change, no actor, no key, no file."""
+        self.store.create_project(self.actor, {'id': probe.PROBE_PROJECT, 'title': 'made by hand'})
+        before = self.rows('SELECT policy,title FROM memory.projects WHERE id=%s', probe.PROBE_PROJECT)
+        with self.assertRaises(probe.ProbeError) as raised:
+            self.provision()
+        self.assertEqual(raised.exception.code, 'project_foreign')
+        self.assertEqual(self.rows('SELECT policy,title FROM memory.projects WHERE id=%s', probe.PROBE_PROJECT), before)
+        self.assertEqual(self.rows('SELECT count(*) AS n FROM memory.actors WHERE username=%s', probe.SERVICE_USERNAME)[0]['n'], 0)
+        self.assertEqual(self.rows('SELECT count(*) AS n FROM memory.api_keys')[0]['n'], 0)
+        self.assertFalse(self.key_file.exists())
+
+    def test_a_project_with_the_title_of_the_probe_and_a_grant_to_a_user_is_somebody_elses(self):
+        with self.store.transaction() as c:
+            c.execute('INSERT INTO memory.projects(id,title) VALUES(%s,%s)', (probe.PROBE_PROJECT, probe.PROBE_TITLE))
+            c.execute('INSERT INTO memory.project_grants(actor_id,project_id,permission) VALUES(%s,%s,%s)', (self.actor['id'], probe.PROBE_PROJECT, 'read'))
+        with self.assertRaises(probe.ProbeError) as raised:
+            self.provision()
+        self.assertEqual(raised.exception.code, 'project_foreign')
+        self.assertEqual(self.rows('SELECT policy FROM memory.projects WHERE id=%s', probe.PROBE_PROJECT)[0]['policy'], {'capture_mode': 'off', 'temporal_projection': False})
+
+    def test_a_user_named_kairos_probe_that_is_not_the_service_account_is_an_error_and_is_left_alone(self):
+        with self.store.transaction() as c:
+            c.execute('INSERT INTO memory.actors(id,username,password_hash,is_admin) VALUES(%s,%s,%s,true)', (str(uuid.uuid4()), probe.SERVICE_USERNAME, hash_password('fixture-password-123')))
+        with self.assertRaises(probe.ProbeError) as raised:
+            self.provision()
+        self.assertEqual(raised.exception.code, 'actor_foreign')
+        self.assertEqual(self.rows('SELECT count(*) AS n FROM memory.projects WHERE id=%s', probe.PROBE_PROJECT)[0]['n'], 0)
+        self.assertEqual(self.rows('SELECT count(*) AS n FROM memory.project_grants')[0]['n'], 0)
+
+    def test_two_provisionings_at_once_never_leave_both_keys_revoked(self):
+        """Item 6: each used to revoke the key the other had just made. Serialised by the advisory lock, the loser finds the winner's key valid and reuses it."""
+        import threading
+        self.provision()
+        self.key_file.write_text('mp_' + 'x' * 64 + '\n', encoding='utf-8')  # the file is invalid: both runs want to make a key
+        barrier = threading.Barrier(2)
+        results, errors = [], []
+
+        def work():
+            try:
+                barrier.wait(10)
+                results.append(probe.provision(self.store, self.key_file))
+            except BaseException as error:
+                errors.append(error)
+        threads = [threading.Thread(target=work) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(60)
+        self.assertEqual(errors, [])
+        self.assertEqual(sorted(result['key'] for result in results), ['created', 'reused'])
+        active = self.rows('SELECT id FROM memory.api_keys WHERE name=%s AND revoked_at IS NULL', probe.PROBE_KEY_NAME)
+        self.assertEqual(len(active), 1)
+        token = self.key_file.read_text(encoding='utf-8').strip()
+        self.assertEqual(probe.valid_key(self.store, token, probe.PROBE_PROJECT, self.service_actor()['id']), active[0]['id'])
+        self.assertEqual({result['key_id'] for result in results}, {active[0]['id']})
+
+    def test_probe_provision_takes_as_and_reports_the_actor(self):
+        out = io.StringIO()
+        with patch('memory_platform.admin.Settings.from_env', return_value=Settings(self.store.dsn)), patch('memory_platform.admin.Store', return_value=self.store), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            admin.main(['probe-provision', '--key-file', str(self.key_file), '--as', self.rows('SELECT username FROM memory.actors WHERE is_admin')[0]['username']])
+        self.assertEqual(json.loads(out.getvalue())['actor'], probe.SERVICE_USERNAME)
 
 
 if __name__ == '__main__':
