@@ -6,6 +6,10 @@ Kairos aún no tiene versiones etiquetadas. Todo lo que sigue está sin publicar
 
 ## [Sin publicar]
 
+### Added — iniciativa `reliable-operations`, hito B (en curso)
+
+- **Abstención opcional en la búsqueda.** `POST /v1/search` y la herramienta `search` aceptan un booleano opcional `abstain`. Activado, la respuesta es `items: []` y `abstained: true` cuando la mejor similitud semántica queda por debajo del umbral del modelo de embeddings (`MEMORY_ABSTAIN_THRESHOLDS`, `modelo=umbral,...`) y ninguna capa léxica devolvió nada; una capa semántica degradada o truncada, un acierto léxico o un modelo sin umbral nunca abstienen (el último añade `abstention: "uncalibrated"`). `MEMORY_ABSTAIN_DEFAULT` (`off` por defecto) decide qué hace una petición sin `abstain`. Sin `abstain` la respuesta es exactamente la anterior. Los contratos solo ganan campos opcionales (`abstain`, `abstained`, `abstention`, también en `result_schemas.search`); aún no hay umbrales calibrados. **Nota para la Iniciativa 7 (custom-agents):** `result_schemas.search` tiene `additionalProperties: false`, así que un cliente estricto construido con el esquema anterior rechazaría `abstained`; la abstención sigue apagada por defecto (decisión P-04) hasta que ese cliente la consuma.
+
 ### Changed — iniciativa `reliable-operations`, hito A (del 2026-11-15 al 2026-11-16)
 
 Kairos ya no pierde datos ni se para cuando se cae la base de datos: las copias se verifican, se cifran y salen de la máquina de forma programada, el worker aguanta una caída de la base y las tablas que solo crecen tienen retención. [Ledger](docs/roadmap/2026-11-15-reliable-operations/tasks.md)

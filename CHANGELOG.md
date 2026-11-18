@@ -6,6 +6,10 @@ Kairos has no tagged releases yet. Everything below is unreleased. The three com
 
 ## [Unreleased]
 
+### Added — `reliable-operations` initiative, milestone B (in progress)
+
+- **Optional abstention in search.** `POST /v1/search` and the `search` tool accept an optional `abstain` boolean. With it on, the answer is `items: []` and `abstained: true` when the best semantic similarity is below the threshold of the embeddings model (`MEMORY_ABSTAIN_THRESHOLDS`, `model=threshold,...`) and no lexical layer returned anything; a degraded or truncated semantic layer, a lexical hit or a model without threshold never abstains (the last adds `abstention: "uncalibrated"`). `MEMORY_ABSTAIN_DEFAULT` (`off` by default) sets what a request without `abstain` does. Without `abstain` the answer is exactly the previous one. The contracts only gain optional fields (`abstain`, `abstained`, `abstention`, also in `result_schemas.search`); there are no calibrated thresholds yet. **Note for Iniciativa 7 (custom-agents):** `result_schemas.search` has `additionalProperties: false`, so a strict client built on the previous schema would reject `abstained`; abstention stays off by default (decision P-04) until that client consumes it.
+
 ### Changed — `reliable-operations` initiative, milestone A (2026-11-15 to 2026-11-16)
 
 Kairos no longer loses data or stops when the database does: copies are verified, encrypted and sent out of the machine on a schedule, the worker rides out a database outage, and the tables that only grow have a retention. [Ledger](docs/roadmap/2026-11-15-reliable-operations/tasks.md)
