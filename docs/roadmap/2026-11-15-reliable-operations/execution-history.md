@@ -1410,3 +1410,11 @@ Fix1 (n.º 3): `queueAge` lee `queue.json` y `queue.jsonl` con `stableRead` (ide
 SHA-256: `c56afdc1440220ab5438bf86bd737869b9fe9a971cd56e4a6a400048a66242d1`.
 
 Fix1 (n.º 1, 2, 4, 6 y 7): el manual dice que el periodo real es duración + intervalo, que una parada termina con `probe_interrupted` en cualquier punto del ciclo conservando el resultado ya escrito, el latido y su margen, el subdirectorio `probe` (Engine 26/Compose 2.26), el motivo de `memory_dsn`, la recreación tras el despliegue y la migración de rutas; `configuration.md`, `client/README.md` e ítem (21) del plan al día; prueba nueva en `DocumentationTests`.
+
+## Compactación 2026-11-18 (21) — notas de la revisión de la fase 12 (T-80)
+
+### T-80
+
+SHA-256: `a6e3fa374dd2f6eeb95afa4b09ec321f28889802f5b1c5aba73d43e87e7cf704`.
+
+**Notas** (2026-11-18): Cerrada en el intento 1 (A, B y C+D; 0 Critical, 0 Important y 7 Minor, corregidos en fix1 `9e64986`..`01a8773`). Tabla en `execution-history.md` (compactación 19, con SHA-256); resumen en `review.md`. Suite 1494 en verde tras fix1 (`kairos-test:i3p12f`, 0 fallos, errores y omitidos; las dos pruebas de tiempo que un revisor vio fallar fuera del arnés pasan en la suite); `scope-check.py --base main` exit 0. Mutantes: cada corrección con RED de comportamiento sobre el código anterior (notas fix1 de T-74..T-78); la Lente B reprodujo n.º 1 y 3 y ejecutó la consulta de la cola en PostgreSQL. Excepción declarada al segundo criterio: no se mutó en memoria cada control uno por uno; la evidencia es el RED por corrección. usage-meter no medido para la revisión (horas estimadas). Cambio de rutas por defecto de la sonda a `/backups/probe/` (n.º 4), con migración en el manual. Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).

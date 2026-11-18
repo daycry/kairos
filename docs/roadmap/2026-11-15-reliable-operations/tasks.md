@@ -2505,7 +2505,7 @@ test-plan: n/a (sin UI)
 - [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
 - [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas** (2026-11-18): Cerrada en el intento 1 (A, B y C+D; 0 Critical, 0 Important y 7 Minor, corregidos en fix1 `9e64986`..`01a8773`). Tabla en `execution-history.md` (compactación 19, con SHA-256); resumen en `review.md`. Suite 1494 en verde tras fix1 (`kairos-test:i3p12f`, 0 fallos, errores y omitidos; las dos pruebas de tiempo que un revisor vio fallar fuera del arnés pasan en la suite); `scope-check.py --base main` exit 0. Mutantes: cada corrección con RED de comportamiento sobre el código anterior (notas fix1 de T-74..T-78); la Lente B reprodujo n.º 1 y 3 y ejecutó la consulta de la cola en PostgreSQL. Excepción declarada al segundo criterio: no se mutó en memoria cada control uno por uno; la evidencia es el RED por corrección. usage-meter no medido para la revisión (horas estimadas). Cambio de rutas por defecto de la sonda a `/backups/probe/` (n.º 4), con migración en el manual. Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+**Notas** (2026-11-18): Cerrada en el intento 1 (0 Critical, 0 Important y 7 Minor, corregidos en fix1 `9e64986`..`01a8773`); suite 1494 en verde, `scope-check.py --base main` exit 0. Detalle en `execution-history.md` (compactación 21, con SHA-256) y `review.md`.
 
 ---
 
@@ -2540,7 +2540,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.04h (medido).
 
-**Notas**: Diseño en `docs/architecture.md` («Abstención: la señal»). Señal: mejor coseno de la capa semántica (RRF no mide relevancia absoluta), capturado antes de `hit()`. Decisión abierta resuelta con lo más conservador: coincidencia léxica = cualquier acierto de capa léxica (no solo `lexical_match: trigram`, que solo marcan los trigramas), `partial` semántico = sin señal. Prototipo (embeddings simulados, 72 preguntas): positivas 0,12-0,87 (mediana 0,55); 7 sin relación 0,10-0,29; solapan en la cola: el umbral se calibra en la fase 14. Sin umbrales por defecto. Métricas de la puerta: abstención correcta (negativas) y falsa (positivas).
+**Notas**: Diseño en `docs/architecture.md` («Abstención: la señal»), con el prototipo y las métricas de la puerta. Decisión abierta (la más conservadora): coincidencia léxica = cualquier acierto de capa léxica, no solo `lexical_match: trigram`; semántica `partial` = sin señal.
 
 ### T-82 — Implementación: `abstain`, `MEMORY_ABSTAIN_THRESHOLDS` y `MEMORY_ABSTAIN_DEFAULT`
 
@@ -2572,43 +2572,46 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.13h (medido).
 
-**Notas**: RED 2026-11-18: `test_abstention` falló con `ImportError: cannot import name 'abstain_from_env'` antes de implementar; después 12 pruebas OK en local (sin Docker; la suite entera corre en T-85). Implementado en `retrieval.py` (`_abstain`; la señal se captura antes de `hit()`), `config.py` (`abstain_from_env`, `check_abstain`, `Settings.abstain_default/abstain_thresholds`) y `models.py` (`Search.abstain`, `SearchResult.abstained/abstention`). Con `abstain` activo la respuesta lleva siempre `abstained` (true/false); `abstention: uncalibrated` sin umbral. Decisión: `app.py` y `store_vectors.py` no cambian (la similitud ya viaja en `score`). Pendiente (no es de esta fase de código): pasar las variables por `docker-compose.yml` y listarlas en `docs/configuration.md` (T de documentación de la fase 14).
+**Notas**: RED 2026-11-18: `test_abstention` falló con `ImportError: abstain_from_env`; luego 12 pruebas OK en local. Código en `retrieval.py` (`_abstain`), `config.py` y `models.py`; `app.py` y `store_vectors.py` sin cambios (la similitud ya viaja en `score`). Con `abstain` activo la respuesta lleva siempre `abstained`. Pendiente (fase 14, documentación): pasar las variables por `docker-compose.yml` y listarlas en `docs/configuration.md`.
 
 ### T-83 — Contratos aditivos: `abstain`, `abstained` y `abstention`
 
 - **Descripción**: Añadir el parámetro `abstain` y los campos `abstained`/`abstention` como opcionales en `memory-platform.openapi.json` y `kairos-mcp.json` (incluido `result_schemas.search` con `additionalProperties: false`), regenerar `mcp/contract` y declararlo en los CHANGELOG con una nota para la Iniciativa 7. Fuente: CA-29; M-01; R-09.
-- **Changelog**:
-- **Estado**: en-progreso
+- **Changelog**: Los contratos HTTP y MCP declaran `abstain` (petición) y `abstained`/`abstention` (respuesta) como campos opcionales; todo lo existente queda igual y los CHANGELOG avisan a la Iniciativa 7.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 2h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real 0.21h (medido)
 - **Supervisión**: est. 0.07h (≈25 % IA) · real —
 - **Previsión IA**: 74 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-82
 - **Tipo**: backend
-- **Archivos**: `scripts/export-contracts.py`, `docs/contracts/memory-platform.openapi.json`, `docs/contracts/kairos-mcp.json`, `mcp/contract/kairos-mcp.json`, `mcp/tests/tool_cases.py`, `server/memory_platform/tests/test_contract_additive.py`, `server/memory_platform/tests/test_mcp_contract_copy.py`, `CHANGELOG.md`, `CHANGELOG.es.md`
+- **Archivos**: `scripts/export-contracts.py`, `docs/contracts/memory-platform.openapi.json`, `docs/contracts/kairos-mcp.json`, `mcp/contract/kairos-mcp.json`, `mcp/tests/tool_cases.py`, `server/memory_platform/tests/test_contract_additive.py`, `server/memory_platform/tests/test_mcp_contract_copy.py`, `CHANGELOG.md`, `CHANGELOG.es.md`, `server/memory_platform/mcp.py`, `mcp/tests/test_contract_identity.py`, `mcp/tests/test_tools_t41.py`
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_contract_additive|test_mcp_contract_copy|test_tool_endpoint_parity|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] `abstain`, `abstained` y `abstention` son opcionales en ambos contratos y en `result_schemas.search`; `test_contract_additive.py` pasa
-- [ ] `mcp/contract/kairos-mcp.json` es idéntico al exportado (`test_mcp_contract_copy`) y las 34 herramientas conservan correspondencia con su endpoint
-- [ ] Los CHANGELOG declaran el cambio con una nota para la Iniciativa 7 (R-09: un cliente estricto rechazaría `abstained` si se activa por defecto)
+- [x] `abstain`, `abstained` y `abstention` son opcionales en ambos contratos y en `result_schemas.search`; `test_contract_additive.py` pasa
+- [x] `mcp/contract/kairos-mcp.json` es idéntico al exportado (`test_mcp_contract_copy`) y las 34 herramientas conservan correspondencia con su endpoint
+- [x] Los CHANGELOG declaran el cambio con una nota para la Iniciativa 7 (R-09: un cliente estricto rechazaría `abstained` si se activa por defecto)
 
 **Subtareas**
-- [ ] Regenerar con `scripts/export-contracts.py`
-- [ ] Comprobar el diff aditivo frente a `contracts_base`
-- [ ] Redactar la nota para la Iniciativa 7
-- [ ] `usage-meter start/close` de la tarea
+- [x] Regenerar con `scripts/export-contracts.py`
+- [x] Comprobar el diff aditivo frente a `contracts_base`
+- [x] Redactar la nota para la Iniciativa 7
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 0.21h (medido).
 
-**Notas**: Patrón: `scripts/export-contracts.py`, `tests/contracts_base/`, `tests/test_contract_additive.py`, `tests/test_mcp_contract_copy.py` y `tests/test_tool_endpoint_parity.py`. Contrato MCP solo aditivo (CLAUDE.md).
+**Notas**: RED 2026-11-18: `test_contract_additive` falló en 2 pruebas y `test_mcp_contract_copy` en la copia; verde tras `export-contracts.py` (solo líneas añadidas) y copiar a `mcp/contract/`. La herramienta `search` gana `abstain` (`context` no). Añadidos al alcance: `mcp.py`, `mcp/tests/test_contract_identity.py`, `mcp/tests/test_tools_t41.py`. `test_tool_endpoint_parity` necesita PostgreSQL: corre en T-85.
 
 ### T-84 — Pruebas de abstención y de no regresión por clase
 
 - **Descripción**: Cubrir la clase entera: cada combinación de modelo con/sin umbral, capa semántica sana/`degraded`, con/sin `lexical_match` y `abstain` explícito/por defecto, y que la respuesta sin `abstain` no cambia. Fuente: CA-27, CA-29.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: La abstención queda probada en todas las combinaciones (modelo con o sin umbral, capa semántica sana o degradada, con o sin coincidencia léxica) por servicio y por API, y sin `abstain` la respuesta no cambia.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 2h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real 0.07h (medido)
 - **Supervisión**: est. 0.07h (≈25 % IA) · real —
 - **Previsión IA**: 74 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-83
@@ -2618,17 +2621,18 @@ test-plan: n/a (sin UI)
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_abstention|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Tabla de combinaciones probada de extremo a extremo (API) y a nivel de servicio
-- [ ] Mutante comprobado: quitar la comprobación de `lexical_match`, de `degraded` o del umbral deja una prueba en rojo
-- [ ] La suite de recuperación existente (`test_retrieval.py`, `test_chunk_search.py`) pasa sin cambios
+- [x] Tabla de combinaciones probada de extremo a extremo (API) y a nivel de servicio
+- [x] Mutante comprobado: quitar la comprobación de `lexical_match`, de `degraded` o del umbral deja una prueba en rojo
+- [x] La suite de recuperación existente (`test_retrieval.py`, `test_chunk_search.py`) pasa sin cambios
 
 **Subtareas**
-- [ ] Tabla de combinaciones
-- [ ] Escribir las pruebas
-- [ ] Aplicar mutantes
-- [ ] `usage-meter start/close` de la tarea
+- [x] Tabla de combinaciones
+- [x] Escribir las pruebas
+- [x] Aplicar mutantes
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 0.07h (medido).
 
-**Notas**: Patrón: `tests/test_retrieval.py` y `tests/test_chunk_search.py`.
+**Notas**: 96 combinaciones por servicio y por API (`/v1/search` y `/v1/context`), con la regla escrita aparte del código; 16 pruebas OK en local. Mutantes 2026-11-18, cada uno deja pruebas en rojo: quitar `lexical` (7 fallos), `degraded`/estado semántico (19), umbral (8) y `uncalibrated` (25). `test_retrieval.py` y `test_chunk_search.py` sin tocar. Excepción: `test_chunk_search` necesita PostgreSQL, corre en T-85. Nota: el tiempo de la escritura inicial de las pruebas corrió dentro de la ventana de T-83.
 
 ### T-85 — Cierre de fase: suite completa y subida del mínimo
 
