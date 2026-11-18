@@ -226,6 +226,7 @@ Todos se comprueban con fixtures aislados (PostgreSQL efímero del target `test`
 - [ ] [GWT] CA-31 — Dado el ensayo aislado con `memory-worker` parado, Cuando se ejecuta la sonda, Entonces falla en ≤ `MEMORY_PROBE_TIMEOUT` con `probe_failed` y `stage=index`, código ≠ 0 y `kairos_probe_success 0`, e intenta retirar lo escrito (criterio de cierre 3 del plan director).
 - [ ] CA-32 — `/metrics` publica `kairos_jobs_oldest_pending_seconds`; la sonda avisa cuando supera `MEMORY_QUEUE_STUCK_SECONDS`; `kairos doctor` avisa cuando la cola en disco del cliente tiene capturas pendientes más antiguas que su umbral (tests de servidor y de cliente).
 - [ ] CA-33 — La clave de la sonda solo tiene alcance sobre `kairos-probe`; tras una ejecución no quedan recuerdos activos de la sonda (solo retirados); ningún test de la sonda apunta a recursos `knowledge-graphs-*`.
+  - (Enmienda de la revisión de la fase 11, intento 1, n.º 9 y 10, sin reescribir el criterio: «no quedan recuerdos activos» vale tras una ejecución que llega a retirar; si la base se corta a mitad, la nota queda activa y la siguiente ejecución la retira en su barrido inicial (y `admin probe` purga físicamente las filas retiradas de `kairos-probe`). La métrica `kairos_probe_last_success_timestamp` del alcance (tabla de la sonda) se publica como `kairos_probe_last_success_timestamp_seconds`, con el sufijo `_seconds` de `kairos_probe_last_run_timestamp_seconds` y `kairos_backup_offsite_last_run_timestamp_seconds`.)
 
 **C-07 · Tests (B-15)**
 
