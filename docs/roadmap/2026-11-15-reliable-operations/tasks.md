@@ -3162,3 +3162,8 @@ Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (16) �
 
 Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (19) — revisión de la fase 12, intento 1»). Resumen: lentes A, B y C+D; 0 Critical, 0 Important, 7 Minor; la fase cierra con fix1.
 
+
+## Revisión de dos lentes — intento 1: Fase 13: abstención (señal, parámetro y contratos) (T-81, T-82, T-83, T-84, T-85)
+
+Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (22) — revisión de la fase 13, intento 1»). Resumen: lentes A, B y C+D; 1 Important (abstención con una capa léxica caída) y 6 Minor; fix1 corrige todo e intento 2.
+

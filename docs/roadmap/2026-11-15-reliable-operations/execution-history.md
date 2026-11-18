@@ -1418,3 +1418,23 @@ Fix1 (n.º 1, 2, 4, 6 y 7): el manual dice que el periodo real es duración + in
 SHA-256: `a6e3fa374dd2f6eeb95afa4b09ec321f28889802f5b1c5aba73d43e87e7cf704`.
 
 **Notas** (2026-11-18): Cerrada en el intento 1 (A, B y C+D; 0 Critical, 0 Important y 7 Minor, corregidos en fix1 `9e64986`..`01a8773`). Tabla en `execution-history.md` (compactación 19, con SHA-256); resumen en `review.md`. Suite 1494 en verde tras fix1 (`kairos-test:i3p12f`, 0 fallos, errores y omitidos; las dos pruebas de tiempo que un revisor vio fallar fuera del arnés pasan en la suite); `scope-check.py --base main` exit 0. Mutantes: cada corrección con RED de comportamiento sobre el código anterior (notas fix1 de T-74..T-78); la Lente B reprodujo n.º 1 y 3 y ejecutó la consulta de la cola en PostgreSQL. Excepción declarada al segundo criterio: no se mutó en memoria cada control uno por uno; la evidencia es el RED por corrección. usage-meter no medido para la revisión (horas estimadas). Cambio de rutas por defecto de la sonda a `/backups/probe/` (n.º 4), con migración en el manual. Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+
+## Compactación 2026-11-18 (22) — revisión de la fase 13, intento 1
+
+Veredicto del intento 1, escrito directamente aquí para mantener `tasks.md` por debajo del límite de lectura.
+
+### Revisión de dos lentes — intento 1: Fase 13: abstención (señal, parámetro y contratos) (T-81, T-82, T-83, T-84, T-85)
+
+SHA-256: `9c43100155f97b81d3663f931da930ed94c16b62401ca19937fe4af8fcaa1e96`.
+
+Lentes: A; B; C+D en un solo revisor (`review-lens-select --base 2d3e57d`: C por `ci.yml`, D por `scripts/export-contracts.py`). Diff `2d3e57d..cf5217d`. Suite 1511, 0 fallos ni omitidos (T-85); `scope-check --base main` exit 0. Lente A: 192 escenarios (servicio, `/v1/search`, `/v1/context`) con el código de `2d3e57d` y de `cf5217d` dan JSON idéntico byte a byte sin `abstain` y con `off`; contrato MCP y OpenAPI solo con líneas añadidas y copia idéntica (34 herramientas); 3 mutantes propios mueren. Lente C+D: sin defectos (la señal solo usa filas que el actor puede leer, tras los filtros de proyecto, capa y categoría; sin consultas ni recorridos HNSW extra; coste con `abstain` apagado despreciable). 0 Critical, 1 Important, 6 Minor. Decisión del orquestador: fix1 corrige todo e intento 2.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | Abstiene aunque una capa léxica haya fallado: «sin acierto léxico» se lee como `any(values)` sin mirar el estado, así que una capa `unavailable`/`partial` (o el respaldo de trigramas con `fuzzy_timeout`) cuenta como «sin coincidencia» y responde `items: []` justo cuando falta la protección léxica; sin `abstain` la misma petición devuelve resultados | T-82 | pendiente (fix1: sin señal léxica completa no abstiene; casos en la matriz) | Lente B n.º 1 (reproducido, `p13b/repro.py`), Lente A (fuera de lente); `retrieval.py:205,212` |
+| 2 | Minor | Un separador mal escrito en `MEMORY_ABSTAIN_THRESHOLDS` (`a=0.5;b=0.2`) crea un umbral para un modelo inventado `a=0.5;b` sin error al arrancar | T-82 | pendiente (fix1) | Lente B n.º 2; `config.py:461` |
+| 3 | Minor | Sin umbral, `uncalibrated` solo aparece si hubo algún acierto semántico; con la capa `ok` y 0 aciertos no sale, contra el criterio sin enmienda | T-82 | pendiente (fix1) | Lente A n.º 1; `retrieval.py:212-215` |
+| 4 | Minor | El pendiente de pasar `MEMORY_ABSTAIN_*` por `docker-compose.yml` solo está en las notas de T-82; ninguna tarea de la Fase 14 declara `docker-compose.yml` | T-82, T-91 | pendiente (fix1: exponerlas ya en `docker-compose.yml` y `docs/configuration.md`) | Lente A n.º 2; `docker-compose.yml:27-29`, `tasks.md:2575` |
+| 5 | Minor | El CHANGELOG no avisa de que con `MEMORY_ABSTAIN_DEFAULT=on` `/v1/context` y la herramienta `context` también ganan `abstained`/`abstention` y pueden devolver `context: ''` | T-83 | pendiente (fix1) | Lente A n.º 3, Lente C+D (fuera de lente); `retrieval.py:265,280` |
+| 6 | Minor | Criterio de T-85 pide el JSON de usage-meter en Notas y solo hay la línea de resumen | T-85 | pendiente (orquestador: pegar el JSON o enmienda) | Lente A n.º 4; `tasks.md:2658,2664` |
+| 7 | Minor | El umbral se busca por el nombre exacto del modelo: `nomic-embed-text:latest` frente a la clave `nomic-embed-text` queda siempre `uncalibrated` sin aviso | T-82 | pendiente (fix1: normalizar `:latest` o avisar al arrancar) | Lente A (fuera de lente) |
