@@ -1637,3 +1637,40 @@ JSON literal de `usage-meter close` de las tres ventanas de fix1 (T-82-fix1, T-8
   ]
 }
 ```
+
+## Compactación 2026-11-18 (24) — revisión de la fase 13, intento 2
+
+Veredicto del intento 2, escrito directamente aquí para mantener `tasks.md` por debajo del límite de lectura.
+
+### Revisión de dos lentes — intento 2: Fase 13: abstención (fix1) (T-81, T-82, T-83, T-84, T-85)
+
+SHA-256: `e27a91639430438b47f1fd26e9a771c4ff07ba9b211e640ef3d798b6e8a32a37`.
+
+Lentes: A, B y C en un solo revisor (re-evaluación de lo corregido; la Lente C+D del intento 1 no halló defectos). Diff `06dca3f..bfd24be` (fix1). Suite 1519, 0 fallos ni omitidos; `scope-check --base main` exit 0. Los 7 gaps del intento 1, corregidos (n.º 1 en toda su clase: con episódica, documental o temporal `unavailable` o con `fuzzy_timeout`, también dentro de `providers`, no abstiene; n.º 6 por enmienda sin reescribir el criterio). `compare.py` sobre `2d3e57d` y `bfd24be`: 192 escenarios idénticos byte a byte. 7 mutantes, todos en rojo. Compactación 23: los 9 bloques movidos casan con sus SHA-256. 0 Critical, 0 Important, 1 Minor. Decisión del orquestador: cierre con corrección del Minor sin otro intento.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| N1 | Minor | fix1 movió la frase de la fusión (`fusion-tuning.json` y la puerta `retrieval-eval`) al final del párrafo de Abstención, y la sección Fusión la perdió; el párrafo decía que el mensaje no nombra valores, pero el error de rango nombra el modelo | T-82 | corregido por el orquestador (frase devuelta a Fusión; texto del mensaje ajustado) | Lente A; `docs/configuration.md:213,222,224`, `config.py:457` |
+| — | — | Fuera de tabla: el campo Changelog de T-85 decía 1511 con el mínimo ya en 1519 | T-85 | corregido por el orquestador | Lente A (visto y no reportado) |
+
+## Compactación 2026-11-18 (25) — notas fix1 de T-81 a T-85
+
+Notas de la corrección fix1 de la revisión de la fase 13, movidas tal cual desde `tasks.md` para mantenerlo por debajo del límite de lectura.
+
+### T-82
+
+SHA-256: `5c24cc31e8d25cc5bf8ffabfcac65ee27224c1f6bed48df70d74f0789de89f4f`.
+
+**Notas** (fix1): revisión de la fase 13, n.º 1, 2, 3, 4 y 7. RED 2026-11-18 (matriz ampliada con capa léxica caída o con plazo vencido, por servicio y API; 465 fallos, más `uncalibrated` sin aciertos, `:latest`, el separador y el Compose). Sin señal léxica completa (`lexical_complete`: toda capa no semántica pedida en `ok` y sin `fuzzy_timeout`, también en sus proveedores) no abstiene; `uncalibrated` sale con la capa semántica `ok` aunque haya 0 aciertos (el modelo se registra aunque nada puntúe), y sin señal semántica solo `abstained: false`; el umbral se busca sin `:latest` en los dos lados (`threshold_for`, sin aviso al arrancar); nombres de modelo con `=`, `;` o espacios impiden arrancar; las dos variables van en `x-memory-environment` y `docs/configuration.md`. Matriz: 2×7×4×13 = 728 combinaciones por servicio y por API (`/v1/search` y `/v1/context`).
+
+### T-83
+
+SHA-256: `0dcf99d148ad4182b6bd4a6eed036663768a4fcb1f54467d2e1c38d282c43fd6`.
+
+**Notas** (fix1): revisión de la fase 13, n.º 5. Ambos CHANGELOG avisan (nota para la Iniciativa 7) de que con `MEMORY_ABSTAIN_DEFAULT=on` `POST /v1/context` y la herramienta `context` también llevan `abstained`/`abstention` y pueden devolver `context: ''`, y de que una capa léxica caída o con plazo vencido tampoco abstiene. Sin cambio de contrato. usage-meter `reliable-operations/T-83-fix1`: 0.02h (medido).
+
+### T-85
+
+SHA-256: `ed0fa83310fa407b63376725a856102b14f8477e1d237be9cbe105fcb493506a`.
+
+**Notas** (fix1): suite 2026-11-18 (`kairos-test:i3p13f`, tras fix1 de la fase 13): `MEMORY_TEST_RESULT` `{"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1519}`; mínimo 1511 a 1519 en `ci.yml` (con historia), `MIN_FLOOR`, `docs/operations.md` y `README.md:252`; `test_ci_workflow`: 45 OK. Enmienda al tercer criterio (revisión de la fase 13, n.º 6): el resumen de las mediciones sustituye al JSON literal de usage-meter de T-81..T-85; motivo: `usage-meter close` imprimió el JSON en la sesión de entonces y no se conservó (`.claude/usage-state.json` guarda solo marcadores, y repetir `close` emitiría otra medición, no la original), así que las horas medidas de cada tarea (`real … (medido)`) son el único dato que sobrevive; las de fix1 sí se pegan en `execution-history.md` (compactación 23, mediciones de fix1).

@@ -199,3 +199,16 @@ Cada fase cierra con su revisión adversarial. El detalle de cada intento está 
 | Intento | Grado | Hallazgo | Estado |
 |---|---|---|---|
 | 1 | Minor | SIGTERM tras una ida y vuelta correcta o durante la espera del bucle; healthcheck sin el plazo de la sonda y tapado por una ejecución manual; `doctor` frente al checkpoint de la cola; `memory-probe` con todo el volumen de copias en escritura; consulta de la cola sin prueba en PostgreSQL; `memory-probe` no recreado tras un despliegue; periodo del bucle en el manual | Corregidos en fix1 (`memory_dsn` se mantiene: el repo tiene un solo rol de base, motivo en el manual) |
+
+## Fase 13 — Abstención: señal absoluta, parámetro y contratos (T-81 a T-86)
+
+- **Fecha**: 2026-11-18
+- **Lentes**: intento 1, A, B y C+D (C por `ci.yml`; D por `scripts/export-contracts.py`); intento 2, A, B y C en un solo revisor.
+- **Veredicto**: cerrada en el intento 2 sin hallazgos Critical ni Important; el Minor del intento 2, corregido por el orquestador.
+- **Evidencia**: suite del servidor 1519 tests, 0 fallos, errores y omitidos; `KAIROS_MIN_TESTS` y `MIN_FLOOR` 1519; `scope-check.py --base main` exit 0; contrato MCP y OpenAPI solo con campos opcionales añadidos y copia `mcp/contract` idéntica (34 herramientas); sin `abstain` y con `MEMORY_ABSTAIN_DEFAULT=off`, respuesta idéntica byte a byte a la anterior en 192 escenarios (servicio, `/v1/search`, `/v1/context`); la señal solo usa filas legibles por el actor, sin consultas extra.
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Important | Abstenía con una capa léxica caída, parcial o con el plazo de trigramas vencido (se leía como «sin coincidencia léxica») | Corregido en fix1: sin señal léxica completa no abstiene; matriz de 728 combinaciones |
+| 1 | Minor | Separador mal escrito en los umbrales, `uncalibrated` sin aciertos, variables fuera del Compose y del manual, CHANGELOG sin la nota de `context`, JSON de usage-meter, sufijo `:latest` | Corregidos en fix1 (JSON por enmienda: la ventana original no se conservó) |
+| 2 | Minor | Frase de la fusión movida al párrafo de Abstención en `configuration.md` | Corregido por el orquestador |

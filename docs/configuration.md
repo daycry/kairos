@@ -210,7 +210,7 @@ La búsqueda combina las capas por fusión de rangos recíprocos: cada acierto s
 | `MEMORY_FUSION_K` | `60` | Constante `k` de la fusión (entero de 1 a 1.000) |
 | `MEMORY_FUSION_WEIGHTS` | vacío (peso 1 en todas) | Pesos por capa, `capa=peso,...`, con capas `episodic`, `documental`, `temporal` y `semantic` y pesos mayores que 0 y hasta 10 |
 
-El Compose las propaga desde `.env` con estos mismos valores por defecto (`MEMORY_FUSION_WEIGHTS` vacío = peso 1 en todas las capas).
+El Compose las propaga desde `.env` con estos mismos valores por defecto (`MEMORY_FUSION_WEIGHTS` vacío = peso 1 en todas las capas). Los valores predeterminados salen de `server/memory_platform/tests/retrieval_eval/fusion-tuning.json` (rejilla explorada y motivo). Cualquier cambio debe pasar la puerta `retrieval-eval`, que exige recall@5 ≥ 0,80, MRR ≥ 0,60 y que ningún subconjunto pierda más de 2 puntos de recall@5 frente a la línea base.
 
 ### Abstención
 
@@ -219,9 +219,9 @@ El parámetro `abstain` de la búsqueda responde «nada relevante» (`items: []`
 | Variable | Predeterminado | Efecto |
 |---|---|---|
 | `MEMORY_ABSTAIN_DEFAULT` | `off` | `on` abstiene también cuando la petición no trae `abstain` (la petición con `abstain` manda); `off` deja la respuesta idéntica a la anterior. Un valor distinto de `on` y `off` impide arrancar |
-| `MEMORY_ABSTAIN_THRESHOLDS` | vacío (sin umbrales) | Umbral por modelo, `modelo=umbral,...`, con el umbral entre -1 y 1 (coseno). Un nombre con `=`, `;`, espacios u otros caracteres de un separador mal escrito, un umbral fuera de rango o un modelo repetido impiden el arrancar (el mensaje nombra la variable, no sus valores) |
+| `MEMORY_ABSTAIN_THRESHOLDS` | vacío (sin umbrales) | Umbral por modelo, `modelo=umbral,...`, con el umbral entre -1 y 1 (coseno). Un nombre con `=`, `;`, espacios u otros caracteres de un separador mal escrito, un umbral fuera de rango o un modelo repetido impiden el arrancar (el mensaje nombra la variable y, en un umbral fuera de rango, el modelo; nunca el umbral) |
 
-El nombre del modelo se compara sin el sufijo `:latest` en los dos lados: `nomic-embed-text=0.55` sirve para `MEMORY_EMBEDDING_MODEL=nomic-embed-text:latest` y al revés; otra etiqueta (`:v2`) es otro modelo, y `nomic-embed-text` junto a `nomic-embed-text:latest` es un modelo repetido. Con `abstain` activo y sin umbral para el modelo, la búsqueda responde normal y añade `abstention: "uncalibrated"` siempre que la capa semántica haya terminado bien (con o sin aciertos); si esa capa está apagada, `degraded` o `partial` no hay señal y la respuesta lleva solo `abstained: false`. Una capa léxica caída, parcial o con el plazo de trigramas vencido (`fuzzy_timeout`) tampoco permite abstener. Cambiarlas exige volver a desplegar `memory-api`. Los valores predeterminados salen de `server/memory_platform/tests/retrieval_eval/fusion-tuning.json` (rejilla explorada y motivo). Cualquier cambio debe pasar la puerta `retrieval-eval`, que exige recall@5 ≥ 0,80, MRR ≥ 0,60 y que ningún subconjunto pierda más de 2 puntos de recall@5 frente a la línea base.
+El nombre del modelo se compara sin el sufijo `:latest` en los dos lados: `nomic-embed-text=0.55` sirve para `MEMORY_EMBEDDING_MODEL=nomic-embed-text:latest` y al revés; otra etiqueta (`:v2`) es otro modelo, y `nomic-embed-text` junto a `nomic-embed-text:latest` es un modelo repetido. Con `abstain` activo y sin umbral para el modelo, la búsqueda responde normal y añade `abstention: "uncalibrated"` siempre que la capa semántica haya terminado bien (con o sin aciertos); si esa capa está apagada, `degraded` o `partial` no hay señal y la respuesta lleva solo `abstained: false`. Una capa léxica caída, parcial o con el plazo de trigramas vencido (`fuzzy_timeout`) tampoco permite abstener. Cambiarlas exige volver a desplegar `memory-api`.
 
 ## Proyectos, categorías y permisos
 
