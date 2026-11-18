@@ -2040,6 +2040,7 @@ test-plan: n/a (sin UI)
 - **Descripción**: Ejecuta la suite completa del servidor, anota el recuento `MEMORY_TEST_RESULT` y sube `KAIROS_MIN_TESTS` y `MIN_FLOOR` al número observado (la suite solo crece).  Fuente: Puerta de fase; CA-38 (suite con 0 fallos y 0 omitidos).
 - **Changelog**: Interno: la suite del servidor pasa de 1241 a 1360 pruebas y la CI exige ese mínimo.
 - **Estado**: completado
+- **Cerrada**: 2026-11-17
 - **Tiempo humano**: est. 1.5h (base) · real —
 - **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real 0.3h (estimado)
 - **Supervisión**: est. 0.05h (≈25 % IA) · real —
@@ -2069,6 +2070,7 @@ test-plan: n/a (sin UI)
 - **Descripción**: Revisión adversarial del diff de la fase con dos lentes: A (contrato, seguridad, regresiones, alcance declarado) y B (mutantes: cada control nuevo se quita y su prueba debe fallar). Cuidado: el bloqueo no debe dejar despliegues colgados; el retroceso no debe migrar ni tocar datos. Cada hallazgo se corrige para la clase entera y se anota con intento y evidencia en `review.md`; cada intento abre y cierra `usage-meter`. Fuente: Lección de la retro de la Iniciativa 2: la revisión es partida propia (0,5 × la implementación; 1,0 × en C-03 y C-05).
 - **Changelog**: Interno: revisión adversarial de la fase 10; el retroceso vuelve siempre al último despliegue que terminó bien, el bloqueo de despliegue es del sistema operativo y un despliegue interrumpido deja constancia.
 - **Estado**: completado
+- **Cerrada**: 2026-11-17
 - **Tiempo humano**: est. 9.5h (base) · real —
 - **Tiempo IA (ejec.)**: est. 1.27h (estimado) · real 4.0h (estimado; cinco intentos y cinco correcciones)
 - **Supervisión**: est. 0.32h (≈25 % IA) · real —
@@ -2128,8 +2130,9 @@ test-plan: n/a (sin UI)
 - [x] Escribir primero las pruebas (rojo)
 - [x] Implementar el aprovisionamiento idempotente
 - [x] `usage-meter start/close` de la tarea
+  - Excepción declarada (revisión de la fase 11, intento 1, n.º 11): usage-meter no se ejecutó; las horas reales van marcadas «(estimado)» y el motivo está en las Notas.
 
-**Notas** (2026-11-18): RED: `test_probe_provisioning` (11 pruebas) contra el HEAD (`kairos-test:i3p10f`, sin `probe.py`) falló con `ImportError: cannot import name 'probe' from 'memory_platform'` · 2026-11-17. RED de comportamiento con mutantes de `probe.py` sobre el código nuevo, cada uno muerto: `PROBE_SCOPES` con `admin` → 3 fallos (`test_it_makes_the_project_and_a_key_with_read_and_write_on_it_alone`, `test_a_key_with_a_wider_reach_is_never_reused_and_is_not_ours_to_revoke`, `test_the_key_is_refused_everywhere_but_its_project_a_write_elsewhere_is_not_even_found`); reutilizar cualquier clave válida → `test_a_key_with_a_wider_reach_...`; el token en el informe → `test_the_command_prints_the_key_id_and_the_path_and_never_the_token` · 2026-11-18. Nuevo `probe.py` (`provision`, `admin_actor`, `valid_key`) y subcomando `admin probe-provision --key-file` (`MEMORY_PROBE_KEY_FILE`, por defecto `/backups/kairos-probe.key`, volumen de `memory-admin`, fuera del repositorio): proyecto `kairos-probe` con política `summary` (la mínima que acepta notas), clave `read`+`write` con `project_ids: [kairos-probe]`, fichero 0600 escrito de forma atómica (rechaza enlace o directorio: `key_file_unsafe`). Una segunda ejecución no cambia nada (ni una fila de auditoría); un fichero inválido, o una clave más ancha (en proyectos o en permisos), da una clave nueva y revoca las `kairos-probe` anteriores de ese proyecto (la más ancha no es nuestra y no se revoca); si el fichero no se puede escribir, se revoca la clave recién creada. El informe lleva el id de la clave y la ruta, nunca el token. Cada prueba usa su propia base: `kairos-probe` no entra en la base compartida. Verificación (el arnés de `run_postgres.py` con estos módulos, PostgreSQL aislado y sin red): `memory_platform.tests.test_probe_provisioning` → 11 pruebas `ok`, 0 omitidas; suite completa: es de T-72 (orquestador); evidencia de esta tarea: las ejecuciones dirigidas (71 pruebas de test_probe_provisioning, test_probe y test_observability, 0 fallos, 0 omitidas). usage-meter no medido (horas estimadas, como T-42 y T-59). Patrón: `admin.py:240-321` (subcomandos), `store_auth.py:36-77` (concesiones por proyecto) y la clave temporal de verificación de `deploy-memory.py --roundtrip`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (15) — notas de T-68 a T-72», T-68).
 
 ### T-69 — `admin probe`: escribir, esperar recibo `embed`, buscar, retirar
 
@@ -2158,8 +2161,9 @@ test-plan: n/a (sin UI)
 - [x] Implementar las cuatro etapas y su clasificación de fallos
 - [x] Publicar métricas `kairos_probe_*`
 - [x] `usage-meter start/close` de la tarea
+  - Excepción declarada (revisión de la fase 11, intento 1, n.º 11): usage-meter no se ejecutó; las horas reales van marcadas «(estimado)» y el motivo está en las Notas.
 
-**Notas** (2026-11-18): RED: `test_probe` (`RoundTripTests`, `HttpApiTests`, `CommandTests`) contra el HEAD falló con `ImportError: cannot import name 'probe' from 'memory_platform'` · 2026-11-17. RED de comportamiento con mutantes de `probe.py`, cada uno muerto: sin la retirada final → `test_a_healthy_server_ends_ok_and_every_stage_has_its_duration` y 3 más; sin la limpieza tras un fallo (`clean_up`) → 16 fallos (`test_each_failure_names_its_stage_and_code_and_retires_what_it_wrote`, `test_with_the_worker_stopped_it_fails_at_index_within_the_budget_and_tries_to_retire`, …); sin el control de `index` → 9 fallos y 2 errores; sin acotar cada petición por el presupuesto restante → `test_every_request_is_bounded_by_what_is_left_of_the_budget`; aceptar un acierto léxico como semántico → `test_a_lexical_only_answer_is_not_a_semantic_hit` y 2 más · 2026-11-18. `Probe` (en `probe.py`) recibe `api` con `call(método, ruta, cuerpo, plazo)`, `clock` y `sleep` inyectados (`FakeServer` y `Clock` en las pruebas: ninguna espera real, y un doble de `time` que falla si se usa el reloj real); etapas `write` (`POST /v1/events`), `index` (lee `/v1/projects/kairos-probe/events/<id>/status` hasta que el trabajo `embed` está `succeeded`), `search` (capa semántica: la nota **y** `backends.semantic` en `ok` con resultados) y `retire` (evento `delete` v2 y una búsqueda léxica que ya no la devuelve). `MEMORY_PROBE_TIMEOUT` (120 s, 1..3600) es el presupuesto de todo el recorrido y acota cada petición; la retirada tiene su plazo corto propio (10 s). Un fallo termina con código 1, `probe_failed` con `stage` y un `code` cerrado, `kairos_probe_success 0` e intenta retirar lo escrito (`retired` true/false/null; un `write` dudoso prueba v2 y, si 409, una lápida en v1). Métricas `kairos_probe_success`, `kairos_probe_stage_seconds{stage}` y `kairos_probe_last_run_timestamp_seconds` en un registro aparte y en `MEMORY_PROBE_METRICS_FILE`; campo de log `stage` (aditivo) y eventos `probe_failed` y `probe_retire_failed`. El transporte real (`HttpApi`, httpx) se prueba contra un servidor de pruebas en el bucle local (`HttpApiTests`: envía el `Bearer` y el cuerpo JSON, no sigue redirecciones —la clave solo viaja a la URL configurada—, una respuesta que no es un objeto JSON es `None` y una conexión rechazada es `unreachable` con el tipo `ConnectError`). CWE-150: del servidor solo salen el número de estado, el tipo de excepción y los códigos cerrados (prueba con un ESC en el cuerpo de la respuesta y con un mensaje de excepción con un token). Verificación (arnés de la suite, subconjunto): `memory_platform.tests.test_probe` (clases `RoundTripTests`, `HttpApiTests` y `CommandTests`) → 18 pruebas `ok`, 0 omitidas; suite completa: es de T-72 (orquestador); evidencia de esta tarea: las ejecuciones dirigidas (71 pruebas de test_probe_provisioning, test_probe y test_observability, 0 fallos, 0 omitidas). usage-meter no medido (horas estimadas). Patrón: `scripts/memory-client.py` y `mcp/kairos_mcp` (clientes de `/v1`), `tests/chain_harness.py` (cadena en proceso) y `observability.py:189-213` (métricas). Defaults `MEMORY_PROBE_TIMEOUT` 120 s.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (15) — notas de T-68 a T-72», T-69).
 
 ### T-70 — Pruebas de la sonda con worker real y worker parado
 
@@ -2187,8 +2191,9 @@ test-plan: n/a (sin UI)
 - [x] Escribir las pruebas
 - [x] Aplicar mutantes
 - [x] `usage-meter start/close` de la tarea
+  - Excepción declarada (revisión de la fase 11, intento 1, n.º 11): usage-meter no se ejecutó; las horas reales van marcadas «(estimado)» y el motivo está en las Notas.
 
-**Notas** (2026-11-18): RED: `ChainTests`, `CutDatabaseTests`, `IsolationTests` y `MutantTests` contra el HEAD fallaron con `ImportError: cannot import name 'probe' from 'memory_platform'` · 2026-11-17. Mutantes de `probe.py` muertos por estas pruebas · 2026-11-18: sin la retirada final → `test_healthy_the_note_goes_through_the_worker_and_is_found_semantically_then_retired` y `test_run_after_run_leaves_no_active_memory_and_one_retired_per_run`; sin `clean_up` → `test_with_the_worker_stopped_it_fails_at_index_in_the_budget_and_retires_the_note` y `test_a_database_cut_while_it_waits_for_the_index_...`; sin el control de `index` → `test_with_the_worker_stopped_...` (la sonda daba por buena una nota sin indexar); escribir fuera de `kairos-probe` (`project_id` ajeno) → 10 fallos. Además, las `MutantTests` fijan en la propia suite que quitar la retirada, la limpieza o el control de `index` es observable. Tabla de escenarios (cabecera de `test_probe.py`): sana (el `Worker` real sobre `FakeEmbeddings` corre mientras la sonda espera; `memories() == (0, 1)`: ningún recuerdo activo, uno retirado, trabajo `embed` `succeeded`), worker parado (`stage=index`, `timeout` ≤ presupuesto, nota retirada y trabajo `pending`), búsqueda sin resultado (otro cliente retira la nota antes de la búsqueda: `stage=search`, `no_result`), base cortada con `FaultProxy` (antes de escribir: `write`/`server_error`/`retired: false`; durante la espera: `index`/`server_error`, y la nota queda activa y se dice), clave revocada (`write`/`unauthorized`/`retired: null`) y servidor sin embeddings (`no_embed_job`). `IsolationTests` recorre `probe.py`, `admin.py`, `observability.py` y las dos pruebas y falla si aparece un recurso `knowledge-graphs-` o el puerto del Ollama del anfitrión (las cadenas se parten en la propia prueba). Cada clase con base usa la suya (`CREATE DATABASE`). Verificación (arnés de la suite, subconjunto): `memory_platform.tests.test_probe` (`ChainTests`, `CutDatabaseTests`, `IsolationTests`, `MutantTests`) → 15 pruebas `ok`, 0 omitidas; suite completa: es de T-72 (orquestador); evidencia de esta tarea: las ejecuciones dirigidas (71 pruebas de test_probe_provisioning, test_probe y test_observability, 0 fallos, 0 omitidas). usage-meter no medido (horas estimadas). Patrón: `tests/chain_harness.py`, `tests/fault_proxy.py` (Fase 1).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (15) — notas de T-68 a T-72», T-70).
 
 ### T-71 — Documentar la sonda
 
@@ -2212,14 +2217,16 @@ test-plan: n/a (sin UI)
 **Subtareas**
 - [x] Actualizar los manuales
 - [x] `usage-meter start/close` de la tarea
+  - Excepción declarada (revisión de la fase 11, intento 1, n.º 11): usage-meter no se ejecutó; las horas reales van marcadas «(estimado)» y el motivo está en las Notas.
 
-**Notas** (2026-11-18): RED: `DocumentationTests` contra el HEAD falló con `ImportError` (sin `probe.py`); contra el código nuevo y el manual a medio escribir falló con `AssertionError: '`summary`' not found in ...` y `AssertionError: '`setup`' not found in ...` · 2026-11-17, y pasó al ajustar el manual. `docs/operations.md`: sección «Sonda de ida y vuelta (`admin probe`)» (etapas con sus códigos de fallo, presupuesto `MEMORY_PROBE_TIMEOUT`, resultado y códigos de salida 0 y 1, `retired`, etapa `setup`, métricas en fichero, aprovisionamiento idempotente de `kairos-probe`, qué puede y qué no la clave —404 fuera del alcance, 403 dentro—, variables y qué deja cada ejecución, con el caso de la base cortada) y `stage` en los campos de los logs; `docs/configuration.md`: subsección con `MEMORY_PROBE_TIMEOUT` (`120`), `MEMORY_PROBE_URL`, `MEMORY_PROBE_KEY_FILE` y `MEMORY_PROBE_METRICS_FILE` con los valores por defecto del código. Las cuatro pruebas de `DocumentationTests` comparan los valores del manual con las constantes de `probe.py`. Verificación (lectura + prueba): `memory_platform.tests.test_probe.DocumentationTests` → 4 `ok`; suite completa: es de T-72 (orquestador); evidencia de esta tarea: las ejecuciones dirigidas (71 pruebas de test_probe_provisioning, test_probe y test_observability, 0 fallos, 0 omitidas). usage-meter no medido. Estilo: `docs/operations.md`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (15) — notas de T-68 a T-72», T-71).
 
 ### T-72 — Cierre de fase: suite completa y subida del mínimo
 
 - **Descripción**: Ejecuta la suite completa del servidor, anota el recuento `MEMORY_TEST_RESULT` y sube `KAIROS_MIN_TESTS` y `MIN_FLOOR` al número observado (la suite solo crece).  Fuente: Puerta de fase; CA-38 (suite con 0 fallos y 0 omitidos).
 - **Changelog**: Interno: la suite del servidor pasa de 1360 a 1408 pruebas y la CI exige ese mínimo.
 - **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 1.5h (base) · real —
 - **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real 0.3h (estimado)
 - **Supervisión**: est. 0.05h (≈25 % IA) · real —
@@ -2236,13 +2243,15 @@ test-plan: n/a (sin UI)
 - [x] `MEMORY_TEST_RESULT` con 0 fallos, 0 errores, 0 omitidos y `tests` ≥ 764 (≥ el recuento del cierre anterior)
 - [x] `KAIROS_MIN_TESTS` en `.github/workflows/ci.yml` y `MIN_FLOOR` en `scripts/tests/test_ci_workflow.py` igualan el recuento observado, y la tabla de `docs/operations.md` lo repite
 - [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas`
+  - Excepción declarada (revisión de la fase 11, intento 1, n.º 11): usage-meter no se ejecutó; las horas reales van marcadas «(estimado)» y el motivo está en las Notas.
 
 **Subtareas**
 - [x] Ejecutar la suite completa (primer plano, un solo Docker a la vez) y anotar el recuento
 - [x] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
 - [x] `usage-meter start/close` de la tarea
+  - Excepción declarada (revisión de la fase 11, intento 1, n.º 11): usage-meter no se ejecutó; las horas reales van marcadas «(estimado)» y el motivo está en las Notas.
 
-**Notas** (2026-11-18): Suite completa sobre `1ebdf63` (`kairos-test:i3p11f`): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1408}`. Un build anterior sobre `1aa6b65` dio 1404 con 2 fallos (`test_auth_cache.EveryTransactionTests`: `probe.py` fuera de las listas revisadas de lecturas de permisos); corregido en `b7115da` (comandos de operador con su motivo). `KAIROS_MIN_TESTS` y `MIN_FLOOR` 1408 con su historia; tabla de `docs/operations.md` y `README.md:252` igual; `test_ci_workflow.py` OK. Excepción declarada: usage-meter no medido (horas estimadas, mismo patrón que T-66). Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Cierra la fase: no se abre la revisión adversarial con la suite en rojo.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (15) — notas de T-68 a T-72», T-72).
 
 ### T-73 — Revisión adversarial de la fase (dos lentes)
 
@@ -3113,4 +3122,5 @@ Lentes: B; A+C (diff `af7df9b..64f3861`, fix4). 133 OK en el anfitrión (2 omiti
 
 ## Revisión de dos lentes — intento 1: Fase 11 (T-68 a T-71) (T-68, T-69, T-70, T-71)
 
-Pendiente de revisión; sin veredicto.
+Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (14) — revisión de la fase 11, intento 1»). Resumen: lentes A, B y C+D; 3 Important (falso verde semántico, reutilización de una clave con el dueño deshabilitado, restos retirados con vector sin podar) y 9 Minor; fix1 corrige todo.
+
