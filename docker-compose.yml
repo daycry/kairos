@@ -27,6 +27,8 @@ x-memory-environment: &memory-environment
   MEMORY_FUSION_K: ${MEMORY_FUSION_K:-60}
   MEMORY_FUSION_VALIDATED_BONUS: ${MEMORY_FUSION_VALIDATED_BONUS:-0.0001}
   MEMORY_FUSION_WEIGHTS: ${MEMORY_FUSION_WEIGHTS:-}
+  MEMORY_ABSTAIN_THRESHOLDS: ${MEMORY_ABSTAIN_THRESHOLDS:-}  # abstention (parameter `abstain`): cosine threshold per embeddings model, `model=threshold,...`; empty = none yet (uncalibrated)
+  MEMORY_ABSTAIN_DEFAULT: ${MEMORY_ABSTAIN_DEFAULT:-off}  # `on` abstains when the request does not say; `off` keeps the answer identical to before
 
 # json-file rotation of every service (T-55): 3 files of 10 MB each, so no container fills the disk with its log.
 x-logging: &logging

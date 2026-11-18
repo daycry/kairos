@@ -2549,12 +2549,12 @@ test-plan: n/a (sin UI)
 - **Estado**: completado
 - **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.67h (estimado) · real 0.13h (medido)
+- **Tiempo IA (ejec.)**: est. 0.67h (estimado) · real 0.41h (medido; 0.13h + 0.28h de fix1)
 - **Supervisión**: est. 0.17h (≈25 % IA) · real —
 - **Previsión IA**: 184 k in / 16 k out tok · ⚠️ verificar €
 - **Dependencias**: T-81
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/retrieval.py`, `server/memory_platform/models.py`, `server/memory_platform/config.py`, `server/memory_platform/store_vectors.py`, `server/memory_platform/app.py`, `server/memory_platform/tests/test_abstention.py`
+- **Archivos**: `server/memory_platform/retrieval.py`, `server/memory_platform/models.py`, `server/memory_platform/config.py`, `server/memory_platform/store_vectors.py`, `server/memory_platform/app.py`, `server/memory_platform/tests/test_abstention.py`, `docker-compose.yml`, `docs/configuration.md`, `docs/architecture.md`, `docs/roadmap/2026-11-15-reliable-operations/improvement-plan.md` (fix1 de la revisión de la fase 13, n.º 1, 2, 3, 4 y 7: variables en el Compose y el manual, regla léxica y de `uncalibrated` en la arquitectura y en el ítem (22))
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_abstention|test_retrieval|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
@@ -2571,8 +2571,10 @@ test-plan: n/a (sin UI)
 - [x] Probar no regresión
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.13h (medido).
+  - usage-meter fix1 (`reliable-operations/T-82-fix1`): 0.28h (medido), 12 min de reloj.
 
 **Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (23) — notas de T-81 a T-85», T-82).
+**Notas** (fix1): revisión de la fase 13, n.º 1, 2, 3, 4 y 7. RED 2026-11-18 (matriz ampliada con capa léxica caída o con plazo vencido, por servicio y API; 465 fallos, más `uncalibrated` sin aciertos, `:latest`, el separador y el Compose). Sin señal léxica completa (`lexical_complete`: toda capa no semántica pedida en `ok` y sin `fuzzy_timeout`, también en sus proveedores) no abstiene; `uncalibrated` sale con la capa semántica `ok` aunque haya 0 aciertos (el modelo se registra aunque nada puntúe), y sin señal semántica solo `abstained: false`; el umbral se busca sin `:latest` en los dos lados (`threshold_for`, sin aviso al arrancar); nombres de modelo con `=`, `;` o espacios impiden arrancar; las dos variables van en `x-memory-environment` y `docs/configuration.md`. Matriz: 2×7×4×13 = 728 combinaciones por servicio y por API (`/v1/search` y `/v1/context`).
 
 ### T-83 — Contratos aditivos: `abstain`, `abstained` y `abstention`
 

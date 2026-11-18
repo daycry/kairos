@@ -440,6 +440,7 @@ def fusion_from_env(environ=None) -> tuple:
 # Abstention (C-05, M-01): `abstain` answers "nothing relevant" when the best semantic cosine is below the threshold of the embeddings model and no
 # lexical layer returned anything (docs/architecture.md, "Abstención: la señal"). Off by default; there is no threshold until it is calibrated (P-04).
 ABSTAIN_THRESHOLD_RANGE = (-1.0, 1.0)  # a cosine similarity
+ABSTAIN_MODEL_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:/@+-]*')  # an Ollama or registry name: never `=`, `;`, spaces or the other characters of a mistyped separator
 
 
 def check_abstain(thresholds) -> None:
@@ -448,8 +449,24 @@ def check_abstain(thresholds) -> None:
     for model, value in thresholds.items():
         if not isinstance(model, str) or not model.strip():
             raise ValueError('MEMORY_ABSTAIN_THRESHOLDS: a model name is empty')
+        if not ABSTAIN_MODEL_NAME.fullmatch(model.strip()):
+            raise ValueError('MEMORY_ABSTAIN_THRESHOLDS: a model name has characters that do not belong in one (letters, digits and . _ : / @ + -); check the separators: model=threshold,model=threshold')
+        if sum(model_key(name) == model_key(model) for name in thresholds if isinstance(name, str)) > 1:
+            raise ValueError('MEMORY_ABSTAIN_THRESHOLDS: one model has two thresholds (`name` and `name:latest` are the same model)')
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not ABSTAIN_THRESHOLD_RANGE[0] <= value <= ABSTAIN_THRESHOLD_RANGE[1]:
             raise ValueError('MEMORY_ABSTAIN_THRESHOLDS: the threshold of %s must be a number between %s and %s' % ((model,) + ABSTAIN_THRESHOLD_RANGE))
+
+
+def model_key(model: str) -> str:
+    """The model without Ollama's implicit `:latest` tag: `nomic-embed-text` and `nomic-embed-text:latest` are the same model."""
+    model = model.strip()
+    return model[:-len(':latest')] if model.endswith(':latest') else model
+
+
+def threshold_for(thresholds, model):
+    """The threshold of an embeddings model (`None` when it has none), looking `:latest` up on both sides; any other tag is another model."""
+    wanted = model_key(model)
+    return next((value for name, value in thresholds.items() if model_key(name) == wanted), None)
 
 
 def abstain_from_env(environ=None) -> tuple:
