@@ -140,9 +140,12 @@ class MetricTests(unittest.TestCase):
     GOALS = {'abstention': {'min_correct_rate': 0.70, 'max_false_rate': 0.05, 'simulated': {'threshold': 0.20, 'min_correct_rate': 0.50, 'max_false_rate': 0.05}}}
 
     @staticmethod
-    def abstention_report(correct=0.75, false=0.0, threshold=0.3, negatives=24, with_items=0):
-        return {'abstention': {'model': 'm', 'threshold': threshold, 'correct_abstention': correct, 'false_abstention': false, 'abstained_with_items': with_items,
-                               'negatives': {'n': negatives}, 'positives': {'n': 72}}}
+    def abstention_report(correct=0.75, false=0.0, threshold=0.3, negatives=24, with_items=0, measurement_errors=None):
+        report = {'abstention': {'model': 'm', 'threshold': threshold, 'correct_abstention': correct, 'false_abstention': false, 'abstained_with_items': with_items,
+                                 'negatives': {'n': negatives}, 'positives': {'n': 72}}}
+        if measurement_errors is not None:
+            report['abstention']['measurement_errors'] = measurement_errors
+        return report
 
     def test_abstention_goals_pass_exactly_at_the_limits(self):
         self.assertEqual(evaluate_abstention(self.abstention_report(correct=0.70, false=0.05), self.GOALS), [])
@@ -190,6 +193,18 @@ class MetricTests(unittest.TestCase):
         self.assertEqual(thresholds['abstention']['models'], {})
         self.assertEqual((thresholds['fused_recall_at_5'], thresholds['fused_mrr'], thresholds['max_subset_regression_points']), (0.80, 0.60, 2))
 
+    def test_the_simulated_abstention_goals_are_fixed_and_cannot_be_lowered_or_removed(self):
+        # User decision 2026-11-18 («12 de 24 en la CI»): goals per provider. The offline provider must keep >= 0.50 correct and <= 0.05 false as a regression guard (its cosines are not
+        # a real model's, R-07); a real model keeps >= 0.70 and <= 0.05. Lowering or deleting one of them would turn the CI gate into a pass without a test noticing (review phase 14, A2).
+        abstention = json.loads((HERE / 'thresholds.json').read_text(encoding='utf-8'))['abstention']
+        self.assertEqual((abstention['min_correct_rate'], abstention['max_false_rate']), (0.70, 0.05))
+        self.assertIn('simulated', abstention)
+        simulated = abstention['simulated']
+        self.assertEqual(sorted(simulated), ['max_false_rate', 'min_correct_rate', 'threshold'])
+        self.assertEqual(simulated['min_correct_rate'], 0.50)
+        self.assertEqual(simulated['max_false_rate'], 0.05)
+        self.assertIsInstance(simulated['threshold'], float)
+
     def test_run_adds_the_abstention_failures_to_the_gate(self):
         report = {key: key for key in STRUCTURAL_KEYS}
         report.update({'layers': {'fused': {'overall': {'recall@5': 1, 'mrr': 1}, 'subsets': {}}}, 'dataset_sha256': 'x', 'embedding_provider': FAKE_LABEL})
@@ -221,6 +236,25 @@ class MetricTests(unittest.TestCase):
         self.assertIsNone(pick_threshold([row(True, 0.1)], 0.70, 0.05))
         # a question with no cosine at all is protected: it can never abstain
         self.assertIsNone(pick_threshold([row(True, None)] * 3 + [row(False, 0.9)], 0.70, 0.05))
+
+    def test_pick_threshold_never_returns_a_threshold_whose_rounding_misses_the_goals(self):
+        # Review phase 14, B1: the middle of a window narrower than 1e-4 was rounded to 0.5, where the correct abstention is 0.6 (< 0.70), and still reported as calibrated.
+        def row(negative, best):
+            return {'negative': negative, 'best': best, 'protected': False}
+        rows = [row(True, b) for b in (0.1, 0.15, 0.2, 0.25, 0.35, 0.45, 0.50001, 0.8, 0.85, 0.95)] + [row(False, b) for b in [0.3, 0.50003] + [0.9] * 18]
+        picked = pick_threshold(rows, 0.70, 0.05)
+        self.assertIsNotNone(picked)
+
+        def rates(t):
+            def rate(group):
+                return sum(1 for r in group if r['best'] < t) / len(group)
+            return rate([r for r in rows if r['negative']]), rate([r for r in rows if not r['negative']])
+        correct, false = rates(picked['threshold'])
+        self.assertGreaterEqual(correct, 0.70)
+        self.assertLessEqual(false, 0.05)
+        self.assertEqual((picked['correct_abstention'], picked['false_abstention']), (correct, false))  # the reported rates are those of the reported threshold
+        self.assertGreater(picked['threshold'], 0.50001)
+        self.assertLess(picked['threshold'], 0.50003)
 
     def test_measure_abstention_counts_correct_and_false_abstentions_from_the_search_answers(self):
         class Search:
@@ -256,6 +290,33 @@ class MetricTests(unittest.TestCase):
         self.assertEqual((leaked['correct_abstention'], leaked['abstained_with_items']), (0.0, 4))
         # the calibration of this file picks a threshold that its own scores reproduce
         self.assertEqual(pick_threshold(result['scores'], 0.5, 0.0)['false_abstention'], 0.0)
+
+    def test_a_failed_measurement_is_counted_and_fails_the_gate_instead_of_reading_as_no_abstention(self):
+        # Review phase 14, B3: `except Exception: scores = []` made a failed cosine a row that «does not abstain»; the cause stayed hidden.
+        class Search:
+            async def search(self, actor, request):
+                return {'items': [{'item_id': 'x'}], 'abstained': False}
+
+        class Store:
+            def search_vectors(self, actor, projects, vector, model, limit):
+                raise RuntimeError('vector index down')
+
+        class Provider:
+            async def embed(self, text, query=False):
+                return {'embedding': [0.5], 'model': 'm'}
+        settings = type('S', (), {'embedding_model': 'm'})()
+        negatives = [{'id': 'n-%d' % i, 'q': 'n', 'near': False} for i in range(2)]
+        positives = [{'id': 'p-1', 'q': 'p'}]
+        result = asyncio.run(_measure_abstention(Store(), {}, 'proj', positives, negatives, Provider(), settings, 0.3, retrieval=Search(), probe=Search()))
+        self.assertEqual(result['measurement_errors'], 3)
+        clean = asyncio.run(_measure_abstention(type('S2', (), {'search_vectors': lambda self, *a: [{'score': 0.4}]})(), {}, 'proj', positives, negatives, Provider(), settings, 0.3,
+                                                retrieval=Search(), probe=Search()))
+        self.assertEqual(clean['measurement_errors'], 0)
+        failures = evaluate_abstention(self.abstention_report(measurement_errors=3), self.GOALS)
+        self.assertEqual([f['check'] for f in failures], ['abstention_measurement_errors'])
+        self.assertEqual(failures[0]['value'], 3)
+        self.assertEqual(evaluate_abstention(self.abstention_report(measurement_errors=0), self.GOALS), [])
+        self.assertEqual(evaluate_abstention(self.abstention_report(), self.GOALS), [])  # a report without the field (older ones) is read as zero
 
     def test_two_runs_that_abstain_differently_are_not_deterministic(self):
         self.assertIn('abstention', STRUCTURAL_KEYS)
@@ -432,6 +493,31 @@ class NegativeDatasetTests(unittest.TestCase):
         self.assertTrue(errors([dict(good[0], type='memory')] + good[1:]))                  # a corpus record in the negative set
         self.assertTrue(errors([dict(good[0], q=' ')] + good[1:]))
 
+    def test_the_check_dataset_cli_validates_the_id_overlap_whatever_the_order_of_the_arguments(self):
+        # Review phase 14, B4: with the negatives first the corpus was still empty and an id shared with dataset-v1 went unnoticed.
+        import contextlib
+        import io
+        from memory_platform.tests.retrieval_eval import check_dataset
+        negatives = self.records()
+        clash = [dict(negatives[0], id='q-001')] + negatives[1:]
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = Path(tmp) / 'negatives-clash.jsonl'
+            bad.write_text(chr(10).join(json.dumps(r) for r in clash) + chr(10), encoding='utf-8')
+            good, dataset = str(HERE / 'dataset-v1-negatives.jsonl'), str(HERE / 'dataset-v1.jsonl')
+            for order in ((dataset, str(bad)), (str(bad), dataset)):
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as raised:
+                    check_dataset.main(['check_dataset', *order])
+                self.assertEqual(raised.exception.code, 1, order)
+                self.assertIn('INVALID', out.getvalue())
+                self.assertIn('q-001', out.getvalue())
+            for order in ((dataset, good), (good, dataset)):
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    check_dataset.main(['check_dataset', *order])
+                self.assertEqual(out.getvalue().count('OK'), 2, order)
+                self.assertNotIn('INVALID', out.getvalue())
+
     def test_dataset_v1_is_frozen(self):
         from memory_platform.tests.retrieval_eval.check_dataset import load
         records, digest = load(HERE / 'dataset-v1.jsonl')
@@ -510,8 +596,8 @@ class MeasureAbstentionTests(unittest.TestCase):
     class FakeDocker:
         """Records every docker call; `fail` maps a command prefix to a failure; `report` is what the evaluation container prints."""
 
-        def __init__(self, fail=(), report=None):
-            self.calls, self.fail, self.report = [], tuple(fail), report
+        def __init__(self, fail=(), report=None, leftovers=()):
+            self.calls, self.fail, self.report, self.leftovers = [], tuple(fail), report, tuple(leftovers)
 
         def __call__(self, args, timeout=None):
             self.calls.append(list(args))
@@ -522,7 +608,7 @@ class MeasureAbstentionTests(unittest.TestCase):
             if args[:1] == ['run'] and '--rm' in args:
                 out = 'RETRIEVAL_EVAL_RESULT ' + json.dumps(self.report) + chr(10)
             if args[:2] in (['ps', '-a'], ['volume', 'ls'], ['network', 'ls']):
-                out = ''
+                out = chr(10).join(self.leftovers) if args[:2] == ['ps', '-a'] else ''
             return type('R', (), {'returncode': 0, 'stdout': out, 'stderr': ''})()
 
     @staticmethod
@@ -575,6 +661,44 @@ class MeasureAbstentionTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             ma.measure(docker=crashed, eval_image='img', server_dir='S')
         self.assertEqual(len([' '.join(c) for c in crashed.calls if c[:1] == ['rm'] or c[:2] in (['volume', 'rm'], ['network', 'rm'])]), 4)
+
+    def test_leftovers_are_reported_on_the_error_path_and_a_failed_check_is_not_read_as_clean(self):
+        # Review phase 14, B2: the check of `kairos-calib-*` leftovers only reached the result on success, and a failing `docker ps/volume ls/network ls` read as «no leftovers».
+        import contextlib
+        import io
+        ma = self.module()
+        crashed = self.FakeDocker(fail=('run --rm',), report={}, leftovers=('kairos-calib-ollama',))
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
+            ma.measure(docker=crashed, eval_image='img', server_dir='S')
+        self.assertNotIn(raised.exception.code, (0, None))
+        self.assertIn('kairos-calib-ollama', stderr.getvalue())
+        self.assertIn('left', stderr.getvalue())
+        clean_crash = io.StringIO()
+        with contextlib.redirect_stderr(clean_crash), self.assertRaises(SystemExit):
+            ma.measure(docker=self.FakeDocker(fail=('run --rm',), report={}), eval_image='img', server_dir='S')
+        self.assertEqual(clean_crash.getvalue(), '')  # nothing left, nothing to add
+        for listing in ('ps -a', 'volume ls', 'network ls'):
+            blind = ma.measure(docker=self.FakeDocker(fail=(listing,), report=self.report([])), eval_image='img', server_dir='S')
+            self.assertEqual(blind['leftovers'], [], listing)
+            self.assertEqual(blind['leftovers_unverifiable'], [listing], listing)
+            with mock.patch.object(ma, 'measure', return_value=blind), contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as refused:
+                ma.main([])
+            self.assertIn('not verifiable', str(refused.exception))
+        sound = ma.measure(docker=self.FakeDocker(report=self.report([])), eval_image='img', server_dir='S')
+        self.assertEqual(sound['leftovers_unverifiable'], [])
+
+    def test_measurement_errors_make_the_calibration_uncalibrated_for_that_reason_not_for_the_goals(self):
+        ma = self.module()
+        rows = [{'id': 'n%d' % i, 'negative': True, 'best': 0.1 + i / 100, 'protected': False} for i in range(10)] + [{'id': 'p%d' % i, 'negative': False, 'best': 0.6 + i / 100, 'protected': False} for i in range(10)]
+        report = self.report(rows)
+        report['abstention']['measurement_errors'] = 4
+        result = ma.measure(docker=self.FakeDocker(report=report), eval_image='img', server_dir='S')
+        self.assertEqual(result['status'], 'uncalibrated')
+        self.assertIn('abstention_measurement_errors', result['reason'])
+        self.assertNotIn('no threshold reaches', result['reason'])
+        self.assertEqual(result['measurement_errors'], 4)
+        self.assertIsNone(result.get('threshold'))
 
     def test_a_pull_that_exceeds_its_time_is_uncalibrated_not_a_hang(self):
         ma = self.module()

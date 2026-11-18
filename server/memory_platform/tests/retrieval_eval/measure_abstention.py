@@ -22,7 +22,7 @@ from memory_platform.tests.retrieval_eval.run import HERE, pick_threshold
 PREFIX = 'kairos-calib-'
 DEPLOYED_PORT = 11434  # the conventional Ollama port, where the deployed installation and the host's Ollama listen: refused, never used
 MODEL = 'nomic-embed-text'
-OLLAMA_IMAGE = 'ollama/ollama:0.31.1'  # a local image: nothing but the model is downloaded
+OLLAMA_IMAGE = 'ollama/ollama:0.31.1@sha256:f1a705f2bd113fb8d15f85f7c217f0dc5f6bebda6b0cc42b82c3ad165ffcb9dc'  # pinned by digest (checked with `docker image inspect`); a local image: nothing but the model is downloaded
 SERVER_DIR = Path(__file__).resolve().parents[3]
 MEMORY_LIMIT = '3g'
 RESULT_PREFIX = 'RETRIEVAL_EVAL_RESULT '
@@ -72,6 +72,7 @@ def measure(container=PREFIX + 'ollama', port=21434, network=PREFIX + 'net', ima
     server_dir = str(server_dir or SERVER_DIR)
     eval_image = eval_image or 'kairos-test:latest'
     result = {'model': MODEL, 'port': port, 'container': container}
+    failed = True  # cleared only when the calibration reached its result
     try:
         for args in (['network', 'create', network], ['volume', 'create', volume]):
             done = docker(args)
@@ -99,24 +100,44 @@ def measure(container=PREFIX + 'ollama', port=21434, network=PREFIX + 'net', ima
         report = parse_report((ran.stdout or '') + chr(10) + (ran.stderr or ''))  # the gate may be red (no threshold yet): the report is what matters
         rows = report['abstention']['scores']
         minimum, maximum = goals_from_thresholds()
-        picked = pick_threshold(rows, minimum, maximum)
-        result.update(fused=report['layers']['fused']['overall'], goals={'min_correct_rate': minimum, 'max_false_rate': maximum}, curve=curve(rows))
-        if picked is None:
+        errors = report['abstention'].get('measurement_errors') or 0
+        picked = None if errors else pick_threshold(rows, minimum, maximum)
+        result.update(fused=report['layers']['fused']['overall'], goals={'min_correct_rate': minimum, 'max_false_rate': maximum}, curve=curve(rows), measurement_errors=errors)
+        if errors:
+            # Not "no threshold reaches the goals": the cosines of some questions were never measured, so no curve or window can be trusted (review phase 14, B3)
+            result.update(status='uncalibrated', reason='abstention_measurement_errors: the best cosine of %d questions could not be measured; the calibration is not trustworthy' % errors)
+        elif picked is None:
             result.update(status='uncalibrated', reason='no threshold reaches the goals (correct abstention >= %s and false abstention <= %s) with this model on this set' % (minimum, maximum))
         else:
             result.update(status='calibrated', threshold=picked['threshold'], window=[picked['low'], picked['high']],
                           correct_abstention=picked['correct_abstention'], false_abstention=picked['false_abstention'])
+        failed = False
         return result
     finally:
         docker(['rm', '-f', evaluation])
         docker(['rm', '-f', container])
         docker(['volume', 'rm', '-f', volume])
         docker(['network', 'rm', network])
-        leftovers = []
+        leftovers, unverifiable = [], []
         for args in (['ps', '-a', '--filter', 'name=' + PREFIX, '--format', '{{.Names}}'], ['volume', 'ls', '--filter', 'name=' + PREFIX, '-q'],
                      ['network', 'ls', '--filter', 'name=' + PREFIX, '--format', '{{.Name}}']):
-            leftovers += [line for line in (docker(args).stdout or '').split() if line]
-        result['leftovers'] = leftovers
+            listing = docker(args)
+            if listing.returncode:  # a listing that failed says nothing: it is not "no leftovers"
+                unverifiable.append(' '.join(args[:2]))
+                continue
+            leftovers += [line for line in (listing.stdout or '').split() if line]
+        result['leftovers'], result['leftovers_unverifiable'] = leftovers, unverifiable
+        if failed and (leftovers or unverifiable):  # the error path reports it too (the original error keeps propagating, with its non-zero exit)
+            print(leave_message(leftovers, unverifiable), file=sys.stderr, flush=True)
+
+
+def leave_message(leftovers, unverifiable):
+    parts = []
+    if leftovers:
+        parts.append('measure_abstention left resources behind: ' + ', '.join(leftovers))
+    if unverifiable:
+        parts.append('measure_abstention could not check for leftovers (docker %s failed): not verifiable' % ', '.join(unverifiable))
+    return '; '.join(parts)
 
 
 def main(argv=None):
@@ -128,8 +149,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     result = measure(container=args.ollama_container, port=args.port, eval_image=args.eval_image, pull_timeout=args.pull_timeout)
     print('ABSTENTION_CALIBRATION_RESULT ' + json.dumps(result, sort_keys=True, ensure_ascii=False), flush=True)
-    if result.get('leftovers'):
-        raise SystemExit('measure_abstention left resources behind: ' + ', '.join(result['leftovers']))
+    if result.get('leftovers') or result.get('leftovers_unverifiable'):
+        raise SystemExit(leave_message(result.get('leftovers', []), result.get('leftovers_unverifiable', [])))
 
 
 if __name__ == '__main__':

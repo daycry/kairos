@@ -206,16 +206,21 @@ def pick_threshold(rows, min_correct, max_false):
     runs.append(current)
     widest = max(runs, key=lambda run_: candidates[run_[-1]] - candidates[run_[0]])
     low, high = candidates[widest[0]], candidates[widest[-1]]
-    middle = round((low + high) / 2, 4)
-    correct, false = rates(middle)
-    return {'threshold': middle, 'low': round(low, 4), 'high': round(high, 4), 'correct_abstention': round(correct, 6), 'false_abstention': round(false, 6)}
+    # Rounded for reading, but the goals are checked again AT the rounded threshold: a window narrower than the rounding would otherwise report a threshold that misses them (review phase 14, B1).
+    for digits in (4, 5, 6, None):
+        middle = (low + high) / 2 if digits is None else round((low + high) / 2, digits)
+        correct, false = rates(middle)
+        if correct >= min_correct and false <= max_false:
+            fit = (lambda value: value) if digits is None else (lambda value: round(value, digits))
+            return {'threshold': middle, 'low': fit(low), 'high': fit(high), 'correct_abstention': round(correct, 6), 'false_abstention': round(false, 6)}
+    return None
 
 
 def evaluate_abstention(report, thresholds):
     """Failed checks of the abstention goals (CA-27, CA-28; empty = they pass), same discipline as ``evaluate_gate``: a missing goal, threshold or measurement fails, never passes silently.
 
     ``abstention_correct``: fewer than ``min_correct_rate`` of the questions without an answer got ``abstained: true``; ``abstention_false``: more than ``max_false_rate`` of the questions
-    with an answer did; ``abstention_items``: an abstention that still carried items; ``abstention_negatives_too_few``: the set shrank below 20 questions.
+    with an answer did; ``abstention_measurement_errors``: a question whose best cosine could not be measured; ``abstention_items``: an abstention that still carried items; ``abstention_negatives_too_few``: the set shrank below 20 questions.
     """
     failures = []
     config = thresholds.get('abstention')
@@ -234,6 +239,8 @@ def evaluate_abstention(report, thresholds):
         failures.append({'check': 'threshold_missing:abstention.threshold', 'value': None, 'required': 'cosine threshold of the model under test (simulated.threshold or models.<model>)'})
     if measured.get('negatives', {}).get('n', 0) < NEGATIVES_MINIMUM:
         failures.append({'check': 'abstention_negatives_too_few', 'value': measured.get('negatives', {}).get('n', 0), 'required': NEGATIVES_MINIMUM})
+    if measured.get('measurement_errors'):
+        failures.append({'check': 'abstention_measurement_errors', 'value': measured['measurement_errors'], 'required': 0})
     if measured.get('abstained_with_items'):
         failures.append({'check': 'abstention_items', 'value': measured['abstained_with_items'], 'required': 0})
     if isinstance(config.get('min_correct_rate'), (int, float)) and measured.get('correct_abstention', 0) < config['min_correct_rate']:
@@ -469,7 +476,7 @@ async def _measure_abstention(store, actor, project, positives, negatives, provi
         from memory_platform.retrieval import Retrieval
         retrieval = Retrieval(store, replace(settings, abstain_thresholds={settings.embedding_model: threshold} if threshold is not None else {}), provider)
         probe = Retrieval(store, replace(settings, abstain_thresholds={settings.embedding_model: 1.0}), provider)
-    rows = []
+    rows, errors = [], 0
     for negative, questions in ((True, negatives), (False, positives)):
         for question in questions:
             request = {'project_ids': [project], 'q': question['q'], 'layers': ['episodic', 'documental'], 'semantic': True, 'limit': LIMIT, 'abstain': True}
@@ -478,7 +485,7 @@ async def _measure_abstention(store, actor, project, positives, negatives, provi
                 embedded = await provider.embed(question['q'], query=True)
                 scores = [float(h['score']) for h in store.search_vectors(actor, [project], embedded['embedding'], embedded['model'], LIMIT) if h.get('score') is not None]
             except Exception:
-                scores = []
+                scores, errors = [], errors + 1  # counted and reported (`measurement_errors`): a failed cosine is not a question that "does not abstain"
             abstained = answer.get('abstained') is True
             rows.append({'id': question['id'], 'negative': negative, 'near': bool(question.get('near')), 'best': round(max(scores), 6) if scores else None,
                          'protected': probed.get('abstained') is not True, 'abstained': abstained and not answer['items'], 'with_items': abstained and bool(answer['items'])})
@@ -488,7 +495,7 @@ async def _measure_abstention(store, actor, project, positives, negatives, provi
         return round(sum(1 for r in group if r['abstained']) / len(group), 6) if group else 0.0
     return {'model': settings.embedding_model, 'threshold': threshold,
             'correct_abstention': rate(negative_rows), 'false_abstention': rate(positive_rows),
-            'abstained_with_items': sum(1 for r in rows if r['with_items']),
+            'abstained_with_items': sum(1 for r in rows if r['with_items']), 'measurement_errors': errors,
             'negatives': {'n': len(negative_rows), 'abstained': sum(1 for r in negative_rows if r['abstained']),
                           'near_n': sum(1 for r in negative_rows if r['near']), 'near_abstained': sum(1 for r in negative_rows if r['near'] and r['abstained'])},
             'positives': {'n': len(positive_rows), 'abstained': sum(1 for r in positive_rows if r['abstained'])},

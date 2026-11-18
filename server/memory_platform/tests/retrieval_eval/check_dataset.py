@@ -104,15 +104,15 @@ def is_negative_set(records):
 def main(argv):
     if len(argv) < 2:
         raise SystemExit('usage: check_dataset <dataset.jsonl> [<dataset-v1-negatives.jsonl>]')
-    corpus = []
     invalid = False
-    for path in argv[1:]:
-        records, digest = load(path)
+    loaded = [(path, *load(path)) for path in argv[1:]]
+    # The ids of the questions without an answer are checked against the corpus whatever the order of the arguments (review phase 14, B4).
+    corpus = [record for _, records, _ in loaded if not is_negative_set(records) for record in records]
+    for path, records, digest in loaded:
         if is_negative_set(records):
             counts, total, errors = validate_negatives(records, corpus)
             summary = 'OK negatives es=%(es)d en=%(en)d near=%(near)d' % counts + f' total={total}'
         else:
-            corpus = records
             counts, total, errors = validate(records)
             summary = 'OK es=%(es)d en=%(en)d typo_id=%(typo_id)d long=%(long)d' % counts + f' total={total}'
         if errors:
