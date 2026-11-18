@@ -11,6 +11,38 @@ const copy=value=>JSON.parse(JSON.stringify(value));
 const alive=pid=>{ try { process.kill(pid,0); return true; } catch(error) { return error.code!=='ESRCH'; } };
 const size=row=>Buffer.byteLength(canonical(row));
 
+const WAITING=new Set(['pending','unknown','accepted']);
+/** What `kairos doctor` reads of the queue on this disk: a READ-ONLY replay of the snapshot and the journal. It takes no lock (the dispatcher holds it), creates and rewrites nothing,
+ * reads no source file and sends nothing anywhere. Returns null when there is no queue; otherwise `{pending, oldest_seconds}` (captures that still wait for the server: pending,
+ * unknown or accepted, by `admitted_at`); a queue that cannot be replayed throws, and the caller reports it as unreadable. */
+export function queueAge(directory,binding,now=Date.now()) {
+  const root=checked(directory),rows=new Map(); let seq=0;
+  const snapshot=readBytes(path.join(root,'queue.json'),16*1024*1024);
+  if(snapshot) {
+    let record; try { record=JSON.parse(text(snapshot)); } catch { fail('capture_state_corrupt'); }
+    const {sha256,...body}=record;
+    if(![1,2].includes(body.schema)||body.binding!==binding||!Number.isSafeInteger(body.seq)||!Array.isArray(body.rows)||digest(body)!==sha256) fail('capture_state_corrupt');
+    seq=body.seq; for(const row of body.rows) rows.set(row.key,row);
+  }
+  const journal=readBytes(path.join(root,'queue.jsonl'),32*1024*1024);
+  if(journal) {
+    const source=text(journal),end=source.lastIndexOf('\n')+1;  // a line still being written (no newline yet) is not read
+    for(const line of source.slice(0,end).split('\n').filter(Boolean)) {
+      let record; try { record=JSON.parse(line); } catch { fail('capture_journal_corrupt'); }
+      const {sha256,...body}=record;
+      if(body.binding!==binding||digest(body)!==sha256||!Number.isSafeInteger(body.seq)) fail('capture_journal_corrupt');
+      if(body.seq<=seq) continue;
+      if(body.seq!==seq+1) fail('capture_journal_gap');
+      if(body.op==='remove') rows.delete(body.key); else rows.set(body.row.key,body.row);
+      seq=body.seq;
+    }
+  }
+  if(!snapshot&&!journal) return null;
+  const waiting=[...rows.values()].filter(row=>WAITING.has(row.phase));
+  const times=waiting.map(row=>Date.parse(row.admitted_at)).filter(Number.isFinite);
+  return {pending:waiting.length,oldest_seconds:times.length?Math.max(0,Math.round((now-Math.min(...times))/1000)):0};
+}
+
 /** Source files are separate from the receipt journal. Terminal cache eviction
  * requires Dispatcher to reconcile every cache miss before a new admission. */
 export class Outbox {

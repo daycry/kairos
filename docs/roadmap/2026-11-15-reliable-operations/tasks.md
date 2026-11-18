@@ -51,12 +51,12 @@ test-plan: n/a (sin UI)
 | Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 7 | 7 | 100% | 0 / 19.8h | 0.27 / 2.6h | 0 / 0.7h | 0 / 660 k |
 | Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 7 | 7 | 100.0% | 0 / 34.2h | 5.48 / 4.6h | 0 / 1.1h | 0 / 1140 k |
 | Fase 11 — Sonda de ida y vuelta (C-06) | 6 | 6 | 100.0% | 0 / 23.4h | 4.95 / 3.1h | 0 / 0.8h | 0 / 780 k |
-| Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 2 | 7 | 28.6% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
+| Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 3 | 7 | 42.9% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 0 | 6 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **75** | **98** | **76.5%** | **0 / 412.8h** | **15.68 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **76** | **98** | **77.6%** | **0 / 412.8h** | **15.68 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2366,30 +2366,35 @@ RED: `test_probe.py::CommandTests::test_t74_a_queue_older_than_the_threshold_is_
 ### T-76 — `kairos doctor`: aviso de cola en disco del cliente
 
 - **Descripción**: `kairos doctor` avisa cuando la cola en disco del cliente tiene capturas pendientes más antiguas que un umbral, sin telemetría del cliente al servidor. Fuente: CA-32; M-06; P-07.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: `kairos doctor` avisa (`capture_queue_stale`, estado `degraded`) cuando la cola de capturas en disco tiene capturas pendientes de más de 900 s (`KAIROS_QUEUE_STALE_SECONDS`); no envía nada al servidor y sin pendientes su salida no cambia.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 3h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.19h (medido)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 110 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
 - **Tipo**: frontend
-- **Archivos**: `client/lib/outbox.mjs`, `client/lib/mcp.mjs`, `client/tests/doctor-outbox.test.mjs`
+- **Archivos**: `client/lib/outbox.mjs`, `client/lib/mcp.mjs`, `client/tests/doctor-outbox.test.mjs`, `client/package.json` (script `test`), `docs/roadmap/2026-11-15-reliable-operations/improvement-plan.md` (ítem 21 de Coordinación)
 - **Cubre (tests)**: —
 - **Verificación**: `cd client && npm test` → 0 fallos, con las pruebas de `doctor-outbox` en verde
 
 **Criterios de aceptación**
-- [ ] `doctor` informa de la antigüedad de la cola en disco y avisa por encima del umbral (prueba con reloj inyectado)
-- [ ] No envía nada al servidor (prueba sin red)
-- [ ] La salida actual de `doctor` no cambia cuando no hay capturas pendientes
+- [x] `doctor` informa de la antigüedad de la cola en disco y avisa por encima del umbral (prueba con reloj inyectado)
+- [x] No envía nada al servidor (prueba sin red)
+- [x] La salida actual de `doctor` no cambia cuando no hay capturas pendientes
 
 **Subtareas**
-- [ ] Escribir primero la prueba (rojo)
-- [ ] Leer la antigüedad en `outbox.mjs`
-- [ ] Añadir el aviso a `doctor`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero la prueba (rojo)
+- [x] Leer la antigüedad en `outbox.mjs`
+- [x] Añadir el aviso a `doctor`
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 0.19h (medido), 11m.
 
-**Notas**: Patrón: `client/lib/outbox.mjs:177` (cola en disco) y `client/lib/mcp.mjs` (`doctor`); tests en `client/tests/`. Cualquier test del cliente usa directorios temporales, nunca el perfil real.
+**Notas**: `queueAge` (outbox.mjs) reproduce snapshot+journal en solo lectura: sin bloqueo (el dispatcher lo tiene), sin escribir ni leer fuentes; pendientes = pending, unknown y accepted por `admitted_at`. `doctor` solo añade `capture_queue` si hay pendientes (reloj `now` inyectable); cola ilegible = `{status:'unreadable'}` sin fallar ni cambiar el estado; en línea, el aviso mantiene `degraded`. Umbral 900 s (igual que el servidor), `KAIROS_QUEUE_STALE_SECONDS` o `queueStaleSeconds`; valor no positivo = 900. Verificación: `cd client && npm test` = 97 pruebas, 0 fallos (6 de doctor-outbox).
+
+
+RED: `client/tests/doctor-outbox.test.mjs (5 de 6)` falló con capture_queue undefined: doctor no lee la cola en disco (TypeError: Cannot read properties of undefined reading threshold_seconds) · 2026-11-18.
 
 ### T-77 — Ensayo aislado: sonda con `memory-worker` parado
 
