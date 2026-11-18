@@ -1712,3 +1712,139 @@ Salida de `usage-meter.py close` de cada tarea de la fase 14 (clave `reliable-op
 
 (campos de coste vacíos omitidos: eur null, sin_coste)
 ```
+
+### T-88
+
+```json
+{
+  "artefacto": "reliable-operations/T-88",
+  "inicio": "2026-11-18T11:04:55Z",
+  "fin": "2026-11-18T11:21:22Z",
+  "fuente": "medido",
+  "tokens_reales": {
+    "entrada": 64,
+    "salida": 41219,
+    "cache_creacion": 76689,
+    "cache_lectura": 3135677,
+    "respuestas": 32
+  },
+  "eur": null,
+  "horas_ia": 0.39,
+  "duracion": "23m",
+  "duracion_reloj": "16m",
+  "ratio_usado": 300000,
+  "ratio_origen": "default no calibrado (300000)",
+  "tokens_procedencia": "transcript",
+  "tokens_cobertura": "completa",
+  "transcripts_leidos": 2,
+  "transcripts_subagente": 1,
+  "transcripts_con_error": 0,
+  "coste_procedencia": "sin_coste",
+  "coste_cobertura": "sin_coste",
+  "coste_sin_precio": [],
+  "tarifa_verificada_el": null,
+  "medicion_persistida": true,
+  "fuente_id": "src-8ffaaac4e3b9a11805b5148dbea387f65be01b42fba05cbf3ca54c4b799a95c8",
+  "ventana_id": "win-e3becb7467cc435aa1ba0311e0475d8a",
+  "revision_medicion": 1,
+  "avisos": [
+    "CALIBRATION: fila marcada (estimado); fuera de la mediana",
+    "CALIBRATION: fila marcada (estimado); fuera de la mediana",
+    "precioTokens no fiable (0/ausente/viejo) → eur=null; ejecuta la skill rates-verify"
+  ]
+}
+```
+
+## Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)
+
+Notas de tareas cerradas movidas tal cual (línea literal `**Notas**`) desde `tasks.md` para mantenerlo por debajo del límite de lectura (245.000 bytes); el SHA-256 es el de esa línea en UTF-8.
+
+### T-01
+
+SHA-256: `3ce8643d7b464cdc9b637a87d04be3a4e4f28ddaa26bc61f716b2384f49ee135`.
+
+**Notas**: Patrón: `tests/run_postgres.py:30-31` (PostgreSQL efímero en `127.0.0.1:55432`, `MEMORY_TEST_DSN`) y `tests/llm_spy.py` / `tests/chain_services.py` (servidores en proceso con `.start()`/`.stop()`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `b58b78130691`.
+
+### T-02
+
+SHA-256: `668943d59bde1a788282d23712c89bea53ded883b74e0ee16a62e6d5e9e0cafd`.
+
+**Notas**: Patrón: `app.py:36` (`body_too_large`), `agent_store.py:186` (`work_budget_exceeded`), `tests/test_observability.py:216` (caso 503 de `/health/ready` ya existente: se reutiliza el estilo, no se duplica). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `2fefc0633626`.
+
+### T-03
+
+SHA-256: `bb5c44275206271c91ed36d454035cb0aebd0f3e204170d143d7a16e854f5a71`.
+
+**Notas**: Patrón: `tests/test_chunk_schema.py:13-21` (`SCHEMA`, «schema.sql exactly as the previous release left the database»), `tests/test_fts_migration.py:11`, `tests/test_pgvector_migration.py:12`, `tests/test_migrations_additive.py:12-19` (`MIGRATION_SOURCES`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `cba1f3f0139e`.
+
+### T-06
+
+SHA-256: `7b522e6a0e8cae73d43620d64e636fe26126b7da5a10ecce1d70f5678b157eca`.
+
+**Notas**: Cerrada en el intento 2 de 3 (secciones «Revisión de dos lentes — intento 1/2» al final del ledger y `review.md`). Lentes: intento 1, A+B+C+D; intento 2, A+B. `scope-check.py --base be001a4` exit 0; suite 806 en verde (Notas de T-05). Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+
+### T-09
+
+SHA-256: `9f2d52c60bf53280992673c5f11086611d3bf2f98950e7dacd27ae7bc49b97cd`.
+
+**Notas**: Patrón: `worker.py:145` (`complete_job`), `:148-160` (política de reintento del proveedor), `:165-168` (`except Exception` → `fail_job(..., 'provider_error')`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `59449263d58d`.
+
+### T-10
+
+SHA-256: `41df389b7f827db76f46a48c73bf7c9493da644b68d0cd4d592452b3e44b1ea1`.
+
+**Notas**: Patrón: `store_jobs.py:89-192` (`claim_job`, `renew_lease`, `_current_job`, `complete_job`, `fail_job`); `observability.py:205-208` (`kairos_jobs_failed`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `92342b06d044`.
+
+### T-14
+
+SHA-256: `aa53a99aba362f864aa7ecfe75cc13be5cb1f363127e722176145432e04f2404`.
+
+**Notas**: Deuda Minor heredada de la revisión de la Fase 1 (intento 2, n.º 3 y 4): cubrir la guarda en Python de los índices HNSW (`store_vectors.py:23-24`) frente a un `migrate()` repetido, y que las etiquetas de sección de la prueba genérica salgan de `schema.sql` en vez de ir a mano. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `75d9cf808631`.
+
+### T-20
+
+SHA-256: `c2845fe2c8eb65bfb888effab579cea028f90da8a898d706b25e6fe6c141e5bc`.
+
+**Notas**: Cerrada en el intento 2 de 3 (intento 1: A+B+C+D; intento 2: A+B; resumen en `review.md`). `scope-check.py --base d23f4a7` exit 0; suite 925 en verde. Los revisores no tienen medición propia. Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+
+### T-21
+
+SHA-256: `a811c9fcbc50d8db3e1f37037405d2189f7a44dcf1dfbfd308ccc7282e53d8f2`.
+
+**Notas**: Patrón: `store.py:24-30` (una conexión nueva por `transaction()`), `retrieval.py:87-148` (una transacción por capa) y `tests/measure_vector_candidates.py` (medidor existente fuera de la suite). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `5b68a093ed16`.
+
+### T-29
+
+SHA-256: `9fafcd14cd8aa9629e80712ed3ef13ece05169b5a4c7f8cb905716c18f22fc86`.
+
+**Notas**: Cerrada en el intento 2 de 3 (intento 1: A+B+C+D; intento 2: A+B; resumen en `review.md`). `scope-check.py --base 9416128` exit 0; suite 1006 en verde. Los revisores no tienen medición propia. Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+
+### T-34
+
+SHA-256: `5ea9fd4353e1de4e908ca2acafb97d40c02bad214d7ba72ee734595500e32ca2`.
+
+**Notas**: Cerrada en el intento 2 de 3 (intento 1: A+B+C+D; intento 2: A+B+C; Minor del intento 2 corregidos en el cierre, commit 886388a; resumen en `review.md`). `scope-check.py --base 04822a0` exit 0; suite 1054 en verde. Los revisores no tienen medición propia. Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+
+### T-38
+
+SHA-256: `0ca3df3fe9d87656ba6e8709886609934fb525f130dd11d38bb3fe4b19b8e642`.
+
+**Notas**: Patrón: `deploy-memory.py:27` (`MIGRATE_TIMEOUT_SECONDS`), `:257-258` (`operator()` con `timeout=120`), `:376` y `:380` (llamadas), `tests/test_deploy.py` (dobles de `subprocess`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `9c7c6ae7de06`.
+
+### T-53
+
+SHA-256: `6aa2ce712cfd1bb20f57cb4dc499dda337ab531f69dab707d0f3bc8050a9b11b`.
+
+**Notas**: OK expreso del usuario: «Fusiónalo cuando esté en verde» (abrir el PR de cada hito y fusionarlo con la CI en verde, merge commit, conservando la rama); esto sustituye al «No se hace merge» original. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `859ff3e36dd6`.
+
+### T-80
+
+SHA-256: `8079f38e0d2224aace9f5a805950f21de4cbd692cfd9d056be340485d9aa3d38`.
+
+**Notas** (2026-11-18): Cerrada en el intento 1 (0 Critical, 0 Important y 7 Minor, corregidos en fix1 `9e64986`..`01a8773`); suite 1494 en verde, `scope-check.py --base main` exit 0. Detalle en `execution-history.md` (compactación 21, con SHA-256) y `review.md`.
+
+### T-88
+
+SHA-256: `68d413e59c445aba1d09133c6026bbb4fb715abf5bc14f2ee075ecd059500881`.
+
+**Notas**: RED 2026-11-18: `test_metrics` no importaba (`ImportError: cannot import name '_measure_abstention'`) y 4 casos de `test_ci_workflow` fallaron (el paso de CI no exigía la medida de abstención); verde tras `evaluate_abstention`, `_measure_abstention`, `pick_threshold`, `load_negatives` y `abstention_threshold` en `run.py`, el bloque `abstention` de `thresholds.json` y 2 `grep` nuevos en `ci.yml`. Medida (docker run sobre `kairos-test:i3p13f` con `server/` montado, `--network=none`): con el proveedor simulado y umbral 0.2022, abstención correcta 0.50 (12/24; cercanas 1/12) y falsa 0.0417 (3/72), recall@5 1.0, MRR 0.9715, puerta `passed: true`, determinista. Con umbral 0.99 (edición temporal, revertida): correcta 0.9583, falsa 0.3194, `passed: false` (`abstention_false`), exit 1. DECISIÓN ABIERTA (R-07): con los embeddings simulados NO existe umbral que cumpla ≥ 70 % y ≤ 5 % a la vez (0.30 da 91.7 % y 11.1 %; 70.8 % exige 6.9 % de falsa: 5 positivas sin coincidencia léxica tienen coseno < 0.235); `thresholds.json` lleva por eso metas propias del simulado (`abstention.simulated`: correcta ≥ 0.50, falsa ≤ 0.05, umbral 0.2022 = centro de la ventana 0.198-0.207) y deja las de CA-27 (0.70/0.05) en el nivel superior para un modelo real (`abstention.models.<modelo>`; T-89). `evaluate_abstention` falla con `threshold_missing:abstention.*`, `abstention_missing`, `abstention_items`, `abstention_negatives_too_few`. CI: el paso «The gate really ran» exige además `abstention` con `correct_abstention`/`false_abstention` y `abstained_with_items: 0` (comprobado con 5 informes sintéticos en bash). Las 3 pruebas de DSN de `test_metrics` no corren en el host (sin `psycopg`), sí en la imagen. JSON de usage-meter en `execution-history.md` («Mediciones de la fase 14», T-88). Patrón original: Patrón: `tests/retrieval_eval/run.py:109-120` (`threshold_missing`/`subset_missing`), `thresholds.json`, `fake_embeddings.py:1-8` (embeddings simulados) y `ci.yml` (trabajo `retrieval-eval`).

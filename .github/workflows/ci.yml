@@ -54,7 +54,7 @@ jobs:
           test "${tests:-0}" -ge "$KAIROS_MIN_TESTS"
 
   retrieval-eval:
-    # Quality gate with the simulated (offline) embedding provider: recall@5 >= 0.80 and MRR >= 0.60 or the build fails.
+    # Quality gate with the simulated (offline) embedding provider: recall@5 >= 0.80 and MRR >= 0.60 and the abstention goals of thresholds.json (C-05) or the build fails.
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -70,6 +70,9 @@ jobs:
           line="$(grep -o 'RETRIEVAL_EVAL_RESULT {.*' /tmp/eval.log | tail -1)"
           echo "${line:0:300}"
           echo "$line" | grep -q '"gate": {[^}]*"passed": true'
+          # C-05 (CA-28): the line carries the abstention measurement and no abstention kept its items; the goals themselves are in the gate (`thresholds.json`).
+          echo "$line" | grep -q '"abstention": {[^}]*"correct_abstention": [0-9.]*, "false_abstention": [0-9.]*'
+          echo "$line" | grep -q '"abstention": {"abstained_with_items": 0,'
 
   client:
     # Installable CLI: its tests and the offline release check (it prepares the package, it never publishes).

@@ -177,6 +177,34 @@ class AuxiliaryJobsTests(unittest.TestCase):
         self.assertIn('RETRIEVAL_EVAL_RESULT', block)
         self.assertIn('"passed": true', block)
 
+    def test_retrieval_eval_job_demands_the_abstention_measurement(self):
+        # C-05 (CA-28): the line read back from the build log must carry the abstention measurement, and no abstention may keep its items.
+        block = self.jobs['retrieval-eval']
+        for text in ('"abstention": {', 'correct_abstention', 'false_abstention', '"abstained_with_items": 0'):
+            self.assertIn(text, block)
+
+    def test_the_retrieval_eval_check_fails_without_the_abstention_measurement_or_with_a_red_gate(self):
+        if BASH is None:
+            self.skipTest('bash not found: the behavioural check of the retrieval-eval step runs in CI')
+        step = re.search(r'(?s)      - name: The gate really ran and passed\n        run: \|\n(.*?)(?=\n\n|\Z)', self.jobs['retrieval-eval'])
+        self.assertIsNotNone(step)
+        script = '\n'.join(line[10:] for line in step.group(1).splitlines())
+        gate = '"gate": {"baseline_compared": true, "failures": [], "passed": %s}'
+        ok_abstention = '"abstention": {"abstained_with_items": 0, "correct_abstention": 0.5, "false_abstention": 0.04, "model": "m"}'
+        cases = (('good', ok_abstention + ', ' + gate % 'true', True),
+                 ('red gate', ok_abstention + ', ' + gate % 'false', False),
+                 ('no abstention measurement', gate % 'true', False),
+                 ('abstention without false rate', '"abstention": {"abstained_with_items": 0, "correct_abstention": 0.5}, ' + gate % 'true', False),
+                 ('an abstention that kept its items', ok_abstention.replace('"abstained_with_items": 0', '"abstained_with_items": 2') + ', ' + gate % 'true', False))
+        for name, body, passes in cases:
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
+                log = Path(tmp) / 'eval.log'
+                log.write_text('noise\nRETRIEVAL_EVAL_RESULT {' + body + '}\n', encoding='utf-8')
+                file = Path(tmp) / 'step.sh'
+                file.write_text('set -euo pipefail\n' + script.replace('/tmp/eval.log', log.as_posix()) + '\n', encoding='utf-8')
+                result = subprocess.run([BASH, '--noprofile', '--norc', file.as_posix()], capture_output=True, text=True)
+                self.assertEqual(result.returncode == 0, passes, result.stdout + result.stderr)
+
     def test_client_job_runs_tests_and_release_check_in_the_package(self):
         self.assertIn('client', self.jobs)
         block = self.jobs['client']

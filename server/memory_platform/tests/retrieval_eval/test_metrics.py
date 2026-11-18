@@ -8,8 +8,9 @@ from pathlib import Path
 from unittest import mock
 
 from memory_platform.tests.retrieval_eval.fake_embeddings import vectorize
-from memory_platform.tests.retrieval_eval.run import (HERE, STRUCTURAL_KEYS, _measure, aggregate, check_dsn, connect_dsn, evaluate_gate, load_dataset,
-                                                      mrr, network_observation, recall_at_k, run)
+from memory_platform.tests.retrieval_eval.run import (HERE, STRUCTURAL_KEYS, _measure, _measure_abstention, abstention_threshold, aggregate, check_dsn, connect_dsn,
+                                                      evaluate_abstention, evaluate_gate, load_dataset, load_negatives, mrr, network_observation,
+                                                      pick_threshold, recall_at_k, run)
 
 
 class MetricTests(unittest.TestCase):
@@ -127,12 +128,142 @@ class MetricTests(unittest.TestCase):
         report.update({'layers': {'fused': {'overall': {'recall@5': 1, 'mrr': 1}, 'subsets': {}}}, 'dataset_sha256': 'x'})
         changed = dict(report, query_backends='different')
         module = 'memory_platform.tests.retrieval_eval.run.'
-        with mock.patch(module + 'build_report', side_effect=[report, changed]), mock.patch(module + 'evaluate_gate', return_value=[]):
+        with mock.patch(module + 'build_report', side_effect=[report, changed]), mock.patch(module + 'evaluate_gate', return_value=[]), mock.patch(module + 'evaluate_abstention', return_value=[]):
             result = run(dataset='unused', dsn='d', test_dsn='d')
         self.assertFalse(result['deterministic'])
         self.assertEqual([f['check'] for f in result['gate']['failures']], ['determinism'])
-        with mock.patch(module + 'build_report', side_effect=[report, dict(report)]), mock.patch(module + 'evaluate_gate', return_value=[]):
+        with mock.patch(module + 'build_report', side_effect=[report, dict(report)]), mock.patch(module + 'evaluate_gate', return_value=[]), mock.patch(module + 'evaluate_abstention', return_value=[]):
             self.assertTrue(run(dataset='unused', dsn='d', test_dsn='d')['deterministic'])
+
+    # --- Abstention (C-05, CA-27, CA-28) ---------------------------------------------------------------------------------------------------------------
+    GOALS = {'abstention': {'min_correct_rate': 0.70, 'max_false_rate': 0.05, 'simulated': {'threshold': 0.20, 'min_correct_rate': 0.50, 'max_false_rate': 0.05}}}
+
+    @staticmethod
+    def abstention_report(correct=0.75, false=0.0, threshold=0.3, negatives=24, with_items=0):
+        return {'abstention': {'model': 'm', 'threshold': threshold, 'correct_abstention': correct, 'false_abstention': false, 'abstained_with_items': with_items,
+                               'negatives': {'n': negatives}, 'positives': {'n': 72}}}
+
+    def test_abstention_goals_pass_exactly_at_the_limits(self):
+        self.assertEqual(evaluate_abstention(self.abstention_report(correct=0.70, false=0.05), self.GOALS), [])
+        self.assertEqual([f['check'] for f in evaluate_abstention(self.abstention_report(correct=0.6999), self.GOALS)], ['abstention_correct'])
+        self.assertEqual([f['check'] for f in evaluate_abstention(self.abstention_report(false=0.0501), self.GOALS)], ['abstention_false'])
+
+    def test_the_offline_provider_is_judged_by_its_own_goals_and_a_real_model_by_the_top_ones(self):
+        simulated = self.abstention_report(correct=0.5, false=0.05)
+        simulated['abstention']['simulated'] = True
+        self.assertEqual(evaluate_abstention(simulated, self.GOALS), [])
+        simulated['abstention']['simulated'] = False
+        self.assertEqual([f['check'] for f in evaluate_abstention(simulated, self.GOALS)], ['abstention_correct'])
+        simulated['abstention'].update(simulated=True, correct=0.49, correct_abstention=0.49)
+        self.assertEqual([f['check'] for f in evaluate_abstention(simulated, self.GOALS)], ['abstention_correct'])
+        without = {'abstention': {'min_correct_rate': 0.7, 'max_false_rate': 0.05}}
+        self.assertEqual([f['check'] for f in evaluate_abstention(simulated, without)],
+                         ['threshold_missing:abstention.min_correct_rate', 'threshold_missing:abstention.max_false_rate'])
+
+    def test_an_absurd_threshold_leaves_the_gate_red(self):
+        # 0.99 abstains on almost every question: correct abstention is perfect and the false abstention on questions WITH an answer breaks its cap (CA-28)
+        failed = evaluate_abstention(self.abstention_report(correct=1.0, false=0.9, threshold=0.99), self.GOALS)
+        self.assertEqual([f['check'] for f in failed], ['abstention_false'])
+        # 0.0 never abstains: nothing is a correct abstention
+        failed = evaluate_abstention(self.abstention_report(correct=0.0, false=0.0, threshold=0.0), self.GOALS)
+        self.assertEqual([f['check'] for f in failed], ['abstention_correct'])
+
+    def test_a_missing_goal_threshold_or_measurement_fails_instead_of_passing(self):
+        self.assertEqual([f['check'] for f in evaluate_abstention({}, self.GOALS)], ['abstention_missing'])
+        self.assertEqual([f['check'] for f in evaluate_abstention(self.abstention_report(), {})],
+                         ['threshold_missing:abstention.min_correct_rate', 'threshold_missing:abstention.max_false_rate'])
+        for key in ('min_correct_rate', 'max_false_rate'):
+            goals = {'abstention': {k: v for k, v in self.GOALS['abstention'].items() if k != key}}
+            self.assertEqual([f['check'] for f in evaluate_abstention(self.abstention_report(), goals)], ['threshold_missing:abstention.' + key])
+        self.assertEqual([f['check'] for f in evaluate_abstention(self.abstention_report(threshold=None), self.GOALS)], ['threshold_missing:abstention.threshold'])
+        self.assertEqual([f['check'] for f in evaluate_abstention(self.abstention_report(negatives=19), self.GOALS)], ['abstention_negatives_too_few'])
+        self.assertEqual([f['check'] for f in evaluate_abstention(self.abstention_report(with_items=1), self.GOALS)], ['abstention_items'])
+
+    def test_the_committed_thresholds_carry_the_agreed_abstention_goals_and_keep_the_existing_gates(self):
+        thresholds = json.loads((HERE / 'thresholds.json').read_text(encoding='utf-8'))
+        self.assertEqual((thresholds['abstention']['min_correct_rate'], thresholds['abstention']['max_false_rate']), (0.70, 0.05))
+        simulated = thresholds['abstention']['simulated']  # R-07: with the offline provider 70 % correct needs 6.9 % false (measured), so it has goals of its own
+        self.assertIsInstance(simulated['threshold'], float)
+        self.assertLessEqual(simulated['max_false_rate'], 0.05)
+        self.assertEqual((thresholds['fused_recall_at_5'], thresholds['fused_mrr'], thresholds['max_subset_regression_points']), (0.80, 0.60, 2))
+
+    def test_run_adds_the_abstention_failures_to_the_gate(self):
+        report = {key: key for key in STRUCTURAL_KEYS}
+        report.update({'layers': {'fused': {'overall': {'recall@5': 1, 'mrr': 1}, 'subsets': {}}}, 'dataset_sha256': 'x'})
+        module = 'memory_platform.tests.retrieval_eval.run.'
+        with mock.patch(module + 'build_report', side_effect=[report, dict(report)]), mock.patch(module + 'evaluate_gate', return_value=[]):
+            result = run(dataset='unused', dsn='d', test_dsn='d')
+        self.assertFalse(result['gate']['passed'])
+        self.assertEqual([f['check'] for f in result['gate']['failures']], ['abstention_missing'])
+
+    def test_the_threshold_under_test_comes_from_the_simulated_entry_or_the_model_entry(self):
+        config = {'abstention': {'simulated': {'threshold': 0.3}, 'models': {'nomic-embed-text': 0.55}}}
+        self.assertEqual(abstention_threshold(config, 'nomic-embed-text', True), 0.3)
+        self.assertEqual(abstention_threshold(config, 'nomic-embed-text:latest', False), 0.55)
+        self.assertIsNone(abstention_threshold(config, 'other-model', False))
+        self.assertIsNone(abstention_threshold({}, 'nomic-embed-text', True))
+        self.assertIsNone(abstention_threshold({'abstention': {'simulated': {'threshold': 0.3}}}, 'nomic-embed-text', False))
+
+    def test_pick_threshold_takes_the_middle_of_the_widest_interval_that_meets_both_goals(self):
+        def row(negative, best, protected=False):
+            return {'negative': negative, 'best': best, 'protected': protected}
+        # negatives at .10 .15 .20 .25 and one protected at .05; positives at .40 .50 .60 .70 and a low one (.18) protected by a lexical hit
+        rows = [row(True, b) for b in (0.10, 0.15, 0.20, 0.25)] + [row(True, 0.05, True)] + [row(False, b) for b in (0.40, 0.50, 0.60, 0.70)] + [row(False, 0.18, True), row(False, 0.30, True)]
+        picked = pick_threshold(rows, 0.70, 0.05)
+        self.assertEqual((picked['low'], picked['high']), (0.275, 0.35))
+        self.assertEqual(picked['threshold'], 0.3125)
+        self.assertEqual((picked['correct_abstention'], picked['false_abstention']), (0.8, 0.0))
+        # nothing reaches the goals when a positive without lexical protection sits below every negative
+        self.assertIsNone(pick_threshold(rows + [row(False, 0.02)], 0.70, 0.05))
+        self.assertIsNone(pick_threshold([row(True, 0.1)], 0.70, 0.05))
+        # a question with no cosine at all is protected: it can never abstain
+        self.assertIsNone(pick_threshold([row(True, None)] * 3 + [row(False, 0.9)], 0.70, 0.05))
+
+    def test_measure_abstention_counts_correct_and_false_abstentions_from_the_search_answers(self):
+        class Search:
+            def __init__(self, threshold):
+                self.threshold = threshold
+
+            async def search(self, actor, request):
+                assert request['abstain'] is True
+                best = {'n1': 0.1, 'n2': 0.2, 'p1': 0.9, 'p2': 0.25}[request['q']]
+                gone = best < self.threshold and request['q'] != 'p2'  # p2 is protected by a lexical hit
+                return {'items': [] if gone else [{'item_id': 'x'}], 'abstained': gone}
+
+        class Store:
+            def search_vectors(self, actor, projects, vector, model, limit):
+                return [{'score': vector[0]}, {'score': vector[0] / 2}]
+
+        class Provider:
+            async def embed(self, text, query=False):
+                return {'embedding': [{'n1': 0.1, 'n2': 0.2, 'p1': 0.9, 'p2': 0.25}[text]], 'model': 'm'}
+        negatives = [{'id': 'n-1', 'q': 'n1', 'near': False}, {'id': 'n-2', 'q': 'n2', 'near': True}]
+        positives = [{'id': 'p-1', 'q': 'p1'}, {'id': 'p-2', 'q': 'p2'}]
+        settings = type('S', (), {'embedding_model': 'm'})()
+        result = asyncio.run(_measure_abstention(Store(), {}, 'proj', positives, negatives, Provider(), settings, 0.15, retrieval=Search(0.15), probe=Search(1.0)))
+        self.assertEqual((result['correct_abstention'], result['false_abstention'], result['abstained_with_items']), (0.5, 0.0, 0))
+        self.assertEqual(result['negatives'], {'n': 2, 'abstained': 1, 'near_n': 1, 'near_abstained': 0})
+        self.assertEqual({r['id']: (r['best'], r['protected'], r['abstained']) for r in result['scores']},
+                         {'n-1': (0.1, False, True), 'n-2': (0.2, False, False), 'p-1': (0.9, False, False), 'p-2': (0.25, True, False)})
+        # an abstention that still carries items is reported, never counted as a correct one
+        class Leaky(Search):
+            async def search(self, actor, request):
+                return {'items': [{'item_id': 'x'}], 'abstained': True}
+        leaked = asyncio.run(_measure_abstention(Store(), {}, 'proj', positives, negatives, Provider(), settings, 0.15, retrieval=Leaky(0), probe=Search(1.0)))
+        self.assertEqual((leaked['correct_abstention'], leaked['abstained_with_items']), (0.0, 4))
+        # the calibration of this file picks a threshold that its own scores reproduce
+        self.assertEqual(pick_threshold(result['scores'], 0.5, 0.0)['false_abstention'], 0.0)
+
+    def test_negatives_are_loaded_and_validated_against_the_corpus(self):
+        corpus, _ = load_dataset(HERE / 'dataset-v1.jsonl')
+        records, digest = load_negatives(HERE / 'dataset-v1-negatives.jsonl', corpus)
+        self.assertEqual((len(records), len(digest)), (24, 64))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'few.jsonl'
+            path.write_text(json.dumps(records[0]) + chr(10), encoding='utf-8')
+            with self.assertRaises(SystemExit) as raised:
+                load_negatives(path, corpus)
+        self.assertIn('without an answer', str(raised.exception))
 
     def test_fake_embeddings_are_deterministic_and_sized(self):
         self.assertEqual(vectorize('worker lease'), vectorize('worker lease'))

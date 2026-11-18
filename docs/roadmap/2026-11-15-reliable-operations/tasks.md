@@ -53,10 +53,10 @@ test-plan: n/a (sin UI)
 | Fase 11 — Sonda de ida y vuelta (C-06) | 6 | 6 | 100.0% | 0 / 23.4h | 4.95 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 7 | 7 | 100.0% | 0 / 23.4h | 2.62 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 6 | 6 | 100.0% | 0 / 33.6h | 2.36 / 4.5h | 0 / 1.1h | 0 / 1120 k |
-| Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 1 | 7 | 14.3% | 0 / 33.6h | 0.31 / 4.5h | 0 / 1.1h | 0 / 1120 k |
+| Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 2 | 7 | 28.6% | 0 / 33.6h | 0.70 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **86** | **98** | **87.8%** | **0 / 412.8h** | **20.66 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **87** | **98** | **88.8%** | **0 / 412.8h** | **21.05 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -94,7 +94,7 @@ test-plan: n/a (sin UI)
 - [x] Probar corte, restauración, modo mudo y cierre
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `tests/run_postgres.py:30-31` (PostgreSQL efímero en `127.0.0.1:55432`, `MEMORY_TEST_DSN`) y `tests/llm_spy.py` / `tests/chain_services.py` (servidores en proceso con `.start()`/`.stop()`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `b58b78130691`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-01).
 
 ### T-02 — Tests de `body_too_large`, `/v1/users`, `/health/ready` y `work_budget_exceeded`
 
@@ -123,7 +123,7 @@ test-plan: n/a (sin UI)
 - [x] Dejar el código de producción intacto
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `app.py:36` (`body_too_large`), `agent_store.py:186` (`work_budget_exceeded`), `tests/test_observability.py:216` (caso 503 de `/health/ready` ya existente: se reutiliza el estilo, no se duplica). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `2fefc0633626`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-02).
 
 ### T-03 — Tests de esquema por catálogo y comportamiento, no por texto SQL
 
@@ -153,7 +153,7 @@ test-plan: n/a (sin UI)
 - [x] Comprobar el recuento antes y después
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `tests/test_chunk_schema.py:13-21` (`SCHEMA`, «schema.sql exactly as the previous release left the database»), `tests/test_fts_migration.py:11`, `tests/test_pgvector_migration.py:12`, `tests/test_migrations_additive.py:12-19` (`MIGRATION_SOURCES`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `cba1f3f0139e`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-03).
 
 ### T-04 — Pruebas de concesión expirada y ayudante para caducarla
 
@@ -243,7 +243,7 @@ test-plan: n/a (sin UI)
 - [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
 - [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas**: Cerrada en el intento 2 de 3 (secciones «Revisión de dos lentes — intento 1/2» al final del ledger y `review.md`). Lentes: intento 1, A+B+C+D; intento 2, A+B. `scope-check.py --base be001a4` exit 0; suite 806 en verde (Notas de T-05). Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-06).
 
 ---
 
@@ -338,7 +338,7 @@ test-plan: n/a (sin UI)
 - [x] Verificar con la base cortada en `complete_job` y en `fail_job`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `worker.py:145` (`complete_job`), `:148-160` (política de reintento del proveedor), `:165-168` (`except Exception` → `fail_job(..., 'provider_error')`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `59449263d58d`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-09).
 
 ### T-10 — Tope al reclamar: `attempts_exhausted` en el trabajo venenoso
 
@@ -368,7 +368,7 @@ test-plan: n/a (sin UI)
 - [x] Comprobar `retry_job` y la métrica
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `store_jobs.py:89-192` (`claim_job`, `renew_lease`, `_current_job`, `complete_job`, `fail_job`); `observability.py:205-208` (`kairos_jobs_failed`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `92342b06d044`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-10).
 
 ### T-11 — Documentar el comportamiento del worker sin base
 
@@ -489,7 +489,7 @@ test-plan: n/a (sin UI)
 - [x] Comprobar migración desde la 11
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Deuda Minor heredada de la revisión de la Fase 1 (intento 2, n.º 3 y 4): cubrir la guarda en Python de los índices HNSW (`store_vectors.py:23-24`) frente a un `migrate()` repetido, y que las etiquetas de sección de la prueba genérica salgan de `schema.sql` en vez de ir a mano. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `75d9cf808631`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-14).
 
 ### T-15 — `EXPLAIN` de `claim_job` sobre 10.000 trabajos y, si hace falta, dos sondeos
 
@@ -669,7 +669,7 @@ test-plan: n/a (sin UI)
 - [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
 - [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas**: Cerrada en el intento 2 de 3 (intento 1: A+B+C+D; intento 2: A+B; resumen en `review.md`). `scope-check.py --base d23f4a7` exit 0; suite 925 en verde. Los revisores no tienen medición propia. Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-20).
 
 ---
 
@@ -702,7 +702,7 @@ test-plan: n/a (sin UI)
 - [x] Anotar la cifra «antes» en `Notas`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `store.py:24-30` (una conexión nueva por `transaction()`), `retrieval.py:87-148` (una transacción por capa) y `tests/measure_vector_candidates.py` (medidor existente fuera de la suite). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `5b68a093ed16`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-21).
 
 ### T-22 — `psycopg_pool` en `Store.transaction()` con `MEMORY_POOL_*`
 
@@ -936,7 +936,7 @@ test-plan: n/a (sin UI)
 - [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
 - [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas**: Cerrada en el intento 2 de 3 (intento 1: A+B+C+D; intento 2: A+B; resumen en `review.md`). `scope-check.py --base 9416128` exit 0; suite 1006 en verde. Los revisores no tienen medición propia. Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-29).
 
 ---
 
@@ -1089,7 +1089,7 @@ test-plan: n/a (sin UI)
 - [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
 - [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas**: Cerrada en el intento 2 de 3 (intento 1: A+B+C+D; intento 2: A+B+C; Minor del intento 2 corregidos en el cierre, commit 886388a; resumen en `review.md`). `scope-check.py --base 04822a0` exit 0; suite 1054 en verde. Los revisores no tienen medición propia. Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-34).
 
 ---
 
@@ -1211,7 +1211,7 @@ test-plan: n/a (sin UI)
 - [x] Añadir `--backup-timeout` y pasarlo a las tres llamadas
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `deploy-memory.py:27` (`MIGRATE_TIMEOUT_SECONDS`), `:257-258` (`operator()` con `timeout=120`), `:376` y `:380` (llamadas), `tests/test_deploy.py` (dobles de `subprocess`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `9c7c6ae7de06`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-38).
 
 ### T-39 — `--verify-backup`: restauración en PostgreSQL efímero antes de `migrate`
 
@@ -1674,7 +1674,7 @@ test-plan: n/a (sin UI)
 - [x] Anotar el número en `Notas`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: OK expreso del usuario: «Fusiónalo cuando esté en verde» (abrir el PR de cada hito y fusionarlo con la CI en verde, merge commit, conservando la rama); esto sustituye al «No se hace merge» original. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `859ff3e36dd6`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-53).
 
 ---
 
@@ -2505,7 +2505,7 @@ test-plan: n/a (sin UI)
 - [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
 - [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas** (2026-11-18): Cerrada en el intento 1 (0 Critical, 0 Important y 7 Minor, corregidos en fix1 `9e64986`..`01a8773`); suite 1494 en verde, `scope-check.py --base main` exit 0. Detalle en `execution-history.md` (compactación 21, con SHA-256) y `review.md`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-80).
 
 ---
 
@@ -2749,10 +2749,11 @@ test-plan: n/a (sin UI)
 ### T-88 — Métricas de abstención, `thresholds.json` y prueba de rojo en la CI
 
 - **Descripción**: Ampliar `retrieval-eval` con abstención correcta en negativas y abstención falsa en positivas, con umbrales en `thresholds.json` (metas: ≥ 70 % y ≤ 5 %), mientras recall@5 ≥ 0,80 y MRR ≥ 0,60 siguen cumpliéndose; el trabajo de CI las exige y un umbral absurdo lo deja en rojo. Fuente: CA-27, CA-28; M-01; P-05.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: la puerta de calidad de búsqueda mide también la abstención (acierta al no responder y no abstiene de más) y la CI falla si no cumple sus metas.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 4h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.53h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.53h (estimado) · real 0.39h (medido)
 - **Supervisión**: est. 0.13h (≈25 % IA) · real —
 - **Previsión IA**: 147 k in / 13 k out tok · ⚠️ verificar €
 - **Dependencias**: T-87, T-82
@@ -2765,17 +2766,18 @@ test-plan: n/a (sin UI)
   - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
 
 **Criterios de aceptación**
-- [ ] Con el umbral del proveedor simulado, la puerta responde `items: []` y `abstained: true` en al menos el porcentaje acordado de las negativas y la abstención falsa en positivas no supera el tope, con recall@5 ≥ 0,80 y MRR ≥ 0,60
-- [ ] El trabajo `retrieval-eval` de la CI exige las métricas de abstención; un umbral absurdo lo deja en rojo en una ejecución de prueba, anotada en `Notas`
-- [ ] Un umbral o subconjunto ausente falla la puerta (`threshold_missing`/`subset_missing`, patrón existente)
+- [x] Con el umbral del proveedor simulado, la puerta responde `items: []` y `abstained: true` en al menos el porcentaje acordado de las negativas y la abstención falsa en positivas no supera el tope, con recall@5 ≥ 0,80 y MRR ≥ 0,60
+- [x] El trabajo `retrieval-eval` de la CI exige las métricas de abstención; un umbral absurdo lo deja en rojo en una ejecución de prueba, anotada en `Notas`
+- [x] Un umbral o subconjunto ausente falla la puerta (`threshold_missing`/`subset_missing`, patrón existente)
 
 **Subtareas**
-- [ ] Escribir primero las pruebas de métricas en `test_metrics.py` (rojo)
-- [ ] Añadir las métricas a `run.py` y los umbrales
-- [ ] Ejecutar la puerta en verde y con 0,99 en rojo
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero las pruebas de métricas en `test_metrics.py` (rojo)
+- [x] Añadir las métricas a `run.py` y los umbrales
+- [x] Ejecutar la puerta en verde y con 0,99 en rojo
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 0.39h (medido).
 
-**Notas**: Patrón: `tests/retrieval_eval/run.py:109-120` (`threshold_missing`/`subset_missing`), `thresholds.json`, `fake_embeddings.py:1-8` (embeddings simulados) y `ci.yml` (trabajo `retrieval-eval`).
+**Notas**: RED: `ImportError` de `_measure_abstention` y 4 casos de `test_ci_workflow`. Medida con el simulado y umbral 0.2022: correcta 0.50 (12/24), falsa 0.0417 (3/72), recall@5 1.0, MRR 0.9715, `passed: true`; con 0.99: correcta 0.9583, falsa 0.3194, `passed: false` (`abstention_false`), exit 1. DECISIÓN ABIERTA (R-07): con el simulado no existe umbral con ≥ 70 % y ≤ 5 % a la vez, así que `thresholds.json` lleva metas propias del simulado (`abstention.simulated`: ≥ 0.50 y ≤ 0.05) y deja 0.70/0.05 para un modelo real (`abstention.models.<modelo>`). Notas completas, JSON de usage-meter y detalle en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-88; «Mediciones de la fase 14»).
 
 ### T-89 — Medición del umbral de `nomic-embed-text` con un Ollama efímero y aislado (P-05)
 
