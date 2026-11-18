@@ -53,10 +53,10 @@ test-plan: n/a (sin UI)
 | Fase 11 — Sonda de ida y vuelta (C-06) | 6 | 6 | 100.0% | 0 / 23.4h | 4.95 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 7 | 7 | 100.0% | 0 / 23.4h | 2.62 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 6 | 6 | 100.0% | 0 / 33.6h | 2.36 / 4.5h | 0 / 1.1h | 0 / 1120 k |
-| Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 5 | 7 | 71.4% | 0 / 33.6h | 5.37 / 4.5h | 0 / 1.1h | 0 / 1120 k |
+| Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 6 | 7 | 85.7% | 0 / 33.6h | 9.12 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **90** | **98** | **91.8%** | **0 / 412.8h** | **25.72 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **91** | **98** | **92.9%** | **0 / 412.8h** | **29.47 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -181,7 +181,7 @@ test-plan: n/a (sin UI)
 - [x] Añadir `expire_lease` al arnés
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `tests/test_jobs.py` (reclamo y reintento) y `store_jobs.py:89-192`. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `4487d9fca4a6`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-04).
 
 ### T-05 — Cierre de fase: suite completa y subida del mínimo
 
@@ -211,7 +211,7 @@ test-plan: n/a (sin UI)
 - [x] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `085447c72270`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-05).
 
 ### T-06 — Revisión adversarial de la fase (dos lentes)
 
@@ -278,7 +278,7 @@ test-plan: n/a (sin UI)
 - [x] Probar la redacción del DSN
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `errors.py` (jerarquía de errores del servidor) y `store.py:24-30` (único punto de `psycopg.connect`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `5d4f52fd580e`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-07).
 
 ### T-08 — Reclamo resiliente: espera exponencial con jitter y `MEMORY_WORKER_DB_BACKOFF_MAX`
 
@@ -309,7 +309,7 @@ test-plan: n/a (sin UI)
 - [x] Añadir `MEMORY_WORKER_DB_BACKOFF_MAX` a `config.py`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `worker.py:78-184` (`run_once`, `run`; `claim_job` fuera del `try` en `:91`, `run()` en `:178-184`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `5375106d7d1f`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-08).
 
 ### T-09 — Un fallo de base al completar o fallar un trabajo no cambia su estado
 
@@ -394,7 +394,7 @@ test-plan: n/a (sin UI)
 - [x] Actualizar `docs/operations.md`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Estilo: `docs/operations.md` ya tiene una sección de cola y trabajos (`kairos_jobs_failed`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `6b5c28734894`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-11).
 
 ### T-12 — Cierre de fase: suite completa y subida del mínimo
 
@@ -424,7 +424,7 @@ test-plan: n/a (sin UI)
 - [x] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `f1e02ee9477b`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-12).
 
 ### T-13 — Revisión adversarial de la fase (dos lentes)
 
@@ -518,7 +518,7 @@ test-plan: n/a (sin UI)
 - [x] Probar equivalencia de semántica
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `store_jobs.py:92` (`ORDER BY priority, available_at, created_at, id` con `OR` sobre `running` caducado) y `:104` (reconciliación). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `d864b63387e1`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-15).
 
 ### T-16 — `admin prune-tables` por lotes con `--dry-run` y ventanas por tabla
 
@@ -550,7 +550,7 @@ test-plan: n/a (sin UI)
 - [x] Añadir las claves a `config.py`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `admin.py:240-321` (registro de subcomandos, `backup`, `restore-check`) y `schema.sql:7-19` (tablas). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `b7b669cad3b4`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-16).
 
 ### T-17 — Invariantes de la retención: manifiesto, recibos y migraciones sin `DELETE`
 
@@ -580,7 +580,7 @@ test-plan: n/a (sin UI)
 - [x] Añadir el mutante `DELETE` a `test_migrations_additive.py`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `schema.sql:20` (`projection_receipts.job_id` referencia `jobs(id)`) y `scripts/deploy-memory.py:376` (uso de `content-manifest`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `35f5dbac93d8`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-17).
 
 ### T-18 — Documentar índices, retención y ventanas
 
@@ -607,7 +607,7 @@ test-plan: n/a (sin UI)
 - [x] Actualizar `docs/operations.md`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Estilo: secciones existentes de `docs/operations.md`. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `d12daa1a338b`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-18).
 
 ### T-19 — Cierre de fase: suite completa y subida del mínimo
 
@@ -637,7 +637,7 @@ test-plan: n/a (sin UI)
 - [x] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `0060032d7a78`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-19).
 
 ### T-20 — Revisión adversarial de la fase (dos lentes)
 
@@ -848,7 +848,7 @@ test-plan: n/a (sin UI)
 - [x] Ajustar los defaults de `config.py` si la medición lo pide
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Comparar con la línea base de la tarea de medición previa. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `f84e802454e3`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-26).
 
 ### T-27 — Documentar pool, plazos y errores 503
 
@@ -874,7 +874,7 @@ test-plan: n/a (sin UI)
 - [x] Actualizar los tres manuales
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Estilo: `docs/configuration.md` (tabla de variables). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `f6ef40a83a74`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-27).
 
 ### T-28 — Cierre de fase: suite completa y subida del mínimo
 
@@ -904,7 +904,7 @@ test-plan: n/a (sin UI)
 - [x] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `62eb579e5974`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-28).
 
 ### T-29 — Revisión adversarial de la fase (dos lentes)
 
@@ -2706,7 +2706,7 @@ test-plan: n/a (sin UI)
 - [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
 - [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas** (2026-11-18): Cerrada en el intento 2 (intento 1: A, B y C+D, 1 Important y 6 Minor, corregidos en fix1 `52d5563`..`bfd24be`; intento 2: A, B y C, 0 Critical, 0 Important y 1 Minor de documentación, corregido por el orquestador). Tablas en `execution-history.md` (compactaciones 22 y 24, con SHA-256); resumen en `review.md`. Suite 1519 en verde tras fix1 (`kairos-test:i3p13f`, 0 fallos, errores y omitidos); `scope-check.py --base main` exit 0. Mutantes: la Lente A mató 3 propios en el intento 1 y 7 en el intento 2; cada corrección de fix1 con RED de comportamiento. Respuesta sin `abstain` idéntica byte a byte a la de `2d3e57d` en 192 escenarios en los dos intentos. usage-meter no medido para la revisión (horas estimadas); los JSON de fix1 están en `execution-history.md`. Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-86).
 
 ---
 
@@ -2744,7 +2744,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.31h (medido).
 
-**Notas**: RED 2026-11-18: 3 pruebas nuevas de `NegativeDatasetTests` (`test_metrics`) fallaron con `ImportError: cannot import name validate_negatives`; verde tras `validate_negatives` en `check_dataset.py` (2 errores y 1 prueba de congelación ya en verde). Conjunto: 24 preguntas (12 ES, 12 EN, 12 cercanas; sha256 `6f8a0e92…`), `check_dataset` valida los dos ficheros (`OK es=24 en=24 typo_id=12 long=12 total=72` y `OK negatives es=12 en=12 near=12 total=24`) y `git diff --stat -- dataset-v1.jsonl` vacío. Verificado con `docker run` sobre `kairos-test:i3p13f` con `server/` montado (la suite completa, con su `MEMORY_TEST_RESULT`, es T-92). JSON de usage-meter en `execution-history.md` («Mediciones de la fase 14», T-87).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-87).
 
 ### T-88 — Métricas de abstención, `thresholds.json` y prueba de rojo en la CI
 
@@ -2871,31 +2871,33 @@ test-plan: n/a (sin UI)
 ### T-92 — Cierre de fase: suite completa y subida del mínimo
 
 - **Descripción**: Ejecuta la suite completa del servidor, anota el recuento `MEMORY_TEST_RESULT` y sube `KAIROS_MIN_TESTS` y `MIN_FLOOR` al número observado (la suite solo crece).  Fuente: Puerta de fase; CA-38 (suite con 0 fallos y 0 omitidos).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: la suite del servidor pasa de 1519 a 1547 pruebas, todas en verde y sin omitidas, y la CI exige ese mínimo.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 1h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real 3.75h (medido)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 37 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: T-91
 - **Tipo**: test
-- **Archivos**: `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `docs/operations.md`, `docs/contracts/kairos-mcp.json`
+- **Archivos**: `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `docs/operations.md`, `docs/contracts/kairos-mcp.json`, `README.md`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
   - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
 
 **Criterios de aceptación**
-- [ ] `MEMORY_TEST_RESULT` con 0 fallos, 0 errores, 0 omitidos y `tests` ≥ 764 (≥ el recuento del cierre anterior)
-- [ ] `KAIROS_MIN_TESTS` en `.github/workflows/ci.yml` y `MIN_FLOOR` en `scripts/tests/test_ci_workflow.py` igualan el recuento observado, y la tabla de `docs/operations.md` lo repite
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas`
+- [x] `MEMORY_TEST_RESULT` con 0 fallos, 0 errores, 0 omitidos y `tests` ≥ 764 (≥ el recuento del cierre anterior)
+- [x] `KAIROS_MIN_TESTS` en `.github/workflows/ci.yml` y `MIN_FLOOR` en `scripts/tests/test_ci_workflow.py` igualan el recuento observado, y la tabla de `docs/operations.md` lo repite
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas`
 
 **Subtareas**
-- [ ] Ejecutar la suite completa (primer plano, un solo Docker a la vez) y anotar el recuento
-- [ ] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Ejecutar la suite completa (primer plano, un solo Docker a la vez) y anotar el recuento
+- [x] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 3.75h (medido).
 
-**Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Cierra la fase: no se abre la revisión adversarial con la suite en rojo.
+**Notas**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain -t kairos-test:i3p14 .` (2377 s): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1547}`. Mínimo 1519 -> 1547 en `KAIROS_MIN_TESTS` (con su comentario de historia), `MIN_FLOOR`, `docs/operations.md` y `README.md:252` (declarado en Archivos); `python -m unittest scripts.tests.test_ci_workflow` -> `OK`. El trabajo `retrieval-eval` de la CI ya exige las metas de abstención (T-88: paso con 5 informes sintéticos y 7 mutantes; umbral 0.99 -> `passed: false`). Puerta con el simulado (docker run con `server/` montado): `passed: true`, correcta 0.50, falsa 0.0417, recall@5 1.0, MRR 0.9715. JSON de usage-meter (3.75h medido, reloj 44 min) en `execution-history.md`.
 
 ### T-93 — Revisión adversarial de la fase (dos lentes)
 

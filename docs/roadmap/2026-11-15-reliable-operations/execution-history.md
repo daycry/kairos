@@ -1693,6 +1693,102 @@ SHA-256: `791539ce3b4b709a81f9790506e16ad3515ab6ab54854563481b1c5dcadd8e0e`.
 
 **Notas**: RED: `test_abstention_docs` (nuevo, 4 pruebas, corre en el host) no se cumple sobre el HEAD anterior (0 apariciones de `measure_abstention` en `operations.md` ni de la frase de `custom-agents` en los CHANGELOG); verde con los textos nuevos. `docs/configuration.md` (tabla de variables con `off` y vacío, igual que `config.py`, y la calibración medida con R-07), `docs/operations.md` (métricas de la puerta, metas y cómo calibrar un modelo real) y ambos CHANGELOG (abstención apagada por defecto, `nomic-embed-text` `uncalibrated`, activarla cambia lo que ve `custom-agents`). `docs/manual.md` no cambia: es el manual del portal y el portal no expone `abstain`. Cambio visible (23) añadido a la frase Coordinación de `improvement-plan.md` (sin cambio de contrato ni de comportamiento por defecto). Ficheros fuera del Archivos original, declarados: `test_abstention_docs.py` e `improvement-plan.md`. JSON de usage-meter en `execution-history.md`.
 
+### T-04
+
+SHA-256: `a4cfab9302f8962e827cf80794d9db93c46db93d8a1a4d4ab25d4f8dadd65d27`.
+
+**Notas**: Patrón: `tests/test_jobs.py` (reclamo y reintento) y `store_jobs.py:89-192`. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `4487d9fca4a6`.
+
+### T-05
+
+SHA-256: `cdf86daf552d7877f3efbfb0f5b0cf86091ef1e1ab67be50b0492776a250728f`.
+
+**Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `085447c72270`.
+
+### T-07
+
+SHA-256: `250d325768a948d94914b529999ea11861b4007539f0e5b2a643325895e857dd`.
+
+**Notas**: Patrón: `errors.py` (jerarquía de errores del servidor) y `store.py:24-30` (único punto de `psycopg.connect`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `5d4f52fd580e`.
+
+### T-08
+
+SHA-256: `7c49d976d42ed6925bcc1c3c7b6b97f89d42c1bacb3f5858c1f219376ae94c50`.
+
+**Notas**: Patrón: `worker.py:78-184` (`run_once`, `run`; `claim_job` fuera del `try` en `:91`, `run()` en `:178-184`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `5375106d7d1f`.
+
+### T-11
+
+SHA-256: `ec44e2387770c03f8eef79348b62796bde2f63e937d769503afe0b3a87e60c9f`.
+
+**Notas**: Estilo: `docs/operations.md` ya tiene una sección de cola y trabajos (`kairos_jobs_failed`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `6b5c28734894`.
+
+### T-12
+
+SHA-256: `dd40c0473ad7f887ccc2adb6971156b5d89f459f0da61da1645fd81ce1bed587`.
+
+**Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `f1e02ee9477b`.
+
+### T-15
+
+SHA-256: `43d2077a69b1008d593280a811d0373d0272368efffb361aaa1d147fca3a692e`.
+
+**Notas**: Patrón: `store_jobs.py:92` (`ORDER BY priority, available_at, created_at, id` con `OR` sobre `running` caducado) y `:104` (reconciliación). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `d864b63387e1`.
+
+### T-16
+
+SHA-256: `98ef42810d81125b986a11915cf56898ffb548ae501c75bc633261d23c6ac771`.
+
+**Notas**: Patrón: `admin.py:240-321` (registro de subcomandos, `backup`, `restore-check`) y `schema.sql:7-19` (tablas). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `b7b669cad3b4`.
+
+### T-17
+
+SHA-256: `005943479378838c4db8ecb7d7877338cfb6916f40ef1a21760e1929b2e36d62`.
+
+**Notas**: Patrón: `schema.sql:20` (`projection_receipts.job_id` referencia `jobs(id)`) y `scripts/deploy-memory.py:376` (uso de `content-manifest`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `35f5dbac93d8`.
+
+### T-18
+
+SHA-256: `2f9e2845b02310347f4b9e217318c7f45ae2ede617aaf9566503b9416c88242f`.
+
+**Notas**: Estilo: secciones existentes de `docs/operations.md`. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `d12daa1a338b`.
+
+### T-19
+
+SHA-256: `22924c973e05a44e34fe092e433ab49a88d09c99267ba8d74dbb87ee7b92b1b7`.
+
+**Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `0060032d7a78`.
+
+### T-26
+
+SHA-256: `ff29f5166ea22fb31ffce8cbf6cb17ff5cf0a7edf5f258e65b2c7b8a91a7d64f`.
+
+**Notas**: Comparar con la línea base de la tarea de medición previa. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `f84e802454e3`.
+
+### T-27
+
+SHA-256: `4cf1753e2b1580b5a604d31459d40aaf40a458634fdf57e41a52aca78581b547`.
+
+**Notas**: Estilo: `docs/configuration.md` (tabla de variables). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `f6ef40a83a74`.
+
+### T-28
+
+SHA-256: `a3c9ed676b6e7eb5abe20671540d767eb66188f0decf53a8c48c2342bfca8895`.
+
+**Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `62eb579e5974`.
+
+### T-86
+
+SHA-256: `477bc4053ad42e7d1675dc5c71729232c14cfaafdd1b575376654a7d4a678602`.
+
+**Notas** (2026-11-18): Cerrada en el intento 2 (intento 1: A, B y C+D, 1 Important y 6 Minor, corregidos en fix1 `52d5563`..`bfd24be`; intento 2: A, B y C, 0 Critical, 0 Important y 1 Minor de documentación, corregido por el orquestador). Tablas en `execution-history.md` (compactaciones 22 y 24, con SHA-256); resumen en `review.md`. Suite 1519 en verde tras fix1 (`kairos-test:i3p13f`, 0 fallos, errores y omitidos); `scope-check.py --base main` exit 0. Mutantes: la Lente A mató 3 propios en el intento 1 y 7 en el intento 2; cada corrección de fix1 con RED de comportamiento. Respuesta sin `abstain` idéntica byte a byte a la de `2d3e57d` en 192 escenarios en los dos intentos. usage-meter no medido para la revisión (horas estimadas); los JSON de fix1 están en `execution-history.md`. Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+
+### T-87
+
+SHA-256: `2c8bbde31e15f86d7fe4dc55c9ee5f540cacb9651108abcfa919f889f5239745`.
+
+**Notas**: RED 2026-11-18: 3 pruebas nuevas de `NegativeDatasetTests` (`test_metrics`) fallaron con `ImportError: cannot import name validate_negatives`; verde tras `validate_negatives` en `check_dataset.py` (2 errores y 1 prueba de congelación ya en verde). Conjunto: 24 preguntas (12 ES, 12 EN, 12 cercanas; sha256 `6f8a0e92…`), `check_dataset` valida los dos ficheros (`OK es=24 en=24 typo_id=12 long=12 total=72` y `OK negatives es=12 en=12 near=12 total=24`) y `git diff --stat -- dataset-v1.jsonl` vacío. Verificado con `docker run` sobre `kairos-test:i3p13f` con `server/` montado (la suite completa, con su `MEMORY_TEST_RESULT`, es T-92). JSON de usage-meter en `execution-history.md` («Mediciones de la fase 14», T-87).
+
 ## Mediciones de la fase 14 (usage-meter, JSON literal)
 
 Salida de `usage-meter.py close` de cada tarea de la fase 14 (clave `reliable-operations/T-XX`), pegada sin editar.
@@ -2105,6 +2201,48 @@ SHA-256: `68d413e59c445aba1d09133c6026bbb4fb715abf5bc14f2ee075ecd059500881`.
   "medicion_persistida": true,
   "fuente_id": "src-8ffaaac4e3b9a11805b5148dbea387f65be01b42fba05cbf3ca54c4b799a95c8",
   "ventana_id": "win-a2e72e19f54841e58f8642922f559394",
+  "revision_medicion": 1,
+  "avisos": [
+    "CALIBRATION: fila marcada (estimado); fuera de la mediana",
+    "CALIBRATION: fila marcada (estimado); fuera de la mediana",
+    "precioTokens no fiable (0/ausente/viejo) → eur=null; ejecuta la skill rates-verify"
+  ]
+}
+```
+
+### T-92
+
+```json
+{
+  "artefacto": "reliable-operations/T-92",
+  "inicio": "2026-11-18T13:39:44Z",
+  "fin": "2026-11-18T14:24:07Z",
+  "fuente": "medido",
+  "tokens_reales": {
+    "entrada": 36,
+    "salida": 7368,
+    "cache_creacion": 1116741,
+    "cache_lectura": 3021403,
+    "respuestas": 17
+  },
+  "eur": null,
+  "horas_ia": 3.75,
+  "duracion": "3h 45m",
+  "duracion_reloj": "44m",
+  "ratio_usado": 300000,
+  "ratio_origen": "default no calibrado (300000)",
+  "tokens_procedencia": "transcript",
+  "tokens_cobertura": "completa",
+  "transcripts_leidos": 2,
+  "transcripts_subagente": 1,
+  "transcripts_con_error": 0,
+  "coste_procedencia": "sin_coste",
+  "coste_cobertura": "sin_coste",
+  "coste_sin_precio": [],
+  "tarifa_verificada_el": null,
+  "medicion_persistida": true,
+  "fuente_id": "src-8ffaaac4e3b9a11805b5148dbea387f65be01b42fba05cbf3ca54c4b799a95c8",
+  "ventana_id": "win-084624bba9f1436595e073f019ef8512",
   "revision_medicion": 1,
   "avisos": [
     "CALIBRATION: fila marcada (estimado); fuera de la mediana",
