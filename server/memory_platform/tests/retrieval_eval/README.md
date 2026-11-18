@@ -20,6 +20,13 @@ It is a separate gate (`docker build --target retrieval-eval`), not part of the 
   `long` subsets a gain of at least 15 recall@5 points over the baseline (decision P-06). All checks are
   mandatory; the gain needs a baseline recorded on the same dataset hash. A retrieval backend that is not
   `ok` (or a `partial` result) fails the gate as `backend_unavailable:<layer>` instead of scoring recall 0.
+  The `abstention` block (T-88, CA-27; amended 2026-11-18 after the user's decision "12 de 24 en la CI") holds the goals of the abstention measurement, **per provider**:
+  `min_correct_rate` 0.70 and `max_false_rate` 0.05 are the goals of a REAL model (`abstention.models.<model>` holds its calibrated cosine threshold; today it is `{}` because
+  `nomic-embed-text` reaches neither goal, see `docs/configuration.md`). `abstention.simulated` has the goals and the threshold of the offline provider used by the CI:
+  `threshold` 0.2022, `min_correct_rate` 0.50 (12 of the 24 negatives) and `max_false_rate` 0.05. They are lower on purpose (R-07): the simulated embeddings do not reflect a real
+  model's quality (with them 70 % correct abstention needs 6.9 % false abstention, measured), so the simulated goals are a regression guard of the retrieval pipeline, not a quality
+  claim. `test_metrics` pins the values (0.50, 0.05 and the presence of `threshold`): lowering or deleting one of them fails a test. A missing goal or threshold fails the gate as
+  `threshold_missing:abstention.<key>`; a question whose best cosine could not be measured fails it as `abstention_measurement_errors`.
 - `check_dataset.py`: validates schema and minimum counts, prints the SHA-256.
 - `fake_embeddings.py`: deterministic provider (`embed` and `embed_many`) hashing words and character trigrams (SHA-256), no network. It measures the
   retrieval pipeline, not model quality; the real Ollama run is a separate, explicit step.
