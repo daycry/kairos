@@ -958,7 +958,7 @@ test-plan: n/a (sin UI)
 - **Tipo**: backend
 - **Archivos**: `server/memory_platform/store_auth.py`, `server/memory_platform/store.py`, `server/memory_platform/tests/test_auth_cache.py`, `server/memory_platform/auth_scope.py` (nuevo: el ciclo de vida de la caché; `store_auth.py` y `auth.py` se importan entre sí y no podía vivir en el primero), `server/memory_platform/auth.py`, `server/memory_platform/store_documents.py`, `server/memory_platform/store_vectors.py` (savepoints), `server/memory_platform/extended_store.py`, `server/memory_platform/corpus_answers.py` (releer tras `FOR SHARE`), `server/memory_platform/store_jobs.py`, `server/memory_platform/store_pool.py`, `server/memory_platform/retrieval.py`, `server/memory_platform/errors.py` (deuda de la Fase 4), `server/memory_platform/tests/test_store_phase4_debt.py` (nuevo), `server/memory_platform/tests/test_store_faults.py` (una expectativa cambia: ver Notas), `server/memory_platform/store_ingest.py` (fix1: releer tras esperar), `server/memory_platform/tests/test_auth_race.py` (nuevo, fix1: dos conexiones), `server/memory_platform/app.py` (fix2: comentario), `docs/architecture.md`, `docs/operations.md` (fix2: límite residual y tabla de rutas)
 - **Cubre (tests)**: —
-- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_auth_cache|test_auth|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos. Salida fix1 (build `kairos-test:i3p5`, 2026-11-16): `#30 81.17 test_bearer_revocation_primary_and_foreign_scope (memory_platform.tests.test_auth.AuthTests.test_bearer_revocation_primary_and_foreign_scope) ... ok` · `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1048}`
+- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `964027b50e11`.
 
 **Criterios de aceptación**
 - [x] Una búsqueda sobre N proyectos ejecuta la lectura de actor y clave una sola vez por transacción (contador de consultas en la prueba)
@@ -1016,7 +1016,7 @@ test-plan: n/a (sin UI)
 - **Tipo**: docs
 - **Archivos**: `server/memory_platform/tests/measure_connections.py`, `docs/architecture.md`, `docs/configuration.md`, `docs/operations.md` (la regla de clasificación y la medición), `docs/roadmap/2026-11-15-reliable-operations/improvement-plan.md` (lista de coordinación con la Iniciativa 7)
 - **Cubre (tests)**: —
-- **Verificación**: `docker run --rm --network=none -e MEASURE_CONNECTIONS=1 -e MEASURE_POOL=1 -e MEASURE_REPEATS=30 kairos-test:i3p5 python -m memory_platform.tests.measure_connections` → una línea `MEASURE_CONNECTIONS {json}` con menos consultas por búsqueda que la línea base de la Fase 4 (63 con el pool; el medidor no corre en el build: mismo ajuste que T-21/T-26) y, en el build `--target test`, `MEMORY_TEST_RESULT` sin fallos. Salida fix1 (2026-11-16): `MEASURE_CONNECTIONS {"auth_queries_per_search": 22.0, "connections_per_search": 0.0, "hits": 10, "pool": true, "pool_max": 10, "pool_queries_per_search": 14.0, "projects": 3, "queries_per_search": 49.0, "queries_without_pool_per_search": 35.0, "repeats": 30, "rows_per_table": 300, "transactions_per_search": 7.0, "warmup": 10}`
+- **Verificación**: `docker run --rm --network=none -e MEASURE_CONNECTIONS=1 -e MEASURE_POOL=1 -e MEASURE_REPEATS=30 kairos-test:i3p5 python -m memory_platform.tests.measure_connections` → una línea `MEASURE_CONNECTIONS {json}` con menos consultas por búsqueda que la línea base de la Fase 4 (63 con el pool; el medidor no corre en el build: mismo ajuste que T-21/T-26) y, en el build `--target test`,… Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `ee7ba2c77c6c`.
 
 **Criterios de aceptación**
 - [x] Cifras anotadas en `Notas`
@@ -1111,7 +1111,7 @@ test-plan: n/a (sin UI)
 - **Tipo**: backend
 - **Archivos**: `server/memory_platform/admin.py`, `server/memory_platform/tests/test_admin.py`, `server/memory_platform/tests/test_backup_manifest.py`, `server/memory_platform/backup.py` (nuevo: manifiesto, escritura atómica y verificación; `admin.py` queda fino), `server/memory_platform/tests/test_backup_hardening.py` (nuevo, fix1)
 - **Cubre (tests)**: —
-- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_backup_manifest|test_admin|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos Salida (2026-11-16): bucle rápido (imagen de pruebas + árbol de trabajo; la suite completa va en T-42) `Ran 57 tests ... OK`: test_admin, test_backup_manifest (12), test_store_timeouts; `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 57}`.
+- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `50256f6498a9`.
 
 **Criterios de aceptación**
 - [x] `backup` escribe `<copia>` y `<copia>.json` con los campos del manifiesto y `chmod 600`
@@ -1256,10 +1256,7 @@ test-plan: n/a (sin UI)
 - **Tipo**: devops
 - **Archivos**: `scripts/deploy-memory.py`
 - **Cubre (tests)**: —
-- **Verificación**:
-  - `python scripts/deploy-memory.py --project-name kairos-ops-a --embed-stub --verify-backup` → termina en 0 y el informe registra `verify_backup` con resultado y duración; después `docker ps -a --filter name=kairos-ops-a` y `docker volume ls --filter name=kairos-ops-a` muestran solo recursos propios, que se eliminan al terminar
-  - `docker ps --filter name=knowledge-graphs` y `docker volume ls --filter name=knowledge-graphs` → idénticos antes y después
-  - Salida fix2 (2026-11-16, tras fix1 y fix2; `kairos-ops-a`, puertos 28791/25174, `--embed-stub`, secretos sintéticos nuevos): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (13)», T-40, Salida fix2 (2026-11-16, tras fix1 y fix2; `kairos-ops-a`, puertos 28791/25174, `--embed-stub`, secretos sintéticos nuevos)).
+- **Verificación**: `python scripts/deploy-memory.py --project-name kairos-ops-a --embed-stub --verify-backup` → termina en 0 y el informe registra `verify_backup` con resultado y duración; después `docker ps -a --filter name=kairos-ops-a` y `docker volume ls --filter name=kairos-ops-a` muestran solo recursos propios, que se eliminan al terminar · `docker ps --filter name=knowledge-graphs` y `docker volume ls… Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `a43a2239823d`.
 
 **Criterios de aceptación**
 - [x] El ensayo usa el proyecto `kairos-ops-a`, nunca `knowledge-graphs`, ni el Ollama del host (`--embed-stub`)
@@ -1288,7 +1285,7 @@ test-plan: n/a (sin UI)
 - **Tipo**: docs
 - **Archivos**: `docs/operations.md`, `docs/configuration.md`
 - **Cubre (tests)**: —
-- **Verificación**: lectura: `docs/configuration.md` lista `MEMORY_BACKUP_RECIPIENTS_FILE`, `MEMORY_BACKUP_REQUIRE_ENCRYPTION` y `MEMORY_BACKUP_KEEP` con defaults iguales a `config.py`, y `docs/operations.md` exige custodiar la clave privada fuera del VPS Salida (2026-11-16): lectura: `docs/configuration.md` lista `MEMORY_BACKUP_RECIPIENTS_FILE` (sin valor), `MEMORY_BACKUP_REQUIRE_ENCRYPTION` (`0`) y `MEMORY_BACKUP_KEEP` (`7`) como `config.py`; `docs/operations.md` exige custodiar la clave privada fuera del VPS (comprobado por script).
+- **Verificación**: lectura: `docs/configuration.md` lista `MEMORY_BACKUP_RECIPIENTS_FILE`, `MEMORY_BACKUP_REQUIRE_ENCRYPTION` y `MEMORY_BACKUP_KEEP` con defaults iguales a `config.py`, y `docs/operations.md` exige custodiar la clave privada fuera del VPS Salida (2026-11-16): lectura: `docs/configuration.md` lista `MEMORY_BACKUP_RECIPIENTS_FILE` (sin valor), `MEMORY_BACKUP_REQUIRE_ENCRYPTION` (`0`) y… Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `1ccdc570c36d`.
 
 **Criterios de aceptación**
 - [x] Nombres y defaults iguales al código
@@ -1315,9 +1312,7 @@ test-plan: n/a (sin UI)
 - **Tipo**: test
 - **Archivos**: `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `docs/operations.md`, `README.md` (recuento), `server/memory_platform/tests/test_auth_cache.py` (la lista revisada de transacciones incluye `create_backup`)
 - **Cubre (tests)**: —
-- **Verificación**: Salida (2026-11-16, fix2): `docker build -f server/memory_platform/Dockerfile --target test -t kairos-test:i3p6f2 .` (exit 0): `MEMORY_TEST_RESULT {"database": "PostgreSQL", "environment": "isolated-container-build", "errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1154}`; `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `Ran 45 tests ... OK`. (Cierre de fase: 1122; fix1: 1145.)
-  - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
-  - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
+- **Verificación**: Salida (2026-11-16, fix2): `docker build -f server/memory_platform/Dockerfile --target test -t kairos-test:i3p6f2 .` (exit 0): `MEMORY_TEST_RESULT {"database": "PostgreSQL", "environment": "isolated-container-build", "errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1154}`; `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `Ran 45 tests… Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `567d43014410`.
 
 **Criterios de aceptación**
 - [x] `MEMORY_TEST_RESULT` con 0 fallos, 0 errores, 0 omitidos y `tests` ≥ 764 (≥ el recuento del cierre anterior)
@@ -1381,8 +1376,7 @@ test-plan: n/a (sin UI)
 - **Tipo**: backend
 - **Archivos**: `server/memory_platform/admin.py`, `server/memory_platform/config.py`, `server/memory_platform/Dockerfile`, `server/memory_platform/tests/test_backup_cycle.py`, `server/memory_platform/offsite.py` (módulo nuevo: destinos y ciclo; añadido), `server/memory_platform/observability.py` (las dos series de la copia externa; añadido, es de T-45)
 - **Cubre (tests)**: —
-- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_backup_cycle|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
-  - Salida (2026-11-16; imagen `kairos-test:i3p6f2` con el árbol de trabajo montado y `rclone` 1.60.1 instalado; la suite completa y su `MEMORY_TEST_RESULT` se pegan en T-48): `test_backup_cycle` → `Ran 23 tests ... OK` (17 de T-44 y 6 de T-45), con las 3 de `rclone` ejecutadas; junto a `test_deploy`, `test_deploy_isolation` y `test_observability`: `DEVRUN 109 0 0 0` (pruebas, fallos, errores, omitidas).
+- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `61a2bf0a6140`.
 
 **Criterios de aceptación**
 - [x] Con un destino `dir:` en un directorio temporal, `backup-cycle` sube copia cifrada y manifiesto, verifica el sha256 en destino y aplica `MEMORY_BACKUP_REMOTE_KEEP` (30)
@@ -1411,8 +1405,7 @@ test-plan: n/a (sin UI)
 - **Tipo**: backend
 - **Archivos**: `server/memory_platform/admin.py`, `server/memory_platform/observability.py`, `server/memory_platform/tests/test_backup_cycle.py`, `server/memory_platform/offsite.py` (el manejo vive en `run_cycle`; añadido)
 - **Cubre (tests)**: —
-- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_backup_cycle|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
-  - Salida (2026-11-16, misma imagen y montaje que T-44): `test_backup_cycle` → `Ran 23 tests ... OK`; `OffsiteFailureTests` (6 pruebas: destino ausente con reintento, sha256 distinto en destino, copia local alterada, copia antigua alterada, credenciales, argumentos de `rclone`) en `ok`. La suite completa se pega en T-48.
+- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `463c76b8bea9`.
 
 **Criterios de aceptación**
 - [x] Con el destino inaccesible: `backup_offsite_failed`, métrica a 0, reintento en el ciclo siguiente y copias locales intactas (prueba)
@@ -1441,8 +1434,7 @@ test-plan: n/a (sin UI)
 - **Tipo**: devops
 - **Archivos**: `docker-compose.yml`, `server/memory_platform/tests/test_backup_service.py`, `docs/configuration.md`, `scripts/deploy-memory.py` (override del servicio nuevo; añadido), `.gitignore` (`backup-config/`, `offsite/`; añadido), `server/memory_platform/backup.py` y `server/memory_platform/tests/test_backup_prune.py` (deuda de la carrera de dos `--prune`; añadidos), `docs/roadmap/2026-11-15-reliable-operations/improvement-plan.md` (frase «Fase 7» en Coordinación; añadido)
 - **Cubre (tests)**: —
-- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_backup_service|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
-  - Salida (2026-11-16, misma imagen y montaje): `test_backup_service` + `test_backup_prune` → `Ran 20 tests ... OK`; `docker compose -p kairos-ops-cfg -f docker-compose.yml --profile backup config --format json` → exit 0 (sin crear recursos), `memory-backup`: perfil `backup`, sin `ports`, secretos solo `memory_dsn`, `/config` de solo lectura; `docker ps -a --filter name=kairos-ops` → 0; `git diff --stat -- ollama-proxy` vacío. La suite completa se pega en T-48.
+- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `ad44de8a4b5d`.
 
 **Criterios de aceptación**
 - [x] `docker-compose.yml` define `memory-backup` con perfil `backup`, `MEMORY_BACKUP_INTERVAL` (24 h por defecto), `MEMORY_BACKUP_DESTINATION`, `MEMORY_BACKUP_REQUIRE_ENCRYPTION=1` por defecto y sin puertos publicados
@@ -1471,11 +1463,7 @@ test-plan: n/a (sin UI)
 - **Tipo**: devops
 - **Archivos**: `docs/operations.md`, `scripts/rehearse-restore.py`, `scripts/tests/test_rehearse_restore.py`, `docs/roadmap/2026-11-15-reliable-operations/improvement-plan.md` (frase «Fase 7»; añadido)
 - **Cubre (tests)**: —
-- **Verificación**:
-  - `python -m unittest discover -s scripts/tests -p test_rehearse_restore.py` → `OK`
-  - `python scripts/rehearse-restore.py --project-name kairos-ops-b --embed-stub` → salida con `restored_and_content_verified`; el proyecto `kairos-ops-b` se elimina al terminar y `docker ps --filter name=knowledge-graphs` queda idéntico
-  - Salida original (2026-11-16, antes de fix1): 8 pruebas en `OK` y ensayo real en 11 min 44 s con `restored_and_content_verified` (26 tablas) y `knowledge-graphs-*` idéntico; superada por la salida de fix1.
-  - Salida fix1 (2026-11-16): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (13)», T-47, Salida fix1 (2026-11-16)).
+- **Verificación**: `python -m unittest discover -s scripts/tests -p test_rehearse_restore.py` → `OK` · `python scripts/rehearse-restore.py --project-name kairos-ops-b --embed-stub` → salida con `restored_and_content_verified`; el proyecto `kairos-ops-b` se elimina al terminar y `docker ps --filter name=knowledge-graphs` queda idéntico · Salida original (2026-11-16, antes de fix1): 8 pruebas en `OK` y ensayo real… Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `39b7e9a4a7c4`.
 
 **Criterios de aceptación**
 - [x] El ensayo descarga del destino simulado (directorio), verifica el sha256, descifra con una clave de prueba generada en el ensayo, ejecuta `restore-check` en un proyecto aislado vacío y compara el manifiesto
@@ -1505,11 +1493,7 @@ test-plan: n/a (sin UI)
 - **Tipo**: test
 - **Archivos**: `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `docs/operations.md`, `README.md` (recuento), `server/memory_platform/Dockerfile` (el ARG de rclone pasa a `DEBIAN_RCLONE_VERSION`; añadido), `server/memory_platform/tests/test_backup_service.py` y `server/memory_platform/tests/test_backup_cycle.py` (controles positivos de rclone y la prueba del ARG; añadidos)
 - **Cubre (tests)**: —
-- **Verificación**:
-  - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
-  - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
-  - Salida (2026-11-16, tercera ejecución, tras corregir el ARG): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (13)», T-48, Salida (2026-11-16, tercera ejecución, tras corregir el ARG)).
-  - Salida fix1 (2026-11-16): `docker build -f server/memory_platform/Dockerfile --target test --progress=plain -t kairos-test:i3p7f1 .` (exit 0): `MEMORY_TEST_RESULT {"database": "PostgreSQL", "environment": "isolated-container-build", "errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1195}`; `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `Ran 45 tests ... OK`. (Corrección de la revisión de la Fase 7: 1184 → 1195.)
+- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `28b16add7b00`.
 
 **Criterios de aceptación**
 - [x] `MEMORY_TEST_RESULT` con 0 fallos, 0 errores, 0 omitidos y `tests` ≥ 764 (≥ el recuento del cierre anterior)
@@ -2744,7 +2728,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.31h (medido).
 
-**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (25) — notas fix1 de T-81 a T-85», subsección T-87; JSON de usage-meter en «Mediciones de la fase 14»). fix1 (B4): RED `test_the_check_dataset_cli_validates_the_id_overlap_whatever_the_order_of_the_arguments` (`SystemExit not raised` con las negativas antes del corpus); el CLI carga todos los ficheros y valida los ids contra todo el corpus sea cual sea el orden; verde. Medición del fix1 compartida con T-89 (una sola ventana, 0.29h).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (25) — notas fix1 de T-81 a T-85», subsección T-87; JSON de usage-meter en «Mediciones de la fase 14»). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `e0a3257322bf`.
 
 ### T-88 — Métricas de abstención, `thresholds.json` y prueba de rojo en la CI
 
@@ -2777,7 +2761,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.39h (medido).
 
-**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (29) — cierre de la fase 14», T-88). Notas anteriores en «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)» y «Compactación 2026-11-18 (28) — notas de T-88 y T-92 y fix1 de la fase 14», subsección T-88; JSON de usage-meter en «Mediciones de la fase 14». Decisión del usuario (2026-11-18, «12 de 24 en la CI»): metas por proveedor (simulado ≥ 0.50/≤ 0.05, modelo real ≥ 0.70/≤ 0.05); P-05, CA-27, go y R-07 enmendados.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (29) — cierre de la fase 14», T-88). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `40973e45bfac`.
 
 ### T-89 — Medición del umbral de `nomic-embed-text` con un Ollama efímero y aislado (P-05)
 
@@ -2810,7 +2794,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 4.58h (medido).
 
-**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (29) — cierre de la fase 14», T-89). Notas anteriores en «Compactación 2026-11-18 (25) — notas fix1 de T-81 a T-85», subsección T-89, y fix1 en «Compactación 2026-11-18 (28) — notas de T-88 y T-92 y fix1 de la fase 14»; JSON de usage-meter en «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», subsección T-89. `nomic-embed-text` queda `uncalibrated` (ningún umbral da ≥ 70 % y ≤ 5 %).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (29) — cierre de la fase 14», T-89). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `35bf4bf5cff9`.
 
 ### T-90 — Pruebas de la puerta de abstención
 
@@ -2840,7 +2824,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.07h (medido).
 
-**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (29) — cierre de la fase 14», T-90). Notas anteriores en «Compactación 2026-11-18 (25) — notas fix1 de T-81 a T-85», subsección T-90; JSON de usage-meter en «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», subsección T-90. fix1 (A2): las metas del simulado tienen prueba; caen los 6 mutantes de `thresholds.json`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (29) — cierre de la fase 14», T-90). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `15ab6321e8c5`.
 
 ### T-91 — Documentar la abstención y avisar a la Iniciativa 7
 
@@ -2866,7 +2850,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 0.02h (medido).
 
-**Notas**: RED: `test_abstention_docs` no se cumplía sobre el HEAD anterior. `docs/configuration.md`, `docs/operations.md` y ambos CHANGELOG actualizados; `test_abstention_docs` (4 pruebas); `manual.md` sin cambio (el portal no expone `abstain`); ítem (23) en `improvement-plan.md`. Detalle completo en `execution-history.md` (sección «Compactación 2026-11-18 (25) — notas fix1 de T-81 a T-85», subsección T-91; JSON de usage-meter en «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», subsección T-91).
+**Notas**: RED: `test_abstention_docs` no se cumplía sobre el HEAD anterior. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `4d339e9ef248`.
 
 ### T-92 — Cierre de fase: suite completa y subida del mínimo
 
@@ -2897,7 +2881,7 @@ test-plan: n/a (sin UI)
 - [x] `usage-meter start/close` de la tarea
   - usage-meter close: 3.75h (medido).
 
-**Notas**: TDD n/a: ejecución de la suite y subida del mínimo, sin código que probar antes. Archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (29) — cierre de la fase 14», T-92); notas anteriores en «Compactación 2026-11-18 (28) — notas de T-88 y T-92 y fix1 de la fase 14», T-92; JSON de usage-meter en «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», subsección T-92. Suite 1553 (0 fallos, errores y omitidos); mínimo 1553 en los 4 sitios.
+**Notas**: TDD n/a: ejecución de la suite y subida del mínimo, sin código que probar antes. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `bcac544fe305`.
 
 ### T-93 — Revisión adversarial de la fase (dos lentes)
 
@@ -2999,7 +2983,7 @@ test-plan: n/a (sin UI)
 - [x] Anotar el número en `Notas`
 - [x] `usage-meter start/close` de la tarea (n/a: sin marcador, real estimado; ver Notas)
 
-**Notas**: Atribución de commits y PR: la del recordatorio del sistema. La nota original decía «No se hace merge»; el 2026-11-19 se preguntó al usuario «¿Abro el PR del hito B y lo fusiono cuando la CI esté en verde?» y respondió «Ok» (coherente con su «Fusiónalo cuando esté en verde» del 2026-11-16, aplicado al hito A en el PR #4): fusión con merge commit cuando la CI esté en verde, se conserva la rama, sin etiquetas ni versiones. PR abierto: [daycry/kairos#5](https://github.com/daycry/kairos/pull/5) (2026-11-19). La CI no llegó a ejecutarse: GitHub no arrancó ningún trabajo por un problema de facturación de la cuenta («recent account payments have failed or your spending limit needs to be increased»), igual en todos los push del 2026-11-19; la fusión espera a que el usuario lo resuelva y la CI pase. Sin marcador de usage-meter (tarea de minutos dentro de la sesión): real estimado.
+**Notas**: Atribución de commits y PR: la del recordatorio del sistema. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `c5438e938e31`.
 
 ---
 
@@ -3108,25 +3092,17 @@ test-plan: n/a (sin UI)
 - 2026-11-16 · «Revisión de dos lentes — intento 1: Fase 5 (T-30..T-33) (T-30, T-31, T-32, T-33)» → [execution-history.md](execution-history.md) · SHA-256 `71140bcb0171ab5a63e75d39bd2a425b2099715951736841104ad8d7ca9fa6c7`
 - 2026-11-17 · «Revisión de dos lentes — intento 1: Fase 7 (T-44..T-48) (T-44, T-45, T-46, T-47, T-48)» → [execution-history.md](execution-history.md) · SHA-256 `fc5c46f1983e5eb56bc5fcc773e4fe46cba80cea9e6b9d6f58cbe4158cefbd03`
 - 2026-11-18 · 15 secciones «Revisión de dos lentes» de las fases 6, 7, 9, 10 y 11 (intentos 1 a 5) → [execution-history.md](execution-history.md) («Compactación 2026-11-18 (30) — resúmenes de revisión de las fases 6 a 11»), cada una con su SHA-256
+- 2026-11-19 · «Revisión de dos lentes — intento 1: Fase 13: abstención (señal, parámetro y contratos) (T-81, T-82, T-83, T-84, T-85)» → [execution-history.md](execution-history.md) · SHA-256 `995696a463218a6c20e6f754f2f8ebbd15d04f45d96c0be07080602514b35e8e`
+- 2026-11-19 · «Revisión de dos lentes — intento 1: Fase 14: calibración de la abstención y puerta retrieval-eval (T-87, T-88, T-89, T-90, T-91, T-92)» → [execution-history.md](execution-history.md) · SHA-256 `19cc42be8b6ab3ce701aae7dd58805bb6198fb6fde8928e7201c4490d9330671`
 
 ## Revisión de dos lentes — intento 1: Fase 12: cola atascada, servicio de sonda y kairos doctor (T-74, T-75, T-76, T-77, T-78, T-79)
 
 Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (19) — revisión de la fase 12, intento 1»). Resumen: lentes A, B y C+D; 0 Critical, 0 Important, 7 Minor; la fase cierra con fix1.
 
 
-## Revisión de dos lentes — intento 1: Fase 13: abstención (señal, parámetro y contratos) (T-81, T-82, T-83, T-84, T-85)
-
-Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (22) — revisión de la fase 13, intento 1»). Resumen: lentes A, B y C+D; 1 Important (abstención con una capa léxica caída) y 6 Minor; fix1 corrige todo e intento 2.
-
-
 ## Revisión de dos lentes — intento 2: Fase 13: abstención (fix1) (T-81, T-82, T-83, T-84, T-85)
 
 Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (24) — revisión de la fase 13, intento 2»). Resumen: lentes A, B y C; 7 gaps del intento 1 corregidos; 0 Critical, 0 Important y 1 Minor, corregido por el orquestador; la fase cierra.
-
-
-## Revisión de dos lentes — intento 1: Fase 14: calibración de la abstención y puerta retrieval-eval (T-87, T-88, T-89, T-90, T-91, T-92)
-
-Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (27) — revisión de la fase 14, intento 1»). Resumen: lentes A, B y C; 0 Critical, 2 Important (meta del simulado sin enmienda; meta sin prueba que la fije) y 9 Minor; decisión del usuario: metas por proveedor (simulado 0,50/0,05); fix1 corrige todo.
 
 
 ## Revisión de dos lentes — intento 2: Fase 14: calibración de la abstención (fix1) (T-87, T-88, T-89, T-90, T-91, T-92)
