@@ -1,10 +1,10 @@
 ---
 spec: access-control
 descripcion: Control de acceso y privacidad de Kairos — ciclo de vida de contraseñas, usuarios, sesiones y claves, login que no se bloquea entre clientes, límites por clave, redacción de secretos ampliada y compartida entre servidor y cliente, modelo de identidad con guía de alta y baja, y superficie de secretos acotada.
-estado: borrador          # borrador | aprobada | implementada | obsoleta
+estado: aprobada          # borrador | aprobada | implementada | obsoleta
 creado: 2026-11-19
 actualizado: 2026-11-19
-evaluacion: pendiente
+evaluacion: evaluation.md
 design: n/a
 plan: pendiente
 generacion:
@@ -303,7 +303,11 @@ Ninguna necesita ya al usuario. **Decisión (2026-11-19, usuario, a través del 
 3. Las claves no caducan salvo que se pida al crearlas. **Confirmado** («Solo si se pide»).
 4. El detector de entropía es conservador. **Confirmado** («Conservador»).
 
-Pendiente: la aprobación de la spec completa; por eso sigue en `borrador`.
+5. Puerta go/no-go de la evaluación: **go** («go, pero seguimos mañana»). La spec pasa a `aprobada`.
+6. CA-42: se **mantiene la delegación** («Mantener la delegación»): un administrador de proyecto sigue pudiendo dar de alta personas para su proyecto; el resto de la administración es solo del administrador general.
+7. Paso de diseño con `architect` antes del plan: **sí** («Sí, con diseño»).
+
+Pendiente antes del diseño: aplicar a esta spec las correcciones que señala `evaluation.md` (pruebas de navegador reales en `server/memory_platform/Dockerfile.e2e` + `tests/e2e_portal.py`, CA-08 caducada frente a inválida, CA-38 (a), CA-18 y el resto de sus 8 puntos) y la redacción de CA-42 según la decisión 6.
 
 ## Referencias
 
