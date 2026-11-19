@@ -55,8 +55,8 @@ test-plan: n/a (sin UI)
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 6 | 6 | 100.0% | 0 / 33.6h | 2.36 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 7 | 7 | 100.0% | 0 / 33.6h | 10.36 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 2 | 2 | 100.0% | 0 / 2.4h | 3.51 / 0.3h | 0 / 0.1h | 0 / 80 k |
-| Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 1 | 3 | 33.3% | 0 / 4.8h | 0.14 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **96** | **98** | **98.0%** | **0 / 412.8h** | **34.67 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 2 | 3 | 66.7% | 0 / 4.8h | 0.24 / 0.6h | 0 / 0.2h | 0 / 160 k |
+| **TOTAL** | **97** | **98** | **99.0%** | **0 / 412.8h** | **34.77 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2989,7 +2989,7 @@ test-plan: n/a (sin UI)
 
 ## Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1
 
-**Estado**: en-progreso · **Hito**: B · **Estimado**: 4.8h (4.0h base, de ellas 0.0h de revisión adversarial) · **Real**: 0.14h · **Coste est.**: 240 € · **Tokens est.**: 160 k
+**Estado**: en-progreso · **Hito**: B · **Estimado**: 4.8h (4.0h base, de ellas 0.0h de revisión adversarial) · **Real**: 0.24h · **Coste est.**: 240 € · **Tokens est.**: 160 k
 
 ### T-96 — Ensayo aislado de cierre (CA-37): restauración, caída de base y sonda con worker parado
 
@@ -3024,32 +3024,32 @@ test-plan: n/a (sin UI)
 ### T-97 — Versión 0.4.1 de servidor, MCP y cliente y CHANGELOG
 
 - **Descripción**: Subir `server/VERSION`, `mcp/VERSION` y `client/package.json` a 0.4.1 y pasar las entradas «sin publicar» de los CHANGELOG a la sección 0.4.1 (la 0.5.0 sigue reservada para retirar el MCP interno). Fuente: CA-38; P-10.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Servidor, kairos-mcp y cliente pasan a la versión 0.4.1 (sin publicar); las entradas de los dos hitos de esta iniciativa quedan en la sección 0.4.1 de los CHANGELOG, con la nota para la Iniciativa 7.
+- **Estado**: completado
 - **Tiempo humano**: est. 1h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real 0.1h (medido)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 37 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: T-96
 - **Tipo**: docs
-- **Archivos**: `server/VERSION`, `mcp/VERSION`, `client/package.json`, `client/package-lock.json`, `server/memory_platform/tests/test_versions.py`, `CHANGELOG.md`, `CHANGELOG.es.md`, `server/memory_platform/app.py`
+- **Archivos**: `server/VERSION`, `mcp/VERSION`, `client/package.json`, `client/package-lock.json`, `server/memory_platform/tests/test_versions.py`, `CHANGELOG.md`, `CHANGELOG.es.md`, `server/memory_platform/app.py`, `client/lib/config.mjs`, `mcp/tests/test_health.py`, `mcp/README.md`, `client/README.md`, `README.md`, `docs/install.md`, `docs/integration.md`, `docs/release-cli.md`, `docs/code-analysis.md`, `docs/operations.md`, `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_versions|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
   - `cd client && npm test` → 0 fallos
 
 **Criterios de aceptación**
-- [ ] Las tres versiones valen 0.4.1 y `test_versions` pasa (comprueba que los CHANGELOG nombran la versión)
-- [ ] Ambos CHANGELOG tienen la sección 0.4.1 con las entradas de los dos hitos y la nota para la Iniciativa 7
-- [ ] Nada se publica
+- [x] Las tres versiones valen 0.4.1 y `test_versions` pasa (comprueba que los CHANGELOG nombran la versión)
+- [x] Ambos CHANGELOG tienen la sección 0.4.1 con las entradas de los dos hitos y la nota para la Iniciativa 7
+- [x] Nada se publica
 
 **Subtareas**
-- [ ] Subir las tres versiones
-- [ ] Actualizar los CHANGELOG
-- [ ] Ejecutar la suite y `npm test`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Subir las tres versiones
+- [x] Actualizar los CHANGELOG
+- [x] Ejecutar la suite y `npm test`
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `tests/test_versions.py` y el cierre de la Iniciativa 2 (versión 0.4.0).
+**Notas**: RED: `ComponentVersionTests` (`test_versions.py`: `EXPECTED` 0.4.1 y la nueva `test_the_changelogs_close_the_release_section_with_both_milestones`) falló con `AssertionError: 0 != 1` (sin sección `## [0.4.1] - 2026-11-19`) y con 0.4.0 en los tres sitios · 2026-11-19. GREEN: `server/VERSION`, `mcp/VERSION`, `client/package.json` y `VERSION` de `client/lib/config.mjs` en 0.4.1 (`COMPATIBLE_VERSIONS` suma `'0.4.0'`); `mcp/tests/test_health.py` a 0.4.1. CHANGELOG: sección `## [0.4.1] - 2026-11-19` bajo una `[Unreleased]`/`[Sin publicar]` vacía; no había sección 0.4.0 (todo estaba sin publicar), así que pasan a ella todas las entradas, con los hitos A y B fechados y la nota para la Iniciativa 7; 0.5.0 sigue reservada. Sin `client/package-lock.json` (no existe en el repo) y `app.py` sin literal de versión: sin cambio. Rutas de tarball y runtime `0.4.1` y versión citada en `client/README.md`, `README.md`, `mcp/README.md` y `docs/` (`install`, `integration`, `release-cli`, `code-analysis`); las menciones «desde la 0.4.0» del MCP interno se dejan. `cd client && npm test` → `tests 100 · pass 100 · fail 0`. Suite: `MEMORY_TEST_RESULT` `tests: 1570`, 0 fallos, 0 errores, 0 omitidos, `passed: true`; `test_versions` (8) en `ok`. Mínimo 1569 → 1570 en `ci.yml`, `MIN_FLOOR`, `docs/operations.md` y `README.md:252`; `python -m unittest scripts.tests.test_ci_workflow` → 48 pruebas OK. Nada publicado (sin tags, releases ni `npm publish`). Medición usage-meter en `execution-history.md` («T-97 · usage-meter», 0.1h medido).
 
 ### T-98 — Comprobaciones finales (CA-38), manuales y estado del ledger
 

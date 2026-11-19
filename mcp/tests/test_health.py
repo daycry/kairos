@@ -19,8 +19,8 @@ class HealthTests(unittest.TestCase):
 
     def test_the_version_is_0_4_0_in_the_file_and_in_the_package(self):
         import kairos_mcp
-        self.assertEqual((ROOT / 'VERSION').read_text(encoding='utf-8').strip(), '0.4.0')
-        self.assertEqual(kairos_mcp.__version__, '0.4.0')
+        self.assertEqual((ROOT / 'VERSION').read_text(encoding='utf-8').strip(), '0.4.1')
+        self.assertEqual(kairos_mcp.__version__, '0.4.1')
 
 
 class IsolationTests(unittest.TestCase):

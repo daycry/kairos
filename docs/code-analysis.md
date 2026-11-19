@@ -7,12 +7,12 @@ Kairos can expose three additional MCP tools in its **local Node proxy**. They i
 The default is off. Preview a new installation with the usual connection options and `--code-analysis on`:
 
 ```powershell
-npx --offline --yes --package ./client/artifacts/daycry-kairos-0.4.0.tgz kairos install --client all --root C:/work/example --url http://127.0.0.1:5173 --project example --key-file C:/Private/example.key --opencode-version 2 --code-analysis on --dry-run
+npx --offline --yes --package ./client/artifacts/daycry-kairos-0.4.1.tgz kairos install --client all --root C:/work/example --url http://127.0.0.1:5173 --project example --key-file C:/Private/example.key --opencode-version 2 --code-analysis on --dry-run
 ```
 
 Review the project root and client configurations. Replace `--dry-run` with `--yes` to apply. Changing this setting on an existing installation requires `--replace` and all managed clients, with the same upgrade precautions as [installation](install.md). To disable it, explicitly install with `--code-analysis off` under those same conditions. Restart the native client after changing its MCP configuration.
 
-The generated proxy command includes the physical project root. The runtime and its hashes live in `.kairos/runtime/0.4.0/`; the capability does not depend on npx preserving a temporary cache. Enabling it does not enable memory capture.
+The generated proxy command includes the physical project root. The runtime and its hashes live in `.kairos/runtime/0.4.1/`; the capability does not depend on npx preserving a temporary cache. Enabling it does not enable memory capture.
 
 ## Tools and examples
 

@@ -1,6 +1,6 @@
 # kairos-mcp
 
-Servidor MCP de Kairos (versión 0.4.0). Publica las **34 herramientas** del contrato `docs/contracts/kairos-mcp.json` y traduce cada llamada a una petición `/v1` de la API REST con **la credencial de quien llama**. No accede a la base de datos, no guarda credenciales propias, no decide permisos y no importa código del servidor: solo habla HTTP con `KAIROS_API_URL`.
+Servidor MCP de Kairos (versión 0.4.1). Publica las **34 herramientas** del contrato `docs/contracts/kairos-mcp.json` y traduce cada llamada a una petición `/v1` de la API REST con **la credencial de quien llama**. No accede a la base de datos, no guarda credenciales propias, no decide permisos y no importa código del servidor: solo habla HTTP con `KAIROS_API_URL`.
 
 ```mermaid
 flowchart LR

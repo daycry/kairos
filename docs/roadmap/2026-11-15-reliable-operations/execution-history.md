@@ -2780,3 +2780,11 @@ Ensayo aislado de cierre (CA-37), medido: 0.14 h IA, 8 min de ejecución, 30 min
 ```json
 {"artefacto":"reliable-operations/T-96","inicio":"2026-11-19T14:04:38Z","fin":"2026-11-19T14:34:54Z","fuente":"medido","tokens_reales":{"entrada":54,"salida":8299,"cache_creacion":34087,"cache_lectura":1294257,"respuestas":27},"eur":null,"horas_ia":0.14,"duracion":"8m","duracion_reloj":"30m","ratio_usado":300000,"tokens_procedencia":"transcript","tokens_cobertura":"completa","fuente_id":"src-8ffaaac4e3b9a11805b5148dbea387f65be01b42fba05cbf3ca54c4b799a95c8","ventana_id":"win-bf6a81a03462429f95e335354e7b509a","revision_medicion":1}
 ```
+
+## T-97 · usage-meter (2026-11-19)
+
+Versión 0.4.1 y CHANGELOG, medido: 0.1 h IA, 6 min de ejecución, 20 min de reloj.
+
+```json
+{"artefacto":"reliable-operations/T-97","inicio":"2026-11-19T14:36:00Z","fin":"2026-11-19T14:56:14Z","fuente":"medido","tokens_reales":{"entrada":36,"salida":10702,"cache_creacion":19364,"cache_lectura":1523322,"respuestas":18},"eur":null,"horas_ia":0.1,"duracion":"6m","duracion_reloj":"20m","ratio_usado":300000,"tokens_procedencia":"transcript","tokens_cobertura":"completa","fuente_id":"src-8ffaaac4e3b9a11805b5148dbea387f65be01b42fba05cbf3ca54c4b799a95c8","ventana_id":"win-147753f7b9f247efaeb1490e7ab62034","revision_medicion":1}
+```
