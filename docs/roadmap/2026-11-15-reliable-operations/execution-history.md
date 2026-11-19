@@ -2569,6 +2569,45 @@ Notas de T-94 movidas literalmente desde `tasks.md` para mantenerlo por debajo d
 - Pendiente del orquestador: añadir `probe_recreate_skipped` y `backup_recreate_skipped` al ítem (24) de Coordinación de `improvement-plan.md` (texto propuesto en el informe).
 - Observación (fuera de alcance, no corregida): un valor mal escrito en `MEMORY_ABSTAIN_THRESHOLDS` también impide arrancar `backup-cycle` y la purga de la sonda, porque comparten `Settings.from_env`; mismo patrón que `MEMORY_FUSION_*` antes del hito.
 
+### Medición de uso — fix3 de la revisión del hito B (T-94)
+
+Salida de `usage-meter close` (clave `reliable-operations/T-94-fix3`), 2026-11-19, sin el campo `avisos` (calibración y precio sin verificar, `eur` nulo).
+
+```json
+{
+  "artefacto": "reliable-operations/T-94-fix3",
+  "inicio": "2026-11-19T11:37:56Z",
+  "fin": "2026-11-19T12:10:10Z",
+  "fuente": "medido",
+  "tokens_reales": {
+    "entrada": 94,
+    "salida": 26822,
+    "cache_creacion": 76654,
+    "cache_lectura": 3118878,
+    "respuestas": 47
+  },
+  "eur": null,
+  "horas_ia": 0.35,
+  "duracion": "21m",
+  "duracion_reloj": "32m",
+  "ratio_usado": 300000,
+  "ratio_origen": "default no calibrado (300000)",
+  "tokens_procedencia": "transcript",
+  "tokens_cobertura": "completa",
+  "transcripts_leidos": 2,
+  "transcripts_subagente": 1,
+  "transcripts_con_error": 0,
+  "coste_procedencia": "sin_coste",
+  "coste_cobertura": "sin_coste",
+  "coste_sin_precio": [],
+  "tarifa_verificada_el": null,
+  "medicion_persistida": true,
+  "fuente_id": "src-8ffaaac4e3b9a11805b5148dbea387f65be01b42fba05cbf3ca54c4b799a95c8",
+  "ventana_id": "win-bce23aad37144547b3b9784edaff05bb",
+  "revision_medicion": 1
+}
+```
+
 ### Revisión del hito B — intento 3 (lentes A, B y C sobre el fix2, `02ddbd4..02ca457`)
 
 Último intento del bucle acotado. Pruebas de despliegue del host 152 OK; `test_ci_workflow` 48 OK; `ledger-lint` y `scope-check --base main` exit 0. Lente C: sin Critical ni Important. Decisión del usuario (2026-11-19): «Haz el fix3», fuera del bucle, con comprobación dirigida sobre su diff.

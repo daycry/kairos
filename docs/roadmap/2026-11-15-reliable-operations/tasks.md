@@ -2970,6 +2970,8 @@ test-plan: n/a (sin UI)
 
 **Notas de los fix de la revisión del hito**: fix1 (5 hallazgos del intento 1) y fix2 (N1 del intento 2) movidas a [execution-history.md](execution-history.md) («Compactación 2026-11-19 (31) — notas de T-94 (fix1 y fix2) y revisión del hito B, intento 3», SHA-256 `14642a90627a…`). El ítem (24) de Coordinación con `probe_recreate_skipped`/`backup_recreate_skipped` lo añadió el orquestador (commit `02ca457`). Intento 3 (último del bucle): 2 Important y 4 Minor sobre el fix2; el usuario decidió el 2026-11-19 «Haz el fix3» (fix3 fuera del bucle con comprobación dirigida).
 
+**fix3 de la revisión del hito** (R3-1..R3-5, 2026-11-19; medición en `execution-history.md`, «Medición de uso — fix3…», 0.35 h IA (medido)): orden manual con todos los `-f` de la etiqueta en orden, o marcador `-f '<files it was created with>'` sin etiqueta fiable; override de ensayo obligatorio (`*_recreate_skipped`); `oneoff=False` y etiquetas idénticas deduplicadas; control escapado con `printable`. RED contra fix2: R3-1 `['custom.yml'] != [docker-compose.yml, …rclone.yml, custom.yml]` y marcador ausente (3 casos); R3-2 `[[docker compose … up]] != []`; R3-3 `0 != 1`; R3-4 sin RED propio (la consulta ya llevaba `project=`; ahora los 3 dobles lanzan `AssertionError` si falta y `r34` lo exige); R3-5 ESC llega a stderr (`re.Match`). `MEMORY_TEST_RESULT` 0/0/0, 1568 pruebas; mínimo 1562 → 1568 en los 4 sitios; `test_ci_workflow` 48 OK. T-94 sigue abierta (la cierra el orquestador).
+
 ### T-95 — Pull request del hito B (solo con OK del usuario)
 
 - **Descripción**: Abrir el PR del hito B desde `feat/reliable-operations`. El PR solo se abre con el OK expreso del usuario; la tarea no se marca hecha hasta que el PR exista. Fuente: P-09 (un PR por hito).
