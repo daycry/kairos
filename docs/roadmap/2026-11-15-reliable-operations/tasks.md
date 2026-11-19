@@ -2948,7 +2948,7 @@ test-plan: n/a (sin UI)
 - **Previsión IA**: 37 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
 - **Tipo**: test
-- **Archivos**: `docs/roadmap/2026-11-15-reliable-operations/review.md`
+- **Archivos**: `docs/roadmap/2026-11-15-reliable-operations/review.md`, `CHANGELOG.md`, `CHANGELOG.es.md` (fix1 de la revisión del hito: los dos CHANGELOG recogen las fases 9 a 12)
 - **Cubre (tests)**: —
 - **Verificación**:
   - `python3 "$SHAREDKIT/scope-check.py" docs/roadmap/2026-11-15-reliable-operations` → exit 0
@@ -2967,6 +2967,15 @@ test-plan: n/a (sin UI)
 - [ ] `usage-meter start/close` de la tarea
 
 **Notas**: Patrón: tarea de comprobaciones del hito A.
+
+**Notas — fix1 de la revisión del hito** (2026-11-19, 5 hallazgos; commits `379a5ec`..`T-94 … (milestone B review, 6)`; medición en `execution-history.md`, «Medición de uso — fix1…», 0.37 h IA (medido)):
+- (1) Important: la sonda enviaba sus 4 búsquedas sin `abstain`, así que `MEMORY_ABSTAIN_DEFAULT=on` la hacía fallar en `search`/`no_result`. Ahora todas llevan `abstain: false`. RED: `test_milestone_b_review_every_search_of_the_probe_says_abstain_false…` con una API simulada que abstiene si `abstain` no es `false`: `probe_failed != probe_ok`. Sin otros llamantes internos (`client/`, `scripts/`): la prueba de ida y vuelta de `deploy-memory.py` busca por la marca léxica y no se tocó.
+- (2) Important: ambos CHANGELOG recogen las fases 9 a 12 (cola atascada y `kairos doctor` con salida 1, sonda y alertas, despliegue con bloqueo/etiquetas/`--rollback` y salidas 3, 4 y 5, límites, healthchecks y `extra_hosts`) y la acción para quien usa `rclone:` (`docker-compose.backup-rclone.yml`), con nota para la Iniciativa 7 en `kairos doctor`; cada punto contrastado con el código. `CHANGELOG*.md` añadidos al `Archivos`.
+- (3) Minor: `refresh_probe` pasó a `refresh_operator_services`: `apply` y `--rollback` recrean `memory-probe` y `memory-backup` si estaban en marcha (`probe_recreated`, `backup_recreated`; no se arranca el que no corría). RED: 2 pruebas nuevas (`apply` y `--rollback`), `0 != 1`. Decisión: no se espera al bloqueo del ciclo de copia porque no hay un bloqueo entre procesos de ciclo (solo el `flock` del directorio parcial) y `backup-cycle` ya trata SIGTERM (60 s de gracia, borra la copia parcial): una copia en curso se rehace en el ciclo siguiente; documentado en `docs/operations.md`, que ya no pide el paso manual. Una prueba de `--rollback` excluye de su lista de órdenes prohibidas el listado `ps --services` (nombra el perfil `backup`).
+- (4) Minor: ítem (24) en la frase Coordinación del plan (`probe_heartbeat_failed`, `probe_queue_failed`, `heartbeat_file_failed`, `queue_age_unavailable`, `MEMORY_PROBE_HEARTBEAT_FILE`, `probe_recreated`, `backup_recreated`, `abstain: false` de la sonda) y los cuatro eventos documentados en `docs/operations.md`. Se editó `improvement-plan.md` por encargo del orquestador.
+- (5) Minor: `docs/architecture.md` pasa «mediría» a presente; el tiempo de CI del trabajo `server` (2 min 7 s) queda marcado como medido con 1203 pruebas, sin cifra nueva.
+- Suite: `MEMORY_TEST_RESULT` 0 fallos, 0 errores, 0 omitidos, 1557 pruebas; mínimo 1553 → 1557 en `ci.yml`, `MIN_FLOOR`, `docs/operations.md` y `README.md`. `test_ci_workflow` 48 OK; pruebas de rehearsal 74 OK.
+- Observación (fuera de alcance, no corregida): un valor mal escrito en `MEMORY_ABSTAIN_THRESHOLDS` también impide arrancar `backup-cycle` y la purga de la sonda, porque comparten `Settings.from_env`; mismo patrón que `MEMORY_FUSION_*` antes del hito.
 
 ### T-95 — Pull request del hito B (solo con OK del usuario)
 

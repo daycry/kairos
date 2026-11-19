@@ -2501,3 +2501,16 @@ SHA-256: `f99e8e1957bdabb4f917b351c650fa0d4c53f4c3057a420505583b2a1c821a49`.
 
 
 Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (16) — revisión de la fase 11, intento 2»). Resumen: lentes A, B y C+D; 0 Critical, 0 Important, 7 Minor; la fase cierra con fix2.
+
+### Medición de uso — fix1 de la revisión del hito B (T-94)
+
+Salida de `usage-meter close` (clave `reliable-operations/T-94-fix1`), 2026-11-19, sin el campo `avisos` (descartados 204 registros anteriores al inicio; calibración y precio sin verificar, `eur: null`):
+
+```json
+{
+  "artefacto": "reliable-operations/T-94-fix1", "inicio": "2026-11-19T09:09:27Z", "fin": "2026-11-19T09:42:37Z", "fuente": "medido",
+  "tokens_reales": {"entrada": 132, "salida": 27082, "cache_creacion": 84720, "cache_lectura": 5752525, "respuestas": 66},
+  "eur": null, "horas_ia": 0.37, "duracion": "22m", "duracion_reloj": "33m", "tokens_procedencia": "transcript", "tokens_cobertura": "completa",
+  "ventana_id": "win-2877d9b393c647988931523523ace151", "revision_medicion": 2
+}
+```
