@@ -2620,3 +2620,11 @@ Salida de `usage-meter close` (clave `reliable-operations/T-94-fix3`), 2026-11-1
 | R3-4 | Minor | Ninguna prueba exige que la consulta de la etiqueta vaya acotada al proyecto; los dobles responden por servicio | A | `test_deploy.py:204-207`; `test_deploy_isolation.py:199-200`; `test_deploy_rollback.py:62-63` |
 | R3-5 | Minor | Caracteres de control de la etiqueta llegan sin neutralizar a stderr (CWE-150; requiere acceso a Docker) | C | `deploy-memory.py:736,745` |
 | R3-6 | Minor | Nota «Pendiente del orquestador» de T-94 obsoleta: el ítem (24) ya estaba hecho | A | `tasks.md` (nota del fix2); `improvement-plan.md:246` — resuelto en esta compactación con el puntero |
+
+### Medición de uso — T-94
+
+Salida de `usage-meter close` (clave `reliable-operations/T-94`), 2026-11-19, sin el campo `avisos` (calibración y precio sin verificar, `eur` nulo). La ventana incluye los transcripts de los subagentes de fix1, fix2 y fix3 y de las lentes de los tres intentos: las mediciones de cada fix son subconjuntos, no se suman.
+
+```json
+{"artefacto": "reliable-operations/T-94", "inicio": "2026-11-19T08:41:43Z", "fin": "2026-11-19T12:31:26Z", "fuente": "medido", "tokens_reales": {"entrada": 840, "salida": 223256, "cache_creacion": 799259, "cache_lectura": 35766972, "respuestas": 407}, "eur": null, "horas_ia": 3.41, "duracion": "3h 25m", "duracion_reloj": "3h 50m", "ratio_usado": 300000, "ratio_origen": "default no calibrado (300000)", "tokens_procedencia": "transcript", "tokens_cobertura": "completa", "transcripts_leidos": 9, "transcripts_subagente": 8, "transcripts_con_error": 0, "coste_procedencia": "sin_coste", "coste_cobertura": "sin_coste", "coste_sin_precio": [], "tarifa_verificada_el": null, "medicion_persistida": true, "fuente_id": "src-8ffaaac4e3b9a11805b5148dbea387f65be01b42fba05cbf3ca54c4b799a95c8", "ventana_id": "win-c0afc65b64ad42a08978278331e41c71", "revision_medicion": 1}
+```

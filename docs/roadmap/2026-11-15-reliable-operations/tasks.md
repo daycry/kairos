@@ -54,9 +54,9 @@ test-plan: n/a (sin UI)
 | Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 7 | 7 | 100.0% | 0 / 23.4h | 2.62 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 6 | 6 | 100.0% | 0 / 33.6h | 2.36 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 7 | 7 | 100.0% | 0 / 33.6h | 10.36 / 4.5h | 0 / 1.1h | 0 / 1120 k |
-| Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
+| Fase 15 — Cierre del hito B: desplegar y detectar | 1 | 2 | 50.0% | 0 / 2.4h | 3.41 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **93** | **98** | **94.9%** | **0 / 412.8h** | **31.02 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **94** | **98** | **95.9%** | **0 / 412.8h** | **34.43 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2935,15 +2935,15 @@ test-plan: n/a (sin UI)
 
 ## Fase 15 — Cierre del hito B: desplegar y detectar
 
-**Estado**: borrador · **Hito**: B · **Estimado**: 2.4h (2.0h base, de ellas 0.0h de revisión adversarial) · **Real**: — · **Coste est.**: 120 € · **Tokens est.**: 80 k
+**Estado**: en-progreso · **Hito**: B · **Estimado**: 2.4h (2.0h base, de ellas 0.0h de revisión adversarial) · **Real**: — · **Coste est.**: 120 € · **Tokens est.**: 80 k
 
 ### T-94 — Comprobaciones de cierre del hito B
 
 - **Descripción**: Comprobar migraciones aditivas, diff aditivo de contratos, ausencia de referencias a `knowledge-graphs-*` y 11434, alcance declarado, `retrieval-eval` y suite. Fuente: CA-38 (parte del hito B).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: `apply` y `--rollback` recrean `memory-probe` y `memory-backup` con los mismos ficheros de Compose con que se crearon (se conserva el override de `rclone`); si no son los conocidos, no los recrean, lo dicen en el informe (`*_recreate_skipped`) e imprimen la orden manual; la sonda envía `abstain: false` en todas sus búsquedas.
+- **Estado**: completado
 - **Tiempo humano**: est. 1h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real 3.41h (medido)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 37 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
@@ -2956,21 +2956,23 @@ test-plan: n/a (sin UI)
   - `docker build -f server/memory_platform/Dockerfile --target retrieval-eval . 2>&1 | grep -i "passed"` → `passed: true`
 
 **Criterios de aceptación**
-- [ ] Suite con 0 fallos y 0 omitidos, `retrieval-eval` en verde, contratos y migraciones aditivos
-- [ ] Ninguna referencia nueva a `knowledge-graphs-*` o 11434 salvo para rechazarlos
-- [ ] Revisión del hito: lectura del diff completo del hito B con hallazgos en `review.md`
+- [x] Suite con 0 fallos y 0 omitidos, `retrieval-eval` en verde, contratos y migraciones aditivos
+- [x] Ninguna referencia nueva a `knowledge-graphs-*` o 11434 salvo para rechazarlos
+- [x] Revisión del hito: lectura del diff completo del hito B con hallazgos en `review.md`
 
 **Subtareas**
-- [ ] Ejecutar `scope-check.py`
-- [ ] Buscar referencias prohibidas
-- [ ] Ejecutar suite y puerta
-- [ ] `usage-meter start/close` de la tarea
+- [x] Ejecutar `scope-check.py`
+- [x] Buscar referencias prohibidas
+- [x] Ejecutar suite y puerta
+- [x] `usage-meter start/close` de la tarea
 
 **Notas**: Patrón: tarea de comprobaciones del hito A.
 
 **Notas de los fix de la revisión del hito**: fix1 (5 hallazgos del intento 1) y fix2 (N1 del intento 2) movidas a [execution-history.md](execution-history.md) («Compactación 2026-11-19 (31) — notas de T-94 (fix1 y fix2) y revisión del hito B, intento 3», SHA-256 `14642a90627a…`). El ítem (24) de Coordinación con `probe_recreate_skipped`/`backup_recreate_skipped` lo añadió el orquestador (commit `02ca457`). Intento 3 (último del bucle): 2 Important y 4 Minor sobre el fix2; el usuario decidió el 2026-11-19 «Haz el fix3» (fix3 fuera del bucle con comprobación dirigida).
 
 **fix3 de la revisión del hito** (R3-1..R3-5, 2026-11-19; medición en `execution-history.md`, «Medición de uso — fix3…», 0.35 h IA (medido)): orden manual con todos los `-f` de la etiqueta en orden, o marcador `-f '<files it was created with>'` sin etiqueta fiable; override de ensayo obligatorio (`*_recreate_skipped`); `oneoff=False` y etiquetas idénticas deduplicadas; control escapado con `printable`. RED contra fix2: R3-1 `['custom.yml'] != [docker-compose.yml, …rclone.yml, custom.yml]` y marcador ausente (3 casos); R3-2 `[[docker compose … up]] != []`; R3-3 `0 != 1`; R3-4 sin RED propio (la consulta ya llevaba `project=`; ahora los 3 dobles lanzan `AssertionError` si falta y `r34` lo exige); R3-5 ESC llega a stderr (`re.Match`). `MEMORY_TEST_RESULT` 0/0/0, 1568 pruebas; mínimo 1562 → 1568 en los 4 sitios; `test_ci_workflow` 48 OK. T-94 sigue abierta (la cierra el orquestador).
+
+**Cierre** (2026-11-19, orquestador): comprobación dirigida del fix3: un detalle más corregido con TDD (en un ensayo, la orden manual de un contenedor creado sin el override del ensayo lo añade al final; RED `[docker-compose.yml] != [docker-compose.yml, compose.override.yml]`); mutante sin el filtro de proyecto muerto (17 fallos); pruebas de despliegue del host OK. Suite `MEMORY_TEST_RESULT` 0/0/0, 1569 pruebas; mínimo 1568 → 1569 en los 4 sitios. `retrieval-eval` `passed: true`; contratos aditivos y las dos copias MCP idénticas; sin migraciones; `knowledge-graphs-*` y 11434 solo para rechazarlos. Hallazgos y veredicto en `review.md` («Hito B …»). Real 3.41 h (medido, ventana de T-94, incluye fix1..fix3 de los subagentes); JSON en `execution-history.md` («Medición de uso — T-94»).
 
 ### T-95 — Pull request del hito B (solo con OK del usuario)
 

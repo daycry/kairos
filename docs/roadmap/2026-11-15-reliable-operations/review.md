@@ -227,3 +227,40 @@ Cada fase cierra con su revisión adversarial. El detalle de cada intento está 
 | 1 | Important | Ninguna prueba fijaba la meta del simulado (con 0,0 o sin la clave, la CI seguía verde) | Corregido en fix1: prueba nueva; 6 mutantes en rojo |
 | 1 | Minor | README de la puerta, fila TOTAL, `TDD n/a` de T-92, punteros, `deterministic: null` sin documentar, redondeo de `pick_threshold`, restos sin verificar, errores de medición silenciados, orden de argumentos de `check_dataset` | Corregidos en fix1 (punteros, a medias) |
 | 2 | Minor | Punteros de T-88 y del JSON de T-89, T-90 y T-91 a secciones sin ese contenido | Corregido por el orquestador |
+
+## Hito B — revisión del diff completo (T-94, criterio 3)
+
+- **Fecha**: 2026-11-19
+- **Lentes**:
+  - Intento 1: una lente del hito (A+B) sobre `e20e93d..8f8d295`, las fases 9 a 14: 63 ficheros, unas 12.500 líneas. Busca interacciones entre fases, coherencia del CHANGELOG, la documentación, la Coordinación, el contrato MCP y las migraciones.
+  - Intento 2: lentes A, B y C sobre el fix1.
+  - Intento 3, el último del bucle: lentes A, B y C sobre el fix2 (`02ddbd4..02ca457`).
+  - Fix3, fuera del bucle por decisión del usuario del 2026-11-19 («Haz el fix3»): comprobación dirigida del orquestador sobre su diff.
+- **Veredicto**: sin hallazgos Critical ni Important abiertos.
+  - El contrato MCP y OpenAPI solo crece, y las dos copias del contrato MCP son idénticas.
+  - No hay migraciones nuevas.
+  - Las referencias nuevas a `knowledge-graphs-*` y a 11434 solo sirven para rechazarlos.
+  - Sin `abstain` y con `MEMORY_ABSTAIN_DEFAULT=off`, la respuesta no cambia.
+- **Evidencia**:
+  - Suite: MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1569}.
+  - `retrieval-eval`: `passed: true`.
+  - `scope-check.py --base main` y `ledger-lint`: exit 0.
+  - Pruebas de despliegue del host: OK.
+  - Mutante que quita el filtro de proyecto de la consulta de la etiqueta: muerto, 17 fallos.
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Important | La sonda buscaba sin `abstain`, así que con `MEMORY_ABSTAIN_DEFAULT=on` fallaba en `search`/`no_result` | Corregido en el fix1: sus 4 búsquedas envían `abstain: false` |
+| 1 | Important | Los CHANGELOG no recogían las fases 9 a 12 | Corregido en el fix1: se contrastaron con el código y se añadió la acción para quien usa `rclone:` |
+| 1 | Minor | Tras `apply` o `--rollback`, `memory-probe` y `memory-backup` seguían con la imagen anterior; hacía falta un paso manual | Corregido en el fix1: se recrean si estaban en marcha (`probe_recreated`, `backup_recreated`) |
+| 1 | Minor | Faltaban el ítem (24) de Coordinación y los eventos nuevos en `operations.md` | Corregido en el fix1 |
+| 1 | Minor | `architecture.md` hablaba en condicional y el tiempo de CI no decía que estaba medido | Corregido en el fix1 |
+| 2 | Important | La recreación de `memory-backup` perdía el override de `rclone` (red `egress`): las copias externas dejaban de subirse | Corregido en el fix2: recrea con los ficheros de la etiqueta `config_files` si están en la lista permitida; si no, `*_recreate_skipped` y orden manual |
+| 3 | Important | La orden manual perdía los ficheros propios cuando la etiqueta traía uno ajeno, y con una etiqueta ilegible se inventaba una lista | Corregido en el fix3: lleva la etiqueta completa en orden, o un marcador si la etiqueta no es fiable |
+| 3 | Important | En un ensayo, un contenedor creado sin el override del ensayo se recreaba con la imagen y el volumen de la instalación | Corregido en el fix3: no se recrea, y la orden manual añade el override del ensayo (este último detalle lo corrigió el orquestador con TDD en la comprobación dirigida) |
+| 3 | Minor | Los contenedores de `compose run` y las etiquetas repetidas hacían saltar la recreación | Corregido en el fix3: `oneoff=False` y deduplicación |
+| 3 | Minor | Ninguna prueba exigía que la consulta fuera acotada al proyecto | Corregido en el fix3: lo comprueban los dobles y una prueba directa; el mutante muere |
+| 3 | Minor | Los caracteres de control de la etiqueta llegaban a stderr (CWE-150) | Corregido en el fix3: se escriben con `printable()` |
+| 3 | Minor | Una nota de T-94 decía que faltaba el ítem (24), ya hecho | Corregido en la compactación (31) |
+
+Deuda observada fuera de alcance: un valor mal escrito en `MEMORY_ABSTAIN_THRESHOLDS` también impide arrancar `backup-cycle` y la purga de la sonda, porque comparten `Settings.from_env`. Es el mismo patrón que tenía `MEMORY_FUSION_*` antes del hito. Queda para la Iniciativa 9 (configuración única, B-12).
