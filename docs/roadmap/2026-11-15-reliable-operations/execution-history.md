@@ -2772,3 +2772,11 @@ SHA-256 del bloque: `bcac544fe3053c41bc101126c7fde66bcd2fd6eae2cc461605738c12c86
 SHA-256 del bloque: `c5438e938e31445b36b5e2f871ec9eb07d5ae277ea5690908e45342c31babaf1`.
 
 **Notas**: Atribución de commits y PR: la del recordatorio del sistema. La nota original decía «No se hace merge»; el 2026-11-19 se preguntó al usuario «¿Abro el PR del hito B y lo fusiono cuando la CI esté en verde?» y respondió «Ok» (coherente con su «Fusiónalo cuando esté en verde» del 2026-11-16, aplicado al hito A en el PR #4): fusión con merge commit cuando la CI esté en verde, se conserva la rama, sin etiquetas ni versiones. PR abierto: [daycry/kairos#5](https://github.com/daycry/kairos/pull/5) (2026-11-19). La CI no llegó a ejecutarse: GitHub no arrancó ningún trabajo por un problema de facturación de la cuenta («recent account payments have failed or your spending limit needs to be increased»), igual en todos los push del 2026-11-19; la fusión espera a que el usuario lo resuelva y la CI pase. Sin marcador de usage-meter (tarea de minutos dentro de la sesión): real estimado.
+
+## T-96 · usage-meter (2026-11-19)
+
+Ensayo aislado de cierre (CA-37), medido: 0.14 h IA, 8 min de ejecución, 30 min de reloj.
+
+```json
+{"artefacto":"reliable-operations/T-96","inicio":"2026-11-19T14:04:38Z","fin":"2026-11-19T14:34:54Z","fuente":"medido","tokens_reales":{"entrada":54,"salida":8299,"cache_creacion":34087,"cache_lectura":1294257,"respuestas":27},"eur":null,"horas_ia":0.14,"duracion":"8m","duracion_reloj":"30m","ratio_usado":300000,"tokens_procedencia":"transcript","tokens_cobertura":"completa","fuente_id":"src-8ffaaac4e3b9a11805b5148dbea387f65be01b42fba05cbf3ca54c4b799a95c8","ventana_id":"win-bf6a81a03462429f95e335354e7b509a","revision_medicion":1}
+```

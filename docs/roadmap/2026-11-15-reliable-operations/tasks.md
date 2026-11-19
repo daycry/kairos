@@ -55,8 +55,8 @@ test-plan: n/a (sin UI)
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 6 | 6 | 100.0% | 0 / 33.6h | 2.36 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 7 | 7 | 100.0% | 0 / 33.6h | 10.36 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 2 | 2 | 100.0% | 0 / 2.4h | 3.51 / 0.3h | 0 / 0.1h | 0 / 80 k |
-| Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **95** | **98** | **96.9%** | **0 / 412.8h** | **34.53 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 1 | 3 | 33.3% | 0 / 4.8h | 0.14 / 0.6h | 0 / 0.2h | 0 / 160 k |
+| **TOTAL** | **96** | **98** | **98.0%** | **0 / 412.8h** | **34.67 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2989,15 +2989,15 @@ test-plan: n/a (sin UI)
 
 ## Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1
 
-**Estado**: borrador · **Hito**: B · **Estimado**: 4.8h (4.0h base, de ellas 0.0h de revisión adversarial) · **Real**: — · **Coste est.**: 240 € · **Tokens est.**: 160 k
+**Estado**: en-progreso · **Hito**: B · **Estimado**: 4.8h (4.0h base, de ellas 0.0h de revisión adversarial) · **Real**: 0.14h · **Coste est.**: 240 € · **Tokens est.**: 160 k
 
 ### T-96 — Ensayo aislado de cierre (CA-37): restauración, caída de base y sonda con worker parado
 
 - **Descripción**: Ejecutar en un único proyecto Compose aislado el ensayo completo: runbook de restauración (CA-07), parada y arranque de `memory-postgres` con trabajos en cola y sonda con `memory-worker` parado (CA-31). Deja la evidencia en el ledger. Fuente: CA-37, CA-07, CA-31; criterios de cierre 1, 2 y 3.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: n/a (ensayo de verificación; sin cambio visible).
+- **Estado**: completado
 - **Tiempo humano**: est. 2h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real 0.14h (medido)
 - **Supervisión**: est. 0.07h (≈25 % IA) · real —
 - **Previsión IA**: 74 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
@@ -3009,17 +3009,17 @@ test-plan: n/a (sin UI)
   - `docker ps --filter name=knowledge-graphs` y `docker volume ls --filter name=knowledge-graphs` → idénticos antes y después
 
 **Criterios de aceptación**
-- [ ] Al parar y arrancar `memory-postgres` con trabajos en cola, `memory-worker` no se reinicia por error propio, la cola se vacía y ningún trabajo queda `failed` por esa caída
-- [ ] El mismo ensayo ejecuta CA-07 y CA-31 y deja la salida en `Notas`
-- [ ] Proyecto aislado retirado; nada `knowledge-graphs-*` ni Ollama del host
+- [x] Al parar y arrancar `memory-postgres` con trabajos en cola, `memory-worker` no se reinicia por error propio, la cola se vacía y ningún trabajo queda `failed` por esa caída
+- [x] El mismo ensayo ejecuta CA-07 y CA-31 y deja la salida en `Notas`
+- [x] Proyecto aislado retirado; nada `knowledge-graphs-*` ni Ollama del host
 
 **Subtareas**
-- [ ] Anotar recursos de la instalación antes
-- [ ] Ejecutar el ensayo completo (primer plano, de uno en uno)
-- [ ] Retirar el proyecto y comparar
-- [ ] `usage-meter start/close` de la tarea
+- [x] Anotar recursos de la instalación antes
+- [x] Ejecutar el ensayo completo (primer plano, de uno en uno)
+- [x] Retirar el proyecto y comparar
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: etapas `a`, `rollback` y `probe` del script de las fases 8, 10 y 12.
+**Notas**: TDD n/a: `--stage all` ya encadena las etapas `a`, `rollback` y `probe` en un proyecto; la tarea es ejecutarlo, sin cambio de código. `python scripts/rehearse-reliable-operations.py --project-name kairos-ops-z --embed-stub --stage all` → exit 0, `status: rehearsal_ok`, `cleanup: complete`, 20 pasos. CA-07: `restore` = `restored_and_content_verified` (26 tablas). CA-37: `worker_survived_db_restart` = `restarts_before 0`, `restarts_after 0`, `same_start true`, `pending_at_stop 246`, `jobs {succeeded: 301}`, `failed 0`, `down_seconds 30`. CA-31: `probe_worker_stopped` = `probe_failed`, `stage index`, `code timeout`, `exit 1`, `kairos_probe_success 0`, 29.5 s ≤ 30 s, `retired true`; `probe_healthy` = `probe_ok` (2.8 s) y `probe_recovered` = `probe_ok`. Listados de `docker ps -a`, `docker volume ls -q` y `docker network ls` filtrados por `knowledge-graphs` antes y después: idénticos (15, 7 y 6 líneas, `cmp` sin diferencias); `kairos-ops-z` sin contenedores, volúmenes ni redes; Ollama del host no usado. Medición usage-meter en `execution-history.md` («T-96 · usage-meter», 0.14h medido).
 
 ### T-97 — Versión 0.4.1 de servidor, MCP y cliente y CHANGELOG
 
