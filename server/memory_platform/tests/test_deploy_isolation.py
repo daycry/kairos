@@ -197,6 +197,7 @@ class IsolatedDeploymentTests(unittest.TestCase):
                 if fail_when and fail_when(command):
                     raise deploy.DeploymentError('simulated failure')
                 if command[:2] == ['docker', 'ps'] and any('config_files' in part for part in command):  # the Compose files a running operator service was created with: by default those of this deployment
+                    assert 'label=com.docker.compose.project=' + project in command and 'label=com.docker.compose.oneoff=False' in command, command  # only the question of this project is answered
                     answer = (config_files or {}).get(next(part.rsplit('=', 1)[1] for part in command if part.startswith('label=com.docker.compose.service=')), ','.join(str(root / name) for name in ('docker-compose.yml', '.private/rehearsal-' + project + '/compose.override.yml')))
                     answer = answer(root) if callable(answer) else answer  # a label that names files of the temporary root
                     if isinstance(answer, Exception):

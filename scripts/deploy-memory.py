@@ -716,33 +716,43 @@ class Deployment:
         return command if placed else command + [piece for file in files for piece in ('-f', file)]
 
     def recorded_compose_files(self, service):
-        """The Compose files the container of `service` was created with (label `com.docker.compose.project.config_files` of its container, asked of the project only), as `(files, '')` when every one is
-        ours: `docker-compose.yml`, `docker-compose.backup-rclone.yml` (the egress network of an `rclone:` destination) and, in a rehearsal, the override this deployment wrote. Anything else, a missing
-        label or a failed question gives `(files, reason)`: recreating with the files of `self.compose` would silently drop what the container was created with."""
+        """The Compose files the container of `service` was created with (label `com.docker.compose.project.config_files` of its container, asked of the project only and leaving out the one-off
+        containers of `compose run`), as `(files, '')` when every one is ours: `docker-compose.yml`, `docker-compose.backup-rclone.yml` (the egress network of an `rclone:` destination) and, in a
+        rehearsal, the override this deployment wrote, which is then mandatory: without it the container is not the rehearsal's and recreating it would use the installation image and volumes. Anything
+        else gives `(names, reason)` with the names of the label exactly as it lists them (all of them, ours and not, in order), or `(None, reason)` when there is no reliable label (empty, unreadable,
+        or more than one different one): recreating with the files of `self.compose` would silently drop what the container was created with."""
         allowed = [self.root / 'docker-compose.yml', self.root / 'docker-compose.backup-rclone.yml'] + ([self.private / 'compose.override.yml'] if self.isolated else [])
         known = {os.path.normcase(str(path.resolve())): str(path) for path in allowed}
         try:
-            label = self.run(['docker', 'ps', '-a', '--filter', 'label=com.docker.compose.project=' + self.project, '--filter', 'label=com.docker.compose.service=' + service,
-                              '--format', '{{.Label "com.docker.compose.project.config_files"}}'])
+            label = self.run(['docker', 'ps', '-a', '--filter', 'label=com.docker.compose.project=' + self.project, '--filter', 'label=com.docker.compose.oneoff=False',
+                              '--filter', 'label=com.docker.compose.service=' + service, '--format', '{{.Label "com.docker.compose.project.config_files"}}'])
         except DeploymentError:
             self.report.pop('command_failure', None)  # a question, not a step
-            return [], 'the Compose files of its container could not be read'
-        lines = [line.strip() for line in label.splitlines() if line.strip()]
+            return None, 'the Compose files of its container could not be read'
+        lines = list(dict.fromkeys(line.strip() for line in label.split('\n') if line.strip()))  # stopped containers of the service repeat the same label
         if len(lines) != 1:
-            return [], 'its container has no label with the Compose files it was created with' if not lines else 'more than one container answers for it'
+            return None, 'its container has no label with the Compose files it was created with' if not lines else 'more than one container answers for it'
+        names = [name.strip() for name in lines[0].split(',') if name.strip()]
         files, foreign = [], []
-        for name in lines[0].split(','):
-            found = known.get(os.path.normcase(str(Path(name.strip()).resolve())))
-            (files if found else foreign).append(found or name.strip())
+        for name in names:
+            found = known.get(os.path.normcase(str(Path(name).resolve())))
+            (files if found else foreign).append(found or name)
         if foreign or not files:
-            return foreign, 'its container was created with Compose files that are not ours (' + ', '.join(foreign) + ')'
+            return names, 'its container was created with Compose files that are not ours (' + ', '.join(printable(name, 500) for name in foreign) + ')'
+        if self.isolated and str(self.private / 'compose.override.yml') not in files:
+            return names, 'its container was created without the rehearsal override; recreating it would use the installation image and volumes'
         return files, ''
 
-    def skip_recreation(self, service, profile, key, files, reason):
-        """A service that is not recreated is not a failed deployment: the report says so (`<name>_recreate_skipped`) and the console gives the command to run by hand."""
-        manual = shlex.join(self.compose_with(files or [str(self.root / 'docker-compose.yml')]) + ['--profile', profile, 'up', '-d', '--no-deps', '--force-recreate', service])
+    def skip_recreation(self, service, profile, key, names, reason):
+        """A service that is not recreated is not a failed deployment: the report says so (`<name>_recreate_skipped`) and the console gives the command to run by hand, with the whole `-f` list of its
+        label as it names it (`names`); with no reliable label (`None`) it says that it could not be known and leaves the marker `-f <files it was created with>`, never a list made up here."""
+        known = names is not None
+        manual = shlex.join(self.compose_with([printable(name, 4000) for name in names] if known else ['<files it was created with>']) + ['--profile', profile, 'up', '-d', '--no-deps', '--force-recreate', service])
         self.report[key.replace('_recreated', '_recreate_skipped')] = reason
-        print(f'Kairos: {service} was NOT recreated: {reason}. It keeps running the previous image; recreate it by hand with the Compose files it was created with: {manual}', file=sys.stderr, flush=True)
+        advice = ('recreate it by hand with the Compose files it was created with' if known else
+                  'it could not be known with which Compose files it was created (replace the marker with its `-f` list; an `rclone:` destination includes docker-compose.backup-rclone.yml); '
+                  'the command, with the Compose files it was created with')
+        print(f'Kairos: {service} was NOT recreated: {reason}. It keeps running the previous image; {advice}: {manual}', file=sys.stderr, flush=True)
 
     def step(self, name):
         self.phase = name

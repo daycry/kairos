@@ -60,6 +60,7 @@ class Docker:
     def __call__(self, command, **kwargs):
         self.commands.append(list(command))
         if command[:2] == ['docker', 'ps'] and any('config_files' in part for part in command):  # the Compose files a running operator service was created with
+            assert 'label=com.docker.compose.project=' + PROJECT in command and 'label=com.docker.compose.oneoff=False' in command, command  # only the question of this project is answered
             answer = self.config_files.get(next(part.rsplit('=', 1)[1] for part in command if part.startswith('label=com.docker.compose.service=')), self.default_files)
             if isinstance(answer, Exception):
                 raise answer
@@ -606,9 +607,9 @@ class OperatorServicesTests(unittest.TestCase):
         with Harness(table, status) as harness:
             harness.docker.running_extra = ['memory-backup']
             rclone = harness.root / 'docker-compose.backup-rclone.yml'
-            harness.docker.config_files['memory-backup'] = ','.join(str(p) for p in (harness.root / 'docker-compose.yml', rclone))
+            harness.docker.config_files['memory-backup'] = ','.join(str(p) for p in (harness.root / 'docker-compose.yml', rclone, harness.private / 'compose.override.yml'))
             command = self.recreated(harness.rollback(), 'memory-backup')
-            self.assertEqual([command[n + 1] for n, part in enumerate(command) if part == '-f'], [str(harness.root / 'docker-compose.yml'), str(rclone)], command)
+            self.assertEqual([command[n + 1] for n, part in enumerate(command) if part == '-f'], [str(harness.root / 'docker-compose.yml'), str(rclone), str(harness.private / 'compose.override.yml')], command)
             self.assertTrue(harness.instance.report.get('backup_recreated'))
 
     def test_milestone_b_review_n1_a_rollback_does_not_recreate_a_service_made_with_other_files_or_with_an_unreadable_label(self):

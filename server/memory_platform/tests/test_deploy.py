@@ -3,6 +3,8 @@ import contextlib
 import importlib.util
 import io
 import json
+import re
+import shlex
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
@@ -13,6 +15,10 @@ from memory_platform.tests.test_admin import workspace
 spec = importlib.util.spec_from_file_location('kairos_deploy', Path(__file__).parents[3] / 'scripts/deploy-memory.py')
 deploy = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(deploy)
+
+
+def rehearsal_override(root, project='kairos-rehearsal'):
+    return root / '.private' / ('rehearsal-' + project) / 'compose.override.yml'
 
 
 def arguments(**changes):
@@ -171,15 +177,72 @@ class BackfillPhaseTests(unittest.TestCase):
         return instance, commands, [c for c in commands if 'up' in c and c[-1] == 'memory-backup']
 
     def test_milestone_b_review_n1_the_recreation_keeps_the_compose_files_the_container_was_created_with(self):
-        """(a) with the rclone override, both `-f` in the order of the label (the container keeps its `egress` network); (b) with only `docker-compose.yml`, one `-f`."""
+        """(a) with the rclone override, both `-f` in the order of the label (the container keeps its `egress` network); (b) with only `docker-compose.yml`; the rehearsal override stays in both."""
         for names in (['docker-compose.yml', 'docker-compose.backup-rclone.yml'], ['docker-compose.yml']):
             with self.subTest(names=names):
-                instance, _, recreate = self.recreation(lambda root, names=names: ','.join(str(root / name) for name in names))
+                instance, _, recreate = self.recreation(lambda root, names=names: ','.join([str(root / name) for name in names] + [str(rehearsal_override(root))]))
                 self.assertEqual(len(recreate), 1)
                 files = [Path(recreate[0][n + 1]).name for n, part in enumerate(recreate[0]) if part == '-f']
-                self.assertEqual(files, names, recreate[0])
+                self.assertEqual(files, names + ['compose.override.yml'], recreate[0])
                 self.assertTrue(instance.report.get('backup_recreated'))
                 self.assertNotIn('backup_recreate_skipped', instance.report)
+
+    def manual_command(self, label, **options):
+        """The `-f` list of the command that is printed for a `memory-backup` that is not recreated, and the whole text of stderr."""
+        from memory_platform.tests import test_deploy_isolation as isolation
+        helper = isolation.IsolatedDeploymentTests('migrate_run')
+        instance, commands = helper.migrate_run(probe_running=False, backup_running=True, config_files={'memory-backup': label}, **options)
+        text = helper.stderr.getvalue()
+        manual = shlex.split(text.split('it was created with: ', 1)[1].strip().splitlines()[0])
+        return instance, commands, text, [manual[n + 1] for n, part in enumerate(manual) if part == '-f']
+
+    def test_milestone_b_review_fix3_r31_the_manual_command_reproduces_the_whole_label_in_its_order(self):
+        names = ['docker-compose.yml', 'docker-compose.backup-rclone.yml', 'custom.yml']
+        instance, commands, _, files = self.manual_command(lambda root: ','.join(str(root / name) for name in names))
+        self.assertEqual([Path(f).name for f in files], names, files)
+        self.assertEqual([c for c in commands if 'up' in c and c[-1] == 'memory-backup'], [])
+        self.assertTrue(instance.report.get('backup_recreate_skipped'))
+
+    def test_milestone_b_review_fix3_r31_without_a_reliable_label_the_manual_command_says_so_and_invents_no_file(self):
+        from memory_platform.tests import test_deploy_isolation as isolation
+        for name, label in {'empty': lambda root: '', 'unreadable': lambda root: isolation.deploy.DeploymentError('boom'),
+                            'two containers': lambda root: str(root / 'docker-compose.yml') + chr(10) + str(root / 'docker-compose.backup-rclone.yml')}.items():
+            with self.subTest(name):
+                _, _, text, files = self.manual_command(label)
+                self.assertEqual(files, ['<files it was created with>'])
+                self.assertIn('could not be known', text)
+                self.assertNotIn('docker-compose.yml', text.split('it was created with: ', 1)[1])
+
+    def test_milestone_b_review_fix3_r32_a_rehearsal_container_without_the_rehearsal_override_is_not_recreated(self):
+        instance, commands, recreate = self.recreation(lambda root: str(root / 'docker-compose.yml'))
+        self.assertEqual(recreate, [])
+        self.assertIn('created without the rehearsal override; recreating it would use the installation image and volumes', instance.report.get('backup_recreate_skipped', ''))
+        self.assertNotIn('command_failure', instance.report)
+        self.assertIn('verify', instance.report['phases'])
+
+    def test_milestone_b_review_fix3_r33_a_one_off_container_is_left_out_and_identical_labels_count_once_but_different_ones_do_not(self):
+        _, commands, recreate = self.recreation(lambda root: chr(10).join([','.join(str(root / n) for n in ('docker-compose.yml', '.private/rehearsal-kairos-rehearsal/compose.override.yml'))] * 2))
+        self.assertEqual(len(recreate), 1)
+        asked = next(c for c in commands if c[:2] == ['docker', 'ps'] and any('config_files' in part for part in c))
+        self.assertIn('label=com.docker.compose.oneoff=False', asked)
+        instance, _, recreate = self.recreation(lambda root: str(root / 'docker-compose.yml') + chr(10) + str(root / 'docker-compose.backup-rclone.yml'))
+        self.assertEqual(recreate, [])
+        self.assertIn('more than one container', instance.report['backup_recreate_skipped'])
+
+    def test_milestone_b_review_fix3_r34_the_question_is_limited_to_the_project(self):
+        _, commands, _ = self.recreation(lambda root: '', project='kairos-ops-r34')
+        asked = [c for c in commands if c[:2] == ['docker', 'ps'] and any('config_files' in part for part in c)]
+        self.assertTrue(asked)
+        for command in asked:
+            self.assertIn('label=com.docker.compose.project=kairos-ops-r34', command)
+
+    def test_milestone_b_review_fix3_r35_control_characters_of_the_label_never_reach_stderr_or_the_report(self):
+        dirty = '/etc/x' + chr(27) + '[2J' + chr(7) + chr(0x9b) + '31m' + chr(0x7f) + '.yml'
+        instance, _, text, _ = self.manual_command(lambda root: str(root / 'docker-compose.yml') + ',' + dirty)
+        bad = re.compile(r'[\x00-\x08\x0b-\x1f\x7f-\x9f]')
+        self.assertIsNone(bad.search(text), repr(text))
+        self.assertIsNone(bad.search(json.dumps(instance.report, ensure_ascii=False)))
+        self.assertIn('\\x1b', text)
 
     def test_milestone_b_review_n1_a_service_made_with_other_files_or_an_unreadable_label_is_not_recreated_and_the_deployment_still_succeeds(self):
         """(c) a file that is not ours, (d) a label that is empty or cannot be read: no `up` for it, `backup_recreate_skipped` in the report, the manual command on stderr, status ok."""
@@ -202,7 +265,7 @@ class BackfillPhaseTests(unittest.TestCase):
                 self.assertIn('verify', instance.report['phases'])
 
     def test_milestone_b_review_n1_a_rehearsal_never_names_the_installed_project_when_it_recreates(self):
-        _, commands, recreate = self.recreation(lambda root: str(root / 'docker-compose.yml'), project='kairos-ops-n1')
+        _, commands, recreate = self.recreation(lambda root: str(root / 'docker-compose.yml') + ',' + str(rehearsal_override(root, 'kairos-ops-n1')), project='kairos-ops-n1')
         self.assertEqual(recreate[0][recreate[0].index('-p') + 1], 'kairos-ops-n1')
         self.assertFalse([c for c in commands if 'knowledge-graphs' in ' '.join(c) and 'knowledge-graphs-' in ' '.join(c).replace('knowledge-graphs/', '')])
 
