@@ -466,13 +466,13 @@ El workflow `.github/workflows/ci.yml` se ejecuta en cada pull request, en cada 
 
 | Trabajo | Qué comprueba | Comando local equivalente | Tiempo en CI | Tiempo local |
 |---|---|---|---|---|
-| `server` | Suite completa del backend (1553 pruebas) contra PostgreSQL aislado | `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:ci .` | 2 min 7 s (medido con 1203 pruebas) | 8 min 41 s (primera construcción) |
+| `server` | Suite completa del backend (1557 pruebas) contra PostgreSQL aislado | `docker build --target test -f server/memory_platform/Dockerfile -t kairos-test:ci .` | 2 min 7 s (medido con 1203 pruebas) | 8 min 41 s (primera construcción) |
 | `retrieval-eval` | Puerta de calidad con embeddings simulados: recall@5 ≥ 0,80, MRR ≥ 0,60 y las metas de abstención | `docker build --target retrieval-eval -f server/memory_platform/Dockerfile -t kairos-eval:ci .` | 2 min 42 s | 1 min 58 s |
 | `client` | Pruebas y comprobación de publicación del instalador (sin publicar) | en `client`: `npm test` y `npm run release:check` | 30 s | 2 min 12 s (solo `npm test`) |
 | `web` | `typecheck`, pruebas y build del portal, y la etapa `test` de la imagen web | en `web`: `npm ci`, `npm run typecheck`, `npm test`, `npm run build`; y `docker build --target test -f web/Dockerfile -t kairos-web-test:ci .` | 43 s | no medido |
 | `contracts` | Los contratos MCP y REST solo crecen respecto a la base y los ficheros versionados coinciden con la exportación | `PYTHONPATH=server python -m unittest memory_platform.tests.test_contract_additive` (desde la raíz) y `python scripts/export-contracts.py` con Python 3.13 y `git diff --ignore-cr-at-eol --exit-code -- docs/contracts` | 14 s | no medido |
 
-Los tiempos de CI son los de la ejecución 43202850710 en `ubuntu-latest`. El tiempo del trabajo `server` es de esa ejecución, cuando la suite tenía 1203 pruebas, no las 1553 de la tabla: con más pruebas tarda más y no hay una medición nueva. El trabajo `contracts` usa Python 3.13 porque los contratos versionados se escribieron con esa versión (la imagen de pruebas trae 3.11, con otra sangría en las descripciones) e ignora el fin de línea porque están guardados con CRLF.
+Los tiempos de CI son los de la ejecución 43202850710 en `ubuntu-latest`. El tiempo del trabajo `server` es de esa ejecución, cuando la suite tenía 1203 pruebas, no las 1557 de la tabla: con más pruebas tarda más y no hay una medición nueva. El trabajo `contracts` usa Python 3.13 porque los contratos versionados se escribieron con esa versión (la imagen de pruebas trae 3.11, con otra sangría en las descripciones) e ignora el fin de línea porque están guardados con CRLF.
 
 ## Retirada del MCP interno
 
