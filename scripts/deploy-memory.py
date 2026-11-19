@@ -53,7 +53,7 @@ LOCK_FILE = 'deployment.lock'  # in the private directory of the project: held w
 ISOLATED_PRIVATE_FILES = ('memory-platform.env', 'compose.override.yml', 'deployment-status.json', 'deployment-status.tmp', LOCK_FILE)
 VOLUMES = (DEFAULT_PROJECT + '_memory-postgres-data', DEFAULT_PROJECT + '_memory-backups')
 SERVICES = ('memory-api', 'memory-worker', 'memory-mcp', 'memory-web')
-PROBE_SERVICE = 'memory-probe'  # opt-in (profile `probe`): not in SERVICES, so a deployment never starts it, but one that is already running is recreated with the new image
+OPERATOR_SERVICES = (('memory-probe', 'probe', 'probe_recreated'), ('memory-backup', 'backup', 'backup_recreated'))  # (service, profile, report key): opt-in services of the `operator` image
 NEW_NETWORKS = ('mcp',)  # networks that an installation made before this release does not have yet: the start creates them, a missing one is not an error
 BACKFILL_TIMEOUT_SECONDS = 1800  # queues jobs in short transactions; the worker does the embedding after `start`
 BACKFILL_REPORT_KEYS = ('status', 'reason', 'enqueued', 'derived', 'failed', 'pending', 'remaining', 'batches', 'embedding_filled', 'stale_marked')  # counts only, never anything else
@@ -678,18 +678,21 @@ class Deployment:
             raise DeploymentError(f'Command failed during {self.phase}.')
         return result.stdout.strip()
 
-    def refresh_probe(self):
-        """The round-trip probe is opt-in (profile `probe`) and the `up` above does not name it: a `memory-probe` that is running would go on with the image of the previous release (it shares the
-        `operator` image that was just built). When it is running it is recreated, without waiting for its healthcheck (start period 120 s); when it is not, it is not started. A failure of the
-        listing is not a failure of the deployment (the probe is not part of what the deployment verifies), a failure of the recreation is."""
+    def refresh_operator_services(self):
+        """The services that share the `operator` image and are opt-in (profiles `probe` and `backup`) are not named by the `up` of a deployment or of a rollback: one that is running would go on
+        with the image of the other release. Each one that is running is recreated, without waiting for its healthcheck (`memory-probe` has a start period of 120 s); one that is not running is not
+        started. `memory-backup` is recreated even in the middle of a copy: its SIGTERM (`stop_grace_period` 60 s) removes the partial copy and the next cycle makes it again, so nothing half
+        written is ever kept. A failure of the listing is not a failure of the deployment (these services are not part of what it verifies), a failure of the recreation is."""
+        profiles = [flag for service in OPERATOR_SERVICES for flag in ('--profile', service[1])]
         try:
-            running = self.run(self.compose + ['--profile', 'probe', 'ps', '--status', 'running', '--services']).split()
+            running = self.run(self.compose + profiles + ['ps', '--status', 'running', '--services']).split()
         except DeploymentError:
             self.report.pop('command_failure', None)  # the listing is a question, not a step
             return
-        if PROBE_SERVICE in running:
-            self.run(self.compose + ['--profile', 'probe', 'up', '-d', '--no-deps', '--force-recreate', PROBE_SERVICE])
-            self.report['probe_recreated'] = True
+        for service, profile, key in OPERATOR_SERVICES:
+            if service in running:
+                self.run(self.compose + ['--profile', profile, 'up', '-d', '--no-deps', '--force-recreate', service])
+                self.report[key] = True
 
     def step(self, name):
         self.phase = name
@@ -1152,6 +1155,7 @@ class Deployment:
             self.run(['docker', 'tag', previous[name], self.image(name)])
         if differing:  # only the containers that are not at the target: one that already is stays as it is (fix3)
             self.run(self.compose + ['up', '-d', '--no-deps', '--no-build', '--wait', '--wait-timeout', '90', *differing])
+        self.refresh_operator_services()  # the operator image was retagged: what runs it (probe, copy cycle) goes back with it
         self.step('verify')
         final = self.long_operator('content-manifest')
         compare_content(before, final)
@@ -1247,7 +1251,7 @@ class Deployment:
         self.step('start')
         self.run(self.compose + ['up', '-d', '--no-deps', '--wait', '--wait-timeout', '90',
                                  *((STUB_SERVICE,) if self.embed_stub else ()), 'ollama', *SERVICES])
-        self.refresh_probe()
+        self.refresh_operator_services()
         self.step('verify')
         final = self.long_operator('content-manifest')
         if before:

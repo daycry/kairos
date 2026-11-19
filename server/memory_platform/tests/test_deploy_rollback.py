@@ -45,6 +45,7 @@ class Docker:
     def __init__(self, secrets, volumes, images=None, manifests=None, served=None):
         self.images = dict(images or {})
         self.commands, self.secrets, self.volumes = [], secrets, volumes
+        self.running_extra = []  # `memory-probe` / `memory-backup` the double reports as running
         self.builds = 0
         self.manifests = list(manifests or [])
         # The image each container runs (`service -> id`): by default the ids in `:latest` of an installation that is up. A build changes `:latest`, never the containers.
@@ -61,6 +62,8 @@ class Docker:
             return f'cid-{service}' if service in self.served else ''
         if command[:2] == ['docker', 'inspect']:
             return self.served[command[-1][len('cid-'):]]
+        if command[-1:] == ['--services']:  # `compose ps --status running --services`
+            return chr(10).join(self.running_extra)
         if 'up' in command:  # a service that is (re)created runs what `:latest` is now
             for name, service in SERVICE_OF.items():
                 if service in command:
@@ -562,6 +565,31 @@ class TagGrammarTests(unittest.TestCase):
                 self.assertTrue(instance.invalid_previous({'api': tag}))
 
 
+class OperatorServicesTests(unittest.TestCase):
+    """Review of milestone B: the services that share the `operator` image (`memory-probe`, `memory-backup`) go back with it."""
+
+    def test_milestone_b_review_a_rollback_recreates_the_running_services_of_the_operator_image(self):
+        table, status = after_two_deployments()
+        with Harness(table, status) as harness:
+            harness.docker.running_extra = ['memory-probe', 'memory-backup']
+            commands = harness.rollback()
+            main_up = max(n for n, command in enumerate(commands) if 'up' in command and 'memory-api' in command)
+            for service, profile in (('memory-probe', 'probe'), ('memory-backup', 'backup')):
+                recreate = [n for n, command in enumerate(commands) if 'up' in command and command[-1] == service]
+                self.assertEqual(len(recreate), 1, service)
+                self.assertGreater(recreate[0], main_up)
+                self.assertTrue({'--profile', profile, '--force-recreate', '--no-deps', '-d'} <= set(commands[recreate[0]]))
+                self.assertNotIn('--wait', commands[recreate[0]])
+            self.assertEqual({key: harness.instance.report.get(key) for key in ('probe_recreated', 'backup_recreated')}, {'probe_recreated': True, 'backup_recreated': True})
+
+    def test_milestone_b_review_a_rollback_starts_nothing_that_was_not_running(self):
+        table, status = after_two_deployments()
+        with Harness(table, status) as harness:
+            commands = harness.rollback()
+            self.assertFalse([c for c in commands if 'up' in c and ('memory-probe' in c or 'memory-backup' in c)])
+            self.assertFalse(harness.instance.report.get('probe_recreated') or harness.instance.report.get('backup_recreated'))
+
+
 class VersionOfTheTagTests(unittest.TestCase):
     def test_the_tag_carries_the_version_that_built_the_image_when_the_record_says_so(self):
         record = {'version': '0.3.0', 'mark': '20261101T100000Z', 'previous': {}, 'kept': {}, 'current': {name: sid(f'running-{name}') for name in NAMES},
@@ -626,7 +654,7 @@ class RollbackTests(unittest.TestCase):
             commands = harness.rollback()
             text = [' '.join(c) for c in commands]
             for forbidden in ('migrate', 'bootstrap', 'backfill', ' backup', 'verify-backup', ' down', ' rm ', '--volumes', ' stop', 'prune', ' build', 'volume', 'network create'):
-                self.assertFalse([t for t in text if forbidden in t and 'content-manifest' not in t and 'config' not in t and 'image inspect' not in t], forbidden)
+                self.assertFalse([t for t in text if forbidden in t and 'content-manifest' not in t and 'config' not in t and 'image inspect' not in t and not t.endswith('ps --status running --services')], forbidden)  # the listing of the opt-in services names the profile `backup`
             self.assertFalse([t for t in text if 'memory-migrate' in t or 'memory-bootstrap' in t or 'memory-postgres' in t])
             tags = [c for c in commands if c[:2] == ['docker', 'tag']]
             self.assertEqual({c[2]: c[3] for c in tags}, {f'{repo(name)}:0.4.0-20261103T100000Z': f'{repo(name)}:latest' for name in NAMES})

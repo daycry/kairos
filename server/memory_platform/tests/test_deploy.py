@@ -146,6 +146,24 @@ class BackfillPhaseTests(unittest.TestCase):
         verify = instance.report['phases'].index('verify')
         self.assertLess(instance.report['phases'].index('start'), verify)
 
+    def test_milestone_b_review_a_running_memory_backup_is_recreated_too_and_the_report_says_so(self):
+        """Both services of the `operator` image (`memory-probe`, `memory-backup`) are recreated when they run; `memory-backup` is SIGTERM-safe (the partial copy is dropped, the next cycle redoes it)."""
+        from memory_platform.tests.test_deploy_isolation import IsolatedDeploymentTests
+        helper = IsolatedDeploymentTests('migrate_run')
+        _, without = helper.migrate_run(probe_running=True, backup_running=False)
+        self.assertFalse([c for c in without if 'memory-backup' in c], 'a service that was not running is not started')
+        instance, commands = helper.migrate_run(probe_running=True, backup_running=True)
+        main_up = next(n for n, command in enumerate(commands) if 'up' in command and 'ollama' in command)
+        recreate = [n for n, command in enumerate(commands) if 'up' in command and 'memory-backup' in command]
+        self.assertEqual(len(recreate), 1)
+        command = commands[recreate[0]]
+        self.assertGreater(recreate[0], main_up)
+        self.assertTrue({'--profile', 'backup', '--force-recreate', '--no-deps', '-d'} <= set(command), command)
+        self.assertEqual(command[-1], 'memory-backup')
+        self.assertNotIn('--wait', command)
+        self.assertTrue(instance.report.get('backup_recreated'))
+        self.assertTrue(instance.report.get('probe_recreated'))
+
     def test_the_report_keeps_only_the_known_count_keys(self):
         noisy = json.dumps({'status': 'backfilled', 'enqueued': 1, 'remaining': 0, 'batches': 1, 'embedding_filled': 0, 'dsn': 'postgresql://u:secret@h/db'})
         instance, _ = self.run_phases(noisy)
