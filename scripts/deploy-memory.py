@@ -740,7 +740,9 @@ class Deployment:
         if foreign or not files:
             return names, 'its container was created with Compose files that are not ours (' + ', '.join(printable(name, 500) for name in foreign) + ')'
         if self.isolated and str(self.private / 'compose.override.yml') not in files:
-            return names, 'its container was created without the rehearsal override; recreating it would use the installation image and volumes'
+            # the manual command adds the rehearsal override: following it must never recreate a rehearsal service with the installation image and volumes
+            return names + [str(self.private / 'compose.override.yml')], ('its container was created without the rehearsal override; recreating it would use the installation image and volumes '
+                                                                           '(the command below adds the rehearsal override)')
         return files, ''
 
     def skip_recreation(self, service, profile, key, names, reason):

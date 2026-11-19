@@ -220,6 +220,12 @@ class BackfillPhaseTests(unittest.TestCase):
         self.assertNotIn('command_failure', instance.report)
         self.assertIn('verify', instance.report['phases'])
 
+    def test_milestone_b_review_fix3_r32_the_manual_command_of_a_rehearsal_container_adds_the_rehearsal_override(self):
+        """Following the printed command must never recreate a rehearsal service with the installation image and volumes: it carries the label and then the rehearsal override."""
+        _, _, text, files = self.manual_command(lambda root: str(root / 'docker-compose.yml'))
+        self.assertEqual([Path(f).name for f in files], ['docker-compose.yml', 'compose.override.yml'], files)
+        self.assertIn('rehearsal override', text)
+
     def test_milestone_b_review_fix3_r33_a_one_off_container_is_left_out_and_identical_labels_count_once_but_different_ones_do_not(self):
         _, commands, recreate = self.recreation(lambda root: chr(10).join([','.join(str(root / n) for n in ('docker-compose.yml', '.private/rehearsal-kairos-rehearsal/compose.override.yml'))] * 2))
         self.assertEqual(len(recreate), 1)
