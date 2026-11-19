@@ -21,7 +21,7 @@ test-plan: n/a (sin UI)
 
 | | |
 |---|---|
-| **Estado** | en-progreso |
+| **Estado** | completado |
 | **Fecha** | 2026-11-15 |
 | **Plan** | [`improvement-plan.md`](./improvement-plan.md) |
 | **Diseño** | n/a |
@@ -55,8 +55,8 @@ test-plan: n/a (sin UI)
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 6 | 6 | 100.0% | 0 / 33.6h | 2.36 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 7 | 7 | 100.0% | 0 / 33.6h | 10.36 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 15 — Cierre del hito B: desplegar y detectar | 2 | 2 | 100.0% | 0 / 2.4h | 3.51 / 0.3h | 0 / 0.1h | 0 / 80 k |
-| Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 2 | 3 | 66.7% | 0 / 4.8h | 0.24 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **97** | **98** | **99.0%** | **0 / 412.8h** | **34.77 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 3 | 3 | 100.0% | 0 / 4.8h | 0.84 / 0.6h | 0 / 0.2h | 0 / 160 k |
+| **TOTAL** | **98** | **98** | **100.0%** | **0 / 412.8h** | **35.37 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2989,7 +2989,7 @@ test-plan: n/a (sin UI)
 
 ## Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1
 
-**Estado**: en-progreso · **Hito**: B · **Estimado**: 4.8h (4.0h base, de ellas 0.0h de revisión adversarial) · **Real**: 0.24h · **Coste est.**: 240 € · **Tokens est.**: 160 k
+**Estado**: completado · **Hito**: B · **Estimado**: 4.8h (4.0h base, de ellas 0.0h de revisión adversarial) · **Real**: 0.84h · **Coste est.**: 240 € · **Tokens est.**: 160 k
 
 ### T-96 — Ensayo aislado de cierre (CA-37): restauración, caída de base y sonda con worker parado
 
@@ -3032,7 +3032,7 @@ test-plan: n/a (sin UI)
 - **Previsión IA**: 37 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: T-96
 - **Tipo**: docs
-- **Archivos**: `server/VERSION`, `mcp/VERSION`, `client/package.json`, `client/package-lock.json`, `server/memory_platform/tests/test_versions.py`, `CHANGELOG.md`, `CHANGELOG.es.md`, `server/memory_platform/app.py`, `client/lib/config.mjs`, `mcp/tests/test_health.py`, `mcp/README.md`, `client/README.md`, `README.md`, `docs/install.md`, `docs/integration.md`, `docs/release-cli.md`, `docs/code-analysis.md`, `docs/operations.md`, `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`
+- **Archivos**: `server/VERSION`, `mcp/VERSION`, `client/package.json`, `client/package-lock.json`, `server/memory_platform/tests/test_versions.py`, `CHANGELOG.md`, `CHANGELOG.es.md`, `server/memory_platform/app.py`, `client/lib/config.mjs`, `mcp/tests/test_health.py`, `mcp/README.md`, `client/README.md`, `README.md`, `docs/install.md`, `docs/integration.md`, `docs/release-cli.md`, `docs/code-analysis.md`, `docs/operations.md`, `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py` · `client/tests/lifecycle.test.mjs` (revisión de la fase 16: la prueba de actualización cubre también desde 0.4.0)
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_versions|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
@@ -3054,10 +3054,10 @@ test-plan: n/a (sin UI)
 ### T-98 — Comprobaciones finales (CA-38), manuales y estado del ledger
 
 - **Descripción**: Comprobar migraciones aditivas, diff aditivo de ambos contratos frente a `contracts_base`, ausencia de referencias a `knowledge-graphs-*` y 11434, suite con 0 fallos y 0 omitidos, `retrieval-eval` en verde y manuales actualizados; marcar el plan y el ledger como completados y actualizar el índice. Fuente: CA-38; todos los CA.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: `docs/architecture.md` describe las copias verificables, el worker que sobrevive a la base, el despliegue reversible y la detección (sonda, antigüedad de la cola y `kairos doctor`); `docs/operations.md` explica cómo activar la abstención.
+- **Estado**: completado
 - **Tiempo humano**: est. 1h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real 0.6h (estimado)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 37 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: T-97
@@ -3070,17 +3070,19 @@ test-plan: n/a (sin UI)
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
 
 **Criterios de aceptación**
-- [ ] `docs/architecture.md`, `docs/operations.md`, `docs/configuration.md` y los CHANGELOG reflejan lo implementado
-- [ ] Todos los CA de la spec tienen evidencia en `Notas` de su tarea
-- [ ] La spec pasa a `implementada` y el índice del roadmap refleja el cierre
+- [x] `docs/architecture.md`, `docs/operations.md`, `docs/configuration.md` y los CHANGELOG reflejan lo implementado
+- [x] Todos los CA de la spec tienen evidencia en `Notas` de su tarea
+- [x] La spec pasa a `implementada` y el índice del roadmap refleja el cierre
 
 **Subtareas**
-- [ ] Repasar los 38 CA contra las evidencias
-- [ ] Actualizar manuales, spec e índice
-- [ ] Ejecutar las comprobaciones finales
-- [ ] `usage-meter start/close` de la tarea
+- [x] Repasar los 38 CA contra las evidencias
+- [x] Actualizar manuales, spec e índice
+- [x] Ejecutar las comprobaciones finales
+- [x] `usage-meter start/close` de la tarea (n/a: sin marcador; real estimado, ver Notas)
 
 **Notas**: Patrón: cierre de la Iniciativa 2 (`docs/roadmap/README.md`, spec `implementada`).
+
+**Cierre** (2026-11-19, orquestador): TDD n/a (prosa, estado y verificación; los Minor de la revisión de la fase llevan su prueba o RED en `review.md`). Un repaso de solo lectura de los 38 CA contra sus evidencias da 34 directos. Hay 4 con matiz, anotados en la spec: CA-08 (la imagen, por construcción), CA-21 (cota enmendada), CA-27 (modelos reales diferidos a la Iniciativa 5, también en R-07) y CA-28 (en local; la CI del PR #5 no arrancó por facturación). Manuales: `docs/architecture.md` gana la sección «Operación fiable» y 3 filas de componentes; `docs/operations.md` explica cómo activar la abstención; `docs/configuration.md` ya lo cubría. Spec `implementada` (38 CA marcados), plan y ledger `completado`, índice `docs/roadmap/README.md` actualizado. Suite `MEMORY_TEST_RESULT` {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1570}; `npm test` 101/101; `ledger-lint` y `scope-check --base main` exit 0. Sin marcador de usage-meter: el orquestador hizo T-98 dentro de la sesión y el real es una estimación.
 
 ---
 

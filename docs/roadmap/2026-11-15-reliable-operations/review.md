@@ -264,3 +264,35 @@ Cada fase cierra con su revisión adversarial. El detalle de cada intento está 
 | 3 | Minor | Una nota de T-94 decía que faltaba el ítem (24), ya hecho | Corregido en la compactación (31) |
 
 Deuda observada fuera de alcance: un valor mal escrito en `MEMORY_ABSTAIN_THRESHOLDS` también impide arrancar `backup-cycle` y la purga de la sonda, porque comparten `Settings.from_env`. Es el mismo patrón que tenía `MEMORY_FUSION_*` antes del hito. Queda para la Iniciativa 9 (configuración única, B-12).
+
+## Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 (T-96 a T-98)
+
+- **Fecha**: 2026-11-19
+- **Lentes**: intento 1, A, más B y C en un solo revisor (C por `ci.yml` y `client/lib/config.mjs`), sobre `3ee5dcc..802a4f7` (T-96 y T-97). T-98 la hizo el orquestador, con un repaso de solo lectura de los 38 CA contra sus evidencias.
+- **Veredicto**: cerrada en el intento 1 sin hallazgos Critical ni Important. El orquestador corrigió 4 Minor y rebatió 1.
+- **Evidencia**:
+  - Ensayo de cierre `kairos-ops-z`, `--stage all`, `rehearsal_ok`:
+    - restauración `restored_and_content_verified` con 26 tablas;
+    - `worker_survived_db_restart`: 246 pendientes, 0 reinicios, 0 `failed`;
+    - sonda con el worker parado: `probe_failed stage=index`.
+    - Listados `knowledge-graphs-*` idénticos antes y después.
+  - Suite: MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1570}.
+  - `npm test` del cliente: 101/101.
+  - `ledger-lint` y `scope-check --base main`: exit 0.
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Minor | Ninguna prueba cubría la actualización del cliente desde 0.4.0: sin `'0.4.0'` en `COMPATIBLE_VERSIONS`, `npm test` seguía en verde | Corregido: `0.4.0` añadido al bucle de `lifecycle.test.mjs`. RED con el mutante: `incompatible_installation_manifest` |
+| 1 | Minor | La sección 0.4.1 de los CHANGELOG decía «Server, kairos-mcp and CLI are all 0.4.0» | Corregido: «pasaron juntos a la 0.4.0 (esta versión es la 0.4.1)» |
+| 1 | Minor | `docs/integration.md` no nombraba la 0.4.1 entre los CLI que no envían `structured` | Corregido |
+| 1 | Minor | Nombre de prueba `test_the_version_is_0_4_0…` que comprueba 0.4.1 | Corregido |
+| 1 | Minor | El CHANGELOG inglés usa «Iniciativa 7» y la prueba lo fija | Rebatido: es el nombre propio de la iniciativa en todo el repositorio, y `test_abstention_docs` (T-91) ya lo exige en los dos idiomas |
+| 1 | Minor (fuera de lente) | `test_versions` partía `CHANGELOG.es.md` por `## [Unreleased]`, que no existe en español, así que revisaba el fichero entero | Corregido: usa `## [Sin publicar]` en ES y exige el encabezado |
+
+T-98 (repaso de CA): 34 de 38 con evidencia directa. Matices, anotados en la spec al cerrarla:
+- CA-08, la parte de la imagen, se cumple por construcción.
+- CA-21 se cumple con la cota enmendada.
+- CA-27: la parte de modelos reales queda diferida a la Iniciativa 5.
+- CA-28 está verificado en local, porque la CI del PR #5 no arrancó por facturación.
+
+Huecos de documentación corregidos: `docs/architecture.md` gana la sección «Operación fiable» y tres filas en la tabla de componentes, y `docs/operations.md` explica cómo activar la abstención.

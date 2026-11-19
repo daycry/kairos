@@ -26,6 +26,9 @@ El puente MCP convierte mensajes stdio en peticiones HTTP autenticadas. El servi
 | `server/memory_platform/store.py` y `store_*.py` | `Store` es una fachada sobre mixins por dominio (autenticación, ingesta, documentos, grafo, trabajos y vectores); el código que usa `Store` no cambió | [fachada](../server/memory_platform/store.py) |
 | `server/memory_platform/observability.py` | Logs JSON con redacción y métricas Prometheus de valores cerrados | [observabilidad](../server/memory_platform/observability.py) |
 | `server/memory_platform/admin.py` | Migración, usuario inicial, inspección, copias, relleno de fragmentos y restauración de comprobación | [administración](../server/memory_platform/admin.py) |
+| `server/memory_platform/backup.py` y `offsite.py` | Copia con manifiesto SHA-256 y huellas por tabla, cifrado `age`, retención local y el ciclo programado `backup-cycle` hacia un destino externo (`dir:` o `rclone:`) | [copias](../server/memory_platform/backup.py) |
+| `server/memory_platform/probe.py` | Sonda de ida y vuelta (`admin probe`): escribe, indexa, busca y retira una nota marcada; servicio `memory-probe` | [sonda](../server/memory_platform/probe.py) |
+| `scripts/deploy-memory.py` | Despliegue con bloqueo por proyecto, etiquetado de imágenes, verificación de la copia antes de migrar y `--rollback` | [despliegue](../scripts/deploy-memory.py) |
 | `web` | Web pública, acceso y panel privado, filtros, listas y mapa | [portal](../web/src/memory-portal.ts) |
 | `client` | Instalación de configuración y puente MCP local | [manifiesto](../client/package.json) |
 | `docker-compose.yml` | Servicios, redes y almacenamiento persistente | [Compose](../docker-compose.yml) |
@@ -96,6 +99,15 @@ La fusión por rangos recíprocos (RRF) no mide relevancia absoluta: el primer r
 - **Medida de calidad (`retrieval-eval`).** Una puerta aparte de la suite (`docker build --target retrieval-eval`) mide recall@1/5/10 y MRR de cada capa y de la fusión sobre un conjunto sintético congelado, con un proveedor de embeddings simulado y determinista, y exige umbrales (recall@5 ≥ 0,80, MRR ≥ 0,60, ninguna pérdida de más de 2 puntos frente a la línea base y, por conjunto y por subconjunto, un MRR de la fusión no inferior al de la mejor capa individual: CA-18). Mide la tubería de recuperación, no la calidad del modelo real; la medida con el modelo real es un paso explícito aparte, en una base aislada y nunca contra la desplegada.
 
 La política de cada proyecto determina qué nuevos eventos se admiten y si se conservan hechos y relaciones. Una memoria generada no recibe automáticamente el estado validado. La eliminación lógica y las versiones evitan recuperar elementos retirados como si siguieran vigentes.
+
+## Operación fiable: copias, despliegue y detección
+
+La Iniciativa 3 añade cuatro piezas de operación. El detalle de cada orden está en [operaciones](operations.md) y las variables, en [configuración](configuration.md).
+
+- **Copias que se pueden comprobar.** `admin backup` escribe el volcado con un manifiesto SHA-256 y huellas por tabla. Con un fichero de destinatarios, cifra con `age` sin que el volcado en claro toque el disco; la clave privada nunca está en el servidor. `verify-backup` restaura en un PostgreSQL efímero y compara las huellas. El servicio `memory-backup` (`backup-cycle --loop`) hace la copia periódica, sube solo copias cifradas al destino externo y aplica la retención local y la remota. `kairos_backup_offsite_success` vale 0 ante cualquier fallo.
+- **El worker sobrevive a la base.** Distingue un error de la base de uno del proveedor. Ante la base caída espera con *backoff* y *jitter* sin gastar intentos del trabajo y sin reiniciarse. Escribe un latido que usa el healthcheck. Un trabajo que agota sus concesiones pasa a `failed` con `attempts_exhausted`.
+- **Despliegue reversible.** `scripts/deploy-memory.py` toma un bloqueo del sistema operativo por proyecto. Etiqueta las imágenes en uso antes de construir y, con `--verify-backup`, comprueba la copia antes de `migrate`. `--rollback` vuelve a las imágenes anteriores sin migrar. Al terminar, recrea `memory-probe` y `memory-backup` con los ficheros de Compose con que se crearon. Compose fija límites de memoria y CPU por servicio, healthchecks, rotación de logs y `extra_hosts`.
+- **Detección.** `memory-probe` ejecuta la sonda cada `MEMORY_PROBE_INTERVAL` segundos y publica `kairos_probe_success` y la etapa que falla (`write`, `index`, `search` o `retire`). `/metrics` publica la antigüedad del trabajo pendiente más viejo. `kairos doctor` del cliente informa de una cola local atascada y sale con 1 cuando hay problemas.
 
 ## Seguridad y fronteras
 
