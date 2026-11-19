@@ -164,6 +164,48 @@ class BackfillPhaseTests(unittest.TestCase):
         self.assertTrue(instance.report.get('backup_recreated'))
         self.assertTrue(instance.report.get('probe_recreated'))
 
+    def recreation(self, label, backup_running=True, project='kairos-rehearsal'):
+        """The `memory-backup` of an apply whose container was created with the Compose files `label` (a function of the root: `None` leaves the label empty, an Exception makes the question fail)."""
+        from memory_platform.tests.test_deploy_isolation import IsolatedDeploymentTests
+        instance, commands = IsolatedDeploymentTests('migrate_run').migrate_run(probe_running=False, backup_running=backup_running, project=project, config_files={'memory-backup': label})
+        return instance, commands, [c for c in commands if 'up' in c and c[-1] == 'memory-backup']
+
+    def test_milestone_b_review_n1_the_recreation_keeps_the_compose_files_the_container_was_created_with(self):
+        """(a) with the rclone override, both `-f` in the order of the label (the container keeps its `egress` network); (b) with only `docker-compose.yml`, one `-f`."""
+        for names in (['docker-compose.yml', 'docker-compose.backup-rclone.yml'], ['docker-compose.yml']):
+            with self.subTest(names=names):
+                instance, _, recreate = self.recreation(lambda root, names=names: ','.join(str(root / name) for name in names))
+                self.assertEqual(len(recreate), 1)
+                files = [Path(recreate[0][n + 1]).name for n, part in enumerate(recreate[0]) if part == '-f']
+                self.assertEqual(files, names, recreate[0])
+                self.assertTrue(instance.report.get('backup_recreated'))
+                self.assertNotIn('backup_recreate_skipped', instance.report)
+
+    def test_milestone_b_review_n1_a_service_made_with_other_files_or_an_unreadable_label_is_not_recreated_and_the_deployment_still_succeeds(self):
+        """(c) a file that is not ours, (d) a label that is empty or cannot be read: no `up` for it, `backup_recreate_skipped` in the report, the manual command on stderr, status ok."""
+        from memory_platform.tests import test_deploy_isolation as isolation
+        IsolatedDeploymentTests = isolation.IsolatedDeploymentTests  # the module of that file has its own copy of the script: its DeploymentError is the one the double raises
+        cases = {'foreign file': lambda root: str(root / 'docker-compose.yml') + ',' + str(root / 'docker-compose.other.yml'),
+                 'empty label': lambda root: '', 'question fails': lambda root: isolation.deploy.DeploymentError('boom')}
+        for name, label in cases.items():
+            with self.subTest(name):
+                helper_stderr = IsolatedDeploymentTests('migrate_run')
+                instance, commands = helper_stderr.migrate_run(probe_running=False, backup_running=True, config_files={'memory-backup': label})
+                recreate = [c for c in commands if 'up' in c and c[-1] == 'memory-backup']
+                errors = helper_stderr.stderr
+                self.assertEqual(recreate, [])
+                self.assertTrue(instance.report.get('backup_recreate_skipped'), instance.report)
+                self.assertNotIn('backup_recreated', instance.report)
+                self.assertNotIn('command_failure', instance.report)
+                self.assertIn('--force-recreate', errors.getvalue())
+                self.assertIn('memory-backup', errors.getvalue())
+                self.assertIn('verify', instance.report['phases'])
+
+    def test_milestone_b_review_n1_a_rehearsal_never_names_the_installed_project_when_it_recreates(self):
+        _, commands, recreate = self.recreation(lambda root: str(root / 'docker-compose.yml'), project='kairos-ops-n1')
+        self.assertEqual(recreate[0][recreate[0].index('-p') + 1], 'kairos-ops-n1')
+        self.assertFalse([c for c in commands if 'knowledge-graphs' in ' '.join(c) and 'knowledge-graphs-' in ' '.join(c).replace('knowledge-graphs/', '')])
+
     def test_the_report_keeps_only_the_known_count_keys(self):
         noisy = json.dumps({'status': 'backfilled', 'enqueued': 1, 'remaining': 0, 'batches': 1, 'embedding_filled': 0, 'dsn': 'postgresql://u:secret@h/db'})
         instance, _ = self.run_phases(noisy)

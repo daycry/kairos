@@ -16,6 +16,7 @@ import os
 import re
 from pathlib import Path
 import secrets
+import shlex
 import signal
 import socket
 import stat
@@ -690,9 +691,58 @@ class Deployment:
             self.report.pop('command_failure', None)  # the listing is a question, not a step
             return
         for service, profile, key in OPERATOR_SERVICES:
-            if service in running:
-                self.run(self.compose + ['--profile', profile, 'up', '-d', '--no-deps', '--force-recreate', service])
-                self.report[key] = True
+            if service not in running:
+                continue
+            files, reason = self.recorded_compose_files(service)
+            if reason:
+                self.skip_recreation(service, profile, key, files, reason)
+                continue
+            self.run(self.compose_with(files) + ['--profile', profile, 'up', '-d', '--no-deps', '--force-recreate', service])
+            self.report[key] = True
+
+    def compose_with(self, files):
+        """`self.compose` with exactly `files` as its `-f` list (in that order) in the place of the first one."""
+        command, placed, skip = [], False, False
+        for part in self.compose:
+            if skip:
+                skip = False
+            elif part == '-f':
+                skip = True
+                if not placed:
+                    command.extend(piece for file in files for piece in ('-f', file))
+                    placed = True
+            else:
+                command.append(part)
+        return command if placed else command + [piece for file in files for piece in ('-f', file)]
+
+    def recorded_compose_files(self, service):
+        """The Compose files the container of `service` was created with (label `com.docker.compose.project.config_files` of its container, asked of the project only), as `(files, '')` when every one is
+        ours: `docker-compose.yml`, `docker-compose.backup-rclone.yml` (the egress network of an `rclone:` destination) and, in a rehearsal, the override this deployment wrote. Anything else, a missing
+        label or a failed question gives `(files, reason)`: recreating with the files of `self.compose` would silently drop what the container was created with."""
+        allowed = [self.root / 'docker-compose.yml', self.root / 'docker-compose.backup-rclone.yml'] + ([self.private / 'compose.override.yml'] if self.isolated else [])
+        known = {os.path.normcase(str(path.resolve())): str(path) for path in allowed}
+        try:
+            label = self.run(['docker', 'ps', '-a', '--filter', 'label=com.docker.compose.project=' + self.project, '--filter', 'label=com.docker.compose.service=' + service,
+                              '--format', '{{.Label "com.docker.compose.project.config_files"}}'])
+        except DeploymentError:
+            self.report.pop('command_failure', None)  # a question, not a step
+            return [], 'the Compose files of its container could not be read'
+        lines = [line.strip() for line in label.splitlines() if line.strip()]
+        if len(lines) != 1:
+            return [], 'its container has no label with the Compose files it was created with' if not lines else 'more than one container answers for it'
+        files, foreign = [], []
+        for name in lines[0].split(','):
+            found = known.get(os.path.normcase(str(Path(name.strip()).resolve())))
+            (files if found else foreign).append(found or name.strip())
+        if foreign or not files:
+            return foreign, 'its container was created with Compose files that are not ours (' + ', '.join(foreign) + ')'
+        return files, ''
+
+    def skip_recreation(self, service, profile, key, files, reason):
+        """A service that is not recreated is not a failed deployment: the report says so (`<name>_recreate_skipped`) and the console gives the command to run by hand."""
+        manual = shlex.join(self.compose_with(files or [str(self.root / 'docker-compose.yml')]) + ['--profile', profile, 'up', '-d', '--no-deps', '--force-recreate', service])
+        self.report[key.replace('_recreated', '_recreate_skipped')] = reason
+        print(f'Kairos: {service} was NOT recreated: {reason}. It keeps running the previous image; recreate it by hand with the Compose files it was created with: {manual}', file=sys.stderr, flush=True)
 
     def step(self, name):
         self.phase = name

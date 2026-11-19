@@ -172,7 +172,7 @@ class IsolatedDeploymentTests(unittest.TestCase):
             self.assertIn('needs its own', str(raised.exception))
             self.assertFalse(any('config' in command for command in commands))
 
-    def migrate_run(self, backfill_answer=None, fail_stop=False, fail_when=None, verify_answer=None, restore_answer=None, expect_failure=False, project='kairos-rehearsal', probe_running=None, backup_running=None, **changes):
+    def migrate_run(self, backfill_answer=None, fail_stop=False, fail_when=None, verify_answer=None, restore_answer=None, expect_failure=False, project='kairos-rehearsal', probe_running=None, backup_running=None, config_files=None, **changes):
         """Run the isolated apply() with a fake runner; returns (instance, ordered compose/operator commands)."""
         with workspace() as root:
             secrets = self.secrets(root)
@@ -196,6 +196,12 @@ class IsolatedDeploymentTests(unittest.TestCase):
                     raise RuntimeError('stop failed')
                 if fail_when and fail_when(command):
                     raise deploy.DeploymentError('simulated failure')
+                if command[:2] == ['docker', 'ps'] and any('config_files' in part for part in command):  # the Compose files a running operator service was created with: by default those of this deployment
+                    answer = (config_files or {}).get(next(part.rsplit('=', 1)[1] for part in command if part.startswith('label=com.docker.compose.service=')), ','.join(str(root / name) for name in ('docker-compose.yml', '.private/rehearsal-' + project + '/compose.override.yml')))
+                    answer = answer(root) if callable(answer) else answer  # a label that names files of the temporary root
+                    if isinstance(answer, Exception):
+                        raise answer
+                    return answer
                 if command[-1] == '--services':  # `compose ps --status running --services`: which services of the project are up (fix1 of phase 12: a running memory-probe is recreated)
                     return '\n'.join(['memory-api', 'memory-worker'] + (['memory-probe'] if probe_running else []) + (['memory-backup'] if backup_running else []))
                 if any('restore-check' in part for part in command):
@@ -211,7 +217,7 @@ class IsolatedDeploymentTests(unittest.TestCase):
                 sleeps.append(seconds)
                 if len(sleeps) > 200:
                     raise AssertionError('a wait that never ends')
-            with patch.object(instance, 'run', side_effect=run), patch.object(deploy, 'verify_runtime', return_value={}), patch.object(deploy.time, 'sleep', side_effect=sleep_guard), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            with patch.object(instance, 'run', side_effect=run), patch.object(deploy, 'verify_runtime', return_value={}), patch.object(deploy.time, 'sleep', side_effect=sleep_guard), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as self.stderr:
                 if fail_stop:
                     with self.assertRaises(RuntimeError):
                         instance.apply()

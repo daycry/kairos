@@ -46,6 +46,8 @@ class Docker:
         self.images = dict(images or {})
         self.commands, self.secrets, self.volumes = [], secrets, volumes
         self.running_extra = []  # `memory-probe` / `memory-backup` the double reports as running
+        self.default_files = ''  # what the label `com.docker.compose.project.config_files` of those containers says unless `config_files` names the service
+        self.config_files = {}  # `service -> label` ('' is a container without the label, an Exception is a question that fails)
         self.builds = 0
         self.manifests = list(manifests or [])
         # The image each container runs (`service -> id`): by default the ids in `:latest` of an installation that is up. A build changes `:latest`, never the containers.
@@ -57,6 +59,11 @@ class Docker:
 
     def __call__(self, command, **kwargs):
         self.commands.append(list(command))
+        if command[:2] == ['docker', 'ps'] and any('config_files' in part for part in command):  # the Compose files a running operator service was created with
+            answer = self.config_files.get(next(part.rsplit('=', 1)[1] for part in command if part.startswith('label=com.docker.compose.service=')), self.default_files)
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
         if command[:2] == ['docker', 'ps']:
             service = next(part.rsplit('=', 1)[1] for part in command if part.startswith('label=com.docker.compose.service='))
             return f'cid-{service}' if service in self.served else ''
@@ -131,6 +138,7 @@ class Harness:
         self.args = SimpleNamespace(**values)
         self.instance = deploy.Deployment(self.args, self.root)
         self.docker = Docker(self.secrets, self.instance.volumes, images, manifests, served)
+        self.docker.default_files = ','.join(str(path) for path in (self.root / 'docker-compose.yml', self.private / 'compose.override.yml'))
 
     def again(self):
         """A new run of the script on the same project: a new `Deployment`, the same Docker and the same status file."""
@@ -588,6 +596,36 @@ class OperatorServicesTests(unittest.TestCase):
             commands = harness.rollback()
             self.assertFalse([c for c in commands if 'up' in c and ('memory-probe' in c or 'memory-backup' in c)])
             self.assertFalse(harness.instance.report.get('probe_recreated') or harness.instance.report.get('backup_recreated'))
+
+    def recreated(self, commands, service):
+        found = [c for c in commands if 'up' in c and c[-1] == service]
+        return found[0] if found else None
+
+    def test_milestone_b_review_n1_a_rollback_recreates_memory_backup_with_the_rclone_override_it_was_created_with(self):
+        table, status = after_two_deployments()
+        with Harness(table, status) as harness:
+            harness.docker.running_extra = ['memory-backup']
+            rclone = harness.root / 'docker-compose.backup-rclone.yml'
+            harness.docker.config_files['memory-backup'] = ','.join(str(p) for p in (harness.root / 'docker-compose.yml', rclone))
+            command = self.recreated(harness.rollback(), 'memory-backup')
+            self.assertEqual([command[n + 1] for n, part in enumerate(command) if part == '-f'], [str(harness.root / 'docker-compose.yml'), str(rclone)], command)
+            self.assertTrue(harness.instance.report.get('backup_recreated'))
+
+    def test_milestone_b_review_n1_a_rollback_does_not_recreate_a_service_made_with_other_files_or_with_an_unreadable_label(self):
+        wrong = {'foreign file': lambda root: str(root / 'docker-compose.yml') + ',' + str(root / 'elsewhere.yml'), 'no label': lambda root: '',
+                 'question fails': lambda root: deploy.DeploymentError('boom')}
+        for name, answer in wrong.items():
+            table, status = after_two_deployments()
+            with self.subTest(name), Harness(table, status) as harness:
+                harness.docker.running_extra = ['memory-probe', 'memory-backup']
+                harness.docker.config_files['memory-backup'] = answer(harness.root)
+                commands = harness.rollback()
+                self.assertIsNone(self.recreated(commands, 'memory-backup'))
+                self.assertTrue(harness.instance.report.get('backup_recreate_skipped'))
+                self.assertFalse(harness.instance.report.get('backup_recreated'))
+                self.assertIsNotNone(self.recreated(commands, 'memory-probe'), 'the other service is still recreated')
+                self.assertTrue(harness.instance.report.get('probe_recreated'))
+                self.assertNotIn('command_failure', harness.instance.report)
 
 
 class VersionOfTheTagTests(unittest.TestCase):
