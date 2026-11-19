@@ -140,9 +140,11 @@ class ComponentVersionTests(unittest.TestCase):
 
     def test_the_changelogs_name_the_client_version_and_no_stale_one(self):
         version = self.declared()['client']
-        for name in ('CHANGELOG.md', 'CHANGELOG.es.md'):
+        for name, unreleased in (('CHANGELOG.md', '## [Unreleased]'), ('CHANGELOG.es.md', '## [Sin publicar]')):
             with self.subTest(changelog=name):
-                head = (self.ROOT / name).read_text(encoding='utf-8').split('## [Unreleased]')[0]
+                text = (self.ROOT / name).read_text(encoding='utf-8')
+                self.assertIn(unreleased, text)
+                head = text.split(unreleased)[0]
                 self.assertRegex(head, r'@daycry/kairos`[^\n]*\b' + re.escape(version) + r'\b')
                 self.assertNotRegex(head, r'@daycry/kairos`[^\n]*\b0\.(3\.0|4\.0)\b')
 

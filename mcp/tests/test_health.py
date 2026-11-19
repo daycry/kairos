@@ -17,7 +17,7 @@ class HealthTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {'status': 'live'})
 
-    def test_the_version_is_0_4_0_in_the_file_and_in_the_package(self):
+    def test_the_version_is_0_4_1_in_the_file_and_in_the_package(self):
         import kairos_mcp
         self.assertEqual((ROOT / 'VERSION').read_text(encoding='utf-8').strip(), '0.4.1')
         self.assertEqual(kairos_mcp.__version__, '0.4.1')

@@ -199,7 +199,7 @@ Cuando quieras que el servidor compruebe la forma de una observación o de un re
 }
 ```
 
-**Solo se valida lo que declara `structured`.** Un evento sin `payload.structured` no se valida y se acepta como siempre; el CLI (0.3.0 y 0.4.0) no lo envía y no cambia. Si `structured` llega y no cumple su esquema (falta un campo, sobra uno, un texto o una lista excede su límite, el tipo es erróneo o `schema_version` falta o es desconocida), el servidor responde **422** con el código `invalid_observation` y un mensaje con la ruta JSON del primer error, por ejemplo `Structured observation does not match its schema: maxLength at /payload/structured/title`. El mensaje nunca reproduce valores del contenido. Corrige el documento y reenvía el evento con la misma identidad: un 422 no deja nada guardado.
+**Solo se valida lo que declara `structured`.** Un evento sin `payload.structured` no se valida y se acepta como siempre; el CLI (0.3.0, 0.4.0 y 0.4.1) no lo envía y no cambia. Si `structured` llega y no cumple su esquema (falta un campo, sobra uno, un texto o una lista excede su límite, el tipo es erróneo o `schema_version` falta o es desconocida), el servidor responde **422** con el código `invalid_observation` y un mensaje con la ruta JSON del primer error, por ejemplo `Structured observation does not match its schema: maxLength at /payload/structured/title`. El mensaje nunca reproduce valores del contenido. Corrige el documento y reenvía el evento con la misma identidad: un 422 no deja nada guardado.
 
 Valida un documento en local antes de enviarlo. Los ejemplos válidos e inválidos de cada esquema están en `docs/contracts/examples/<esquema>/valid/` y `.../invalid/`:
 
