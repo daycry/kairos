@@ -54,9 +54,9 @@ test-plan: n/a (sin UI)
 | Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 7 | 7 | 100.0% | 0 / 23.4h | 2.62 / 3.1h | 0 / 0.8h | 0 / 780 k |
 | Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 6 | 6 | 100.0% | 0 / 33.6h | 2.36 / 4.5h | 0 / 1.1h | 0 / 1120 k |
 | Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 7 | 7 | 100.0% | 0 / 33.6h | 10.36 / 4.5h | 0 / 1.1h | 0 / 1120 k |
-| Fase 15 — Cierre del hito B: desplegar y detectar | 1 | 2 | 50.0% | 0 / 2.4h | 3.41 / 0.3h | 0 / 0.1h | 0 / 80 k |
+| Fase 15 — Cierre del hito B: desplegar y detectar | 2 | 2 | 100.0% | 0 / 2.4h | 3.51 / 0.3h | 0 / 0.1h | 0 / 80 k |
 | Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **94** | **98** | **95.9%** | **0 / 412.8h** | **34.43 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| **TOTAL** | **95** | **98** | **96.9%** | **0 / 412.8h** | **34.53 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -2935,7 +2935,7 @@ test-plan: n/a (sin UI)
 
 ## Fase 15 — Cierre del hito B: desplegar y detectar
 
-**Estado**: en-progreso · **Hito**: B · **Estimado**: 2.4h (2.0h base, de ellas 0.0h de revisión adversarial) · **Real**: — · **Coste est.**: 120 € · **Tokens est.**: 80 k
+**Estado**: completado · **Hito**: B · **Estimado**: 2.4h (2.0h base, de ellas 0.0h de revisión adversarial) · **Real**: 3.51h · **Coste est.**: 120 € · **Tokens est.**: 80 k
 
 ### T-94 — Comprobaciones de cierre del hito B
 
@@ -2977,10 +2977,10 @@ test-plan: n/a (sin UI)
 ### T-95 — Pull request del hito B (solo con OK del usuario)
 
 - **Descripción**: Abrir el PR del hito B desde `feat/reliable-operations`. El PR solo se abre con el OK expreso del usuario; la tarea no se marca hecha hasta que el PR exista. Fuente: P-09 (un PR por hito).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: n/a (PR del hito; los cambios visibles están en las tareas de las fases 9 a 15).
+- **Estado**: completado
 - **Tiempo humano**: est. 1h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real 0.1h (estimado)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 37 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: T-94
@@ -2990,16 +2990,16 @@ test-plan: n/a (sin UI)
 - **Verificación**: `gh pr view --json number,state,headRefName` → PR abierto desde `feat/reliable-operations` (`state: OPEN`)
 
 **Criterios de aceptación**
-- [ ] Hay OK expreso del usuario anotado en `Notas`
-- [ ] El PR enlaza el ledger y el criterio de cierre 3 con su evidencia
+- [x] Hay OK expreso del usuario anotado en `Notas`
+- [x] El PR enlaza el ledger y el criterio de cierre 3 con su evidencia
 
 **Subtareas**
-- [ ] Pedir el OK al usuario
-- [ ] Abrir el PR
-- [ ] Anotar el número en `Notas`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Pedir el OK al usuario
+- [x] Abrir el PR
+- [x] Anotar el número en `Notas`
+- [x] `usage-meter start/close` de la tarea (n/a: sin marcador, real estimado; ver Notas)
 
-**Notas**: Atribución de commits y PR: la del recordatorio del sistema. No se hace merge.
+**Notas**: Atribución de commits y PR: la del recordatorio del sistema. La nota original decía «No se hace merge»; el 2026-11-19 se preguntó al usuario «¿Abro el PR del hito B y lo fusiono cuando la CI esté en verde?» y respondió «Ok» (coherente con su «Fusiónalo cuando esté en verde» del 2026-11-16, aplicado al hito A en el PR #4): fusión con merge commit cuando la CI esté en verde, se conserva la rama, sin etiquetas ni versiones. PR abierto: [daycry/kairos#5](https://github.com/daycry/kairos/pull/5) (2026-11-19). La CI no llegó a ejecutarse: GitHub no arrancó ningún trabajo por un problema de facturación de la cuenta («recent account payments have failed or your spending limit needs to be increased»), igual en todos los push del 2026-11-19; la fusión espera a que el usuario lo resuelva y la CI pase. Sin marcador de usage-meter (tarea de minutos dentro de la sesión): real estimado.
 
 ---
 
