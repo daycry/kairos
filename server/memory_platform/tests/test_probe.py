@@ -62,7 +62,7 @@ class FakeServer:
         self.clock = clock
         self.options = dict({'write_status': 202, 'polls_before_done': 2, 'job_state': 'succeeded', 'embed_jobs': True, 'found': True, 'semantic': 'ok', 'delete_status': 202,
                              'still_active': False, 'status_code': 200, 'raises': None, 'delete_statuses': None, 'leftovers': [], 'foreign': False, 'control_finds': False,
-                             'hang_deletes': False}, **options)
+                             'hang_deletes': False, 'abstains': False}, **options)
         self.requests, self.polls, self.item_id = [], 0, None
 
     def call(self, method, path, body=None, timeout=None):
@@ -89,6 +89,8 @@ class FakeServer:
             statuses = o['delete_statuses']
             status = statuses.pop(0) if statuses else o['delete_status']
             return status, {'status': 'accepted'}
+        if o['abstains'] and body.get('abstain') is not False:  # the API with MEMORY_ABSTAIN_DEFAULT=on: a request that does not say `abstain: false` may be refused by the threshold
+            return 200, {'items': [], 'abstained': True, 'backends': {'semantic': {'status': o['semantic'], 'count': 0}}}
         lexical = body.get('semantic') is False
         item = {'item_id': 'somebody-elses-note' if o['foreign'] else self.item_id}
         items = [item] if (o['found'] and not lexical) or (lexical and (o['still_active'] if kind == 'search' else o['control_finds'])) else []
@@ -113,6 +115,14 @@ class RoundTripTests(unittest.TestCase):
         patcher = patch('memory_platform.probe.time', SimpleNamespace(monotonic=forbidden('monotonic'), sleep=forbidden('sleep')))
         patcher.start()
         self.addCleanup(patcher.stop)
+
+    def test_milestone_b_review_every_search_of_the_probe_says_abstain_false_so_a_default_on_never_fails_it(self):
+        server = FakeServer(self.clock, abstains=True, leftovers=[{'item_id': 'old', 'version': 1}])
+        report = run(server, self.clock)
+        self.assertEqual((report['status'], report['kairos_probe_success']), ('probe_ok', 1))
+        searches = [body for kind, body, _ in server.requests if kind in ('sweep', 'search', 'control')]
+        self.assertEqual(len(searches), 4)  # the sweep, the semantic search, its control and the check of the retirement
+        self.assertTrue(all(body.get('abstain') is False for body in searches), searches)
 
     def test_a_healthy_server_ends_ok_and_every_stage_has_its_duration(self):
         server = FakeServer(self.clock)

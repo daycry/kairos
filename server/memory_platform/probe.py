@@ -199,7 +199,7 @@ class Probe:
         try:
             if self.remaining(started) <= self.timeout / 2:
                 return 0
-            status, data = self.call('write', 'POST', '/v1/search', {'project_ids': [self.project], 'q': SWEEP_QUERY, 'limit': SWEEP_LIMIT, 'semantic': False},
+            status, data = self.call('write', 'POST', '/v1/search', {'project_ids': [self.project], 'q': SWEEP_QUERY, 'limit': SWEEP_LIMIT, 'semantic': False, 'abstain': False},
                                      min(RETIRE_CALL_TIMEOUT, self.remaining(started)))
             if status != 200 or not isinstance(data, dict) or not isinstance(data.get('items'), list):
                 raise StageFailed('write', classify(status) if status != 200 else 'bad_answer', status)
@@ -251,7 +251,7 @@ class Probe:
         """The note of THIS run, found by the semantic path. The query shares no word with the note (the marker is a token of its own): a lexical match is impossible by construction,
         so the note can only come back through the vectors, and `item_id` is this run's (any other note, active or not, is somebody else's). A control search of the same query
         with the semantic layer off must NOT return it: if it does, the two paths cannot be told apart and the run does not call that a semantic hit."""
-        body = {'project_ids': [self.project], 'q': state['semantic_query'], 'limit': 5, 'semantic': True}
+        body = {'project_ids': [self.project], 'q': state['semantic_query'], 'limit': 5, 'semantic': True, 'abstain': False}  # `abstain: false` on every search: the default of the server (MEMORY_ABSTAIN_DEFAULT) must not turn a query with no shared word into a failure
         status, data = self.call('search', 'POST', '/v1/search', body, self.budget('search', started))
         if status != 200 or not isinstance(data, dict):
             raise StageFailed('search', classify(status) if status != 200 else 'bad_answer', status)
@@ -289,7 +289,7 @@ class Probe:
                 break
             if status != 409:
                 raise StageFailed('retire', classify(status), status)
-        query = {'project_ids': [self.project], 'q': state['query'], 'limit': 5, 'semantic': False}  # `q` carries the marker of this run, which no other note has
+        query = {'project_ids': [self.project], 'q': state['query'], 'limit': 5, 'semantic': False, 'abstain': False}  # `q` carries the marker of this run, which no other note has
         if not done:
             status, data = self.call('retire', 'POST', '/v1/search', query, left())
             if status != 200 or not isinstance(data, dict) or not isinstance(data.get('items'), list):
