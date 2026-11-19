@@ -7,6 +7,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from . import models as m
+from .config import threshold_for
 from .errors import MemoryError, NotFound, StoreUnavailable
 from .observability import count_provider_error, log_failure, record_layer
 from .providers import Embeddings, canonical, sha
@@ -46,6 +47,14 @@ def fuzzy_status(status, values):
     status = dict(status, fuzzy_matches=fuzzy) if fuzzy else status
     # The fallback ran out of its own time: the lexical hits are complete but the fuzzy completion was skipped.
     return dict(status, fuzzy_timeout=True) if getattr(values, 'fuzzy_timed_out', False) else status
+
+
+def lexical_complete(status):
+    """A lexical layer gave its whole signal: `ok` (not `unavailable`, `partial`, `off` or degraded) and, in it and in every provider, without the trigram
+    fallback running out of time (`fuzzy_timeout`). Only then does the absence of a match mean something (abstention, docs/architecture.md)."""
+    if status.get('status') != 'ok' or status.get('fuzzy_timeout'):
+        return False
+    return all(lexical_complete(provider) for provider in status.get('providers', {}).values())
 
 
 def hit(record):
@@ -130,6 +139,7 @@ class Retrieval:
                 return layer, [], {'status': 'unavailable', 'count': 0}
             finally:
                 record_layer(layer, time.monotonic()-started, outcome)
+        signal = {}  # the best cosine of the semantic layer and the model that scored it: `hit()` drops them, abstention needs them
         async def vectors():
             if not request.semantic or not request.q.strip() or not set(layers).intersection({'episodic', 'documental'}):
                 return 'semantic', [], {'status': 'off', 'count': 0}
@@ -157,7 +167,13 @@ class Retrieval:
                 # An empty answer can still be truncated, and the hits' own fields are dropped by hit(): read both first.
                 truncated = bool(getattr(values, 'candidates_truncated', False)) or any(value.get('candidates_truncated', False) for value in values)
                 candidate_limit = max((value.get('candidate_limit', 0) for value in values), default=0) or getattr(values, 'candidate_limit', 10000)
-                values = [hit(value) for value in values if value['layer'] in layers and value['project_id'] in request.project_ids and value.get('category') not in request.exclude_categories]
+                values = [value for value in values if value['layer'] in layers and value['project_id'] in request.project_ids and value.get('category') not in request.exclude_categories]
+                scores = [float(value['score']) for value in values if value.get('score') is not None]
+                # The model is known even with no hit: `uncalibrated` is about the model, not about whether something scored.
+                signal['model'] = next((value['embedding_model'] for value in values if value.get('embedding_model')), embedded.get('model') or self.settings.embedding_model)
+                if scores:
+                    signal['best'] = max(scores)
+                values = [hit(value) for value in values]
                 status = 'partial' if truncated else 'ok'
                 record_layer('semantic', time.monotonic()-started, status)
                 return 'semantic', values, {'status': status, 'count': len(values), 'candidate_limit': candidate_limit, 'candidates_truncated': truncated}
@@ -196,7 +212,23 @@ class Retrieval:
         reason = backends['semantic'].get('reason')
         if reason and all(v['status'] in ('ok', 'off') for name, v in backends.items() if name != 'semantic'):
             answer['degraded'] = {'layer': 'semantic', 'reason': reason}
+        if request.abstain if request.abstain is not None else self.settings.abstain_default:
+            self._abstain(answer, signal, backends, any(values for layer, values, _ in results if layer != 'semantic'))
         return answer
+
+    def _abstain(self, answer, signal, backends, lexical):
+        """Abstention (docs/architecture.md, "Abstención: la señal"): `abstained: true` and no items only with a complete semantic answer whose best
+        cosine is below the threshold of its model, no lexical layer hit and every lexical layer complete (`lexical_complete`); no signal (semantic layer
+        off, degraded, truncated), a lexical layer that failed or ran out of time, or no threshold never abstains. `abstention: uncalibrated` = asked, the
+        semantic layer is complete and its model has no threshold."""
+        answer['abstained'] = False
+        if 'model' not in signal or backends['semantic']['status'] != 'ok' or 'degraded' in answer:
+            return
+        threshold = threshold_for(self.settings.abstain_thresholds, signal['model'])
+        if threshold is None:
+            answer['abstention'] = 'uncalibrated'
+        elif 'best' in signal and signal['best'] < threshold and not lexical and all(lexical_complete(v) for name, v in backends.items() if name != 'semantic'):
+            answer['items'], answer['abstained'] = [], True
 
     async def details(self, actor, request):
         request = request if isinstance(request, m.Details) else m.Details.model_validate(request)

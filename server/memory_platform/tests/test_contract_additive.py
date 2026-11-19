@@ -79,6 +79,13 @@ def without_budget(tool):
     return stripped
 
 
+def without_abstain(tool):
+    """The tool with only the optional `abstain` of C-05 (Iniciativa 3, M-01) taken out of its input schema: `search` is the one tool that gained it."""
+    stripped = json.loads(json.dumps(tool))
+    stripped['inputSchema'].get('properties', {}).pop('abstain', None)
+    return stripped
+
+
 def without_structured(tool):
     """The tool with only the optional `payload.structured` of C-05 taken out of the event schema it embeds (`$defs.Payload`)."""
     stripped = json.loads(json.dumps(tool))
@@ -177,11 +184,11 @@ class ContractAdditiveTests(unittest.TestCase):
         after = {tool['name']: tool for tool in self.exported['kairos-mcp.json']['tools']}
         self.assertEqual(list(before), list(after))
         for name in before:
-            current = without_endpoint(without_structured(without_budget(after[name]) if name in BUDGET_TOOLS else after[name]))
+            current = without_endpoint(without_structured(without_abstain(without_budget(after[name]) if name in BUDGET_TOOLS else after[name])))
             self.assertEqual(tool_differences(before[name], current), [], name)
         for name in BUDGET_TOOLS:
             schema = after[name]['inputSchema']
-            self.assertEqual(set(schema['properties']) - set(before[name]['inputSchema']['properties']), {'semantic_budget_ms'}, name)
+            self.assertEqual(set(schema['properties']) - set(before[name]['inputSchema']['properties']), {'semantic_budget_ms'} | ({'abstain'} if name == 'search' else set()), name)
             self.assertNotIn('semantic_budget_ms', schema.get('required', []), name)
         self.assertIs(after['search']['inputSchema']['properties']['semantic']['default'], True)  # the existing default is not touched
 
@@ -233,7 +240,7 @@ class ContractAdditiveTests(unittest.TestCase):
         latest = {tool['name']: tool for tool in json.loads((BASE_23CED03 / 'kairos-mcp.json').read_text(encoding='utf-8'))['tools']}
         self.assertTrue(all('semantic_budget_ms' in latest[name]['inputSchema']['properties'] for name in BUDGET_TOOLS))
         for tool in self.exported['kairos-mcp.json']['tools']:
-            self.assertEqual(tool_differences(latest[tool['name']], without_endpoint(without_structured(tool))), [], tool['name'])
+            self.assertEqual(tool_differences(latest[tool['name']], without_endpoint(without_structured(without_abstain(tool)))), [], tool['name'])
         # the existing routes keep their operations: every (path, method) of the baseline is still there with its parameters and body
         base_paths = json.loads((BASE_23CED03 / 'memory-platform.openapi.json').read_text(encoding='utf-8'))['paths']
         paths = self.exported['memory-platform.openapi.json']['paths']
@@ -246,14 +253,33 @@ class ContractAdditiveTests(unittest.TestCase):
     def test_the_exact_check_rejects_a_restricting_key_anywhere_in_a_tool(self):
         before = next(tool for tool in self.base['kairos-mcp.json']['tools'] if tool['name'] == 'search')
         exported = next(tool for tool in self.exported['kairos-mcp.json']['tools'] if tool['name'] == 'search')
-        self.assertEqual(tool_differences(before, without_endpoint(without_budget(exported))), [])
+        self.assertEqual(tool_differences(before, without_endpoint(without_abstain(without_budget(exported)))), [])
         for name, damage in (('maximum', lambda s: s['properties']['limit'].update(maximum=3)),
                              ('additionalProperties', lambda s: s.update(additionalProperties=False)),
                              ('minLength', lambda s: s['properties']['q'].update(minLength=5)),
                              ('dependentRequired', lambda s: s.update(dependentRequired={'layers': ['q']}))):
             broken = json.loads(json.dumps(exported))
             damage(broken['inputSchema'])
-            self.assertTrue(tool_differences(before, without_endpoint(without_budget(broken))), name)
+            self.assertTrue(tool_differences(before, without_endpoint(without_abstain(without_budget(broken)))), name)
+
+    def test_ca29_abstain_abstained_and_abstention_are_optional_in_both_contracts_and_the_search_result(self):
+        # C-05 (P-04): the parameter and the two answer fields only appear when asked for; `result_schemas.search` has `additionalProperties: false`
+        # at every level, so a strict client of the previous schema would reject `abstained` if it were on by default (R-09, note for Iniciativa 7).
+        tools = {tool['name']: tool for tool in self.exported['kairos-mcp.json']['tools']}
+        schema = tools['search']['inputSchema']
+        self.assertEqual(schema['properties']['abstain']['anyOf'], [{'type': 'boolean'}, {'type': 'null'}])
+        self.assertNotIn('abstain', schema['required'])
+        self.assertEqual(tools['search']['x-kairos-endpoint']['args']['abstain'], {'in': 'body', 'name': 'abstain'})
+        self.assertNotIn('abstain', tools['context']['inputSchema']['properties'])
+        result = self.exported['kairos-mcp.json']['result_schemas']['search']
+        openapi = self.exported['memory-platform.openapi.json']['components']['schemas']
+        for definition in (result, openapi['SearchResult']):
+            self.assertFalse(definition['additionalProperties'])
+            self.assertTrue({'abstained', 'abstention'} <= set(definition['properties']))
+            self.assertFalse({'abstained', 'abstention', 'abstain'} & set(definition.get('required', [])))
+        self.assertIn('abstain', openapi['Search']['properties'])
+        self.assertNotIn('abstain', openapi['Search'].get('required', []))
+        self.assertEqual(result['properties']['abstention']['anyOf'][0], {'const': 'uncalibrated', 'type': 'string'})
 
     def test_the_models_module_defines_the_field_once(self):
         self.assertIn('matched_chunk', models.Hit.model_fields)
@@ -298,7 +324,7 @@ class ToolsListIdentityTests(unittest.TestCase):
             for tool, base in zip(listed, self.base):
                 with self.subTest(origin=origin, tool=base['name']):
                     self.assertEqual(additive_violations(public(base), public(tool)), [])
-                    self.assertEqual(tool_differences(public(base), public(without_structured(tool))), [])
+                    self.assertEqual(tool_differences(public(base), public(without_structured(without_abstain(tool)))), [])
 
     def test_both_origins_list_the_same_content_name_description_input_schema_and_annotations(self):
         internal, kairos = self.listings['internal'], self.listings['kairos-mcp']
@@ -311,7 +337,7 @@ class ToolsListIdentityTests(unittest.TestCase):
             mutated = copy.deepcopy(self.listings['kairos-mcp'][index])
             mutated['description'] = mutated['description'][:-1] + ('!' if not mutated['description'].endswith('!') else '?')
             self.assertTrue(additive_violations(public(self.base[index]), public(mutated)), self.base[index]['name'])
-            self.assertTrue(tool_differences(public(self.base[index]), public(without_structured(mutated))), self.base[index]['name'])
+            self.assertTrue(tool_differences(public(self.base[index]), public(without_structured(without_abstain(mutated)))), self.base[index]['name'])
 
     def test_the_copy_of_the_baseline_kept_with_kairos_mcp_is_this_one(self):
         copied = Path(__file__).resolve().parents[3] / 'mcp' / 'tests' / 'contract_base_23ced03' / 'kairos-mcp.json'

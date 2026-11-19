@@ -11,6 +11,54 @@ const copy=value=>JSON.parse(JSON.stringify(value));
 const alive=pid=>{ try { process.kill(pid,0); return true; } catch(error) { return error.code!=='ESRCH'; } };
 const size=row=>Buffer.byteLength(canonical(row));
 
+const WAITING=new Set(['pending','unknown','accepted']);
+const READ_ATTEMPTS=8;
+/** The two files of the queue as they were at ONE moment, without a lock. The dispatcher's `checkpoint()` replaces queue.json (a new inode) and then empties queue.jsonl (a new inode):
+ * a snapshot read before it and a journal read after it were never a queue (a delivered capture shown as stale, or a `capture_journal_gap`). What identifies a state is the snapshot
+ * (inode, size, mtime) and the INODE of the journal (an append changes its size, not its inode, and is safe to read at any time); when either changed between the start and the end of the
+ * reads, they are repeated. A queue that is replaced on every attempt cannot be read: `capture_queue_unstable` (reported as unreadable, never as an age made up from two moments). */
+function stableRead(root) {
+  const snapshotFile=path.join(root,'queue.json'),journalFile=path.join(root,'queue.jsonl');
+  const identity=(file,full)=>{ try { const info=fs.statSync(file); return full?`${info.ino}:${info.size}:${info.mtimeMs}`:String(info.ino); } catch(error) { if(error.code==='ENOENT') return 'none'; throw error; } };
+  const state=()=>identity(snapshotFile,true)+'|'+identity(journalFile,false);
+  for(let attempt=0;attempt<READ_ATTEMPTS;attempt++) {
+    const before=state();
+    const snapshot=readBytes(snapshotFile,16*1024*1024),journal=readBytes(journalFile,32*1024*1024);
+    if(state()===before) return {snapshot,journal};
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,20);  // the other process is in the middle of a checkpoint: a moment, then again
+  }
+  fail('capture_queue_unstable');
+}
+/** What `kairos doctor` reads of the queue on this disk: a READ-ONLY replay of the snapshot and the journal. It takes no lock (the dispatcher holds it), creates and rewrites nothing,
+ * reads no source file and sends nothing anywhere. Returns null when there is no queue; otherwise `{pending, oldest_seconds}` (captures that still wait for the server: pending,
+ * unknown or accepted, by `admitted_at`); a queue that cannot be replayed throws, and the caller reports it as unreadable. */
+export function queueAge(directory,binding,now=Date.now()) {
+  const root=checked(directory),rows=new Map(); let seq=0;
+  const {snapshot,journal}=stableRead(root);
+  if(snapshot) {
+    let record; try { record=JSON.parse(text(snapshot)); } catch { fail('capture_state_corrupt'); }
+    const {sha256,...body}=record;
+    if(![1,2].includes(body.schema)||body.binding!==binding||!Number.isSafeInteger(body.seq)||!Array.isArray(body.rows)||digest(body)!==sha256) fail('capture_state_corrupt');
+    seq=body.seq; for(const row of body.rows) rows.set(row.key,row);
+  }
+  if(journal) {
+    const source=text(journal),end=source.lastIndexOf('\n')+1;  // a line still being written (no newline yet) is not read
+    for(const line of source.slice(0,end).split('\n').filter(Boolean)) {
+      let record; try { record=JSON.parse(line); } catch { fail('capture_journal_corrupt'); }
+      const {sha256,...body}=record;
+      if(body.binding!==binding||digest(body)!==sha256||!Number.isSafeInteger(body.seq)) fail('capture_journal_corrupt');
+      if(body.seq<=seq) continue;
+      if(body.seq!==seq+1) fail('capture_journal_gap');
+      if(body.op==='remove') rows.delete(body.key); else rows.set(body.row.key,body.row);
+      seq=body.seq;
+    }
+  }
+  if(!snapshot&&!journal) return null;
+  const waiting=[...rows.values()].filter(row=>WAITING.has(row.phase));
+  const times=waiting.map(row=>Date.parse(row.admitted_at)).filter(Number.isFinite);
+  return {pending:waiting.length,oldest_seconds:times.length?Math.max(0,Math.round((now-Math.min(...times))/1000)):0};
+}
+
 /** Source files are separate from the receipt journal. Terminal cache eviction
  * requires Dispatcher to reconcile every cache miss before a new admission. */
 export class Outbox {

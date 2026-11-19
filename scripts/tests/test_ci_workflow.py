@@ -177,6 +177,29 @@ class AuxiliaryJobsTests(unittest.TestCase):
         self.assertIn('RETRIEVAL_EVAL_RESULT', block)
         self.assertIn('"passed": true', block)
 
+    def test_retrieval_eval_job_demands_the_abstention_measurement(self):
+        # C-05 (CA-28): the line read back from the build log must carry the abstention measurement, and no abstention may keep its items.
+        block = self.jobs['retrieval-eval']
+        for text in ('"abstention": {', 'correct_abstention', 'false_abstention', '"abstained_with_items": 0'):
+            self.assertIn(text, block)
+
+    def test_the_retrieval_eval_check_fails_without_the_abstention_measurement_or_with_a_red_gate(self):
+        if BASH is None:
+            self.skipTest('bash not found: the behavioural check of the retrieval-eval step runs in CI')
+        self.assertEqual(eval_step_problems(read()), [])
+
+    def test_every_mutant_of_the_retrieval_eval_step_is_detected(self):
+        # T-90: the step is protected by running its own script over synthetic reports, so weakening it must make one of the cases misbehave.
+        if BASH is None:
+            self.skipTest('bash not found: the behavioural check of the retrieval-eval step runs in CI')
+        original = read()
+        for name, mutate in EVAL_MUTANTS:
+            with self.subTest(mutant=name):
+                block = jobs(original)['retrieval-eval']  # the mutation only touches this job: `server` has steps that look alike
+                mutant = original.replace(block, mutate(block), 1)
+                self.assertNotEqual(mutant, original, 'the mutation changed nothing')
+                self.assertTrue(eval_step_problems(mutant), 'mutant survived: ' + name)
+
     def test_client_job_runs_tests_and_release_check_in_the_package(self):
         self.assertIn('client', self.jobs)
         block = self.jobs['client']
@@ -287,7 +310,7 @@ class ContractsJobTests(unittest.TestCase):
 
 
 GATE_STEP = 'The suite really ran and nothing was skipped'
-MIN_FLOOR = 1203  # the suite with the kairos-mcp chain tests, the review corrections and the C-07 tests and the initiative 3 phase 1 tests (T-01 began at 483, 639 when kairos-mcp started, 727 with the chain tests, 743 after phase 5, 756 with the MCP legacy and route tests, 759 with the phase 7 version tests, 764 with the phase 8 rehearsal tests, 801 with the fault-injection harness and the limit, schema and lease tests of initiative 3 phase 1, 806 with the corrections of its review, 852 with the database-down worker tests of initiative 3 phase 2, 870 with the corrections of its review, 884 with the corrections of its second review, 917 with the queue-index and table-pruning tests of phase 3, 925 with the corrections of its review, 984 with the pool, plazo and fault tests of phase 4, 1006 with the half-open connection, classification and readiness tests of its review, 1038 with the permission-cache, transaction-walk and phase 4 debt tests of phase 5, 1048 with the lock-wait race tests of its review, 1054 with the closing corrections of the phase 5 review, 1122 with the manifest, encryption, retention and restore-verification tests of phase 6, 1145 with the corrections of the phase 6 review, 1154 with the corrections of its second review, 1184 with the external-copy cycle, failure, service and prune-race tests of phase 7, 1195 with the encrypted-only, metric, remote-manifest and prune-race tests of the corrections of its review, 1201 with the refused-start metric, local-retention event, prune-race and checked-descriptor upload tests of the closing of milestone A, 1203 with the start-validation metric and connection-guard tests of the review corrections); raise it when the suite grows, never lower it
+MIN_FLOOR = 1570  # the suite with the kairos-mcp chain tests, the review corrections and the C-07 tests and the initiative 3 phase 1 tests (T-01 began at 483, 639 when kairos-mcp started, 727 with the chain tests, 743 after phase 5, 756 with the MCP legacy and route tests, 759 with the phase 7 version tests, 764 with the phase 8 rehearsal tests, 801 with the fault-injection harness and the limit, schema and lease tests of initiative 3 phase 1, 806 with the corrections of its review, 852 with the database-down worker tests of initiative 3 phase 2, 870 with the corrections of its review, 884 with the corrections of its second review, 917 with the queue-index and table-pruning tests of phase 3, 925 with the corrections of its review, 984 with the pool, plazo and fault tests of phase 4, 1006 with the half-open connection, classification and readiness tests of its review, 1038 with the permission-cache, transaction-walk and phase 4 debt tests of phase 5, 1048 with the lock-wait race tests of its review, 1054 with the closing corrections of the phase 5 review, 1122 with the manifest, encryption, retention and restore-verification tests of phase 6, 1145 with the corrections of the phase 6 review, 1154 with the corrections of its second review, 1184 with the external-copy cycle, failure, service and prune-race tests of phase 7, 1195 with the encrypted-only, metric, remote-manifest and prune-race tests of the corrections of its review, 1201 with the refused-start metric, local-retention event, prune-race and checked-descriptor upload tests of the closing of milestone A, 1203 with the start-validation metric and connection-guard tests of the review corrections, 1228 with the compose limits, healthcheck, heartbeat and backup-egress tests of milestone B phase 9, 1236 with the heartbeat-deadline, cpus, memory-api and key-scan tests of its review corrections, 1241 with the claim-to-renewal heartbeat and renewal-retry tests of its second correction, 1360 with the deployment lock, image tag, rollback, lost-lease and rehearsal tests of phase 10 and the corrections of its review, 1408 with the round-trip probe tests of phase 11, 1442 with the corrections of its review, 1460 with the corrections of its second review, 1477 with the queue-age, probe-loop, memory-probe service and documentation tests of phase 12, 1494 with the corrections of its review, 1511 with the abstention tests of phase 13, 1519 with the corrections of its review, 1547 with the abstention gate, calibration and documentation tests of phase 14, 1553 with the corrections of its review, 1557 with the probe-abstention and operator-service recreation tests of the milestone review, 1562 with the tests that keep the Compose files of the recreated operator services, 1568 with the tests of the manual command, the rehearsal override, one-off containers, the project filter and control characters, 1569 with the rehearsal override in the manual command, 1570 with the release-section test of the changelogs); raise it when the suite grows, never lower it
 GOOD = 'MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": %d}' % MIN_FLOOR
 
 
@@ -504,6 +527,45 @@ MUTANTS = (
 )
 
 
+
+EVAL_STEP = 'The gate really ran and passed'
+EVAL_GATE = '"gate": {"baseline_compared": true, "failures": [], "passed": %s}'
+EVAL_ABSTENTION = '"abstention": {"abstained_with_items": 0, "correct_abstention": 0.5, "false_abstention": 0.04, "model": "m"}'
+EVAL_CASES = (('good', EVAL_ABSTENTION + ', ' + EVAL_GATE % 'true', True),
+              ('red gate', EVAL_ABSTENTION + ', ' + EVAL_GATE % 'false', False),
+              ('no abstention measurement', EVAL_GATE % 'true', False),
+              ('abstention without false rate', '"abstention": {"abstained_with_items": 0, "correct_abstention": 0.5}, ' + EVAL_GATE % 'true', False),
+              ('an abstention that kept its items', EVAL_ABSTENTION.replace('"abstained_with_items": 0', '"abstained_with_items": 2') + ', ' + EVAL_GATE % 'true', False))
+EVAL_MUTANTS = (
+    ('delete the passed check', lambda t: re.sub(r'(?m)^.*"passed": true.*\n', '', t, count=1)),
+    ('delete the abstention measurement check', lambda t: re.sub(r'(?m)^.*"correct_abstention.*\n', '', t, count=1)),
+    ('delete the no-items check', lambda t: re.sub(r'(?m)^.*abstained_with_items.*\n', '', t, count=1)),
+    ('passed check || true', lambda t: t.replace("\"passed\": true'\n", "\"passed\": true' || true\n", 1)),
+    ('measurement check || true', lambda t: re.sub(r"(grep -q '\"abstention\": \{\[\^\}\]\*\"correct_abstention[^\n]*')", r'\1 || true', t, count=1)),
+    ('no-items check || true', lambda t: t.replace("\"abstained_with_items\": 0,'\n", "\"abstained_with_items\": 0,' || true\n", 1)),
+    ('step without set -e', lambda t: t.replace('          line="$(grep -o', '          set +e\n          line="$(grep -o', 1)),
+)
+
+
+def eval_step_problems(text):
+    """Run the script of the retrieval-eval step over synthetic reports; the cases whose outcome is not the expected one."""
+    step = re.search(r'(?s)      - name: ' + EVAL_STEP + r'\n        run: \|\n(.*?)(?=\n\n|\Z)', jobs(text)['retrieval-eval'])
+    if step is None:
+        return ['the step is missing']
+    script = '\n'.join(line[10:] for line in step.group(1).splitlines())
+    problems = []
+    for name, body, passes in EVAL_CASES:
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / 'eval.log'
+            log.write_text('noise\nRETRIEVAL_EVAL_RESULT {' + body + '}\n', encoding='utf-8')
+            file = Path(tmp) / 'step.sh'
+            file.write_text('set -euo pipefail\n' + script.replace('/tmp/eval.log', log.as_posix()) + '\n', encoding='utf-8')
+            result = subprocess.run([BASH, '--noprofile', '--norc', file.as_posix()], capture_output=True, text=True)
+            if (result.returncode == 0) != passes:
+                problems.append(name)
+    return problems
+
+
 class SuiteGateStepTests(unittest.TestCase):
     """The step that reads MEMORY_TEST_RESULT back makes `server` fail on skipped or missing tests. It is protected by running its own
     script over synthetic logs (behaviour), not by looking for text in it."""
@@ -696,7 +758,7 @@ class ComposeLimitsTests(unittest.TestCase):
         compose = (WORKFLOW.parents[2] / 'docker-compose.yml').read_text(encoding='utf-8')
         block = re.search(r'^  memory-mcp:\n((?:    .*\n|\s*\n)+)', compose, re.M)
         self.assertIsNotNone(block)
-        self.assertRegex(block.group(1), r'(?m)^    mem_limit: \d+[mg]\b')
+        self.assertRegex(block.group(1), r'(?m)^    mem_limit: (\d+[mg]|\$\{MEMORY_MCP_MEM_LIMIT:-\d+[mg]\})')  # configurable since T-54, always with a default
 
 
 if __name__ == '__main__':

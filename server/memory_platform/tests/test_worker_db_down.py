@@ -199,8 +199,8 @@ class LoopTests(unittest.IsolatedAsyncioTestCase):
     async def test_last_store_ok_moves_only_with_an_access_that_worked(self):
         now = [100.0]
         worker = Worker(self.store, settings(), {'extract': self.provider}, clock=lambda: now[0], rng=lambda: 1.0, waiter=Recorder())
-        self.assertEqual(worker.last_store_ok, 100.0)
-        for at, outcome, expected in ((110.0, DOWN, 100.0), (130.0, None, 130.0), (140.0, DOWN, 130.0), (5000.0, DOWN, 130.0)):
+        self.assertIsNone(worker.last_store_ok, 'no access has worked yet: the start is not one (review of phase 9, n.º 5)')
+        for at, outcome, expected in ((110.0, DOWN, None), (130.0, None, 130.0), (140.0, DOWN, 130.0), (5000.0, DOWN, 130.0)):
             now[0] = at
             self.store.claim_job.side_effect = [outcome] if outcome is not None else None
             self.store.claim_job.return_value = None

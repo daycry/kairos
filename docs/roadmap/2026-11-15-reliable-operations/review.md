@@ -133,3 +133,166 @@ Cada fase cierra con su revisión adversarial. El detalle de cada intento está 
 | 1 | Minor | `rclone rcat` anulaba `--retries` | Corregido: `copyto --copy-links /proc/self/fd/<n>` desde el descriptor verificado |
 | 1 | Minor | El ensayo no exigía trabajos pendientes con la base parada; detalles de `configuration.md` y Coordinación | Corregidos |
 | 2 | Minor | Mensaje «nothing was deleted» tras borrar la copia mala; `copyto` sin `--ignore-times` no reemplaza un manifiesto remoto dañado del mismo tamaño y fecha | Corregidos por el orquestador |
+
+## Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (T-54 a T-60)
+
+- **Fecha**: 2026-11-17
+- **Lentes**: intento 1, A, B, C y D (C por `docker-compose.yml`, el override de rclone, `Dockerfile` y `ci.yml`; D por `worker.py`); intento 2, A, B, C y D; intento 3, A, B y C; intento 4 (ciclo 2, con la delegación del usuario), A y C.
+- **Veredicto**: cerrada en el intento 4 sin hallazgos Critical ni Important abiertos. T-56 sigue en curso hasta que T-64 ejercite el `unhealthy` real.
+- **Evidencia**: suite del servidor 1241 tests, 0 fallos, errores y omitidos; `KAIROS_MIN_TESTS` y `MIN_FLOOR` 1241; `scope-check.py --base main` exit 0; contrato MCP, `ollama-proxy/default.conf.template` y `web/nginx.conf` sin cambios; simulación del bucle real del worker con 135 combinaciones de concesión, espera y latencia sin sondas fallidas (Lente B, intento 3).
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Important | Umbral fijo de 180 s del healthcheck frente al latido por renovación (falso `unhealthy` con concesión larga; cota de CA-21 incumplible) | Corregido: el latido escribe su propio plazo; CA-21 y T-64 enmendados a «plazo del último latido + interval × retries» |
+| 1 | Important | `cpus` por defecto por encima de las vCPU de un VPS pequeño (Docker no crea el contenedor) | Corregido: `cpus` 0 por defecto (sin cuota); cuotas explícitas en la columna VPS |
+| 1 | Important (seguridad, CWE-306) | La guía de Linux pedía `OLLAMA_HOST=0.0.0.0` | Corregido en tres pasos (intentos 1-3): pasarela IPv4 de `docker0` + reglas `INPUT` solo para la subred de `egress`; sin comodín por IPv6 |
+| 1 | Important | Tope de `memory-api` sin dimensionar para su respuesta máxima | Corregido: `2g` por defecto y `1g` en VPS, con la cuenta medida |
+| 1 | Minor | Arranque como acceso correcto, escaneo de claves, CPU de `memory-mcp` en VPS, `README` fuera de alcance, `compose config` sin pegar | Corregidos |
+| 2 | Important | Hueco de latido entre el reclamo y la primera renovación | Corregido en fix2, con prueba del bucle real (RED de comportamiento) |
+| 2 | Important | La guía de Linux con la pasarela de `egress` no restringía el acceso y rompía el proxy | Corregido en fix2 |
+| 2 | Minor | Reintento de la renovación, cuenta de memoria, suma de la columna VPS, Notas de T-56 | Corregidos |
+| 3 | Important (seguridad, CWE-306) | La alternativa `0.0.0.0` abría `[::]:11434`, fuera de las reglas IPv4 | Corregido en fix3 (ciclo 2) |
+| 3 | Minor | Trabajo con la concesión perdida sin latido; dos mutantes vivos del latido | Deuda → T-64 |
+| 4 | Minor | Volver a aplicar la regla por IP de `ollama` tras recrearlo | Corregido en el cierre |
+
+## Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (T-61 a T-67)
+
+- **Fecha**: 2026-11-17
+- **Lentes**: intento 1, A, B, C y D (C añadida por el orquestador: bloqueo con PID y etiquetas leídas de un JSON que acaban en `docker`; D por `worker.py`); intentos 2 a 5, B y A+C en un solo revisor. Ciclo 2 desde el intento 4, con la delegación del usuario.
+- **Veredicto**: cerrada en el intento 5 sin hallazgos Critical ni Important abiertos; los Minor del cierre, corregidos en fix5.
+- **Evidencia**: suite del servidor 1360 tests, 0 fallos, errores y omitidos (tras convertir en portable la única prueba solo de Windows); `KAIROS_MIN_TESTS` y `MIN_FLOOR` 1360; scripts del anfitrión 181 OK; `scope-check.py --base main` exit 0; contrato MCP, `ollama-proxy/default.conf.template` y `web/nginx.conf` sin cambios; ensayo aislado `kairos-ops-d` etapa `rollback` con salida 0, `unhealthy` 78,2 s tras el plazo del último latido y listados de `knowledge-graphs-*` idénticos; exploraciones aleatorias de la Lente B con el doble de Docker (600 secuencias de 8 pasos con registro y 600 sin él, con fallos, `kill` y Ctrl-C en cada fase) sin problemas al cierre.
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Important | Se etiquetaba `:latest` y no la imagen en servicio: tras un fallo y un reintento, `--rollback` iba a una versión nunca servida | Corregido en fix1 y, por clase, en fix2 |
+| 1 | Minor | Etiquetas de `images.previous` sin validar, carrera de `--break-lock`, reutilización de PID, margen de 10 s del ensayo, ítem (19), catálogo de eventos, versión de la etiqueta | Corregidos en fix1 (destino desconocido del worker: rebatido) |
+| 2 | Important | `already_at_previous` comparaba con `:latest`; un fallo en `start`/`verify` y su reintento etiquetaban la versión fallida como anterior | Corregidos en fix2: «anterior» = último despliegue bueno (`images.good`) |
+| 2 | Minor | Ventana del bloqueo por renombrado, Windows, JSON no objeto, gramática de tags, veredicto del ensayo, `.broken` huérfano | Corregidos en fix2: bloqueo del sistema operativo; cota del ensayo con `State.Health.Log` |
+| 3 | Important | `:latest` desfasado tras `already_at_previous`; despliegue interrumpido sin registro de etiquetas | Corregidos en fix3 (ciclo 2): retroceso completo = contenedores y `:latest`; `in_progress` duradero |
+| 3 | Minor | Ventanas del bloqueo, `O_NOFOLLOW`, ids `sha256:`, `TAG_MARK`, aviso de despliegue interrumpido, CA-21 como enmienda | Corregidos en fix3 |
+| 4 | Important | Instalación sin `images.good`: una interrupción temprana perdía la referencia a la versión buena | Corregido en fix4 (registro desde los contenedores antes de `configuration`) |
+| 4 | Minor | Señales en los manejadores, `migrate` huérfano, mensajes de otro equipo, notas de `--break-lock`, escapes de terminal, enlace duro | Corregidos en fix4 |
+| 5 | Minor | `good` parcial sin contenedores, dos ventanas de señales, manual e ítem (19) en `engine`, `status` sin escapar | Corregidos en fix5 |
+
+## Fase 11 — Sonda de ida y vuelta (T-68 a T-73)
+
+- **Fecha**: 2026-11-18
+- **Lentes**: intentos 1 y 2, A, B y C+D en un solo revisor (C por la clave de la sonda y `test_auth_cache.py`; D por el `sleep` de la sonda y la purga).
+- **Veredicto**: cerrada en el intento 2 sin hallazgos Critical ni Important; los 7 Minor del intento 2, corregidos en fix2.
+- **Evidencia**: suite del servidor 1460 tests, 0 fallos, errores y omitidos; `KAIROS_MIN_TESTS` y `MIN_FLOOR` 1460; `scope-check.py --base main` exit 0 sin criterios alterados; contrato MCP, `schema.sql`, `ollama-proxy/default.conf.template` y `web/nginx.conf` sin cambios; purga comprobada en PostgreSQL aislado (filas de la sonda a 0, cada sentencia por índice que empieza por `project_id`).
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Important | Falso verde: cualquier nota activa de `kairos-probe` satisfacía la búsqueda semántica y nada barría los restos | Corregido en fix1: éxito solo con la nota de esta ejecución por la vía semántica, búsqueda de control y barrido inicial |
+| 1 | Important | `valid_key` reutilizaba la clave con el dueño deshabilitado (comprobación duplicada a mano) | Corregido en fix1: misma vía que la API |
+| 1 | Important | Notas retiradas con vector sin podar (~8 GB/año) | Corregido en fix1: purga de filas solo de `kairos-probe` |
+| 1 | Minor | Interrupción sin limpieza, `.prom` silencioso, aprovisionamientos concurrentes, proyecto ajeno adoptado, auditoría al primer administrador, nombre de la métrica, criterio sin enmienda, retirada fuera del presupuesto, usage-meter | Corregidos en fix1 (usage-meter, por el orquestador) |
+| 2 | Minor | Purga sin comprobar el dueño, rotación de la clave de un humano, auditoría del aprovisionamiento y `--as`, purga sin tope, interrupción con la escritura en vuelo, `last_success` que retrocede, `.lock` en solo lectura | Corregidos en fix2 |
+
+## Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (T-74 a T-80)
+
+- **Fecha**: 2026-11-18
+- **Lentes**: intento 1, A, B y C+D en un solo revisor (C por `docker-compose.yml`, `Dockerfile` y `ci.yml`; D por la consulta de la cola).
+- **Veredicto**: cerrada en el intento 1 sin hallazgos Critical ni Important; los 7 Minor, corregidos en fix1.
+- **Evidencia**: suite del servidor 1494 tests, 0 fallos, errores y omitidos; `KAIROS_MIN_TESTS` y `MIN_FLOOR` 1494; `scripts/tests` 186 OK; cliente 100/100; `scope-check.py --base main` exit 0; contrato MCP, `schema.sql`, migraciones, `ollama-proxy/default.conf.template` y `web/nginx.conf` sin cambios; `LIVE_QUEUE_SQL` con `Index Scan using memory_job_queue` (0,37 ms con 500 000 filas) y valores comprobados en PostgreSQL; ensayo aislado `kairos-ops-e` (sonda sana, worker parado detectado en `index` con `queue_stuck`, recuperación) con listados de `knowledge-graphs-*` idénticos.
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Minor | SIGTERM tras una ida y vuelta correcta o durante la espera del bucle; healthcheck sin el plazo de la sonda y tapado por una ejecución manual; `doctor` frente al checkpoint de la cola; `memory-probe` con todo el volumen de copias en escritura; consulta de la cola sin prueba en PostgreSQL; `memory-probe` no recreado tras un despliegue; periodo del bucle en el manual | Corregidos en fix1 (`memory_dsn` se mantiene: el repo tiene un solo rol de base, motivo en el manual) |
+
+## Fase 13 — Abstención: señal absoluta, parámetro y contratos (T-81 a T-86)
+
+- **Fecha**: 2026-11-18
+- **Lentes**: intento 1, A, B y C+D (C por `ci.yml`; D por `scripts/export-contracts.py`); intento 2, A, B y C en un solo revisor.
+- **Veredicto**: cerrada en el intento 2 sin hallazgos Critical ni Important; el Minor del intento 2, corregido por el orquestador.
+- **Evidencia**: suite del servidor 1519 tests, 0 fallos, errores y omitidos; `KAIROS_MIN_TESTS` y `MIN_FLOOR` 1519; `scope-check.py --base main` exit 0; contrato MCP y OpenAPI solo con campos opcionales añadidos y copia `mcp/contract` idéntica (34 herramientas); sin `abstain` y con `MEMORY_ABSTAIN_DEFAULT=off`, respuesta idéntica byte a byte a la anterior en 192 escenarios (servicio, `/v1/search`, `/v1/context`); la señal solo usa filas legibles por el actor, sin consultas extra.
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Important | Abstenía con una capa léxica caída, parcial o con el plazo de trigramas vencido (se leía como «sin coincidencia léxica») | Corregido en fix1: sin señal léxica completa no abstiene; matriz de 728 combinaciones |
+| 1 | Minor | Separador mal escrito en los umbrales, `uncalibrated` sin aciertos, variables fuera del Compose y del manual, CHANGELOG sin la nota de `context`, JSON de usage-meter, sufijo `:latest` | Corregidos en fix1 (JSON por enmienda: la ventana original no se conservó) |
+| 2 | Minor | Frase de la fusión movida al párrafo de Abstención en `configuration.md` | Corregido por el orquestador |
+
+## Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (T-87 a T-93)
+
+- **Fecha**: 2026-11-18
+- **Lentes**: intento 1, A, B y C (C por `ci.yml`); intento 2, A, B y C en un solo revisor.
+- **Veredicto**: cerrada en el intento 2 sin hallazgos Critical ni Important; los 2 Minor del intento 2 (punteros del ledger), corregidos por el orquestador.
+- **Decisión del usuario** (2026-11-18, «12 de 24 en la CI»): metas de abstención por proveedor. Con el simulado de la CI, ≥ 0,50 de abstención correcta y ≤ 0,05 de falsa como guarda de regresión (R-07); con modelos reales, ≥ 0,70 y ≤ 0,05. Enmendados P-05, CA-27, la decisión de go y R-07.
+- **Evidencia**: suite del servidor 1553 tests, 0 fallos, errores y omitidos; `KAIROS_MIN_TESTS` y `MIN_FLOOR` 1553; `scope-check.py --base main` exit 0; puertas recall@5 ≥ 0,80, MRR ≥ 0,60 y regresión ≤ 2 sin cambios; `dataset-v1.jsonl` sin cambios; `MEMORY_ABSTAIN_DEFAULT=off` y contrato MCP/OpenAPI sin cambios; `nomic-embed-text` medido con un Ollama efímero `kairos-calib-*` y sin calibrar (ningún umbral cumple 70 %/5 %), listados `knowledge-graphs-*` idénticos antes y después.
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Important | Metas del simulado rebajadas a 0,50 sin enmienda de la spec y con una DECISIÓN ABIERTA en una tarea cerrada | Corregido en fix1 con la decisión del usuario y enmiendas fechadas |
+| 1 | Important | Ninguna prueba fijaba la meta del simulado (con 0,0 o sin la clave, la CI seguía verde) | Corregido en fix1: prueba nueva; 6 mutantes en rojo |
+| 1 | Minor | README de la puerta, fila TOTAL, `TDD n/a` de T-92, punteros, `deterministic: null` sin documentar, redondeo de `pick_threshold`, restos sin verificar, errores de medición silenciados, orden de argumentos de `check_dataset` | Corregidos en fix1 (punteros, a medias) |
+| 2 | Minor | Punteros de T-88 y del JSON de T-89, T-90 y T-91 a secciones sin ese contenido | Corregido por el orquestador |
+
+## Hito B — revisión del diff completo (T-94, criterio 3)
+
+- **Fecha**: 2026-11-19
+- **Lentes**:
+  - Intento 1: una lente del hito (A+B) sobre `e20e93d..8f8d295`, las fases 9 a 14: 63 ficheros, unas 12.500 líneas. Busca interacciones entre fases, coherencia del CHANGELOG, la documentación, la Coordinación, el contrato MCP y las migraciones.
+  - Intento 2: lentes A, B y C sobre el fix1.
+  - Intento 3, el último del bucle: lentes A, B y C sobre el fix2 (`02ddbd4..02ca457`).
+  - Fix3, fuera del bucle por decisión del usuario del 2026-11-19 («Haz el fix3»): comprobación dirigida del orquestador sobre su diff.
+- **Veredicto**: sin hallazgos Critical ni Important abiertos.
+  - El contrato MCP y OpenAPI solo crece, y las dos copias del contrato MCP son idénticas.
+  - No hay migraciones nuevas.
+  - Las referencias nuevas a `knowledge-graphs-*` y a 11434 solo sirven para rechazarlos.
+  - Sin `abstain` y con `MEMORY_ABSTAIN_DEFAULT=off`, la respuesta no cambia.
+- **Evidencia**:
+  - Suite: MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1569}.
+  - `retrieval-eval`: `passed: true`.
+  - `scope-check.py --base main` y `ledger-lint`: exit 0.
+  - Pruebas de despliegue del host: OK.
+  - Mutante que quita el filtro de proyecto de la consulta de la etiqueta: muerto, 17 fallos.
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Important | La sonda buscaba sin `abstain`, así que con `MEMORY_ABSTAIN_DEFAULT=on` fallaba en `search`/`no_result` | Corregido en el fix1: sus 4 búsquedas envían `abstain: false` |
+| 1 | Important | Los CHANGELOG no recogían las fases 9 a 12 | Corregido en el fix1: se contrastaron con el código y se añadió la acción para quien usa `rclone:` |
+| 1 | Minor | Tras `apply` o `--rollback`, `memory-probe` y `memory-backup` seguían con la imagen anterior; hacía falta un paso manual | Corregido en el fix1: se recrean si estaban en marcha (`probe_recreated`, `backup_recreated`) |
+| 1 | Minor | Faltaban el ítem (24) de Coordinación y los eventos nuevos en `operations.md` | Corregido en el fix1 |
+| 1 | Minor | `architecture.md` hablaba en condicional y el tiempo de CI no decía que estaba medido | Corregido en el fix1 |
+| 2 | Important | La recreación de `memory-backup` perdía el override de `rclone` (red `egress`): las copias externas dejaban de subirse | Corregido en el fix2: recrea con los ficheros de la etiqueta `config_files` si están en la lista permitida; si no, `*_recreate_skipped` y orden manual |
+| 3 | Important | La orden manual perdía los ficheros propios cuando la etiqueta traía uno ajeno, y con una etiqueta ilegible se inventaba una lista | Corregido en el fix3: lleva la etiqueta completa en orden, o un marcador si la etiqueta no es fiable |
+| 3 | Important | En un ensayo, un contenedor creado sin el override del ensayo se recreaba con la imagen y el volumen de la instalación | Corregido en el fix3: no se recrea, y la orden manual añade el override del ensayo (este último detalle lo corrigió el orquestador con TDD en la comprobación dirigida) |
+| 3 | Minor | Los contenedores de `compose run` y las etiquetas repetidas hacían saltar la recreación | Corregido en el fix3: `oneoff=False` y deduplicación |
+| 3 | Minor | Ninguna prueba exigía que la consulta fuera acotada al proyecto | Corregido en el fix3: lo comprueban los dobles y una prueba directa; el mutante muere |
+| 3 | Minor | Los caracteres de control de la etiqueta llegaban a stderr (CWE-150) | Corregido en el fix3: se escriben con `printable()` |
+| 3 | Minor | Una nota de T-94 decía que faltaba el ítem (24), ya hecho | Corregido en la compactación (31) |
+
+Deuda observada fuera de alcance: un valor mal escrito en `MEMORY_ABSTAIN_THRESHOLDS` también impide arrancar `backup-cycle` y la purga de la sonda, porque comparten `Settings.from_env`. Es el mismo patrón que tenía `MEMORY_FUSION_*` antes del hito. Queda para la Iniciativa 9 (configuración única, B-12).
+
+## Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 (T-96 a T-98)
+
+- **Fecha**: 2026-11-19
+- **Lentes**: intento 1, A, más B y C en un solo revisor (C por `ci.yml` y `client/lib/config.mjs`), sobre `3ee5dcc..802a4f7` (T-96 y T-97). T-98 la hizo el orquestador, con un repaso de solo lectura de los 38 CA contra sus evidencias.
+- **Veredicto**: cerrada en el intento 1 sin hallazgos Critical ni Important. El orquestador corrigió 4 Minor y rebatió 1.
+- **Evidencia**:
+  - Ensayo de cierre `kairos-ops-z`, `--stage all`, `rehearsal_ok`:
+    - restauración `restored_and_content_verified` con 26 tablas;
+    - `worker_survived_db_restart`: 246 pendientes, 0 reinicios, 0 `failed`;
+    - sonda con el worker parado: `probe_failed stage=index`.
+    - Listados `knowledge-graphs-*` idénticos antes y después.
+  - Suite: MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1570}.
+  - `npm test` del cliente: 101/101.
+  - `ledger-lint` y `scope-check --base main`: exit 0.
+
+| Intento | Grado | Hallazgo | Estado |
+|---|---|---|---|
+| 1 | Minor | Ninguna prueba cubría la actualización del cliente desde 0.4.0: sin `'0.4.0'` en `COMPATIBLE_VERSIONS`, `npm test` seguía en verde | Corregido: `0.4.0` añadido al bucle de `lifecycle.test.mjs`. RED con el mutante: `incompatible_installation_manifest` |
+| 1 | Minor | La sección 0.4.1 de los CHANGELOG decía «Server, kairos-mcp and CLI are all 0.4.0» | Corregido: «pasaron juntos a la 0.4.0 (esta versión es la 0.4.1)» |
+| 1 | Minor | `docs/integration.md` no nombraba la 0.4.1 entre los CLI que no envían `structured` | Corregido |
+| 1 | Minor | Nombre de prueba `test_the_version_is_0_4_0…` que comprueba 0.4.1 | Corregido |
+| 1 | Minor | El CHANGELOG inglés usa «Iniciativa 7» y la prueba lo fija | Rebatido: es el nombre propio de la iniciativa en todo el repositorio, y `test_abstention_docs` (T-91) ya lo exige en los dos idiomas |
+| 1 | Minor (fuera de lente) | `test_versions` partía `CHANGELOG.es.md` por `## [Unreleased]`, que no existe en español, así que revisaba el fichero entero | Corregido: usa `## [Sin publicar]` en ES y exige el encabezado |
+
+T-98 (repaso de CA): 34 de 38 con evidencia directa. Matices, anotados en la spec al cerrarla:
+- CA-08, la parte de la imagen, se cumple por construcción.
+- CA-21 se cumple con la cota enmendada.
+- CA-27: la parte de modelos reales queda diferida a la Iniciativa 5.
+- CA-28 está verificado en local, porque la CI del PR #5 no arrancó por facturación.
+
+Huecos de documentación corregidos: `docs/architecture.md` gana la sección «Operación fiable» y tres filas en la tabla de componentes, y `docs/operations.md` explica cómo activar la abstención.

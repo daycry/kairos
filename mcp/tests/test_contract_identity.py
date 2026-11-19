@@ -25,6 +25,7 @@ def public(tool):
 
 def without_structured(tool):
     stripped = copy.deepcopy(tool)
+    stripped['inputSchema'].get('properties', {}).pop('abstain', None)  # the optional `abstain` of `search` (C-05, Iniciativa 3) is the other property added since 23ced03
     stripped['inputSchema'].get('$defs', {}).get('Payload', {}).get('properties', {}).pop(OPTIONAL_STRUCTURED, None)
     return stripped
 

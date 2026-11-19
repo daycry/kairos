@@ -1,0 +1,50 @@
+# Example Prometheus alerting rules for Kairos (the channel of an alert in this release is a metric, a log event and an exit code; sending it to a person is yours).
+# Load it with `rule_files:` in prometheus.yml and adjust the thresholds and `for:` to your installation. Nothing here is read by Kairos.
+#
+# - kairos_probe_*              the textfile written by `admin probe` (service `memory-probe`, see docs/operations.md, "Sonda de ida y vuelta"): scrape it with node_exporter's textfile collector.
+# - kairos_jobs_*               `/metrics` of memory-api (internal network or an administrator's bearer token).
+groups:
+  - name: kairos-probe
+    rules:
+      - alert: KairosProbeFailing
+        expr: kairos_probe_success == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: The Kairos round trip (write, index, search, retire) fails
+          description: Read the `stage` and `code` of the last `probe_failed` log line of memory-probe; a failure at `index` with a healthy API means memory-worker is not draining the queue.
+      - alert: KairosProbeSilent
+        # `kairos_probe_last_run_timestamp_seconds` stops moving when memory-probe is down or the file is not refreshed: a probe that does not run is no proof of health.
+        expr: time() - kairos_probe_last_run_timestamp_seconds > 3 * 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: The Kairos probe has not run for more than three intervals (MEMORY_PROBE_INTERVAL, 300 s)
+  - name: kairos-queue
+    rules:
+      - alert: KairosQueueStuck
+        # 900 s is the default of MEMORY_QUEUE_STUCK_SECONDS in the probe; keep both numbers equal. The metric is 0 with an empty queue.
+        expr: kairos_jobs_oldest_pending_seconds > 900
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: A job has waited more than 15 minutes for a worker
+          description: memory-worker is stopped, cannot reach the database or the embeddings provider. Check `docker compose ps memory-worker` and its logs.
+      - alert: KairosQueueScrapeBroken
+        expr: kairos_jobs_queue_scrape_success == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: /metrics cannot read memory.jobs, so the queue series are the last good values
+      - alert: KairosJobsFailed
+        # The gauge counts the failed rows that are still in the table (they are purged by retention), by destination and error code: alert on growth, not on the absolute number.
+        expr: sum(kairos_jobs_failed) - sum(kairos_jobs_failed offset 1h) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: New failed jobs in the last hour (see `kairos_jobs_failed` by `destination` and `code`)

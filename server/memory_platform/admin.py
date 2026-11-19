@@ -7,10 +7,13 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
+import time
 import hashlib
 
 from . import observability
+from . import probe as round_trip
 from .backup import BackupError, check_keep, create_backup, encrypted_name, encryption_plan, manifest_path, prune_backups, table_fingerprints, terminate_as_exit, verify_backup
 from .chunking import chunk_text, embedding_text
 from .config import (Settings, backup_destination, backup_interval_seconds, backup_keep, backup_recipients_file, backup_remote_keep, backup_require_encryption, retention_windows)
@@ -346,6 +349,15 @@ def main(argv=None):
     prune.add_argument('--dry-run', action='store_true', help='Only report what each table would lose; nothing is written')
     prune.add_argument('--batch', type=int, default=1000, help=f'Rows deleted per transaction (1..{PRUNE_BATCH_MAX})')
     prune.add_argument('--table', action='append', choices=sorted(RETENTION_TABLES), help='Only this table (repeatable); default: every table that has a window')
+    provision = commands.add_parser('probe-provision', help='Make the project kairos-probe and a key that reaches only it (read and write), idempotent; the token goes to --key-file, never to the output')
+    provision.add_argument('--key-file', default=os.environ.get('MEMORY_PROBE_KEY_FILE', round_trip.DEFAULT_KEY_FILE), help='Where the token of the probe key is kept (0600)')
+    provision.add_argument('--as', dest='operator', default=None, help='Username of the administrator that makes the project kairos-probe (default: the first enabled administrator); the key is owned by the service account kairos-probe, never by this user')
+    probe = commands.add_parser('probe', help='Round trip through /v1 with the probe key: write a synthetic note, wait for its embed receipt, search for it, retire it; exit 1 with probe_failed and the stage when any fails')
+    probe.add_argument('--url', default=None, help='Where /v1 answers (default MEMORY_PROBE_URL or http://memory-api:8790)')
+    probe.add_argument('--key-file', default=os.environ.get('MEMORY_PROBE_KEY_FILE', round_trip.DEFAULT_KEY_FILE), help='The probe key written by probe-provision')
+    probe.add_argument('--metrics-file', default=os.environ.get('MEMORY_PROBE_METRICS_FILE', round_trip.DEFAULT_METRICS_FILE), help='Where kairos_probe_* are written for a textfile collector (empty: nowhere)')
+    probe.add_argument('--loop', action='store_true', help='Repeat the probe: one run, then MEMORY_PROBE_INTERVAL seconds (default 300) of wait, so the period is the duration of a run plus the interval: what the memory-probe service runs. A failed run is reported (probe_failed, queue_stuck) and the next one runs; only a stop of the service ends it (probe_interrupted)')
+    probe.add_argument('--heartbeat-file', default=None, help='With --loop: the file the loop touches at the start and the end of every cycle, which the healthcheck of memory-probe reads (default MEMORY_PROBE_HEARTBEAT_FILE, else next to the metrics file with the suffix .heartbeat)')
     commands.add_parser('inspect')
     commands.add_parser('content-manifest')
     backup = commands.add_parser('backup', help='pg_dump to a new file with its manifest <file>.json (sha256, bytes, schema version, time, counts)')
@@ -405,6 +417,52 @@ def main(argv=None):
                           'bytes': manifest['content_bytes' if content else 'bytes'], 'sha256': manifest['content_sha256' if content else 'sha256'],
                           'encrypted': manifest['encrypted'], 'schema_version': manifest['schema_version'], 'created_at': manifest['created_at']}, sort_keys=True))
         return
+    if args.command == 'probe':  # needs no database: it only speaks /v1 with its own key
+        observability.configure_logging()  # `probe_failed` goes to stderr as one JSON line
+        def open_store():  # the retired notes of kairos-probe are purged through the database this command already has settings for; no database is no failure of the probe
+            settings = Settings.from_env()
+            return Store(guarded_dsn(settings.dsn), project_maps=settings.project_maps, embedding_enabled=True)
+        def run_once():
+            """One probe: its report is printed and the verdict is the message an exit would carry (None: all fine)."""
+            report = round_trip.probe_command(args.url, args.key_file, args.metrics_file, store_factory=open_store)
+            print(json.dumps(report, sort_keys=True), flush=True)
+            if report['status'] != 'probe_ok':
+                return report, 'probe_failed: stage=%s code=%s' % (report['stage'], report['code'])
+            if report.get('metrics_written') is False:  # the probe worked but the file a monitor reads did not change: that is a failure of the check
+                return report, 'probe_metrics_failed: the metrics file could not be written'
+            if (report.get('queue') or {}).get('stuck'):  # the round trip worked but the jobs queue holds a job that has waited longer than MEMORY_QUEUE_STUCK_SECONDS
+                return report, 'queue_stuck: oldest_pending_seconds=%s threshold_seconds=%s' % (report['queue']['oldest_pending_seconds'], report['queue']['threshold_seconds'])
+            return report, None
+        if not args.loop:
+            report, verdict = run_once()
+            if verdict:
+                raise SystemExit(verdict)
+            return
+        try:
+            interval = round_trip.probe_interval()
+        except round_trip.ProbeError as error:
+            raise SystemExit('%s: %s' % (error.code, error)) from None
+        beat = round_trip.heartbeat_path(args.metrics_file, args.heartbeat_file)
+        done, stopped = 0, False
+        try:
+            with round_trip.terminate_as_interrupt():  # SIGTERM is Ctrl-C for the whole life of the loop, the wait between runs included (it is where the loop spends nearly all its time)
+                while LOOP_CYCLES is None or done < LOOP_CYCLES:
+                    done += 1
+                    round_trip.write_heartbeat(beat)  # the healthcheck reads this file, which only the loop writes (a manual `admin probe` also writes the .prom)
+                    report, verdict = run_once()
+                    round_trip.write_heartbeat(beat)
+                    if verdict:
+                        print(verdict, file=sys.stderr, flush=True)  # the service stays up: the metric, the event and this line are the alert; the next run retries
+                    if report.get('code') == 'interrupted' or report.get('interrupted'):  # a stop reached the run or what follows it: the note is retired and the result is in the file
+                        stopped = True
+                        break
+                    if LOOP_CYCLES is None or done < LOOP_CYCLES:
+                        time.sleep(interval)
+        except KeyboardInterrupt:  # a stop of the service in the wait, or between two lines of the loop
+            stopped = True
+        if stopped:
+            raise SystemExit('probe_interrupted: the service was stopped')
+        return
     try:
         settings = Settings.from_env()
         dsn = guarded_dsn(settings.dsn)
@@ -421,6 +479,11 @@ def main(argv=None):
             print(json.dumps({'status': 'skipped', 'reason': 'embeddings_disabled', 'enqueued': 0}))
         else:
             print(json.dumps(dict(backfill_chunks(store, settings.embedding_model, batch=args.batch, max_jobs=args.max_jobs, project=args.project, retry_failed=args.retry_failed), status='backfilled'), sort_keys=True))
+    elif args.command == 'probe-provision':
+        try:
+            print(json.dumps(round_trip.provision(store, args.key_file, operator=args.operator), sort_keys=True))
+        except round_trip.ProbeError as error:
+            raise SystemExit(f'{error.code}: {error}') from None
     elif args.command == 'prune-tables':
         print(json.dumps(prune_tables(store, windows, batch=args.batch, dry_run=args.dry_run, tables=args.table), sort_keys=True))
     elif args.command == 'bootstrap':

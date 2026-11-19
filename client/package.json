@@ -1,12 +1,12 @@
 {
   "name": "@daycry/kairos",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Kairos MCP setup and a local stdio bridge for Claude Code, Codex and OpenCode",
   "type": "module",
   "bin": { "kairos": "bin/kairos.mjs" },
   "engines": { "node": ">=20.12.0" },
   "files": ["bin/", "lib/", "README.md", "LICENSE"],
-  "scripts": { "test": "node --test tests/install.test.mjs tests/mcp.test.mjs tests/capture.test.mjs tests/dispatcher.test.mjs tests/lifecycle.test.mjs tests/code-analysis.test.mjs tests/artifact.test.mjs", "release:check":"node tests/release-check.mjs", "prepublishOnly":"node tests/release-check.mjs" },
+  "scripts": { "test": "node --test tests/install.test.mjs tests/mcp.test.mjs tests/capture.test.mjs tests/dispatcher.test.mjs tests/lifecycle.test.mjs tests/code-analysis.test.mjs tests/artifact.test.mjs tests/doctor-outbox.test.mjs", "release:check":"node tests/release-check.mjs", "prepublishOnly":"node tests/release-check.mjs" },
   "publishConfig": {"access":"public","registry":"https://registry.npmjs.org/"},
   "license": "MIT"
 }

@@ -27,25 +27,37 @@ x-memory-environment: &memory-environment
   MEMORY_FUSION_K: ${MEMORY_FUSION_K:-60}
   MEMORY_FUSION_VALIDATED_BONUS: ${MEMORY_FUSION_VALIDATED_BONUS:-0.0001}
   MEMORY_FUSION_WEIGHTS: ${MEMORY_FUSION_WEIGHTS:-}
+  MEMORY_ABSTAIN_THRESHOLDS: ${MEMORY_ABSTAIN_THRESHOLDS:-}  # abstention (parameter `abstain`): cosine threshold per embeddings model, `model=threshold,...`; empty = none yet (uncalibrated)
+  MEMORY_ABSTAIN_DEFAULT: ${MEMORY_ABSTAIN_DEFAULT:-off}  # `on` abstains when the request does not say; `off` keeps the answer identical to before
 
+# json-file rotation of every service (T-55): 3 files of 10 MB each, so no container fills the disk with its log.
+x-logging: &logging
+  driver: json-file
+  options: {max-size: 10m, max-file: '3'}
+
+# `cpus` defaults to 0 (no CPU quota) in every service: Docker refuses a container whose `cpus` is above the CPUs of the host, so no default may be a number
+# that a one-vCPU host cannot meet. A quota is a choice of the operator (docs/configuration.md has the column for a small VPS).
 x-process: &process
   read_only: true
   tmpfs: [/tmp]
   cap_drop: [ALL]
   security_opt: [no-new-privileges:true]
-  logging:
-    driver: json-file
-    options: {max-size: 10m, max-file: '3'}
+  logging: *logging
 
 services:
   ollama:
     image: nginx@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2
+    mem_limit: ${MEMORY_OLLAMA_MEM_LIMIT:-256m}
+    cpus: ${MEMORY_OLLAMA_CPUS:-0}
     restart: unless-stopped
     environment:
       OLLAMA_UPSTREAM: ${OLLAMA_UPSTREAM:-host.docker.internal:11434}
       OLLAMA_ALLOW_CHAT: ${OLLAMA_ALLOW_CHAT:-0}
       NGINX_ENTRYPOINT_QUIET_LOGS: '1'
     volumes: ['./ollama-proxy/default.conf.template:/etc/nginx/templates/default.conf.template:ro']
+    # The VPS is Linux, where `host.docker.internal` does not exist unless it is declared: `host-gateway` makes it the host's address (Docker Desktop already has it).
+    extra_hosts: ['host.docker.internal:host-gateway']
+    logging: *logging
     networks:
       inference: {gw_priority: 0}
       egress: {gw_priority: 100}
@@ -67,6 +79,8 @@ services:
 
   memory-postgres:
     image: kairos-postgres:latest
+    mem_limit: ${MEMORY_POSTGRES_MEM_LIMIT:-4g}
+    cpus: ${MEMORY_POSTGRES_CPUS:-0}
     build: {context: ., dockerfile: server/memory_platform/Dockerfile, target: postgres-pgvector}
     profiles: [memory]
     restart: unless-stopped
@@ -75,6 +89,7 @@ services:
       POSTGRES_USER: memory
       POSTGRES_PASSWORD_FILE: /run/secrets/memory_postgres
     secrets: [memory_postgres]
+    logging: *logging
     volumes: [memory-postgres-data:/var/lib/postgresql/data]
     networks: [memory-data]
     healthcheck:
@@ -87,6 +102,8 @@ services:
   memory-migrate:
     <<: *process
     image: kairos-api:latest
+    mem_limit: ${MEMORY_MIGRATE_MEM_LIMIT:-512m}
+    cpus: ${MEMORY_MIGRATE_CPUS:-0}
     build: {context: ., dockerfile: server/memory_platform/Dockerfile, target: api}
     profiles: [memory]
     restart: 'no'
@@ -101,6 +118,8 @@ services:
   memory-bootstrap:
     <<: *process
     image: kairos-api:latest
+    mem_limit: ${MEMORY_BOOTSTRAP_MEM_LIMIT:-256m}
+    cpus: ${MEMORY_BOOTSTRAP_CPUS:-0}
     profiles: [memory-bootstrap]
     restart: 'no'
     environment: *memory-environment
@@ -113,6 +132,8 @@ services:
 
   memory-files:
     image: kairos-api:latest
+    mem_limit: ${MEMORY_FILES_MEM_LIMIT:-128m}
+    cpus: ${MEMORY_FILES_CPUS:-0}
     profiles: [memory-admin]
     restart: 'no'
     user: '0:0'
@@ -122,11 +143,14 @@ services:
     cap_add: [CHOWN, FOWNER, DAC_OVERRIDE]
     security_opt: [no-new-privileges:true]
     entrypoint: [python, -m, memory_platform.initialize]
+    logging: *logging
     volumes: [memory-backups:/backups]
 
   memory-api:
     <<: *process
     image: kairos-api:latest
+    mem_limit: ${MEMORY_API_MEM_LIMIT:-2g}  # ~100 MB of base + 360 MB peak while one 120 MB maximum answer is rendered (the pool does not bound answers held in memory): 2g holds ~14 maximum answers at once, 1g ~5; see docs/configuration.md
+    cpus: ${MEMORY_API_CPUS:-0}
     build: {context: ., dockerfile: server/memory_platform/Dockerfile, target: api}
     profiles: [memory]
     restart: unless-stopped
@@ -148,10 +172,11 @@ services:
   memory-mcp:
     <<: *process
     image: kairos-mcp:latest
+    mem_limit: ${MEMORY_MCP_MEM_LIMIT:-1g}  # one answer of up to 64 MiB is held about five times over while it is cut; see docs/configuration.md
+    cpus: ${MEMORY_MCP_CPUS:-0}
     build: {context: ./mcp, dockerfile: Dockerfile}
     profiles: [memory]
     restart: unless-stopped
-    mem_limit: 1g  # one answer of up to 64 MiB is held about five times over while it is cut; see docs/configuration.md
     environment:
       KAIROS_API_URL: http://memory-api:8790
       KAIROS_API_TIMEOUT: ${KAIROS_API_TIMEOUT:-30}
@@ -170,6 +195,8 @@ services:
   memory-worker:
     <<: *process
     image: kairos-worker:latest
+    mem_limit: ${MEMORY_WORKER_MEM_LIMIT:-1g}
+    cpus: ${MEMORY_WORKER_CPUS:-0}
     build: {context: ., dockerfile: server/memory_platform/Dockerfile, target: worker}
     profiles: [memory]
     restart: unless-stopped
@@ -178,11 +205,23 @@ services:
     networks: [memory-data, inference]
     depends_on:
       memory-migrate: {condition: service_completed_successfully}
+    # Healthy while the worker's beat is on time (T-56): /tmp/kairos-worker-heartbeat (tmpfs of x-process) holds the epoch second by which the next beat is due (the loop
+    # writes it every turn, the claim of a job rewrites it with the deadline of the first renewal and every lease renewal (every lease/3) renews it, all only while the
+    # database answers). Unhealthy once that second has passed, or when the file is missing or unreadable; `unhealthy` shows interval x retries = 3 x 30 s = 90 s after
+    # the deadline at the latest, for any MEMORY_LEASE_SECONDS and any MEMORY_WORKER_DB_BACKOFF_MAX (a test drives the whole loop and probes every 30 s).
+    healthcheck:
+      test: [CMD, python, -c, "import sys, time; sys.exit(0 if time.time() < float(open('/tmp/kairos-worker-heartbeat').read()) else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     stop_grace_period: 45s
 
   memory-web:
     <<: *process
     image: kairos-web:latest
+    mem_limit: ${MEMORY_WEB_MEM_LIMIT:-256m}
+    cpus: ${MEMORY_WEB_CPUS:-0}
     build: {context: ., dockerfile: web/Dockerfile, target: final}
     profiles: [memory]
     restart: unless-stopped
@@ -192,10 +231,17 @@ services:
       memory-api: {condition: service_healthy}
       memory-mcp: {condition: service_healthy}
     tmpfs: ['/tmp:uid=101,gid=101,mode=1777']
+    healthcheck:
+      test: [CMD-SHELL, 'wget -qO- -T 3 http://127.0.0.1:8080/health/live >/dev/null']  # the proxy's own route (web/nginx.conf), not a call to memory-api
+      interval: 15s
+      timeout: 5s
+      retries: 6
 
   memory-admin:
     <<: *process
     image: kairos-operator:latest
+    mem_limit: ${MEMORY_ADMIN_MEM_LIMIT:-1g}
+    cpus: ${MEMORY_ADMIN_CPUS:-0}
     build: {context: ., dockerfile: server/memory_platform/Dockerfile, target: operator}
     profiles: [memory-admin]
     environment: *memory-environment
@@ -212,6 +258,8 @@ services:
   memory-backup:
     <<: *process
     image: kairos-operator:latest
+    mem_limit: ${MEMORY_BACKUP_MEM_LIMIT:-1g}
+    cpus: ${MEMORY_BACKUP_CPUS:-0}
     build: {context: ., dockerfile: server/memory_platform/Dockerfile, target: operator}
     profiles: [backup]
     restart: unless-stopped
@@ -232,9 +280,47 @@ services:
       - memory-backups:/backups
       - ${MEMORY_BACKUP_CONFIG_DIR:-./backup-config}:/config:ro
       - ${MEMORY_BACKUP_OFFSITE_DIR:-./offsite}:/offsite
-    networks: [memory-data, egress]
+    networks: [memory-data]  # `dir:` needs no outside: docker-compose.backup-rclone.yml adds `egress` for an `rclone:` destination (T-54)
     init: true
     stop_grace_period: 60s
+
+  # Round-trip probe (C-06), opt-in: `docker compose --profile probe up -d memory-probe` (the installed project picks it up only at its next `up`).
+  # `probe --loop` writes a synthetic note through /v1 with the probe key, waits for its embed receipt, searches for it and retires it, then waits MEMORY_PROBE_INTERVAL seconds (the period is
+  # the duration of a run plus the interval), and writes kairos_probe_* to the textfile of the volume (it also warns with `queue_stuck` above MEMORY_QUEUE_STUCK_SECONDS). The key is the FILE `probe-provision`
+  # leaves in /backups/probe (the default of the command, never a variable); the DSN secret only purges the retired notes of the `kairos-probe` project (the one role of the installation: see docs/operations.md,
+  # `memory_dsn` of the service). No ports: nothing reaches it, and it reaches memory-api over the internal database network.
+  memory-probe:
+    <<: *process
+    image: kairos-operator:latest
+    mem_limit: ${MEMORY_PROBE_MEM_LIMIT:-256m}
+    cpus: ${MEMORY_PROBE_CPUS:-0}
+    build: {context: ., dockerfile: server/memory_platform/Dockerfile, target: operator}
+    profiles: [probe]
+    restart: unless-stopped
+    environment:
+      <<: *memory-environment
+      MEMORY_PROBE_URL: ${MEMORY_PROBE_URL:-http://memory-api:8790}
+      MEMORY_PROBE_INTERVAL: ${MEMORY_PROBE_INTERVAL:-300}
+      MEMORY_PROBE_TIMEOUT: ${MEMORY_PROBE_TIMEOUT:-120}
+      MEMORY_QUEUE_STUCK_SECONDS: ${MEMORY_QUEUE_STUCK_SECONDS:-900}
+    secrets: [memory_dsn]
+    entrypoint: [python, -m, memory_platform.admin]
+    command: [probe, --loop]
+    # Least privilege: only the `probe` directory of the volume (compose `volume.subpath`, Docker Engine and Compose with that field; the directory must exist, `probe-provision` creates it), mounted at the
+    # path the defaults of the command use. The encrypted copies of memory-backup, next to it in the volume, are not visible to this service.
+    volumes:
+      - {type: volume, source: memory-backups, target: /backups/probe, volume: {subpath: probe}}
+    networks: [memory-data]
+    init: true
+    # Healthy while the loop beats: the heartbeat file (only `probe --loop` writes it, at the start and the end of every cycle; an `admin probe` by hand writes the .prom but not this) is younger than
+    # MEMORY_PROBE_INTERVAL + the longest cycle (MEMORY_PROBE_TIMEOUT + retirement + purge + queue read) + 60 s. The margin is computed by the code (`python -m memory_platform.probe health`).
+    healthcheck:
+      test: [CMD, python, -m, memory_platform.probe, health]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+    stop_grace_period: 15s  # the retirement after a SIGTERM has 8 s (docs/operations.md, "Sonda de ida y vuelta")
 
 networks:
   memory-data: {internal: true}

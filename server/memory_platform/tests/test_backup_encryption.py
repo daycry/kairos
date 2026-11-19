@@ -21,6 +21,11 @@ from memory_platform.tests.test_store import create_core
 
 ROOT = Path(__file__).resolve().parents[3]
 PRIVATE_MARK = 'AGE-SECRET' + '-KEY-'  # split: this very file must not contain the marker it forbids elsewhere
+# An age private key: the marker, an optional `PQ-` (the hybrid identity), '1' and a run of bech32 characters (58 in an x25519 key; much longer in a PQ one; at least
+# 8, so that a key wrapped at 32 columns or more still leaves enough of them in its first line: the marker and the `1` take 16 of the columns). The tree scan looks for this, not for the bare marker, so the manuals may name the prefix
+# (`AGE-SECRET-KEY-…`) when they explain that a recipients file holding one is rejected.
+BECH32 = '023456789ACDEFGHJKLMNPQRSTUVWXYZ'
+PRIVATE_KEY = re.compile((PRIVATE_MARK + '(?:PQ-)?1[' + BECH32 + ']{8,}').encode())
 
 
 def new_identity(root, name='key'):
@@ -251,6 +256,18 @@ class EncryptionSettingsTests(unittest.TestCase):
 class NoPrivateKeyTests(unittest.TestCase):
     """CA-08: no private key in the repository or in what the image of the test target carries; `age` is pinned in the two images that run it."""
 
+    def test_the_scan_catches_every_form_of_a_private_key_and_not_the_prose_prefix(self):
+        body = (BECH32*3)[:58]
+        for sample in (PRIVATE_MARK + '1' + body,                        # x25519
+                       PRIVATE_MARK + 'PQ-1' + (BECH32*40)[:1900],       # hybrid post-quantum identity
+                       PRIVATE_MARK + '1' + body[:30] + chr(10) + body[30:],  # wrapped: the first line still holds a long run
+                       PRIVATE_MARK + '1' + body[:16] + chr(10) + body[16:],  # wrapped at 32 columns: 16 of the characters are the marker, 16 the key
+                       (PRIVATE_MARK + '1' + body)[:24] + chr(10) + (PRIVATE_MARK + '1' + body)[24:],  # wrapped at 24 columns: 8 key characters
+                       'key = ' + PRIVATE_MARK + '1' + body + chr(10)):
+            self.assertTrue(PRIVATE_KEY.search(sample.encode()), sample[:40])
+        for prose in (PRIVATE_MARK + '…', PRIVATE_MARK + ' and the public one', PRIVATE_MARK + '1' + body[:7], 'age1' + body.lower()):
+            self.assertFalse(PRIVATE_KEY.search(prose.encode()), prose)
+
     def test_no_file_of_the_tree_holds_an_age_private_key(self):
         found = []
         for base, folders, files in os.walk(ROOT):
@@ -260,7 +277,7 @@ class NoPrivateKeyTests(unittest.TestCase):
                 try:
                     if path.stat().st_size > 5_000_000:
                         continue
-                    if PRIVATE_MARK.encode() in path.read_bytes():
+                    if PRIVATE_KEY.search(path.read_bytes()):
                         found.append(str(path.relative_to(ROOT)))
                 except OSError:
                     continue

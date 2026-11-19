@@ -437,6 +437,56 @@ def fusion_from_env(environ=None) -> tuple:
     return int(raw_k), bonus, weights
 
 
+# Abstention (C-05, M-01): `abstain` answers "nothing relevant" when the best semantic cosine is below the threshold of the embeddings model and no
+# lexical layer returned anything (docs/architecture.md, "Abstención: la señal"). Off by default; there is no threshold until it is calibrated (P-04).
+ABSTAIN_THRESHOLD_RANGE = (-1.0, 1.0)  # a cosine similarity
+ABSTAIN_MODEL_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:/@+-]*')  # an Ollama or registry name: never `=`, `;`, spaces or the other characters of a mistyped separator
+
+
+def check_abstain(thresholds) -> None:
+    if not isinstance(thresholds, dict):
+        raise ValueError('MEMORY_ABSTAIN_THRESHOLDS must map embedding models to thresholds')
+    for model, value in thresholds.items():
+        if not isinstance(model, str) or not model.strip():
+            raise ValueError('MEMORY_ABSTAIN_THRESHOLDS: a model name is empty')
+        if not ABSTAIN_MODEL_NAME.fullmatch(model.strip()):
+            raise ValueError('MEMORY_ABSTAIN_THRESHOLDS: a model name has characters that do not belong in one (letters, digits and . _ : / @ + -); check the separators: model=threshold,model=threshold')
+        if sum(model_key(name) == model_key(model) for name in thresholds if isinstance(name, str)) > 1:
+            raise ValueError('MEMORY_ABSTAIN_THRESHOLDS: one model has two thresholds (`name` and `name:latest` are the same model)')
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not ABSTAIN_THRESHOLD_RANGE[0] <= value <= ABSTAIN_THRESHOLD_RANGE[1]:
+            raise ValueError('MEMORY_ABSTAIN_THRESHOLDS: the threshold of %s must be a number between %s and %s' % ((model,) + ABSTAIN_THRESHOLD_RANGE))
+
+
+def model_key(model: str) -> str:
+    """The model without Ollama's implicit `:latest` tag: `nomic-embed-text` and `nomic-embed-text:latest` are the same model."""
+    model = model.strip()
+    return model[:-len(':latest')] if model.endswith(':latest') else model
+
+
+def threshold_for(thresholds, model):
+    """The threshold of an embeddings model (`None` when it has none), looking `:latest` up on both sides; any other tag is another model."""
+    wanted = model_key(model)
+    return next((value for name, value in thresholds.items() if model_key(name) == wanted), None)
+
+
+def abstain_from_env(environ=None) -> tuple:
+    """(default on?, thresholds per model) from MEMORY_ABSTAIN_DEFAULT (`on`/`off`, default `off`) and MEMORY_ABSTAIN_THRESHOLDS (`model=threshold,...`)."""
+    environ = os.environ if environ is None else environ
+    default = switch_from_env('MEMORY_ABSTAIN_DEFAULT', ('on',), ('off',), 'off', environ)
+    thresholds = {}
+    for part in (p for p in environ.get('MEMORY_ABSTAIN_THRESHOLDS', '').split(',') if p.strip()):
+        model, separator, value = part.rpartition('=')
+        model = model.strip()
+        try:
+            if not separator or not model or model in thresholds:
+                raise ValueError()
+            thresholds[model] = float(value)
+        except ValueError:
+            raise ValueError('MEMORY_ABSTAIN_THRESHOLDS must look like model=threshold,model=threshold (one threshold per model)') from None
+    check_abstain(thresholds)
+    return default, thresholds
+
+
 METRICS_MODES = ('off', 'internal', 'admin')
 
 
@@ -489,6 +539,8 @@ class Settings:
     fusion_k: int = DEFAULT_FUSION_K
     fusion_validated_bonus: float = DEFAULT_FUSION_VALIDATED_BONUS
     fusion_weights: dict = field(default_factory=dict)
+    abstain_default: bool = False  # MEMORY_ABSTAIN_DEFAULT: abstention when the request does not say
+    abstain_thresholds: dict = field(default_factory=dict)  # MEMORY_ABSTAIN_THRESHOLDS: embeddings model -> cosine threshold
     pool_min: int = DEFAULT_POOL_MIN  # MEMORY_POOL_MIN: connections the pool of the API / of the worker keeps open
     pool_max: int = DEFAULT_POOL_MAX  # MEMORY_POOL_MAX
     pool_timeout: float = DEFAULT_POOL_TIMEOUT  # MEMORY_POOL_TIMEOUT: seconds a transaction waits for a connection before 503 `store_busy`
@@ -505,6 +557,7 @@ class Settings:
         if self.metrics_mode not in METRICS_MODES:
             raise ValueError('metrics_mode must be one of: ' + ', '.join(METRICS_MODES))
         check_fusion(self.fusion_k, self.fusion_validated_bonus, self.fusion_weights)
+        check_abstain(self.abstain_thresholds)
         check_pool(self.pool_min, self.pool_max, self.pool_timeout)
         check_timeouts(self.connect_timeout, self.statement_timeout_ms)
         check_timeout_pair(self.connect_timeout, self.pool_timeout)
@@ -535,6 +588,7 @@ class Settings:
         keepalives_idle, keepalives_interval, keepalives_count, tcp_user_timeout_ms = tcp_settings()
         batch_timeout, job_timeout_max = embed_timeouts()
         fusion_k, fusion_bonus, fusion_weights = fusion_from_env()
+        abstain_default, abstain_thresholds = abstain_from_env()
         metrics_mode = metrics_mode_from_env()
         extract_enabled = switch_from_env('MEMORY_EXTRACT_ENABLED', ('1',), ('0',), '0')
         corpus_answer_enabled = switch_from_env('MEMORY_CORPUS_ANSWER', ('on',), ('off',), 'off')
@@ -562,6 +616,7 @@ class Settings:
             chunk_chars=chunk_chars, chunk_overlap=chunk_overlap, chunk_max=chunk_max, embedding_batch_size=batch_size,
             embedding_batch_timeout=batch_timeout, embedding_job_timeout_max=job_timeout_max,
             fusion_k=fusion_k, fusion_validated_bonus=fusion_bonus, fusion_weights=fusion_weights,
+            abstain_default=abstain_default, abstain_thresholds=abstain_thresholds,
             pool_min=pool_min, pool_max=pool_max, pool_timeout=pool_timeout, connect_timeout=connect_timeout, statement_timeout_ms=statement_timeout,
             keepalives_idle=keepalives_idle, keepalives_interval=keepalives_interval, keepalives_count=keepalives_count, tcp_user_timeout_ms=tcp_user_timeout_ms,
             metrics_mode=metrics_mode, mount_mcp=mount_mcp,

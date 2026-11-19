@@ -1,0 +1,6 @@
+# Override for a `rclone:` destination of the scheduled copy (T-54). memory-backup is only on the database network by default, which is enough for `dir:`;
+# a remote needs the outside, so this file adds the `egress` network (declared in docker-compose.yml) to that one service and changes nothing else:
+#   docker compose -f docker-compose.yml -f docker-compose.backup-rclone.yml --profile backup up -d memory-backup
+services:
+  memory-backup:
+    networks: [egress]

@@ -94,7 +94,13 @@ export class MCPTransport {
   }
 }
 
-export async function doctor(root, { online = false, transport } = {}) {
+const QUEUE_STALE_SECONDS = 900;  // the default threshold of the capture queue on disk (the same number as the server's MEMORY_QUEUE_STUCK_SECONDS)
+function staleThreshold(option) {
+  const value = Number(option ?? process.env.KAIROS_QUEUE_STALE_SECONDS ?? QUEUE_STALE_SECONDS);
+  return Number.isFinite(value) && value > 0 ? value : QUEUE_STALE_SECONDS;  // a value that is no positive number never switches the warning off
+}
+
+export async function doctor(root, { online = false, transport, now = Date.now, queueStaleSeconds } = {}) {
   const { data } = loadInstallation(root);
   const result = { status: 'configured', network_checked: false, clients: data.clients, project_id: data.project_id };
   if(data.automation&&(data.automation.capture!=='off'||data.automation.context!=='off')) {
@@ -102,6 +108,18 @@ export async function doctor(root, { online = false, transport } = {}) {
     const {lifecycleConfig}=await import('./lifecycle-config.mjs');
     try { const endpoint=readEndpoint(lifecycleConfig(root,data)); result.dispatcher=endpoint?'compatible':'not_running'; }
     catch(error) { if(error.message!=='dispatcher_version_mismatch') throw error; result.status='degraded';result.dispatcher='version_mismatch'; }
+  }
+  if (data.automation&&data.automation.capture!=='off') {  // the queue on this disk: read-only, no lock, nothing sent (P-07); silent when nothing waits
+    const {lifecycleConfig}=await import('./lifecycle-config.mjs');
+    const {queueAge}=await import('./outbox.mjs');
+    try {
+      const config=lifecycleConfig(root,data),age=queueAge(config.directory,config.binding,now());
+      if(age&&age.pending>0) {
+        const threshold=staleThreshold(queueStaleSeconds),stale=age.oldest_seconds>threshold;
+        result.capture_queue={pending:age.pending,oldest_pending_seconds:age.oldest_seconds,threshold_seconds:threshold,stale};
+        if(stale) { result.warnings=['capture_queue_stale']; result.status='degraded'; }
+      }
+    } catch { result.capture_queue={status:'unreadable'}; }
   }
   if (!online) return result;
   const connection = transport || new MCPTransport(data.url, data.key_file, { timeout: 12000 });
@@ -117,7 +135,7 @@ export async function doctor(root, { online = false, transport } = {}) {
       !listed.tools.find(tool => tool.name === 'event_status')?.inputSchema?.properties?.project_id) missing.push('event_status_project_reconciliation');
   if(required.has('capture_policy') && !listed.tools.find(tool=>tool.name==='remember')?.inputSchema?.$defs?.AutomaticCapture) missing.push('automatic_capture_fingerprint');
   if(data.automation?.context==='auto' && !listed.tools.find(tool=>tool.name==='context')?.inputSchema?.properties?.match_mode) missing.push('automatic_context_filters');
-  Object.assign(result, { status: missing.length||result.dispatcher==='version_mismatch' ? 'degraded' : 'ready', network_checked: true, tools: names,
+  Object.assign(result, { status: missing.length||result.dispatcher==='version_mismatch'||result.warnings ? 'degraded' : 'ready', network_checked: true, tools: names,
     missing_tools: missing, project_authorized: false });
   if (names.includes('projects')) {
     const found = await connection.call(3, 'tools/call', { name: 'projects', arguments: {} });

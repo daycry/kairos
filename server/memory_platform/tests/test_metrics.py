@@ -118,6 +118,63 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(store.transaction.call_count, 4)
         self.assertEqual(sample('kairos_jobs_queue_depth', state='pending', destination='embed'), 4)
 
+    def test_t74_the_oldest_pending_age_is_published_and_is_zero_with_an_empty_queue(self):
+        store, asked = jobs_store([{'state': 'pending', 'destination': 'embed', 'n': 3, 'oldest': 42.5}, {'state': 'running', 'destination': 'extract', 'n': 1, 'oldest': 900.25},
+                                   {'state': 'unknown', 'destination': 'embed', 'n': 1, 'oldest': 0}])
+        observability.refresh_queue_depth(store)
+        self.assertEqual(sample('kairos_jobs_oldest_pending_seconds'), 900.25)
+        self.assertIn('# TYPE kairos_jobs_oldest_pending_seconds gauge', observability.render_metrics().decode())
+        store, asked = jobs_store([])
+        observability.refresh_queue_depth(store)
+        self.assertEqual(sample('kairos_jobs_oldest_pending_seconds'), 0.0)  # an empty queue never looks stuck, and nothing stale stays
+        store, asked = jobs_store([{'state': 'pending', 'destination': 'embed', 'n': 2}])  # rows with no age (nothing due yet): 0
+        observability.refresh_queue_depth(store)
+        self.assertEqual(sample('kairos_jobs_oldest_pending_seconds'), 0.0)
+
+    def test_t74_the_age_comes_from_the_live_states_only_and_counts_only_what_is_due(self):
+        store, asked = jobs_store()
+        observability.refresh_queue_depth(store)
+        queue_sql = [sql for sql in asked if 'GROUP BY state' in sql][0]
+        self.assertIn("state IN ('pending','running','unknown')", queue_sql)
+        self.assertIn('oldest', queue_sql)
+        self.assertIn('FILTER', queue_sql)  # a job that waits for its retry time (available_at in the future) is not stuck
+        self.assertIn('lease_until', queue_sql)  # a running job is stuck when its lease has expired, not because it has been running for long
+        for terminal in ('succeeded', 'failed'):
+            self.assertNotIn(terminal, queue_sql)
+        self.assertEqual(len([sql for sql in asked if 'FROM memory.jobs' in sql]), 2)  # no third read: the age rides on the counts query
+
+    def test_t74_a_failed_read_keeps_the_last_age_and_the_scrape_flag_says_so(self):
+        store, asked = jobs_store([{'state': 'pending', 'destination': 'embed', 'n': 1, 'oldest': 77}])
+        observability.refresh_queue_depth(store)
+        observability.reset_queue_cache()
+        broken = MagicMock()
+        broken.transaction.side_effect = RuntimeError('db down')
+        self.assertFalse(observability.refresh_queue_depth(broken))
+        self.assertEqual(sample('kairos_jobs_oldest_pending_seconds'), 77.0)
+        self.assertEqual(sample('kairos_jobs_queue_scrape_success'), 0.0)
+
+    def test_t74_oldest_pending_seconds_reads_the_age_for_the_probe(self):
+        store, asked = jobs_store([{'state': 'pending', 'destination': 'embed', 'n': 1, 'oldest': 31}, {'state': 'running', 'destination': 'embed', 'n': 1, 'oldest': 12}])
+        self.assertEqual(observability.oldest_pending_seconds(store), 31.0)
+        self.assertEqual(observability.oldest_pending_seconds(jobs_store([])[0]), 0.0)
+        broken = MagicMock()
+        broken.transaction.side_effect = RuntimeError('db down')
+        self.assertIsNone(observability.oldest_pending_seconds(broken))
+
+    def test_t74_the_example_rules_are_valid_yaml_and_every_metric_they_name_exists(self):
+        rules = yaml.safe_load((ROOT/'docs'/'examples'/'prometheus-rules.yml').read_text(encoding='utf-8'))
+        alerts = {rule['alert']: rule for group in rules['groups'] for rule in group['rules']}
+        self.assertTrue({'KairosProbeFailing', 'KairosQueueStuck', 'KairosJobsFailed'} <= set(alerts))
+        exposed = observability.render_metrics().decode() + observability.render_probe_metrics().decode()
+        observability.refresh_queue_depth(MagicMock())
+        exposed += observability.render_metrics().decode()
+        for name, rule in alerts.items():
+            for metric in set(re.findall(r'kairos_[a-z_]+', rule['expr'])):
+                self.assertIn('# TYPE %s ' % metric, exposed, name)
+        self.assertIn('kairos_probe_success', alerts['KairosProbeFailing']['expr'])
+        self.assertIn('kairos_jobs_oldest_pending_seconds > 900', alerts['KairosQueueStuck']['expr'])  # the probe's default (MEMORY_QUEUE_STUCK_SECONDS)
+        self.assertIn('kairos_jobs_failed', alerts['KairosJobsFailed']['expr'])
+
     def test_failed_jobs_are_derived_from_the_table_by_closed_code(self):
         store, asked = jobs_store(failed=[{'destination': 'extract', 'error_code': 'provider_rejected', 'n': 3},
                                           {'destination': 'embed', 'error_code': 'provider_timeout', 'n': 2},
@@ -264,15 +321,18 @@ class InstrumentationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sample('kairos_provider_errors_total', provider='extract', code='provider_rejected'), before + 1)
 
     async def test_a_query_whose_budget_runs_out_during_the_embedding_counts_provider_timeout(self):
-        """The layer's own plazo (semantic_budget_ms) expires before the provider's: `counted` only sees a cancellation, the layer counts it."""
+        """The layer's own plazo (semantic_budget_ms) expires before the provider's: `counted` only sees a cancellation, the layer counts it.
+
+        The budget is 500 ms, not 50: it also covers `has_vectors` in a worker thread, and on a loaded CI runner 50 ms could run out
+        there (phase `store`, rightly not a provider timeout), which made the test flaky."""
         async def slow(request):
-            await asyncio.sleep(1)
+            await asyncio.sleep(5)
             return httpx.Response(200, json={'embeddings': [[1.0, 0.5]]})
         settings = Settings('unused', request_timeout=5, embedding_query_timeout=5)
         store = Mock(has_vectors=Mock(return_value=True), search_items=Mock(return_value=[]))
         retrieval = Retrieval(store, settings, Embeddings(settings, transport=httpx.MockTransport(slow)))
         before = sample('kairos_provider_errors_total', provider='embed', code='provider_timeout')
-        result = await retrieval.search({}, {'project_ids': ['a'], 'q': QUERY, 'layers': ['episodic'], 'semantic_budget_ms': 50})
+        result = await retrieval.search({}, {'project_ids': ['a'], 'q': QUERY, 'layers': ['episodic'], 'semantic_budget_ms': 500})
         self.assertEqual(result['degraded'], {'layer': 'semantic', 'reason': 'timeout'})
         self.assertEqual(sample('kairos_provider_errors_total', provider='embed', code='provider_timeout'), before + 1)
 

@@ -57,7 +57,7 @@ ENDPOINTS = {
     'document_status': ('GET', P + '/documents/{document_id}', {'project_id': path('project_id'), 'document_id': path('document_id')}),
     'document_manifest': ('GET', P + '/manifest', {'project_id': path('project_id'), **same('query', 'limit', 'cursor')}),
     'revoke_document': ('DELETE', P + '/documents/{document_id}', {'project_id': path('project_id'), 'document_id': path('document_id'), 'version': query('version')}),
-    'search': ('POST', '/v1/search', same('body', 'project_ids', 'q', 'layers', 'limit', 'semantic', 'semantic_budget_ms')),
+    'search': ('POST', '/v1/search', same('body', 'project_ids', 'q', 'layers', 'limit', 'semantic', 'semantic_budget_ms', 'abstain')),
     'details': ('POST', '/v1/details', same('body', 'refs', 'max_chars')),
     'context': ('POST', '/v1/context', same('body', 'project_ids', 'q', 'layers', 'limit', 'max_chars', 'semantic', 'match_mode', 'exclude_categories', 'semantic_budget_ms')),
     'timeline': ('POST', '/v1/timeline', same('body', 'project_ids', 'anchor_ref', 'before', 'after', 'limit')),

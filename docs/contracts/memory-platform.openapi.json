@@ -1180,6 +1180,18 @@
       "Search": {
         "additionalProperties": false,
         "properties": {
+          "abstain": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional: answer `abstained: true` with no items when the best semantic similarity is below the threshold of the embeddings model and no lexical layer returned anything; unset follows the server setting MEMORY_ABSTAIN_DEFAULT (off by default)",
+            "title": "Abstain"
+          },
           "categories": {
             "anyOf": [
               {
@@ -1303,6 +1315,33 @@
       "SearchResult": {
         "additionalProperties": false,
         "properties": {
+          "abstained": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional: present only when abstention is active; true means nothing relevant was found and `items` is empty",
+            "title": "Abstained"
+          },
+          "abstention": {
+            "anyOf": [
+              {
+                "const": "uncalibrated",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional: `uncalibrated` when abstention was asked for but the embeddings model has no threshold, so the answer is the normal one",
+            "title": "Abstention"
+          },
           "backends": {
             "additionalProperties": true,
             "title": "Backends",

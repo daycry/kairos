@@ -157,7 +157,7 @@ Guía completa: [servidor desde cero](docs/server-install.md) y [configuración]
 
 ## Conectar un agente
 
-El instalador `@daycry/kairos` (versión 0.4.0) configura Claude Code, Codex y OpenCode. La 0.4.0 no está publicada en npm y el repositorio no incluye ningún tarball (`client/artifacts/` está en `.gitignore`): desde un clon, genera primero el tarball local y luego instálalo:
+El instalador `@daycry/kairos` (versión 0.4.1) configura Claude Code, Codex y OpenCode. La 0.4.1 no está publicada en npm y el repositorio no incluye ningún tarball (`client/artifacts/` está en `.gitignore`): desde un clon, genera primero el tarball local y luego instálalo:
 
 ```powershell
 # Generar el tarball (no publica nada)
@@ -166,7 +166,7 @@ npm pack --ignore-scripts --offline --pack-destination ./artifacts
 cd ../..
 
 # Previsualizar (no modifica nada)
-npx --offline --yes --package ./client/artifacts/daycry-kairos-0.4.0.tgz kairos install `
+npx --offline --yes --package ./client/artifacts/daycry-kairos-0.4.1.tgz kairos install `
   --client all --root C:/laragon/www/mi-proyecto --url http://127.0.0.1:5173 `
   --project mi-proyecto --key-file C:/Private/kairos-agent.key --opencode-version 2 --dry-run
 
@@ -220,7 +220,7 @@ Contratos: [`docs/contracts/kairos-mcp.json`](docs/contracts/kairos-mcp.json) y 
 └── docs/                     Manuales, contratos, capturas y roadmap con evidencias
 ```
 
-Los tres componentes (servidor, kairos-mcp y cliente) comparten la versión 0.4.0 y nada de esto está publicado. Cada uno tiene su Dockerfile (o su paquete) y la orden de pruebas que ejecuta la CI:
+Los tres componentes (servidor, kairos-mcp y cliente) comparten la versión 0.4.1 y nada de esto está publicado. Cada uno tiene su Dockerfile (o su paquete) y la orden de pruebas que ejecuta la CI:
 
 | Componente | Carpeta y versión | Dockerfile o paquete | Pruebas |
 |---|---|---|---|
@@ -249,7 +249,7 @@ Copias, restauración aislada, claves e incidencias: [operación y recuperación
 
 | Ámbito | Cómo se verifica |
 |---|---|
-| Backend | Suite completa contra PostgreSQL aislado (1203 pruebas) |
+| Backend | Suite completa contra PostgreSQL aislado (1570 pruebas) |
 | Calidad de recuperación | Puerta `retrieval-eval` (recall@5, MRR y no regresión por subconjunto sobre un conjunto sintético congelado), con embeddings simulados en la suite y con un Ollama desechable en la medida con el modelo real |
 | Web | Pruebas unitarias (65), TypeScript y build de producción con Vite |
 | Interfaz | Navegación real en Chromium con Playwright (20 escenarios), escritorio y móvil |

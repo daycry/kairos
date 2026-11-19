@@ -123,7 +123,7 @@ class VersionTests(unittest.TestCase):
 class ComponentVersionTests(unittest.TestCase):
     """C-06 / CA-24: server, mcp and client carry the same version (nothing is published) and the changelogs name it."""
     ROOT = Path(__file__).resolve().parents[3]
-    EXPECTED = '0.4.0'
+    EXPECTED = '0.4.1'
 
     def declared(self):
         return {
@@ -140,8 +140,25 @@ class ComponentVersionTests(unittest.TestCase):
 
     def test_the_changelogs_name_the_client_version_and_no_stale_one(self):
         version = self.declared()['client']
-        for name in ('CHANGELOG.md', 'CHANGELOG.es.md'):
+        for name, unreleased in (('CHANGELOG.md', '## [Unreleased]'), ('CHANGELOG.es.md', '## [Sin publicar]')):
             with self.subTest(changelog=name):
-                head = (self.ROOT / name).read_text(encoding='utf-8').split('## [Unreleased]')[0]
+                text = (self.ROOT / name).read_text(encoding='utf-8')
+                self.assertIn(unreleased, text)
+                head = text.split(unreleased)[0]
                 self.assertRegex(head, r'@daycry/kairos`[^\n]*\b' + re.escape(version) + r'\b')
-                self.assertNotRegex(head, r'@daycry/kairos`[^\n]*\b0\.3\.0\b')
+                self.assertNotRegex(head, r'@daycry/kairos`[^\n]*\b0\.(3\.0|4\.0)\b')
+
+    def test_the_changelogs_close_the_release_section_with_both_milestones(self):
+        """CA-38 / P-10: the entries once unpublished sit in a dated 0.4.1 section; the unreleased one is empty above it; 0.5.0 stays reserved."""
+        for name, unreleased in (('CHANGELOG.md', '## [Unreleased]'), ('CHANGELOG.es.md', '## [Sin publicar]')):
+            with self.subTest(changelog=name):
+                text = (self.ROOT / name).read_text(encoding='utf-8')
+                release = '## [' + self.EXPECTED + '] - 2026-11-19'
+                self.assertIn(unreleased, text)
+                self.assertEqual(text.count(release), 1)
+                self.assertLess(text.index(unreleased), text.index(release))
+                self.assertNotIn('###', text[text.index(unreleased):text.index(release)], 'nothing is left under the unreleased heading')
+                section = text[text.index(release):]
+                self.assertEqual(len(re.findall(r'^### .*`reliable-operations`', section, re.M)), 2, 'one heading per milestone')
+                self.assertIn('Iniciativa 7', section)
+                self.assertNotIn('0.5.0]', text)

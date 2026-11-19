@@ -83,7 +83,7 @@ test('plugin host executable differs from Node while validation and daemon launc
   } finally { process.execPath=original; if(handlePromise) await (await handlePromise).close(); }
 });
 
-for (const previous of ['0.1.0','0.1.2','0.1.3','0.1.4','0.1.5','0.3.0']) test(`upgrade from ${previous} preserves old files and recovers a partial switch`, t => {
+for (const previous of ['0.1.0','0.1.2','0.1.3','0.1.4','0.1.5','0.3.0','0.4.0']) test(`upgrade from ${previous} preserves old files and recovers a partial switch`, t => {
   const f=fixture(t); applyInstall(planInstall(f.options));
   const manifestFile=path.join(f.root,'.kairos/installation.json'),old=JSON.parse(fs.readFileSync(manifestFile,'utf8'));
   // Build the previous distribution in the fixture, including its hook and MCP

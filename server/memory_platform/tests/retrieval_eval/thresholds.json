@@ -4,5 +4,6 @@
   "fused_mrr": 0.60,
   "subset_gain_points": 15,
   "gain_subsets": ["es", "typo_id", "long"],
-  "max_subset_regression_points": 2
+  "max_subset_regression_points": 2,
+  "abstention": {"min_correct_rate": 0.70, "max_false_rate": 0.05, "models": {}, "simulated": {"threshold": 0.2022, "min_correct_rate": 0.50, "max_false_rate": 0.05}}
 }

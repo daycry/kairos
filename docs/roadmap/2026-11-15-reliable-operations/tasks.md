@@ -21,7 +21,7 @@ test-plan: n/a (sin UI)
 
 | | |
 |---|---|
-| **Estado** | en-progreso |
+| **Estado** | completado |
 | **Fecha** | 2026-11-15 |
 | **Plan** | [`improvement-plan.md`](./improvement-plan.md) |
 | **Diseño** | n/a |
@@ -48,15 +48,15 @@ test-plan: n/a (sin UI)
 | Fase 6 — Copias locales: integridad, cifrado, retención y verificación (C-01) | 9 | 9 | 100% | 0 / 43.2h | 0 / 5.8h | 0 / 1.4h | 0 / 1440 k |
 | Fase 7 — Copia externa programada y runbook de restauración (C-01) | 6 | 6 | 100% | 0 / 28.8h | 0 / 3.8h | 0 / 1.0h | 0 / 960 k |
 | Fase 8 — Cierre del hito A: no perder datos ni parar | 4 | 4 | 100% | 0 / 7.2h | 1.06 / 1.0h | 0 / 0.2h | 0 / 240 k |
-| Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 0 | 7 | 0% | 0 / 19.8h | 0 / 2.6h | 0 / 0.7h | 0 / 660 k |
-| Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 0 | 7 | 0% | 0 / 34.2h | 0 / 4.6h | 0 / 1.1h | 0 / 1140 k |
-| Fase 11 — Sonda de ida y vuelta (C-06) | 0 | 6 | 0% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
-| Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 0 | 7 | 0% | 0 / 23.4h | 0 / 3.1h | 0 / 0.8h | 0 / 780 k |
-| Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 0 | 6 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
-| Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 0 | 7 | 0% | 0 / 33.6h | 0 / 4.5h | 0 / 1.1h | 0 / 1120 k |
-| Fase 15 — Cierre del hito B: desplegar y detectar | 0 | 2 | 0% | 0 / 2.4h | 0 / 0.3h | 0 / 0.1h | 0 / 80 k |
-| Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 0 | 3 | 0% | 0 / 4.8h | 0 / 0.6h | 0 / 0.2h | 0 / 160 k |
-| **TOTAL** | **53** | **98** | **54.1%** | **0 / 412.8h** | **4.98 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
+| Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04) | 7 | 7 | 100% | 0 / 19.8h | 0.27 / 2.6h | 0 / 0.7h | 0 / 660 k |
+| Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04) | 7 | 7 | 100.0% | 0 / 34.2h | 5.48 / 4.6h | 0 / 1.1h | 0 / 1140 k |
+| Fase 11 — Sonda de ida y vuelta (C-06) | 6 | 6 | 100.0% | 0 / 23.4h | 4.95 / 3.1h | 0 / 0.8h | 0 / 780 k |
+| Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06) | 7 | 7 | 100.0% | 0 / 23.4h | 2.62 / 3.1h | 0 / 0.8h | 0 / 780 k |
+| Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05) | 6 | 6 | 100.0% | 0 / 33.6h | 2.36 / 4.5h | 0 / 1.1h | 0 / 1120 k |
+| Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05) | 7 | 7 | 100.0% | 0 / 33.6h | 10.36 / 4.5h | 0 / 1.1h | 0 / 1120 k |
+| Fase 15 — Cierre del hito B: desplegar y detectar | 2 | 2 | 100.0% | 0 / 2.4h | 3.51 / 0.3h | 0 / 0.1h | 0 / 80 k |
+| Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1 | 3 | 3 | 100.0% | 0 / 4.8h | 0.84 / 0.6h | 0 / 0.2h | 0 / 160 k |
+| **TOTAL** | **98** | **98** | **100.0%** | **0 / 412.8h** | **35.37 / 55.0h** | **0 / 13.8h** | **0 / 13760 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -94,7 +94,7 @@ test-plan: n/a (sin UI)
 - [x] Probar corte, restauración, modo mudo y cierre
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `tests/run_postgres.py:30-31` (PostgreSQL efímero en `127.0.0.1:55432`, `MEMORY_TEST_DSN`) y `tests/llm_spy.py` / `tests/chain_services.py` (servidores en proceso con `.start()`/`.stop()`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `b58b78130691`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-01).
 
 ### T-02 — Tests de `body_too_large`, `/v1/users`, `/health/ready` y `work_budget_exceeded`
 
@@ -123,7 +123,7 @@ test-plan: n/a (sin UI)
 - [x] Dejar el código de producción intacto
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `app.py:36` (`body_too_large`), `agent_store.py:186` (`work_budget_exceeded`), `tests/test_observability.py:216` (caso 503 de `/health/ready` ya existente: se reutiliza el estilo, no se duplica). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `2fefc0633626`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-02).
 
 ### T-03 — Tests de esquema por catálogo y comportamiento, no por texto SQL
 
@@ -153,7 +153,7 @@ test-plan: n/a (sin UI)
 - [x] Comprobar el recuento antes y después
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `tests/test_chunk_schema.py:13-21` (`SCHEMA`, «schema.sql exactly as the previous release left the database»), `tests/test_fts_migration.py:11`, `tests/test_pgvector_migration.py:12`, `tests/test_migrations_additive.py:12-19` (`MIGRATION_SOURCES`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `cba1f3f0139e`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-03).
 
 ### T-04 — Pruebas de concesión expirada y ayudante para caducarla
 
@@ -181,7 +181,7 @@ test-plan: n/a (sin UI)
 - [x] Añadir `expire_lease` al arnés
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `tests/test_jobs.py` (reclamo y reintento) y `store_jobs.py:89-192`. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `4487d9fca4a6`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-04).
 
 ### T-05 — Cierre de fase: suite completa y subida del mínimo
 
@@ -211,7 +211,7 @@ test-plan: n/a (sin UI)
 - [x] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `085447c72270`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-05).
 
 ### T-06 — Revisión adversarial de la fase (dos lentes)
 
@@ -243,7 +243,7 @@ test-plan: n/a (sin UI)
 - [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
 - [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas**: Cerrada en el intento 2 de 3 (secciones «Revisión de dos lentes — intento 1/2» al final del ledger y `review.md`). Lentes: intento 1, A+B+C+D; intento 2, A+B. `scope-check.py --base be001a4` exit 0; suite 806 en verde (Notas de T-05). Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-06).
 
 ---
 
@@ -278,7 +278,7 @@ test-plan: n/a (sin UI)
 - [x] Probar la redacción del DSN
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `errors.py` (jerarquía de errores del servidor) y `store.py:24-30` (único punto de `psycopg.connect`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `5d4f52fd580e`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-07).
 
 ### T-08 — Reclamo resiliente: espera exponencial con jitter y `MEMORY_WORKER_DB_BACKOFF_MAX`
 
@@ -309,7 +309,7 @@ test-plan: n/a (sin UI)
 - [x] Añadir `MEMORY_WORKER_DB_BACKOFF_MAX` a `config.py`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `worker.py:78-184` (`run_once`, `run`; `claim_job` fuera del `try` en `:91`, `run()` en `:178-184`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `5375106d7d1f`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-08).
 
 ### T-09 — Un fallo de base al completar o fallar un trabajo no cambia su estado
 
@@ -338,7 +338,7 @@ test-plan: n/a (sin UI)
 - [x] Verificar con la base cortada en `complete_job` y en `fail_job`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `worker.py:145` (`complete_job`), `:148-160` (política de reintento del proveedor), `:165-168` (`except Exception` → `fail_job(..., 'provider_error')`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `59449263d58d`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-09).
 
 ### T-10 — Tope al reclamar: `attempts_exhausted` en el trabajo venenoso
 
@@ -368,7 +368,7 @@ test-plan: n/a (sin UI)
 - [x] Comprobar `retry_job` y la métrica
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `store_jobs.py:89-192` (`claim_job`, `renew_lease`, `_current_job`, `complete_job`, `fail_job`); `observability.py:205-208` (`kairos_jobs_failed`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `92342b06d044`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-10).
 
 ### T-11 — Documentar el comportamiento del worker sin base
 
@@ -394,7 +394,7 @@ test-plan: n/a (sin UI)
 - [x] Actualizar `docs/operations.md`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Estilo: `docs/operations.md` ya tiene una sección de cola y trabajos (`kairos_jobs_failed`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `6b5c28734894`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-11).
 
 ### T-12 — Cierre de fase: suite completa y subida del mínimo
 
@@ -424,7 +424,7 @@ test-plan: n/a (sin UI)
 - [x] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `f1e02ee9477b`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-12).
 
 ### T-13 — Revisión adversarial de la fase (dos lentes)
 
@@ -489,7 +489,7 @@ test-plan: n/a (sin UI)
 - [x] Comprobar migración desde la 11
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Deuda Minor heredada de la revisión de la Fase 1 (intento 2, n.º 3 y 4): cubrir la guarda en Python de los índices HNSW (`store_vectors.py:23-24`) frente a un `migrate()` repetido, y que las etiquetas de sección de la prueba genérica salgan de `schema.sql` en vez de ir a mano. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `75d9cf808631`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-14).
 
 ### T-15 — `EXPLAIN` de `claim_job` sobre 10.000 trabajos y, si hace falta, dos sondeos
 
@@ -518,7 +518,7 @@ test-plan: n/a (sin UI)
 - [x] Probar equivalencia de semántica
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `store_jobs.py:92` (`ORDER BY priority, available_at, created_at, id` con `OR` sobre `running` caducado) y `:104` (reconciliación). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `d864b63387e1`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-15).
 
 ### T-16 — `admin prune-tables` por lotes con `--dry-run` y ventanas por tabla
 
@@ -550,7 +550,7 @@ test-plan: n/a (sin UI)
 - [x] Añadir las claves a `config.py`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `admin.py:240-321` (registro de subcomandos, `backup`, `restore-check`) y `schema.sql:7-19` (tablas). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `b7b669cad3b4`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-16).
 
 ### T-17 — Invariantes de la retención: manifiesto, recibos y migraciones sin `DELETE`
 
@@ -580,7 +580,7 @@ test-plan: n/a (sin UI)
 - [x] Añadir el mutante `DELETE` a `test_migrations_additive.py`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `schema.sql:20` (`projection_receipts.job_id` referencia `jobs(id)`) y `scripts/deploy-memory.py:376` (uso de `content-manifest`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `35f5dbac93d8`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-17).
 
 ### T-18 — Documentar índices, retención y ventanas
 
@@ -607,7 +607,7 @@ test-plan: n/a (sin UI)
 - [x] Actualizar `docs/operations.md`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Estilo: secciones existentes de `docs/operations.md`. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `d12daa1a338b`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-18).
 
 ### T-19 — Cierre de fase: suite completa y subida del mínimo
 
@@ -637,7 +637,7 @@ test-plan: n/a (sin UI)
 - [x] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `0060032d7a78`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-19).
 
 ### T-20 — Revisión adversarial de la fase (dos lentes)
 
@@ -669,7 +669,7 @@ test-plan: n/a (sin UI)
 - [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
 - [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas**: Cerrada en el intento 2 de 3 (intento 1: A+B+C+D; intento 2: A+B; resumen en `review.md`). `scope-check.py --base d23f4a7` exit 0; suite 925 en verde. Los revisores no tienen medición propia. Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-20).
 
 ---
 
@@ -702,7 +702,7 @@ test-plan: n/a (sin UI)
 - [x] Anotar la cifra «antes» en `Notas`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `store.py:24-30` (una conexión nueva por `transaction()`), `retrieval.py:87-148` (una transacción por capa) y `tests/measure_vector_candidates.py` (medidor existente fuera de la suite). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `5b68a093ed16`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-21).
 
 ### T-22 — `psycopg_pool` en `Store.transaction()` con `MEMORY_POOL_*`
 
@@ -848,7 +848,7 @@ test-plan: n/a (sin UI)
 - [x] Ajustar los defaults de `config.py` si la medición lo pide
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Comparar con la línea base de la tarea de medición previa. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `f84e802454e3`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-26).
 
 ### T-27 — Documentar pool, plazos y errores 503
 
@@ -874,7 +874,7 @@ test-plan: n/a (sin UI)
 - [x] Actualizar los tres manuales
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Estilo: `docs/configuration.md` (tabla de variables). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `f6ef40a83a74`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-27).
 
 ### T-28 — Cierre de fase: suite completa y subida del mínimo
 
@@ -904,7 +904,7 @@ test-plan: n/a (sin UI)
 - [x] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `62eb579e5974`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-28).
 
 ### T-29 — Revisión adversarial de la fase (dos lentes)
 
@@ -936,7 +936,7 @@ test-plan: n/a (sin UI)
 - [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
 - [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas**: Cerrada en el intento 2 de 3 (intento 1: A+B+C+D; intento 2: A+B; resumen en `review.md`). `scope-check.py --base 9416128` exit 0; suite 1006 en verde. Los revisores no tienen medición propia. Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-29).
 
 ---
 
@@ -958,7 +958,7 @@ test-plan: n/a (sin UI)
 - **Tipo**: backend
 - **Archivos**: `server/memory_platform/store_auth.py`, `server/memory_platform/store.py`, `server/memory_platform/tests/test_auth_cache.py`, `server/memory_platform/auth_scope.py` (nuevo: el ciclo de vida de la caché; `store_auth.py` y `auth.py` se importan entre sí y no podía vivir en el primero), `server/memory_platform/auth.py`, `server/memory_platform/store_documents.py`, `server/memory_platform/store_vectors.py` (savepoints), `server/memory_platform/extended_store.py`, `server/memory_platform/corpus_answers.py` (releer tras `FOR SHARE`), `server/memory_platform/store_jobs.py`, `server/memory_platform/store_pool.py`, `server/memory_platform/retrieval.py`, `server/memory_platform/errors.py` (deuda de la Fase 4), `server/memory_platform/tests/test_store_phase4_debt.py` (nuevo), `server/memory_platform/tests/test_store_faults.py` (una expectativa cambia: ver Notas), `server/memory_platform/store_ingest.py` (fix1: releer tras esperar), `server/memory_platform/tests/test_auth_race.py` (nuevo, fix1: dos conexiones), `server/memory_platform/app.py` (fix2: comentario), `docs/architecture.md`, `docs/operations.md` (fix2: límite residual y tabla de rutas)
 - **Cubre (tests)**: —
-- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_auth_cache|test_auth|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos. Salida fix1 (build `kairos-test:i3p5`, 2026-11-16): `#30 81.17 test_bearer_revocation_primary_and_foreign_scope (memory_platform.tests.test_auth.AuthTests.test_bearer_revocation_primary_and_foreign_scope) ... ok` · `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1048}`
+- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `964027b50e11`.
 
 **Criterios de aceptación**
 - [x] Una búsqueda sobre N proyectos ejecuta la lectura de actor y clave una sola vez por transacción (contador de consultas en la prueba)
@@ -1016,7 +1016,7 @@ test-plan: n/a (sin UI)
 - **Tipo**: docs
 - **Archivos**: `server/memory_platform/tests/measure_connections.py`, `docs/architecture.md`, `docs/configuration.md`, `docs/operations.md` (la regla de clasificación y la medición), `docs/roadmap/2026-11-15-reliable-operations/improvement-plan.md` (lista de coordinación con la Iniciativa 7)
 - **Cubre (tests)**: —
-- **Verificación**: `docker run --rm --network=none -e MEASURE_CONNECTIONS=1 -e MEASURE_POOL=1 -e MEASURE_REPEATS=30 kairos-test:i3p5 python -m memory_platform.tests.measure_connections` → una línea `MEASURE_CONNECTIONS {json}` con menos consultas por búsqueda que la línea base de la Fase 4 (63 con el pool; el medidor no corre en el build: mismo ajuste que T-21/T-26) y, en el build `--target test`, `MEMORY_TEST_RESULT` sin fallos. Salida fix1 (2026-11-16): `MEASURE_CONNECTIONS {"auth_queries_per_search": 22.0, "connections_per_search": 0.0, "hits": 10, "pool": true, "pool_max": 10, "pool_queries_per_search": 14.0, "projects": 3, "queries_per_search": 49.0, "queries_without_pool_per_search": 35.0, "repeats": 30, "rows_per_table": 300, "transactions_per_search": 7.0, "warmup": 10}`
+- **Verificación**: `docker run --rm --network=none -e MEASURE_CONNECTIONS=1 -e MEASURE_POOL=1 -e MEASURE_REPEATS=30 kairos-test:i3p5 python -m memory_platform.tests.measure_connections` → una línea `MEASURE_CONNECTIONS {json}` con menos consultas por búsqueda que la línea base de la Fase 4 (63 con el pool; el medidor no corre en el build: mismo ajuste que T-21/T-26) y, en el build `--target test`,… Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `ee7ba2c77c6c`.
 
 **Criterios de aceptación**
 - [x] Cifras anotadas en `Notas`
@@ -1089,7 +1089,7 @@ test-plan: n/a (sin UI)
 - [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
 - [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas**: Cerrada en el intento 2 de 3 (intento 1: A+B+C+D; intento 2: A+B+C; Minor del intento 2 corregidos en el cierre, commit 886388a; resumen en `review.md`). `scope-check.py --base 04822a0` exit 0; suite 1054 en verde. Los revisores no tienen medición propia. Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-34).
 
 ---
 
@@ -1111,7 +1111,7 @@ test-plan: n/a (sin UI)
 - **Tipo**: backend
 - **Archivos**: `server/memory_platform/admin.py`, `server/memory_platform/tests/test_admin.py`, `server/memory_platform/tests/test_backup_manifest.py`, `server/memory_platform/backup.py` (nuevo: manifiesto, escritura atómica y verificación; `admin.py` queda fino), `server/memory_platform/tests/test_backup_hardening.py` (nuevo, fix1)
 - **Cubre (tests)**: —
-- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_backup_manifest|test_admin|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos Salida (2026-11-16): bucle rápido (imagen de pruebas + árbol de trabajo; la suite completa va en T-42) `Ran 57 tests ... OK`: test_admin, test_backup_manifest (12), test_store_timeouts; `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 57}`.
+- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `50256f6498a9`.
 
 **Criterios de aceptación**
 - [x] `backup` escribe `<copia>` y `<copia>.json` con los campos del manifiesto y `chmod 600`
@@ -1211,7 +1211,7 @@ test-plan: n/a (sin UI)
 - [x] Añadir `--backup-timeout` y pasarlo a las tres llamadas
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `deploy-memory.py:27` (`MIGRATE_TIMEOUT_SECONDS`), `:257-258` (`operator()` con `timeout=120`), `:376` y `:380` (llamadas), `tests/test_deploy.py` (dobles de `subprocess`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `9c7c6ae7de06`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-38).
 
 ### T-39 — `--verify-backup`: restauración en PostgreSQL efímero antes de `migrate`
 
@@ -1256,10 +1256,7 @@ test-plan: n/a (sin UI)
 - **Tipo**: devops
 - **Archivos**: `scripts/deploy-memory.py`
 - **Cubre (tests)**: —
-- **Verificación**:
-  - `python scripts/deploy-memory.py --project-name kairos-ops-a --embed-stub --verify-backup` → termina en 0 y el informe registra `verify_backup` con resultado y duración; después `docker ps -a --filter name=kairos-ops-a` y `docker volume ls --filter name=kairos-ops-a` muestran solo recursos propios, que se eliminan al terminar
-  - `docker ps --filter name=knowledge-graphs` y `docker volume ls --filter name=knowledge-graphs` → idénticos antes y después
-  - Salida fix2 (2026-11-16, tras fix1 y fix2; `kairos-ops-a`, puertos 28791/25174, `--embed-stub`, secretos sintéticos nuevos): (1) `--apply --fresh --roundtrip` → exit 0, `PASS roundtrip`, `chat_calls 0`; (2) `--apply --verify-backup` → exit 0, `PASS verify-backup: verified in 38.65 s`, fases `backup, verify_backup, migrate`, `verify_backup {status: verified, tables: 26, cleanup: complete}`; (3) copia con manifiesto alterado (`actors`) → `backup_restore_mismatch: ... actors`, `status: failed`, `cleanup: complete`, sin `migrate`; ningún `kairos-verify-*` (contenedor ni red) tras (2) ni (3). `docker ps -a`, `volume ls` y `network ls` con filtro `knowledge-graphs` antes y después: idénticos (15 contenedores, 7 volúmenes, 6 redes; `cmp` sin diferencias). Retirado por nombre exacto: 7 contenedores, 5 redes, 2 volúmenes, 6 imágenes `rehearsal-kairos-ops-a-*`, secretos y `.private/rehearsal-kairos-ops-a`; `--filter name=kairos-ops` → 0. No se tocó `knowledge-graphs-*`, el Ollama del host (11434) ni la base desplegada.
+- **Verificación**: `python scripts/deploy-memory.py --project-name kairos-ops-a --embed-stub --verify-backup` → termina en 0 y el informe registra `verify_backup` con resultado y duración; después `docker ps -a --filter name=kairos-ops-a` y `docker volume ls --filter name=kairos-ops-a` muestran solo recursos propios, que se eliminan al terminar · `docker ps --filter name=knowledge-graphs` y `docker volume ls… Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `a43a2239823d`.
 
 **Criterios de aceptación**
 - [x] El ensayo usa el proyecto `kairos-ops-a`, nunca `knowledge-graphs`, ni el Ollama del host (`--embed-stub`)
@@ -1288,7 +1285,7 @@ test-plan: n/a (sin UI)
 - **Tipo**: docs
 - **Archivos**: `docs/operations.md`, `docs/configuration.md`
 - **Cubre (tests)**: —
-- **Verificación**: lectura: `docs/configuration.md` lista `MEMORY_BACKUP_RECIPIENTS_FILE`, `MEMORY_BACKUP_REQUIRE_ENCRYPTION` y `MEMORY_BACKUP_KEEP` con defaults iguales a `config.py`, y `docs/operations.md` exige custodiar la clave privada fuera del VPS Salida (2026-11-16): lectura: `docs/configuration.md` lista `MEMORY_BACKUP_RECIPIENTS_FILE` (sin valor), `MEMORY_BACKUP_REQUIRE_ENCRYPTION` (`0`) y `MEMORY_BACKUP_KEEP` (`7`) como `config.py`; `docs/operations.md` exige custodiar la clave privada fuera del VPS (comprobado por script).
+- **Verificación**: lectura: `docs/configuration.md` lista `MEMORY_BACKUP_RECIPIENTS_FILE`, `MEMORY_BACKUP_REQUIRE_ENCRYPTION` y `MEMORY_BACKUP_KEEP` con defaults iguales a `config.py`, y `docs/operations.md` exige custodiar la clave privada fuera del VPS Salida (2026-11-16): lectura: `docs/configuration.md` lista `MEMORY_BACKUP_RECIPIENTS_FILE` (sin valor), `MEMORY_BACKUP_REQUIRE_ENCRYPTION` (`0`) y… Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `1ccdc570c36d`.
 
 **Criterios de aceptación**
 - [x] Nombres y defaults iguales al código
@@ -1315,9 +1312,7 @@ test-plan: n/a (sin UI)
 - **Tipo**: test
 - **Archivos**: `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `docs/operations.md`, `README.md` (recuento), `server/memory_platform/tests/test_auth_cache.py` (la lista revisada de transacciones incluye `create_backup`)
 - **Cubre (tests)**: —
-- **Verificación**: Salida (2026-11-16, fix2): `docker build -f server/memory_platform/Dockerfile --target test -t kairos-test:i3p6f2 .` (exit 0): `MEMORY_TEST_RESULT {"database": "PostgreSQL", "environment": "isolated-container-build", "errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1154}`; `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `Ran 45 tests ... OK`. (Cierre de fase: 1122; fix1: 1145.)
-  - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
-  - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
+- **Verificación**: Salida (2026-11-16, fix2): `docker build -f server/memory_platform/Dockerfile --target test -t kairos-test:i3p6f2 .` (exit 0): `MEMORY_TEST_RESULT {"database": "PostgreSQL", "environment": "isolated-container-build", "errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1154}`; `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `Ran 45 tests… Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `567d43014410`.
 
 **Criterios de aceptación**
 - [x] `MEMORY_TEST_RESULT` con 0 fallos, 0 errores, 0 omitidos y `tests` ≥ 764 (≥ el recuento del cierre anterior)
@@ -1381,8 +1376,7 @@ test-plan: n/a (sin UI)
 - **Tipo**: backend
 - **Archivos**: `server/memory_platform/admin.py`, `server/memory_platform/config.py`, `server/memory_platform/Dockerfile`, `server/memory_platform/tests/test_backup_cycle.py`, `server/memory_platform/offsite.py` (módulo nuevo: destinos y ciclo; añadido), `server/memory_platform/observability.py` (las dos series de la copia externa; añadido, es de T-45)
 - **Cubre (tests)**: —
-- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_backup_cycle|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
-  - Salida (2026-11-16; imagen `kairos-test:i3p6f2` con el árbol de trabajo montado y `rclone` 1.60.1 instalado; la suite completa y su `MEMORY_TEST_RESULT` se pegan en T-48): `test_backup_cycle` → `Ran 23 tests ... OK` (17 de T-44 y 6 de T-45), con las 3 de `rclone` ejecutadas; junto a `test_deploy`, `test_deploy_isolation` y `test_observability`: `DEVRUN 109 0 0 0` (pruebas, fallos, errores, omitidas).
+- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `61a2bf0a6140`.
 
 **Criterios de aceptación**
 - [x] Con un destino `dir:` en un directorio temporal, `backup-cycle` sube copia cifrada y manifiesto, verifica el sha256 en destino y aplica `MEMORY_BACKUP_REMOTE_KEEP` (30)
@@ -1411,8 +1405,7 @@ test-plan: n/a (sin UI)
 - **Tipo**: backend
 - **Archivos**: `server/memory_platform/admin.py`, `server/memory_platform/observability.py`, `server/memory_platform/tests/test_backup_cycle.py`, `server/memory_platform/offsite.py` (el manejo vive en `run_cycle`; añadido)
 - **Cubre (tests)**: —
-- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_backup_cycle|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
-  - Salida (2026-11-16, misma imagen y montaje que T-44): `test_backup_cycle` → `Ran 23 tests ... OK`; `OffsiteFailureTests` (6 pruebas: destino ausente con reintento, sha256 distinto en destino, copia local alterada, copia antigua alterada, credenciales, argumentos de `rclone`) en `ok`. La suite completa se pega en T-48.
+- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `463c76b8bea9`.
 
 **Criterios de aceptación**
 - [x] Con el destino inaccesible: `backup_offsite_failed`, métrica a 0, reintento en el ciclo siguiente y copias locales intactas (prueba)
@@ -1441,8 +1434,7 @@ test-plan: n/a (sin UI)
 - **Tipo**: devops
 - **Archivos**: `docker-compose.yml`, `server/memory_platform/tests/test_backup_service.py`, `docs/configuration.md`, `scripts/deploy-memory.py` (override del servicio nuevo; añadido), `.gitignore` (`backup-config/`, `offsite/`; añadido), `server/memory_platform/backup.py` y `server/memory_platform/tests/test_backup_prune.py` (deuda de la carrera de dos `--prune`; añadidos), `docs/roadmap/2026-11-15-reliable-operations/improvement-plan.md` (frase «Fase 7» en Coordinación; añadido)
 - **Cubre (tests)**: —
-- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_backup_service|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
-  - Salida (2026-11-16, misma imagen y montaje): `test_backup_service` + `test_backup_prune` → `Ran 20 tests ... OK`; `docker compose -p kairos-ops-cfg -f docker-compose.yml --profile backup config --format json` → exit 0 (sin crear recursos), `memory-backup`: perfil `backup`, sin `ports`, secretos solo `memory_dsn`, `/config` de solo lectura; `docker ps -a --filter name=kairos-ops` → 0; `git diff --stat -- ollama-proxy` vacío. La suite completa se pega en T-48.
+- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `ad44de8a4b5d`.
 
 **Criterios de aceptación**
 - [x] `docker-compose.yml` define `memory-backup` con perfil `backup`, `MEMORY_BACKUP_INTERVAL` (24 h por defecto), `MEMORY_BACKUP_DESTINATION`, `MEMORY_BACKUP_REQUIRE_ENCRYPTION=1` por defecto y sin puertos publicados
@@ -1471,11 +1463,7 @@ test-plan: n/a (sin UI)
 - **Tipo**: devops
 - **Archivos**: `docs/operations.md`, `scripts/rehearse-restore.py`, `scripts/tests/test_rehearse_restore.py`, `docs/roadmap/2026-11-15-reliable-operations/improvement-plan.md` (frase «Fase 7»; añadido)
 - **Cubre (tests)**: —
-- **Verificación**:
-  - `python -m unittest discover -s scripts/tests -p test_rehearse_restore.py` → `OK`
-  - `python scripts/rehearse-restore.py --project-name kairos-ops-b --embed-stub` → salida con `restored_and_content_verified`; el proyecto `kairos-ops-b` se elimina al terminar y `docker ps --filter name=knowledge-graphs` queda idéntico
-  - Salida original (2026-11-16, antes de fix1): 8 pruebas en `OK` y ensayo real en 11 min 44 s con `restored_and_content_verified` (26 tablas) y `knowledge-graphs-*` idéntico; superada por la salida de fix1.
-  - Salida fix1 (2026-11-16): `python -m unittest discover -s scripts/tests -p test_rehearse_restore.py` → `Ran 16 tests ... OK`. `python -u scripts/rehearse-restore.py --project-name kairos-ops-b --embed-stub` → exit 0 en 427 s: `{"cleanup": "complete", "cycle": {"bytes": 73490, "copy": "kairos-cycle-20261116T213555925413Z.dump.age", "destination": "dir"}, "project": "kairos-ops-b", "restore": {"database": "memory_restore_150557dfc3af", "server": "ephemeral", "status": "restored_and_content_verified", "tables": 26}, "status": "restored_and_content_verified", "steps": ["deploy", "keys", "cycle", "download", "verify", "decrypt", "restore"], "verify": {"sha256": "9ced5d82…"}}`. `docker ps -a`, `volume ls` y `network ls` con filtro `knowledge-graphs` antes y después: idénticos (31 líneas, `cmp` sin diferencias); `--filter name=kairos-ops`: 0 contenedores, 0 volúmenes, 0 redes, 0 imágenes `rehearsal-kairos-ops-*`; el directorio temporal (clave incluida) y el servidor efímero (`kairos-ops-b-restore-pg-*`, con su red y su volumen) eliminados.
+- **Verificación**: `python -m unittest discover -s scripts/tests -p test_rehearse_restore.py` → `OK` · `python scripts/rehearse-restore.py --project-name kairos-ops-b --embed-stub` → salida con `restored_and_content_verified`; el proyecto `kairos-ops-b` se elimina al terminar y `docker ps --filter name=knowledge-graphs` queda idéntico · Salida original (2026-11-16, antes de fix1): 8 pruebas en `OK` y ensayo real… Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `39b7e9a4a7c4`.
 
 **Criterios de aceptación**
 - [x] El ensayo descarga del destino simulado (directorio), verifica el sha256, descifra con una clave de prueba generada en el ensayo, ejecuta `restore-check` en un proyecto aislado vacío y compara el manifiesto
@@ -1505,11 +1493,7 @@ test-plan: n/a (sin UI)
 - **Tipo**: test
 - **Archivos**: `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `docs/operations.md`, `README.md` (recuento), `server/memory_platform/Dockerfile` (el ARG de rclone pasa a `DEBIAN_RCLONE_VERSION`; añadido), `server/memory_platform/tests/test_backup_service.py` y `server/memory_platform/tests/test_backup_cycle.py` (controles positivos de rclone y la prueba del ARG; añadidos)
 - **Cubre (tests)**: —
-- **Verificación**:
-  - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
-  - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
-  - Salida (2026-11-16, tercera ejecución, tras corregir el ARG): `docker build -f server/memory_platform/Dockerfile --target test --progress=plain -t kairos-test:i3p7 .` (exit 0): `MEMORY_TEST_RESULT {"database": "PostgreSQL", "environment": "isolated-container-build", "errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1184}`; `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `Ran 45 tests ... OK`. Imagen `operator` construida aparte con el ARG nuevo (`rclone` 1.60.1+dfsg-4, `age` 1.2.1) y retirada por nombre. (Cierre de fase: 1154 → 1184.)
-  - Salida fix1 (2026-11-16): `docker build -f server/memory_platform/Dockerfile --target test --progress=plain -t kairos-test:i3p7f1 .` (exit 0): `MEMORY_TEST_RESULT {"database": "PostgreSQL", "environment": "isolated-container-build", "errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1195}`; `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `Ran 45 tests ... OK`. (Corrección de la revisión de la Fase 7: 1184 → 1195.)
+- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `28b16add7b00`.
 
 **Criterios de aceptación**
 - [x] `MEMORY_TEST_RESULT` con 0 fallos, 0 errores, 0 omitidos y `tests` ≥ 764 (≥ el recuento del cierre anterior)
@@ -1576,7 +1560,7 @@ test-plan: n/a (sin UI)
 - **Verificación**:
   - `python -m unittest discover -s scripts/tests -p test_rehearse_reliable_operations.py` → `OK`
   - `python scripts/rehearse-reliable-operations.py --project-name kairos-ops-c --embed-stub --stage a` → `restored_and_content_verified` y `worker_survived_db_restart` con contador de reinicios igual y 0 trabajos `failed`
-  - Salida (2026-11-16/17): `python -I -m unittest discover -s scripts/tests -p test_rehearse_reliable_operations.py` → `Ran 11 tests ... OK` (4 mutantes del script: 4 caen). Ensayo real (segundo intento; el primero cayó en `compose start memory-worker` por el `memory-migrate` ya retirado y se corrigió con `docker stop/start` por id) → exit 0: `{"cleanup": "complete", "project": "kairos-ops-c", "stage": "a", "status": "restored_and_content_verified", "restore": {"status": "restored_and_content_verified", "tables": 26, "server": "ephemeral"}, "cycle": {"bytes": 2235899, "destination": "dir"}, "seed": {"embeddings": 30000, "dims": 768}, "queue": {"events": 300, "pending_before_worker": 300}, "worker_survived_db_restart": {"restarts_before": 0, "restarts_after": 0, "same_start": true, "running": true, "running_while_down": true, "pending_at_stop": 256, "down_seconds": 30, "jobs": {"succeeded": 301}, "failed": 0}, "fingerprints": {"rows": 30001, "table_bytes": 132268032, "embeddings_seconds": 62.07, "all_tables_seconds": 56.34, "seconds_per_row": 0.002069, "megabytes_per_second": 2.1, "seconds_for_5_gb": 2519, "backup_timeout_seconds": 3600, "within_timeout": true}, "timings": {"backup_cycle_seconds": 93.1, "restore_step_seconds": 111.8}}`. `docker ps -a`, `volume ls`, `network ls` filtrados por `knowledge-graphs` (con `StartedAt` y reinicios), antes y después: idénticos; `kairos-ops` → 0 contenedores, 0 volúmenes, 0 redes y 0 imágenes `rehearsal-kairos-ops`; el Ollama del host sigue en 200.
+  - Salida (2026-11-16/17): archivada en `execution-history.md` (sección «Compactación 2026-11-17 (13)», T-50, Salida (2026-11-16/17)).
 
 **Criterios de aceptación**
 - [x] Con trabajos en cola, parar y arrancar `memory-postgres` del ensayo: `memory-worker` no se reinicia por error propio (contador de reinicios igual), la cola se vacía y ningún trabajo queda `failed` por esa caída
@@ -1620,7 +1604,7 @@ test-plan: n/a (sin UI)
 - [x] Ejecutar la suite y los contratos
 - [x] `usage-meter start/close` de la tarea
 
-**Notas** (2026-11-17): **Revisión del hito** (orquestador): intento 1 con dos lentes nuevas (hito completo `main...HEAD` y seguridad de la Fase 8), intento 2 sobre el fix1 (B+C); sin Critical ni Important abiertos; detalle en `review.md`. Tras el intento 2, el orquestador corrigió sus dos Minor (`--ignore-times` en la subida rclone y el mensaje de `backup_checksum_mismatch`) y repitió la suite: `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1203}`. **Suite**: `docker build -f server/memory_platform/Dockerfile --target test -t kairos-test:i3p8f1 .` (tras el fix1) → exit 0, `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1203}` (mínimo 1203 en `ci.yml`, `MIN_FLOOR` y su historia, `docs/operations.md` y `README.md`; `scripts/tests` en host: `Ran 162 tests ... OK`). `test_contract_additive` y `test_migrations_additive` van dentro de esa suite y pasan. **Alcance**: `scope-check.py docs/roadmap/2026-11-15-reliable-operations --base eaff0d1` → exit 0 (27 ficheros, 0 fuera de alcance). El `main` LOCAL está obsoleto (7f116d0, sin la fusión de la PR #3 que sí tiene `origin/main`), así que `--base main` da exit 1 con 304 ficheros de las iniciativas 1 y 2; con la base real del PR, `--base origin/main`, solo salían `docs/roadmap/2026-11-12-three-components/retro.md` y `docs/roadmap/CALIBRATION.md` (la retro de la Iniciativa 2, commiteada en esta rama): declarados en `Archivos` de esta tarea, con lo que `--base origin/main` da exit 0. **Referencias**: `grep -rn "knowledge-graphs-\|11434" scripts server/memory_platform/tests docker-compose.yml` solo da apariciones que rechazan o nombran esos recursos (`deploy-memory.py` 42 puerto del stub y 88 comentario, los docstrings de los dos ensayos, las pruebas de aislamiento y los pares de rechazo de `retrieval_eval`/`test_ollama_proxy`/`test_deploy_isolation`, y `docker-compose.yml` 8, 45 y 53 del proxy propio de Ollama); las líneas añadidas por el hito frente a `origin/main` con esas cadenas son 5 (los dos docstrings, dos `assertNotIn` y la lista de nombres rechazados de las pruebas de los ensayos): ninguna referencia nueva que use esos recursos. `usage-meter` de T-51: 0,08 h (medido). **Fix1 de la revisión (Minor, 2026-11-17)**: RED (suite en Docker, antes de arreglar): `RED: test_every_startup_validation_of_the_cycle_zeroes_the_metric_not_only_the_backup_settings (MEMORY_MAX_ATTEMPTS=0 salía con el .prom en 1; la ventana --prune-tables, mutante: sin el record_failure vuelve a fallar)`; `RED: test_a_failure_of_the_local_retention... (métrica 1.0 != 0)`; `RED: test_a_copy_that_differs_at_the_destination... (la copia mala seguía en el destino)`; `RED: test_rclone_is_started_without_a_shell... (rcat != copyto)`; `RED: test_the_connections_of_the_cycle_carry_a_connect_timeout_and_keepalives... ('connect_timeout' not found)`; `RED: test_a_queue_that_drained_between_the_first_look_and_the_stop (RehearsalError not raised)`. (1) `admin.py`: `Settings.from_env()` y las ventanas de `--prune-tables` de `backup-cycle` llaman a `record_failure`. (2) `run_cycle`: un fallo de la retención local deja la métrica en 0. (3) CHANGELOG: «deben diferir al menos 1 s» (lo que hace `check_timeout_pair`) y «cualquier fallo del ciclo» ya es verdad. (4) `guarded_dsn` (`connect_timeout=10`, `keepalives=1`, idle 30, intervalo 10, count 3, `tcp_user_timeout=60000`, nunca `statement_timeout`; la DSN del operador manda) en el `Store` de `admin`, en el servicio de `pg_dump`/`pg_restore` y en el destino de `restore-check`; tres pruebas antiguas que exigían lo contrario (`test_store_timeouts`, `test_prune_tables`, `test_backup_restore`) pasan a exigir los guardas y la ausencia de `statement_timeout`. (5) `rclone copyto --copy-links /proc/self/fd/<n>` con `pass_fds`: en la imagen de pruebas (rclone 1.60.1) `copyto` sin `--copy-links` da `readdirent /proc/self/fd/3: not a directory` y `/dev/fd/<n>` falla incluso con él (`is a directory`); `/proc/self/fd/<n>` con `--copy-links` copia bien y los reintentos vuelven (`--copy-links` solo afecta al origen, nuestro descriptor); si el sha256 del destino no coincide se borra lo subido antes del error. (6) el ensayo toma el recuento de pendientes en una segunda lectura pegada al `docker stop` y falla si es 0 (la lógica de parada no cambia: no se repite el ensayo real). (7) docs: `configuration.md` («Las seis», también `backup-cycle`), `operations.md` y ítems 16 y nuevo 17 (Fase 8) de `improvement-plan.md` (incluye `backup_manifest_invalid`, keepalives y reintentos). `scope-check --base eaff0d1` exit 0 (el `main` local sigue obsoleto). **Pendiente**: «Revisión del hito» (lectura del diff completo por una lente distinta; la despacha el orquestador); T-51 sigue `en-progreso`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 — notas de las fases 8 y 9 y revisiones de las fases 6 y 7», T-51).
 
 ### T-52 — Notas de cambio del hito A
 
@@ -1646,7 +1630,7 @@ test-plan: n/a (sin UI)
 - [x] Redactar las entradas
 - [x] `usage-meter start/close` de la tarea
 
-**Notas** (2026-11-17): sección nueva `### Changed — reliable-operations initiative, milestone A` encima de la de `three-components` en `## [Unreleased]` de `CHANGELOG.md` y `CHANGELOG.es.md` (29 líneas cada una, misma estructura y mismas cifras), sacada de los campos `Changelog` de T-01 a T-50; incluye el punto «Cierre del hito» con lo visible para el operador de la Fase 8. Verificación por lectura: cada uno cubre copias cifradas y verificadas, `store_unavailable`, `attempts_exhausted`, pool y plazos, `prune-tables` con sus ventanas y que `events` no se poda por defecto. La versión sigue en 0.4.0 (cabecera sin tocar; `test_versions` lee solo lo anterior a `## [Unreleased]`). `usage-meter` de T-52: 0,04 h (medido).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 — notas de las fases 8 y 9 y revisiones de las fases 6 y 7», T-52).
 
 ### T-53 — Pull request del hito A (solo con OK del usuario)
 
@@ -1674,49 +1658,51 @@ test-plan: n/a (sin UI)
 - [x] Anotar el número en `Notas`
 - [x] `usage-meter start/close` de la tarea
 
-**Notas**: OK expreso del usuario: «Fusiónalo cuando esté en verde» (abrir el PR de cada hito y fusionarlo con la CI en verde, merge commit, conservando la rama); esto sustituye al «No se hace merge» original. PR #4 (https://github.com/daycry/kairos/pull/4), cuerpo con el enlace al ledger y los criterios de cierre 1 y 2 con su evidencia (T-50). CI: en la primera ejecución falló `retrieval-eval` (push) por `test_the_extra_call_for_other_dimensions_fits_inside_the_job_deadline`, con solo 0,1 s de holgura; se amplió a 0,8 s (commit en T-51; el mutante sin la ampliación del plazo en `run_once` sigue en rojo) y la CI quedó en verde en todos los trabajos de las dos ejecuciones. usage-meter no medido: estimado. Atribución de commits y PR: la del recordatorio del sistema.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-53).
 
 ---
 
 ## Fase 9 — Compose: límites, healthchecks, rotación y `extra_hosts` (C-04)
 
-**Estado**: borrador · **Hito**: B · **Estimado**: 19.8h (16.5h base, de ellas 5.5h de revisión adversarial) · **Real**: — · **Coste est.**: 990 € · **Tokens est.**: 660 k
+**Estado**: completado · **Hito**: B · **Estimado**: 19.8h (16.5h base, de ellas 5.5h de revisión adversarial) · **Real**: — · **Coste est.**: 990 € · **Tokens est.**: 660 k
 
 ### T-54 — `mem_limit` y `cpus` configurables en todos los servicios
 
 - **Descripción**: Declarar `mem_limit` y `cpus` en todos los servicios con variables `MEMORY_<SERVICIO>_MEM_LIMIT`/`_CPUS` y valores por defecto documentados para 32 GB locales y un VPS pequeño. Aviso: la instalación desplegada lo recoge solo en su próximo `up`. Fuente: CA-20; O-05; R-06.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: `memory-backup` ya no sale a Internet salvo que el destino sea `rclone:` (se añade con un fichero Compose aparte) y todos los servicios llevan límites de memoria y CPU configurables (`MEMORY_<SERVICIO>_MEM_LIMIT`/`_CPUS`).
+- **Cerrada**: 2026-11-17
+- **Estado**: completado
 - **Tiempo humano**: est. 2.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.33h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.33h (estimado) · real 0.09h (medido)
 - **Supervisión**: est. 0.08h (≈25 % IA) · real —
 - **Previsión IA**: 92 k in / 8 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
 - **Tipo**: devops
-- **Archivos**: `docker-compose.yml`, `server/memory_platform/tests/test_compose_limits.py`, `docs/configuration.md`
+- **Archivos**: `docker-compose.yml`, `server/memory_platform/tests/test_compose_limits.py`, `docs/configuration.md`, `docker-compose.backup-rclone.yml`, `server/memory_platform/Dockerfile`, `server/memory_platform/tests/test_backup_service.py`, `scripts/tests/test_ci_workflow.py`, `docs/operations.md`
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_compose_limits|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Todos los servicios de `docker-compose.yml` declaran `mem_limit` y `cpus` configurables por variable (prueba sobre el YAML y `docker compose -p kairos-ops-cfg config` en local)
-- [ ] `docs/configuration.md` documenta los valores por defecto para 32 GB locales y para un VPS pequeño
-- [ ] `memory-postgres` y `memory-worker` no quedan con un límite que los mate durante el relleno (valor justificado en `Notas`)
+- [x] Todos los servicios de `docker-compose.yml` declaran `mem_limit` y `cpus` configurables por variable (prueba sobre el YAML y `docker compose -p kairos-ops-cfg config` en local)
+- [x] `docs/configuration.md` documenta los valores por defecto para 32 GB locales y para un VPS pequeño
+- [x] `memory-postgres` y `memory-worker` no quedan con un límite que los mate durante el relleno (valor justificado en `Notas`)
 
 **Subtareas**
-- [ ] Escribir primero la prueba sobre el YAML (rojo)
-- [ ] Añadir límites y variables
-- [ ] Documentar
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero la prueba sobre el YAML (rojo)
+- [x] Añadir límites y variables
+- [x] Documentar
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Deuda Minor de la revisión de la Fase 7 (intento 1, n.º 10): `memory-backup` no debe tener la red `egress` con destino `dir:` (p. ej. override o servicio aparte para `rclone:`), con prueba sobre `compose config`. Patrón: `docker-compose.yml:154` (`mem_limit` en `memory-mcp`) y `tests/test_deploy_isolation.py:43-48` (lectura del compose). R-08: no tocar `ollama-proxy/default.conf.template` (lo monta `docker-compose.yml:48`).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 — notas de las fases 8 y 9 y revisiones de las fases 6 y 7», T-54).
 
 ### T-55 — Rotación de logs en `ollama` y `memory-postgres` y `extra_hosts`
 
 - **Descripción**: Hacer que `ollama` y `memory-postgres` hereden la rotación `json-file` (`max-size`, `max-file`) de `x-process` y añadir `extra_hosts: ["host.docker.internal:host-gateway"]` al servicio `ollama` (el VPS es Linux). Fuente: CA-22, CA-25; O-05, O-06.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: `ollama`, `memory-postgres` y `memory-files` rotan sus logs como el resto de servicios y el proxy `ollama` resuelve `host.docker.internal` también en Linux (el VPS).
+- **Cerrada**: 2026-11-17
+- **Estado**: completado
 - **Tiempo humano**: est. 1.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real 0.03h (medido)
 - **Supervisión**: est. 0.05h (≈25 % IA) · real —
 - **Previsión IA**: 55 k in / 5 k out tok · ⚠️ verificar €
 - **Dependencias**: T-54
@@ -1726,53 +1712,55 @@ test-plan: n/a (sin UI)
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_compose_limits|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Todos los servicios rotan logs con `json-file`, `max-size` y `max-file` (prueba sobre el YAML)
-- [ ] `ollama` declara `extra_hosts: ["host.docker.internal:host-gateway"]` y `docs/operations.md` explica el caso Linux
-- [ ] `ollama-proxy/default.conf.template` sin cambios (`git diff --stat` lo confirma)
+- [x] Todos los servicios rotan logs con `json-file`, `max-size` y `max-file` (prueba sobre el YAML)
+- [x] `ollama` declara `extra_hosts: ["host.docker.internal:host-gateway"]` y `docs/operations.md` explica el caso Linux
+- [x] `ollama-proxy/default.conf.template` sin cambios (`git diff --stat` lo confirma)
 
 **Subtareas**
-- [ ] Escribir primero la prueba (rojo)
-- [ ] Aplicar `x-process`/`logging` a los dos servicios
-- [ ] Añadir `extra_hosts` y la nota de Linux
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero la prueba (rojo)
+- [x] Aplicar `x-process`/`logging` a los dos servicios
+- [x] Añadir `extra_hosts` y la nota de Linux
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `docker-compose.yml:36-38` (`x-process`), `:41-85` (servicios sin rotación), `:45` (`OLLAMA_UPSTREAM` con `host.docker.internal`).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 — notas de las fases 8 y 9 y revisiones de las fases 6 y 7», T-55).
 
 ### T-56 — Latido del worker y healthcheck de `memory-worker`
 
-- **Descripción**: El bucle del worker escribe `/tmp/kairos-worker-heartbeat` en cada vuelta (solo si `last_store_ok` es reciente: R-01) y `memory-worker` declara un healthcheck por antigüedad del fichero; con el bucle parado, el contenedor pasa a `unhealthy` en ≤ `interval × retries`. Fuente: CA-21; O-05; R-01.
-- **Changelog**:
-- **Estado**: borrador
+- **Descripción**: El bucle del worker escribe `/tmp/kairos-worker-heartbeat` en cada vuelta (solo si `last_store_ok` es reciente: R-01) y `memory-worker` declara un healthcheck sobre el fichero; con el bucle parado, el contenedor pasa a `unhealthy` en ≤ plazo del último latido + `interval × retries`. Enmienda (revisión de la Fase 9, n.º 1; aprobada por el orquestador): el original decía «por antigüedad del fichero» y «≤ `interval × retries`»; el fichero guarda ahora el plazo del siguiente latido. Fuente: CA-21; O-05; R-01.
+- **Changelog**: `memory-worker` pasa a `unhealthy` si su bucle se para o no alcanza la base durante unos minutos (latido en `/tmp/kairos-worker-heartbeat`, healthcheck cada 30 s).
+- **Estado**: completado
+- **Cerrada**: 2026-11-17
 - **Tiempo humano**: est. 3h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.10h (medido)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 110 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: T-54
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/worker.py`, `docker-compose.yml`, `server/memory_platform/tests/test_worker_heartbeat.py`
+- **Archivos**: `server/memory_platform/worker.py`, `docker-compose.yml`, `server/memory_platform/tests/test_worker_heartbeat.py`, `docs/operations.md`, `server/memory_platform/tests/test_worker_db_down.py` (fix1, n.º 5: `last_store_ok` arranca en `None`)
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_worker_heartbeat|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Prueba unitaria con reloj inyectado: el latido avanza en cada vuelta sana y no avanza si la base lleva caída más que el umbral
-- [ ] `memory-worker` declara healthcheck por antigüedad de `/tmp/kairos-worker-heartbeat` (fichero en el `tmpfs` existente) con `interval × retries` documentados
-- [ ] El caso real de `unhealthy` con el bucle detenido se ejercita en el ensayo de la Fase 10
+- [x] Prueba unitaria con reloj inyectado: el latido avanza en cada vuelta sana y no avanza si la base lleva caída más que el umbral
+- [x] `memory-worker` declara healthcheck por antigüedad de `/tmp/kairos-worker-heartbeat` (fichero en el `tmpfs` existente) con `interval × retries` documentados — Enmienda (revisión de la Fase 9, n.º 1, aprobada por el orquestador): el healthcheck compara con el reloj el plazo que guarda el fichero, no su antigüedad, y se documentan también el plazo del latido y su cota
+- [x] El caso real de `unhealthy` con el bucle detenido se ejercita en el ensayo de la Fase 10
 
 **Subtareas**
-- [ ] Escribir primero la prueba del latido (rojo)
-- [ ] Escribir el latido en el bucle (usa `last_store_ok` de la Fase 2)
-- [ ] Añadir el healthcheck al compose
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero la prueba del latido (rojo)
+- [x] Escribir el latido en el bucle (usa `last_store_ok` de la Fase 2)
+- [x] Añadir el healthcheck al compose
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `worker.py:178-184` (`run`), `docker-compose.yml:32-33` (`tmpfs` y sistema de ficheros de solo lectura) y `:170-194` (servicios sin healthcheck). Aprendizaje 2: reloj inyectado.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (3) — notas de T-56 y de las tareas T-61 a T-64», T-56).
 
 ### T-57 — Healthcheck de `memory-web`
 
 - **Descripción**: Añadir healthcheck a `memory-web` con `GET /health/live` del proxy nginx. Fuente: CA-21; O-05.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: `memory-web` tiene healthcheck (consulta `/health/live` del propio proxy), por lo que `docker compose ps` ya muestra si el portal responde.
+- **Cerrada**: 2026-11-17
+- **Estado**: completado
 - **Tiempo humano**: est. 1.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real 0.02h (medido)
 - **Supervisión**: est. 0.05h (≈25 % IA) · real —
 - **Previsión IA**: 55 k in / 5 k out tok · ⚠️ verificar €
 - **Dependencias**: T-54
@@ -1782,76 +1770,78 @@ test-plan: n/a (sin UI)
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_compose_limits|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] `memory-web` declara healthcheck contra `/health/live` y la prueba sobre el YAML lo comprueba
-- [ ] `web/nginx.conf` no cambia (la ruta ya existe en `:44`)
+- [x] `memory-web` declara healthcheck contra `/health/live` y la prueba sobre el YAML lo comprueba
+- [x] `web/nginx.conf` no cambia (la ruta ya existe en `:44`)
 
 **Subtareas**
-- [ ] Escribir primero la prueba (rojo)
-- [ ] Añadir el healthcheck
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero la prueba (rojo)
+- [x] Añadir el healthcheck
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `web/nginx.conf:44` (`location = /health/live`) y `docker-compose.yml:170-194`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 — notas de las fases 8 y 9 y revisiones de las fases 6 y 7», T-57).
 
 ### T-58 — Documentar límites, healthchecks, rotación y `extra_hosts`
 
 - **Descripción**: Completar `docs/configuration.md` y `docs/operations.md` con límites por servicio, healthchecks y el caso Linux de `host.docker.internal`. Fuente: CA-20, CA-21, CA-22, CA-25 (documentación).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Los manuales de configuración y de operación listan los límites por servicio, los healthchecks, la rotación de logs y el caso Linux de `host.docker.internal`.
+- **Cerrada**: 2026-11-17
+- **Estado**: completado
 - **Tiempo humano**: est. 1h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real 0.03h (medido)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 37 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: T-56, T-57, T-55
 - **Tipo**: docs
-- **Archivos**: `docs/configuration.md`, `docs/operations.md`
+- **Archivos**: `docs/configuration.md`, `docs/operations.md`, `server/memory_platform/tests/test_compose_limits.py`
 - **Cubre (tests)**: —
 - **Verificación**: lectura: `docs/configuration.md` lista las variables `MEMORY_*_MEM_LIMIT`/`_CPUS` por servicio con valores por defecto
 
 **Criterios de aceptación**
-- [ ] Variables y valores iguales a `docker-compose.yml`
+- [x] Variables y valores iguales a `docker-compose.yml`
 
 **Subtareas**
-- [ ] Actualizar los dos manuales
-- [ ] `usage-meter start/close` de la tarea
+- [x] Actualizar los dos manuales
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Estilo: tablas de `docs/configuration.md`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 — notas de las fases 8 y 9 y revisiones de las fases 6 y 7», T-58).
 
 ### T-59 — Cierre de fase: suite completa y subida del mínimo
 
 - **Descripción**: Ejecuta la suite completa del servidor, anota el recuento `MEMORY_TEST_RESULT` y sube `KAIROS_MIN_TESTS` y `MIN_FLOOR` al número observado (la suite solo crece).  Fuente: Puerta de fase; CA-38 (suite con 0 fallos y 0 omitidos).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: la suite del servidor pasa a 1228 pruebas (mínimo de la CI 1228).
+- **Cerrada**: 2026-11-17
+- **Estado**: completado
 - **Tiempo humano**: est. 1.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real 0.5h (estimado; cuatro pasadas de la suite)
 - **Supervisión**: est. 0.05h (≈25 % IA) · real —
 - **Previsión IA**: 55 k in / 5 k out tok · ⚠️ verificar €
 - **Dependencias**: T-58
 - **Tipo**: test
-- **Archivos**: `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `docs/operations.md`
+- **Archivos**: `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `docs/operations.md`, `README.md` (el recuento de pruebas que repite), `server/memory_platform/Dockerfile`, `server/memory_platform/tests/test_backup_encryption.py`, `server/memory_platform/tests/test_metrics.py` (la suite completa de la fase: el test stage copia los dos manuales que leen las pruebas nuevas; la búsqueda de claves privadas casa la clave real y no el prefijo que nombra `operations.md`; holgura en una prueba de plazo intermitente)
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
   - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
 
 **Criterios de aceptación**
-- [ ] `MEMORY_TEST_RESULT` con 0 fallos, 0 errores, 0 omitidos y `tests` ≥ 764 (≥ el recuento del cierre anterior)
-- [ ] `KAIROS_MIN_TESTS` en `.github/workflows/ci.yml` y `MIN_FLOOR` en `scripts/tests/test_ci_workflow.py` igualan el recuento observado, y la tabla de `docs/operations.md` lo repite
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas`
+- [x] `MEMORY_TEST_RESULT` con 0 fallos, 0 errores, 0 omitidos y `tests` ≥ 764 (≥ el recuento del cierre anterior)
+- [x] `KAIROS_MIN_TESTS` en `.github/workflows/ci.yml` y `MIN_FLOOR` en `scripts/tests/test_ci_workflow.py` igualan el recuento observado, y la tabla de `docs/operations.md` lo repite
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas`
 
 **Subtareas**
-- [ ] Ejecutar la suite completa (primer plano, un solo Docker a la vez) y anotar el recuento
-- [ ] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Ejecutar la suite completa (primer plano, un solo Docker a la vez) y anotar el recuento
+- [x] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Cierra la fase: no se abre la revisión adversarial con la suite en rojo.
+**Notas**: Tras el fix2: `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1241}`; mínimo a 1241 en los cuatro sitios. archivadas en `execution-history.md` (sección «Compactación 2026-11-17 — notas de las fases 8 y 9 y revisiones de las fases 6 y 7», T-59).
 
 ### T-60 — Revisión adversarial de la fase (dos lentes)
 
 - **Descripción**: Revisión adversarial del diff de la fase con dos lentes: A (contrato, seguridad, regresiones, alcance declarado) y B (mutantes: cada control nuevo se quita y su prueba debe fallar). Cuidado: R-06 (límites que matan servicios) y R-08 (ficheros que monta la instalación desplegada). Cada hallazgo se corrige para la clase entera y se anota con intento y evidencia en `review.md`; cada intento abre y cierra `usage-meter`. Fuente: Lección de la retro de la Iniciativa 2: la revisión es partida propia (0,5 × la implementación; 1,0 × en C-03 y C-05).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: revisión adversarial de la fase 9; el healthcheck del worker sigue un plazo que escribe el propio latido, los `cpus` por defecto no impiden arrancar en ningún anfitrión y la guía de Ollama en Linux lo deja al alcance solo del proxy.
+- **Estado**: completado
 - **Tiempo humano**: est. 5.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.73h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.73h (estimado) · real 1.5h (estimado; cuatro intentos de revisión)
 - **Supervisión**: est. 0.18h (≈25 % IA) · real —
 - **Previsión IA**: 202 k in / 18 k out tok · ⚠️ verificar €
 - **Dependencias**: T-59
@@ -1864,60 +1854,62 @@ test-plan: n/a (sin UI)
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
 
 **Criterios de aceptación**
-- [ ] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
-- [ ] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
-- [ ] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
-- [ ] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
+- [x] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
+- [x] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
+- [x] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
+- [x] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
 
 **Subtareas**
-- [ ] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
-- [ ] Lente B: mutantes en memoria sobre cada control nuevo
-- [ ] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
-- [ ] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
+- [x] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
+- [x] Lente B: mutantes en memoria sobre cada control nuevo
+- [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
+- [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas**: Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
-
----
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (4) — notas de tareas cerradas de las fases 1 a 9», T-60).
 
 ## Fase 10 — Despliegue: bloqueo, etiquetado y retroceso (C-04)
 
-**Estado**: borrador · **Hito**: B · **Estimado**: 34.2h (28.5h base, de ellas 9.5h de revisión adversarial) · **Real**: — · **Coste est.**: 1.710 € · **Tokens est.**: 1140 k
+**Estado**: completado · **Hito**: B · **Estimado**: 34.2h (28.5h base, de ellas 9.5h de revisión adversarial) · **Real**: — · **Coste est.**: 1.710 € · **Tokens est.**: 1140 k
 
 ### T-61 — Bloqueo exclusivo de despliegue y `--break-lock`
 
 - **Descripción**: Fichero de bloqueo exclusivo en el directorio privado del proyecto con PID, host y hora; un segundo despliegue termina con `deployment_locked` sin ejecutar fases; un bloqueo con PID muerto se informa y solo se rompe con `--break-lock`. Fuente: CA-23; O-06.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Un segundo despliegue del mismo proyecto termina con `deployment_locked`; el bloqueo es del sistema operativo, no sigue enlaces simbólicos, no borra nada y avisa si el despliegue anterior no terminó.
+- **Estado**: completado
+- **Cerrada**: 2026-11-17
 - **Tiempo humano**: est. 3.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.47h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.47h (estimado) · real 0.17h (medido)
 - **Supervisión**: est. 0.12h (≈25 % IA) · real —
 - **Previsión IA**: 129 k in / 11 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
 - **Tipo**: devops
-- **Archivos**: `scripts/deploy-memory.py`, `server/memory_platform/tests/test_deploy.py`, `server/memory_platform/tests/test_deploy_lock.py`
+- **Archivos**: `scripts/deploy-memory.py`, `server/memory_platform/tests/test_deploy.py`, `server/memory_platform/tests/test_deploy_lock.py`, `scripts/rehearse-restore.py` (una línea: `deployment.lock` entra en `PRIVATE_FILES`, para que su limpieza reconozca el directorio privado del proyecto)
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_deploy_lock|test_deploy|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Un segundo despliegue sobre el mismo proyecto termina con `deployment_locked` (PID y hora del dueño) sin ejecutar ninguna fase (doble de `subprocess` sin llamadas)
-- [ ] Un bloqueo con PID muerto se informa y solo se rompe con `--break-lock`
-- [ ] El bloqueo se libera también si una fase falla o el proceso se interrumpe
+- [x] Un segundo despliegue sobre el mismo proyecto termina con `deployment_locked` (PID y hora del dueño) sin ejecutar ninguna fase (doble de `subprocess` sin llamadas)
+- [x] Un bloqueo con PID muerto se informa y solo se rompe con `--break-lock`
+  - (enmienda, revisión de la fase 10, fix3 y fix4, con la delegación del usuario; el criterio de arriba no se reescribe: con el bloqueo del sistema operativo `--break-lock` ya no rompe nada y no es necesario ni siquiera para un fichero de otro equipo —si el sistema deja tomar el bloqueo se toma sin la opción, que solo nombra la toma—; lo que se «informa» es lo que un despliegue que no terminó dejó en el fichero, con un mensaje que no afirma que murió cuando el fichero es de otro equipo; el fichero de bloqueo debe ser normal y de un solo nombre.)
+  - (enmendado en la revisión de la fase 10, fix2, n.º 3-5 y 8: el bloqueo pasa a ser del sistema operativo (`flock`/`msvcrt.locking`), que lo libera cuando el proceso muere; un dueño muerto de este equipo ya no deja nada que romper y el siguiente despliegue lo toma sin opciones; `--break-lock` queda solo para un fichero de bloqueo escrito por otro equipo. El criterio de arriba se conserva como se aprobó; véase la nota de enmienda de CA-23 en `spec.md`.)
+- [x] El bloqueo se libera también si una fase falla o el proceso se interrumpe
 
 **Subtareas**
-- [ ] Escribir primero las pruebas (rojo)
-- [ ] Implementar el bloqueo con creación exclusiva
-- [ ] Añadir `--break-lock`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero las pruebas (rojo)
+- [x] Implementar el bloqueo con creación exclusiva
+- [x] Añadir `--break-lock`
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `deploy-memory.py:296-410` (secuencia de fases) y el directorio privado del proyecto (`deployment-status.json`, `docs/operations.md:186`). El script no se ejecuta contra la instalación real.
+**Notas**: archivadas en `execution-history.md` (secciones «Compactación 2026-11-17 (12)» y «Compactación 2026-11-17 (13, bis)», T-61).
 
 ### T-62 — Etiquetas locales `kairos-*:<versión>-<marca>` y registro en `deployment-status.json`
 
 - **Descripción**: Etiquetar las imágenes locales antes de cada construcción (`kairos-*:<versión>-<marca>`), conservar las dos anteriores y registrar las etiquetas en `deployment-status.json`. Fuente: CA-24; O-06; P-08.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Cada despliegue etiqueta antes de construir las imágenes del último bueno como `kairos-*:<versión>-<marca>` y lo registra de forma duradera en `deployment-status.json`, aunque se interrumpa.
+- **Estado**: completado
+- **Cerrada**: 2026-11-17
 - **Tiempo humano**: est. 4h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.53h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.53h (estimado) · real 0.14h (medido)
 - **Supervisión**: est. 0.13h (≈25 % IA) · real —
 - **Previsión IA**: 147 k in / 13 k out tok · ⚠️ verificar €
 - **Dependencias**: T-61
@@ -1927,25 +1919,28 @@ test-plan: n/a (sin UI)
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_deploy_rollback|test_deploy|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Antes de construir, las imágenes vigentes se etiquetan `kairos-*:<versión>-<marca>` y `deployment-status.json` registra las etiquetas anterior y actual
-- [ ] Se conservan las dos anteriores y las más antiguas se retiran (prueba con dobles)
-- [ ] Los nombres de imagen del despliegue aislado no coinciden con los de la instalación
+- [x] Antes de construir, las imágenes vigentes se etiquetan `kairos-*:<versión>-<marca>` y `deployment-status.json` registra las etiquetas anterior y actual
+  - (aclarado en la revisión de la fase 10, fix2, n.º 1-2: «las imágenes vigentes» son las del último despliegue que terminó bien (`images.good`, por id), no lo que haya en `:latest` ni lo que ejecuten los contenedores en ese momento.)
+  - (enmendado en la revisión de la fase 10, n.º 6: «actual» se registra como el id de `:latest` tras construir (`images.current`) y su versión (`images.current_versions`); la imagen actual no tiene etiqueta hasta que el despliegue siguiente la etiqueta como `previous`, porque etiquetarla antes la haría pasar por «anterior» de sí misma.)
+- [x] Se conservan las dos anteriores y las más antiguas se retiran (prueba con dobles)
+- [x] Los nombres de imagen del despliegue aislado no coinciden con los de la instalación
 
 **Subtareas**
-- [ ] Escribir primero las pruebas con dobles (rojo)
-- [ ] Implementar el etiquetado y el registro
-- [ ] Retirada de etiquetas antiguas
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero las pruebas con dobles (rojo)
+- [x] Implementar el etiquetado y el registro
+- [x] Retirada de etiquetas antiguas
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `deploy-memory.py:236-258` y `:296-410` (construcción y estado) y `docker-compose.yml:69-198` (imágenes `:latest`).
+**Notas**: archivadas en `execution-history.md` (secciones «Compactación 2026-11-17 (12)» y «Compactación 2026-11-17 (13, bis)», T-62).
 
 ### T-63 — `--rollback` sin migrar
 
 - **Descripción**: `--rollback` vuelve a las etiquetas registradas sin migrar; sin etiquetas anteriores falla con `no_previous_images` sin tocar servicios. Se apoya en que las migraciones son aditivas. Fuente: CA-24; O-06; P-08.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: `--rollback` restaura contenedores y `:latest` de la versión anterior sin migrar, también tras un despliegue interrumpido; sin imágenes anteriores falla con `no_previous_images` y no cambia nada.
+- **Estado**: completado
+- **Cerrada**: 2026-11-17
 - **Tiempo humano**: est. 4.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.60h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.60h (estimado) · real 0.16h (medido)
 - **Supervisión**: est. 0.15h (≈25 % IA) · real —
 - **Previsión IA**: 166 k in / 14 k out tok · ⚠️ verificar €
 - **Dependencias**: T-62
@@ -1955,108 +1950,113 @@ test-plan: n/a (sin UI)
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_deploy_rollback|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] `--rollback` recompone los servicios con las etiquetas anteriores del registro y no ejecuta `migrate` (prueba con dobles)
-- [ ] Sin etiquetas anteriores falla con `no_previous_images` y no cambia servicios
-- [ ] `docs/operations.md` explica el retroceso y su límite (imágenes, no datos)
+- [x] `--rollback` recompone los servicios con las etiquetas anteriores del registro y no ejecuta `migrate` (prueba con dobles)
+- [x] Sin etiquetas anteriores falla con `no_previous_images` y no cambia servicios
+- [x] `docs/operations.md` explica el retroceso y su límite (imágenes, no datos)
 
 **Subtareas**
-- [ ] Escribir primero las pruebas (rojo)
-- [ ] Implementar `--rollback`
-- [ ] Documentar
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero las pruebas (rojo)
+- [x] Implementar `--rollback`
+- [x] Documentar
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `docs/operations.md:186`, `:201` (el código anterior funciona sobre la base migrada) y la tarea de etiquetado.
+**Notas**: archivadas en `execution-history.md` (secciones «Compactación 2026-11-17 (12)» y «Compactación 2026-11-17 (13, bis)», T-63).
 
 ### T-64 — Ensayo aislado de retroceso y de latido `unhealthy`
 
 - **Descripción**: Ejecutar un ensayo aislado con dos despliegues etiquetados y `--rollback`, y comprobar que con el bucle del worker detenido el contenedor pasa a `unhealthy`. Fuente: CA-24, CA-21 (caso del ensayo).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Un ensayo aislado (`--stage rollback`) demuestra el retroceso de imágenes sin migrar y que `memory-worker` pasa a `unhealthy` con el bucle parado; un trabajo que pierde su concesión se cancela en vez de dejar al worker `unhealthy`.
+- **Estado**: completado
+- **Cerrada**: 2026-11-17
 - **Tiempo humano**: est. 4h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.53h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.53h (estimado) · real 0.57h (medido)
 - **Supervisión**: est. 0.13h (≈25 % IA) · real —
 - **Previsión IA**: 147 k in / 13 k out tok · ⚠️ verificar €
 - **Dependencias**: T-63, T-56
 - **Tipo**: devops
-- **Archivos**: `scripts/rehearse-reliable-operations.py`, `scripts/tests/test_rehearse_reliable_operations.py`
+- **Archivos**: `scripts/rehearse-reliable-operations.py`, `scripts/tests/test_rehearse_reliable_operations.py`, `server/memory_platform/worker.py` (deuda n.º 6: cancelar el trabajo al perder la concesión), `server/memory_platform/tests/test_worker_heartbeat.py` (deudas n.º 6 y 7: pruebas y mutantes), `docs/operations.md` (el comportamiento nuevo del worker y la etapa del ensayo, E3)
 - **Cubre (tests)**: —
 - **Verificación**:
-  - `python scripts/rehearse-reliable-operations.py --project-name kairos-ops-d --embed-stub --stage rollback` → `rollback_ok` con `content-manifest` igual, una búsqueda correcta y `worker_unhealthy` en ≤ `interval × retries`
+  - `python scripts/rehearse-reliable-operations.py --project-name kairos-ops-d --embed-stub --stage rollback` → `rollback_ok` con `content-manifest` igual, una búsqueda correcta y `worker_unhealthy` en ≤ plazo del último latido + `interval × retries` (enmienda de la revisión de la Fase 9, n.º 1)
   - `docker ps --filter name=knowledge-graphs` y `docker volume ls --filter name=knowledge-graphs` → idénticos antes y después
 
 **Criterios de aceptación**
-- [ ] Los servicios vuelven a las etiquetas anteriores sin migrar, `content-manifest` es igual y una búsqueda funciona
-- [ ] Con el bucle detenido, `memory-worker` pasa a `unhealthy` en ≤ `interval × retries`
-- [ ] Evidencia anotada en `Notas`; proyecto aislado retirado al terminar
+- [x] Los servicios vuelven a las etiquetas anteriores sin migrar, `content-manifest` es igual y una búsqueda funciona
+- [x] Con el bucle detenido, `memory-worker` pasa a `unhealthy` en ≤ `interval × retries` — Enmienda (revisión de la Fase 9, n.º 1, aprobada por el orquestador): en ≤ plazo del último latido + `interval × retries`
+  - (enmienda, revisión de la fase 10, fix3 n.º 9, con la delegación del usuario; antes «aclarado» en fix2 n.º 7: la cota se deduce además de la duración de las sondas, porque Docker espera `interval` después de que cada una termina, y con sondas que agotan su plazo AMPLÍA la cota hasta ~20 s por encima del texto original; véase la enmienda de CA-21 en `spec.md`.)
+- [x] Evidencia anotada en `Notas`; proyecto aislado retirado al terminar
 
 **Subtareas**
-- [ ] Añadir la etapa `rollback` al script
-- [ ] Ejecutar el ensayo (primer plano, de uno en uno)
-- [ ] Retirar el proyecto
-- [ ] `usage-meter start/close` de la tarea
+- [x] Añadir la etapa `rollback` al script
+- [x] Ejecutar el ensayo (primer plano, de uno en uno)
+- [x] Retirar el proyecto
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: la etapa `a` creada en la Fase 8. Restricción dura: nada `knowledge-graphs-*`, ni Ollama del host.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (12) — notas de T-61 a T-65 hasta fix4», T-64).
 
 ### T-65 — Documentar bloqueo y retroceso
 
 - **Descripción**: Documentar `deployment_locked`, `--break-lock`, las etiquetas locales y `--rollback`. Fuente: CA-23, CA-24 (documentación).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: La guía de operaciones explica `deployment_locked`, `--break-lock`, las etiquetas locales de las imágenes y `--rollback` (con su límite: imágenes, no datos).
+- **Estado**: completado
+- **Cerrada**: 2026-11-17
 - **Tiempo humano**: est. 1.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real 0.14h (medido)
 - **Supervisión**: est. 0.05h (≈25 % IA) · real —
 - **Previsión IA**: 55 k in / 5 k out tok · ⚠️ verificar €
 - **Dependencias**: T-64
 - **Tipo**: docs
-- **Archivos**: `docs/operations.md`
+- **Archivos**: `docs/operations.md`, `server/memory_platform/tests/test_deploy_rollback.py` (una prueba que compara los nombres y códigos del manual con los del script), `scripts/deploy-memory.py` (constantes `EXIT_LOCKED` y `EXIT_NO_PREVIOUS_IMAGES` para esa comparación)
 - **Cubre (tests)**: —
 - **Verificación**: lectura: `docs/operations.md` describe `deployment_locked`, `--break-lock`, las etiquetas `kairos-*:<versión>-<marca>`, `--rollback` y `no_previous_images`
 
 **Criterios de aceptación**
-- [ ] Nombres y códigos iguales al script
+- [x] Nombres y códigos iguales al script
 
 **Subtareas**
-- [ ] Actualizar `docs/operations.md`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Actualizar `docs/operations.md`
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Estilo: secciones de despliegue de `docs/operations.md:128-201`.
+**Notas**: archivadas en `execution-history.md` (secciones «Compactación 2026-11-17 (12)» y «Compactación 2026-11-17 (13, bis)», T-65).
 
 ### T-66 — Cierre de fase: suite completa y subida del mínimo
 
 - **Descripción**: Ejecuta la suite completa del servidor, anota el recuento `MEMORY_TEST_RESULT` y sube `KAIROS_MIN_TESTS` y `MIN_FLOOR` al número observado (la suite solo crece).  Fuente: Puerta de fase; CA-38 (suite con 0 fallos y 0 omitidos).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: la suite del servidor pasa de 1241 a 1360 pruebas y la CI exige ese mínimo.
+- **Estado**: completado
+- **Cerrada**: 2026-11-17
 - **Tiempo humano**: est. 1.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real 0.3h (estimado)
 - **Supervisión**: est. 0.05h (≈25 % IA) · real —
 - **Previsión IA**: 55 k in / 5 k out tok · ⚠️ verificar €
 - **Dependencias**: T-65
 - **Tipo**: test
-- **Archivos**: `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `docs/operations.md`
+- **Archivos**: `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `docs/operations.md`, `README.md`, `server/memory_platform/tests/test_deploy_lock.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
   - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
 
 **Criterios de aceptación**
-- [ ] `MEMORY_TEST_RESULT` con 0 fallos, 0 errores, 0 omitidos y `tests` ≥ 764 (≥ el recuento del cierre anterior)
-- [ ] `KAIROS_MIN_TESTS` en `.github/workflows/ci.yml` y `MIN_FLOOR` en `scripts/tests/test_ci_workflow.py` igualan el recuento observado, y la tabla de `docs/operations.md` lo repite
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas`
+- [x] `MEMORY_TEST_RESULT` con 0 fallos, 0 errores, 0 omitidos y `tests` ≥ 764 (≥ el recuento del cierre anterior)
+- [x] `KAIROS_MIN_TESTS` en `.github/workflows/ci.yml` y `MIN_FLOOR` en `scripts/tests/test_ci_workflow.py` igualan el recuento observado, y la tabla de `docs/operations.md` lo repite
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas`
 
 **Subtareas**
-- [ ] Ejecutar la suite completa (primer plano, un solo Docker a la vez) y anotar el recuento
-- [ ] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Ejecutar la suite completa (primer plano, un solo Docker a la vez) y anotar el recuento
+- [x] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Cierra la fase: no se abre la revisión adversarial con la suite en rojo.
+**Notas** (2026-11-17): archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (13)», T-66, notas de cierre).
 
 ### T-67 — Revisión adversarial de la fase (dos lentes)
 
 - **Descripción**: Revisión adversarial del diff de la fase con dos lentes: A (contrato, seguridad, regresiones, alcance declarado) y B (mutantes: cada control nuevo se quita y su prueba debe fallar). Cuidado: el bloqueo no debe dejar despliegues colgados; el retroceso no debe migrar ni tocar datos. Cada hallazgo se corrige para la clase entera y se anota con intento y evidencia en `review.md`; cada intento abre y cierra `usage-meter`. Fuente: Lección de la retro de la Iniciativa 2: la revisión es partida propia (0,5 × la implementación; 1,0 × en C-03 y C-05).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: revisión adversarial de la fase 10; el retroceso vuelve siempre al último despliegue que terminó bien, el bloqueo de despliegue es del sistema operativo y un despliegue interrumpido deja constancia.
+- **Estado**: completado
+- **Cerrada**: 2026-11-17
 - **Tiempo humano**: est. 9.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 1.27h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 1.27h (estimado) · real 4.0h (estimado; cinco intentos y cinco correcciones)
 - **Supervisión**: est. 0.32h (≈25 % IA) · real —
 - **Previsión IA**: 350 k in / 30 k out tok · ⚠️ verificar €
 - **Dependencias**: T-66
@@ -2069,88 +2069,97 @@ test-plan: n/a (sin UI)
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
 
 **Criterios de aceptación**
-- [ ] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
-- [ ] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
-- [ ] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
-- [ ] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
+- [x] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
+- [x] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
+- [x] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
+- [x] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
 
 **Subtareas**
-- [ ] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
-- [ ] Lente B: mutantes en memoria sobre cada control nuevo
-- [ ] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
-- [ ] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
+- [x] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
+- [x] Lente B: mutantes en memoria sobre cada control nuevo
+- [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
+- [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas**: Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+**Notas** (2026-11-17): archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (13)», T-67, notas de cierre).
 
 ---
 
 ## Fase 11 — Sonda de ida y vuelta (C-06)
 
-**Estado**: borrador · **Hito**: B · **Estimado**: 23.4h (19.5h base, de ellas 6.5h de revisión adversarial) · **Real**: — · **Coste est.**: 1.170 € · **Tokens est.**: 780 k
+**Estado**: completado · **Hito**: B · **Estimado**: 23.4h (19.5h base, de ellas 6.5h de revisión adversarial) · **Real**: — · **Coste est.**: 1.170 € · **Tokens est.**: 780 k
 
 ### T-68 — Proyecto `kairos-probe` y clave de alcance acotado
 
 - **Descripción**: Aprovisionar el proyecto dedicado `kairos-probe` y una clave con alcance solo sobre él, sin tocar proyectos de usuarios. Fuente: CA-33; M-06.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Nuevo `admin probe-provision`: crea el proyecto aislado `kairos-probe` y una clave de lectura y escritura que solo llega a él, de una cuenta de servicio propia (el token va a un fichero 600).
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 3h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.5h (estimado)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 110 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/admin.py`, `server/memory_platform/tests/test_probe_provisioning.py`
+- **Archivos**: `server/memory_platform/admin.py`, `server/memory_platform/tests/test_probe_provisioning.py`, `server/memory_platform/probe.py` (fichero nuevo: el aprovisionamiento y, en T-69, la sonda; `admin.py` queda con el cableado), `docs/roadmap/2026-11-15-reliable-operations/improvement-plan.md` (ítem (20) de Coordinación), `server/memory_platform/tests/test_auth_cache.py` (listas revisadas: `probe.py`)
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_probe_provisioning|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] La clave de la sonda solo tiene alcance sobre `kairos-probe` (una escritura en otro proyecto da 403, prueba)
-- [ ] El aprovisionamiento es idempotente y no escribe en proyectos de usuarios
-- [ ] La clave no se imprime en registros ni se guarda en el repositorio
+- [x] La clave de la sonda solo tiene alcance sobre `kairos-probe` (una escritura en otro proyecto da 403, prueba)
+  - (enmendado en la implementación, con la delegación del usuario: fuera del alcance la API responde 404, no 403, porque `store_auth._require` oculta los proyectos ajenos; dentro de `kairos-probe` las acciones no permitidas dan 403.)
+- [x] El aprovisionamiento es idempotente y no escribe en proyectos de usuarios
+- [x] La clave no se imprime en registros ni se guarda en el repositorio
 
 **Subtareas**
-- [ ] Escribir primero las pruebas (rojo)
-- [ ] Implementar el aprovisionamiento idempotente
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero las pruebas (rojo)
+- [x] Implementar el aprovisionamiento idempotente
+- [x] `usage-meter start/close` de la tarea
+  - Excepción declarada (revisión de la fase 11, intento 1, n.º 11): usage-meter no se ejecutó; las horas reales van marcadas «(estimado)» y el motivo está en las Notas.
 
-**Notas**: Patrón: `admin.py:240-321` (subcomandos), `store_auth.py:36-77` (concesiones por proyecto) y la clave temporal de verificación de `deploy-memory.py --roundtrip`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (15) — notas de T-68 a T-72», T-68); notas de fix1 y fix2 en la sección «Compactación 2026-11-18 (17) — notas fix1 y fix2 de T-68 a T-72».
+
 
 ### T-69 — `admin probe`: escribir, esperar recibo `embed`, buscar, retirar
 
 - **Descripción**: `admin probe` contra `/v1`: escribe un recuerdo sintético con marca única, espera su recibo `embed`, lo busca con la capa semántica, lo retira y mide cada etapa; un fallo en cualquier etapa termina con código ≠ 0, `probe_failed` con `stage` (`write`, `index`, `search`, `retire`) y `kairos_probe_success 0`, e intenta retirar lo escrito. Fuente: CA-30, CA-31; M-06.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Nuevo `admin probe`: escribe una nota sintética por `/v1`, espera a que el worker la indexe, la encuentra por búsqueda semántica y la retira y purga; con un fallo o Ctrl-C sale con 1 y dice la etapa.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.67h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.67h (estimado) · real 0.8h (estimado)
 - **Supervisión**: est. 0.17h (≈25 % IA) · real —
 - **Previsión IA**: 184 k in / 16 k out tok · ⚠️ verificar €
 - **Dependencias**: T-68
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/admin.py`, `server/memory_platform/observability.py`, `server/memory_platform/tests/test_probe.py`
+- **Archivos**: `server/memory_platform/admin.py`, `server/memory_platform/observability.py`, `server/memory_platform/tests/test_probe.py`, `server/memory_platform/probe.py` (la sonda; fichero nuevo de T-68), `docs/roadmap/2026-11-15-reliable-operations/spec.md` (nota de enmienda de CA-33 y del nombre de la métrica)
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_probe|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Sobre un servidor sano la sonda termina en 0 y publica la duración de cada etapa
-- [ ] Con el worker parado, falla en ≤ `MEMORY_PROBE_TIMEOUT` con `probe_failed`, `stage=index` y código ≠ 0, e intenta retirar lo escrito
-- [ ] Tras una ejecución no quedan recuerdos activos de la sonda (solo retirados)
-- [ ] El tiempo se mide con reloj inyectado en las pruebas (sin esperas reales)
+- [x] Sobre un servidor sano la sonda termina en 0 y publica la duración de cada etapa
+- [x] Con el worker parado, falla en ≤ `MEMORY_PROBE_TIMEOUT` con `probe_failed`, `stage=index` y código ≠ 0, e intenta retirar lo escrito
+- [x] Tras una ejecución no quedan recuerdos activos de la sonda (solo retirados)
+  - (enmendado en fix1, revisión de la fase 11, n.º 10: vale tras una ejecución que llega a retirar; si la base se corta a mitad la nota queda activa y la siguiente ejecución la retira en su barrido inicial; además `admin probe` purga las filas retiradas. Nota equivalente bajo CA-33 en `spec.md`.)
+- [x] El tiempo se mide con reloj inyectado en las pruebas (sin esperas reales)
 
 **Subtareas**
-- [ ] Escribir primero las pruebas (rojo)
-- [ ] Implementar las cuatro etapas y su clasificación de fallos
-- [ ] Publicar métricas `kairos_probe_*`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero las pruebas (rojo)
+- [x] Implementar las cuatro etapas y su clasificación de fallos
+- [x] Publicar métricas `kairos_probe_*`
+- [x] `usage-meter start/close` de la tarea
+  - Excepción declarada (revisión de la fase 11, intento 1, n.º 11): usage-meter no se ejecutó; las horas reales van marcadas «(estimado)» y el motivo está en las Notas.
 
-**Notas**: Patrón: `scripts/memory-client.py` y `mcp/kairos_mcp` (clientes de `/v1`), `tests/chain_harness.py` (cadena en proceso) y `observability.py:189-213` (métricas). Defaults `MEMORY_PROBE_TIMEOUT` 120 s.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (15) — notas de T-68 a T-72», T-69); notas de fix1 y fix2 en la sección «Compactación 2026-11-18 (17) — notas fix1 y fix2 de T-68 a T-72».
+
 
 ### T-70 — Pruebas de la sonda con worker real y worker parado
 
 - **Descripción**: Probar la sonda de extremo a extremo con la cadena en proceso: sana, con worker parado, con búsqueda sin resultado, con base cortada, y que ningún test apunta a recursos `knowledge-graphs-*`. Fuente: CA-30, CA-31, CA-33.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: pruebas de la sonda contra el servidor real con el worker real y con el worker parado, con una base cortada, y con mutantes que dejan una prueba en rojo.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 3h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.7h (estimado)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 110 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: T-69
@@ -2160,78 +2169,87 @@ test-plan: n/a (sin UI)
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_probe|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Cuatro escenarios cubiertos: sana, worker parado (`stage=index`), búsqueda sin resultado (`stage=search`) y base cortada con `FaultProxy`
-- [ ] Mutante comprobado: quitar la retirada final o el control de etapa deja una prueba en rojo
-- [ ] Un test recorre los ficheros de la sonda y falla si aparece `knowledge-graphs-` o el puerto 11434
+- [x] Cuatro escenarios cubiertos: sana, worker parado (`stage=index`), búsqueda sin resultado (`stage=search`) y base cortada con `FaultProxy`
+- [x] Mutante comprobado: quitar la retirada final o el control de etapa deja una prueba en rojo
+- [x] Un test recorre los ficheros de la sonda y falla si aparece `knowledge-graphs-` o el puerto 11434
 
 **Subtareas**
-- [ ] Tabla de escenarios
-- [ ] Escribir las pruebas
-- [ ] Aplicar mutantes
-- [ ] `usage-meter start/close` de la tarea
+- [x] Tabla de escenarios
+- [x] Escribir las pruebas
+- [x] Aplicar mutantes
+- [x] `usage-meter start/close` de la tarea
+  - Excepción declarada (revisión de la fase 11, intento 1, n.º 11): usage-meter no se ejecutó; las horas reales van marcadas «(estimado)» y el motivo está en las Notas.
 
-**Notas**: Patrón: `tests/chain_harness.py`, `tests/fault_proxy.py` (Fase 1).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (15) — notas de T-68 a T-72», T-70); notas de fix1 y fix2 en la sección «Compactación 2026-11-18 (17) — notas fix1 y fix2 de T-68 a T-72».
+
 
 ### T-71 — Documentar la sonda
 
 - **Descripción**: Documentar `admin probe`, sus etapas, códigos de salida y variables en los manuales. Fuente: CA-30, CA-31 (documentación).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: La guía de operaciones explica `admin probe`: etapas, códigos de salida, `probe_failed`, el aprovisionamiento de `kairos-probe` y las variables `MEMORY_PROBE_*`.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 0.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.07h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.07h (estimado) · real 0.15h (estimado)
 - **Supervisión**: est. 0.02h (≈25 % IA) · real —
 - **Previsión IA**: 18 k in / 2 k out tok · ⚠️ verificar €
 - **Dependencias**: T-70
 - **Tipo**: docs
-- **Archivos**: `docs/operations.md`, `docs/configuration.md`
+- **Archivos**: `docs/operations.md`, `docs/configuration.md`, `server/memory_platform/tests/test_probe.py` (`DocumentationTests`: nombres, valores por defecto, etapas y códigos del manual iguales a los del código)
 - **Cubre (tests)**: —
 - **Verificación**: lectura: `docs/operations.md` describe las etapas, `probe_failed` y el aprovisionamiento de `kairos-probe`; `docs/configuration.md` lista `MEMORY_PROBE_TIMEOUT`
 
 **Criterios de aceptación**
-- [ ] Nombres y defaults iguales al código
+- [x] Nombres y defaults iguales al código
 
 **Subtareas**
-- [ ] Actualizar los manuales
-- [ ] `usage-meter start/close` de la tarea
+- [x] Actualizar los manuales
+- [x] `usage-meter start/close` de la tarea
+  - Excepción declarada (revisión de la fase 11, intento 1, n.º 11): usage-meter no se ejecutó; las horas reales van marcadas «(estimado)» y el motivo está en las Notas.
 
-**Notas**: Estilo: `docs/operations.md`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (15) — notas de T-68 a T-72», T-71); notas de fix1 y fix2 en la sección «Compactación 2026-11-18 (17) — notas fix1 y fix2 de T-68 a T-72».
+
 
 ### T-72 — Cierre de fase: suite completa y subida del mínimo
 
 - **Descripción**: Ejecuta la suite completa del servidor, anota el recuento `MEMORY_TEST_RESULT` y sube `KAIROS_MIN_TESTS` y `MIN_FLOOR` al número observado (la suite solo crece).  Fuente: Puerta de fase; CA-38 (suite con 0 fallos y 0 omitidos).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: la suite del servidor pasa de 1360 a 1460 pruebas y la CI exige ese mínimo.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 1.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real 0.3h (estimado)
 - **Supervisión**: est. 0.05h (≈25 % IA) · real —
 - **Previsión IA**: 55 k in / 5 k out tok · ⚠️ verificar €
 - **Dependencias**: T-71
 - **Tipo**: test
-- **Archivos**: `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `docs/operations.md`
+- **Archivos**: `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `docs/operations.md`, `README.md`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
   - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
 
 **Criterios de aceptación**
-- [ ] `MEMORY_TEST_RESULT` con 0 fallos, 0 errores, 0 omitidos y `tests` ≥ 764 (≥ el recuento del cierre anterior)
-- [ ] `KAIROS_MIN_TESTS` en `.github/workflows/ci.yml` y `MIN_FLOOR` en `scripts/tests/test_ci_workflow.py` igualan el recuento observado, y la tabla de `docs/operations.md` lo repite
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas`
+- [x] `MEMORY_TEST_RESULT` con 0 fallos, 0 errores, 0 omitidos y `tests` ≥ 764 (≥ el recuento del cierre anterior)
+- [x] `KAIROS_MIN_TESTS` en `.github/workflows/ci.yml` y `MIN_FLOOR` en `scripts/tests/test_ci_workflow.py` igualan el recuento observado, y la tabla de `docs/operations.md` lo repite
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas`
+  - Excepción declarada (revisión de la fase 11, intento 1, n.º 11): usage-meter no se ejecutó; las horas reales van marcadas «(estimado)» y el motivo está en las Notas.
 
 **Subtareas**
-- [ ] Ejecutar la suite completa (primer plano, un solo Docker a la vez) y anotar el recuento
-- [ ] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Ejecutar la suite completa (primer plano, un solo Docker a la vez) y anotar el recuento
+- [x] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
+- [x] `usage-meter start/close` de la tarea
+  - Excepción declarada (revisión de la fase 11, intento 1, n.º 11): usage-meter no se ejecutó; las horas reales van marcadas «(estimado)» y el motivo está en las Notas.
 
-**Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Cierra la fase: no se abre la revisión adversarial con la suite en rojo.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-17 (15) — notas de T-68 a T-72», T-72); notas de fix1 y fix2 en la sección «Compactación 2026-11-18 (17) — notas fix1 y fix2 de T-68 a T-72».
+
 
 ### T-73 — Revisión adversarial de la fase (dos lentes)
 
 - **Descripción**: Revisión adversarial del diff de la fase con dos lentes: A (contrato, seguridad, regresiones, alcance declarado) y B (mutantes: cada control nuevo se quita y su prueba debe fallar). Cuidado: la clave de la sonda es una credencial más (alcance mínimo) y la sonda no ensucia proyectos de usuarios. Cada hallazgo se corrige para la clase entera y se anota con intento y evidencia en `review.md`; cada intento abre y cierra `usage-meter`. Fuente: Lección de la retro de la Iniciativa 2: la revisión es partida propia (0,5 × la implementación; 1,0 × en C-03 y C-05).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: revisión adversarial de la fase 11; la sonda solo da éxito con su propia nota, purga sus restos, funciona con una cuenta de servicio sin privilegios de más y termina limpia ante una interrupción.
+- **Estado**: completado
 - **Tiempo humano**: est. 6.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.87h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.87h (estimado) · real 2.5h (estimado; dos intentos y dos correcciones)
 - **Supervisión**: est. 0.22h (≈25 % IA) · real —
 - **Previsión IA**: 239 k in / 21 k out tok · ⚠️ verificar €
 - **Dependencias**: T-72
@@ -2244,116 +2262,123 @@ test-plan: n/a (sin UI)
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
 
 **Criterios de aceptación**
-- [ ] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
-- [ ] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
-- [ ] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
-- [ ] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
+- [x] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
+- [x] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
+- [x] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
+- [x] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
 
 **Subtareas**
-- [ ] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
-- [ ] Lente B: mutantes en memoria sobre cada control nuevo
-- [ ] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
-- [ ] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
+- [x] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
+- [x] Lente B: mutantes en memoria sobre cada control nuevo
+- [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
+- [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas**: Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (23) — notas de T-81 a T-85», T-73 (notas)).
 
 ---
 
 ## Fase 12 — Cola atascada, servicio de sonda y `kairos doctor` (C-06)
 
-**Estado**: borrador · **Hito**: B · **Estimado**: 23.4h (19.5h base, de ellas 6.5h de revisión adversarial) · **Real**: — · **Coste est.**: 1.170 € · **Tokens est.**: 780 k
+**Estado**: completado · **Hito**: B · **Estimado**: 23.4h (19.5h base, de ellas 6.5h de revisión adversarial) · **Real**: — · **Coste est.**: 1.170 € · **Tokens est.**: 780 k
 
 ### T-74 — `kairos_jobs_oldest_pending_seconds` y aviso de cola atascada
 
 - **Descripción**: Publicar `kairos_jobs_oldest_pending_seconds` en `/metrics` y hacer que la sonda avise cuando supera `MEMORY_QUEUE_STUCK_SECONDS` (900 s). Añadir un fichero de reglas Prometheus de ejemplo. Fuente: CA-32; M-06; P-06.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: `/metrics` publica `kairos_jobs_oldest_pending_seconds` y `admin probe` avisa con `queue_stuck` (evento, `queue` en el informe y salida ≠ 0) si un trabajo espera más de `MEMORY_QUEUE_STUCK_SECONDS` (900 s); hay reglas Prometheus de ejemplo.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 3h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.30h (estimado)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 110 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/observability.py`, `server/memory_platform/admin.py`, `server/memory_platform/tests/test_observability.py`, `docs/examples/prometheus-rules.yml`
+- **Archivos**: `server/memory_platform/observability.py`, `server/memory_platform/probe.py`, `server/memory_platform/admin.py`, `server/memory_platform/Dockerfile` (COPY de las reglas para la prueba), `server/memory_platform/tests/test_observability.py`, `server/memory_platform/tests/test_metrics.py`, `server/memory_platform/tests/test_probe.py`, `docs/examples/prometheus-rules.yml`
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_observability|test_probe|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] `/metrics` publica `kairos_jobs_oldest_pending_seconds` (0 con la cola vacía) leyendo solo `pending`, `running` y `unknown`, sin recorrer filas terminales
-- [ ] La sonda avisa con `queue_stuck` cuando la antigüedad supera `MEMORY_QUEUE_STUCK_SECONDS` (prueba con reloj inyectado)
-- [ ] `docs/examples/prometheus-rules.yml` contiene reglas de ejemplo para `kairos_probe_success`, antigüedad de cola y `kairos_jobs_failed`
+- [x] `/metrics` publica `kairos_jobs_oldest_pending_seconds` (0 con la cola vacía) leyendo solo `pending`, `running` y `unknown`, sin recorrer filas terminales
+- [x] La sonda avisa con `queue_stuck` cuando la antigüedad supera `MEMORY_QUEUE_STUCK_SECONDS` (prueba con reloj inyectado)
+- [x] `docs/examples/prometheus-rules.yml` contiene reglas de ejemplo para `kairos_probe_success`, antigüedad de cola y `kairos_jobs_failed`
 
 **Subtareas**
-- [ ] Escribir primero las pruebas (rojo)
-- [ ] Añadir la métrica con el índice parcial de la Fase 3
-- [ ] Añadir el aviso a la sonda y el fichero de reglas
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero las pruebas (rojo)
+- [x] Añadir la métrica con el índice parcial de la Fase 3
+- [x] Añadir el aviso a la sonda y el fichero de reglas
+- [x] `usage-meter start/close` de la tarea
+  - Excepción declarada: usage-meter start se ejecutó desde otro directorio y close no encontró el marcador (`fuente: estimado`); horas reales marcadas «(estimado)».
 
-**Notas**: Patrón: `observability.py:189-213` y `:205-208` (`kairos_jobs_queue_depth`, `kairos_jobs_failed`) y `tests/test_observability.py`. Canal de alerta (P-06): métrica, evento y código de salida; el envío a personas es de la Iniciativa 5.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-74). Notas de fix1 en la sección «Compactación 2026-11-18 (20) — notas fix1 de T-74 a T-79».
 
 ### T-75 — Servicio Compose `memory-probe` (perfil propio)
 
 - **Descripción**: Añadir el servicio opcional `memory-probe` (perfil propio, sin puertos publicados) que ejecuta la sonda cada `MEMORY_PROBE_INTERVAL` (300 s). Aviso: la instalación desplegada lo recoge solo en su próximo `up`. Fuente: CA-30; M-06.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Servicio opcional `memory-probe` (`docker compose --profile probe up -d memory-probe`): ejecuta `admin probe --loop` cada `MEMORY_PROBE_INTERVAL` (300 s) sin publicar puertos; la instalación desplegada lo recoge en su próximo `up`.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 3h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.24h (medido)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 110 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: T-74
 - **Tipo**: devops
-- **Archivos**: `docker-compose.yml`, `server/memory_platform/tests/test_compose_limits.py`, `docs/configuration.md`
+- **Archivos**: `docker-compose.yml`, `server/memory_platform/admin.py` (`probe --loop`), `server/memory_platform/probe.py` (`probe_interval`), `server/memory_platform/tests/test_compose_limits.py`, `server/memory_platform/tests/test_probe.py`, `scripts/deploy-memory.py` (imagen del servicio en el override aislado; fix1: `refresh_probe`), `server/memory_platform/tests/test_deploy.py`, `server/memory_platform/tests/test_deploy_isolation.py` (fix1: recreación tras el despliegue), `docs/configuration.md`, `docs/operations.md` (fila del healthcheck)
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_compose_limits|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] `memory-probe` define perfil propio, `MEMORY_PROBE_INTERVAL`, límites, healthcheck y rotación de logs como el resto, sin puertos publicados
-- [ ] La prueba sobre el YAML confirma que ningún servicio monta credenciales fuera de las variables documentadas
-- [ ] Ningún fichero que monta la instalación desplegada cambia
+- [x] `memory-probe` define perfil propio, `MEMORY_PROBE_INTERVAL`, límites, healthcheck y rotación de logs como el resto, sin puertos publicados
+- [x] La prueba sobre el YAML confirma que ningún servicio monta credenciales fuera de las variables documentadas
+- [x] Ningún fichero que monta la instalación desplegada cambia
 
 **Subtareas**
-- [ ] Escribir primero la prueba (rojo)
-- [ ] Añadir el servicio
-- [ ] Documentar variables
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero la prueba (rojo)
+- [x] Añadir el servicio
+- [x] Documentar variables
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 0.24h (medido), 14m.
 
-**Notas**: Patrón: `memory-backup` de la Fase 7 y `docker-compose.yml:31-85`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-75). Notas de fix1 en la sección «Compactación 2026-11-18 (20) — notas fix1 de T-74 a T-79».
 
 ### T-76 — `kairos doctor`: aviso de cola en disco del cliente
 
 - **Descripción**: `kairos doctor` avisa cuando la cola en disco del cliente tiene capturas pendientes más antiguas que un umbral, sin telemetría del cliente al servidor. Fuente: CA-32; M-06; P-07.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: `kairos doctor` avisa (`capture_queue_stale`, estado `degraded`) cuando la cola de capturas en disco tiene capturas pendientes de más de 900 s (`KAIROS_QUEUE_STALE_SECONDS`); no envía nada al servidor y sin pendientes su salida no cambia.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 3h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.40h (estimado) · real 0.19h (medido)
 - **Supervisión**: est. 0.10h (≈25 % IA) · real —
 - **Previsión IA**: 110 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
 - **Tipo**: frontend
-- **Archivos**: `client/lib/outbox.mjs`, `client/lib/mcp.mjs`, `client/tests/doctor-outbox.test.mjs`
+- **Archivos**: `client/lib/outbox.mjs`, `client/lib/mcp.mjs`, `client/tests/doctor-outbox.test.mjs`, `client/package.json` (script `test`), `docs/roadmap/2026-11-15-reliable-operations/improvement-plan.md` (ítem 21 de Coordinación)
 - **Cubre (tests)**: —
 - **Verificación**: `cd client && npm test` → 0 fallos, con las pruebas de `doctor-outbox` en verde
 
 **Criterios de aceptación**
-- [ ] `doctor` informa de la antigüedad de la cola en disco y avisa por encima del umbral (prueba con reloj inyectado)
-- [ ] No envía nada al servidor (prueba sin red)
-- [ ] La salida actual de `doctor` no cambia cuando no hay capturas pendientes
+- [x] `doctor` informa de la antigüedad de la cola en disco y avisa por encima del umbral (prueba con reloj inyectado)
+- [x] No envía nada al servidor (prueba sin red)
+- [x] La salida actual de `doctor` no cambia cuando no hay capturas pendientes
 
 **Subtareas**
-- [ ] Escribir primero la prueba (rojo)
-- [ ] Leer la antigüedad en `outbox.mjs`
-- [ ] Añadir el aviso a `doctor`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero la prueba (rojo)
+- [x] Leer la antigüedad en `outbox.mjs`
+- [x] Añadir el aviso a `doctor`
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 0.19h (medido), 11m.
 
-**Notas**: Patrón: `client/lib/outbox.mjs:177` (cola en disco) y `client/lib/mcp.mjs` (`doctor`); tests en `client/tests/`. Cualquier test del cliente usa directorios temporales, nunca el perfil real.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-76). Notas de fix1 en la sección «Compactación 2026-11-18 (20) — notas fix1 de T-74 a T-79».
 
 ### T-77 — Ensayo aislado: sonda con `memory-worker` parado
 
 - **Descripción**: Añadir al script de ensayo la etapa `probe` y ejecutarla: sonda sana y sonda con `memory-worker` parado (criterio de cierre 3). Fuente: CA-31 (ensayo); criterio de cierre 3.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: El script de ensayo tiene la etapa `probe`: comprueba en un proyecto aislado que la sonda sana sale con 0 y que, con `memory-worker` parado, falla en `index` con `timeout`, `kairos_probe_success 0` y `queue_stuck`.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 2h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real 0.29h (medido)
 - **Supervisión**: est. 0.07h (≈25 % IA) · real —
 - **Previsión IA**: 74 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-74, T-75
@@ -2365,48 +2390,52 @@ test-plan: n/a (sin UI)
   - `docker ps --filter name=knowledge-graphs` → idéntico antes y después
 
 **Criterios de aceptación**
-- [ ] La sonda sana termina en 0; con `memory-worker` parado falla en ≤ `MEMORY_PROBE_TIMEOUT` con `stage=index`
-- [ ] Evidencia anotada en `Notas`; proyecto aislado retirado
+- [x] La sonda sana termina en 0; con `memory-worker` parado falla en ≤ `MEMORY_PROBE_TIMEOUT` con `stage=index`
+- [x] Evidencia anotada en `Notas`; proyecto aislado retirado
 
 **Subtareas**
-- [ ] Añadir la etapa `probe`
-- [ ] Ejecutar (primer plano, de uno en uno)
-- [ ] Retirar el proyecto
-- [ ] `usage-meter start/close` de la tarea
+- [x] Añadir la etapa `probe`
+- [x] Ejecutar (primer plano, de uno en uno)
+- [x] Retirar el proyecto
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 0.29h (medido), 17m.
 
-**Notas**: Patrón: etapas `a` y `rollback` del mismo script. Restricción dura: nada `knowledge-graphs-*`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-77). Fix1: `PROBE_METRICS_FILE` pasa a `/backups/probe/kairos-probe.prom` (nueva ruta por defecto, n.º 4); sin re-ensayo del despliegue en esta corrección (prohibido); `scripts/tests` en verde.
 
 ### T-78 — Documentar cola atascada, reglas de ejemplo y `doctor`
 
 - **Descripción**: Documentar `kairos_jobs_oldest_pending_seconds`, `MEMORY_QUEUE_STUCK_SECONDS`, el servicio `memory-probe`, las reglas de ejemplo y el aviso de `kairos doctor`. Fuente: CA-32 (documentación).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: La guía de operaciones y de configuración explican la cola atascada (`kairos_jobs_oldest_pending_seconds`, `MEMORY_QUEUE_STUCK_SECONDS`), el servicio `memory-probe`, las reglas Prometheus de ejemplo y el aviso de `kairos doctor`.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 1h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real 0.06h (medido)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 37 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: T-76, T-77
 - **Tipo**: docs
-- **Archivos**: `docs/operations.md`, `docs/configuration.md`, `client/README.md`
+- **Archivos**: `docs/operations.md`, `docs/configuration.md`, `client/README.md`, `server/memory_platform/tests/test_probe.py` (`DocumentationTests`: nombres y defaults del manual iguales al código)
 - **Cubre (tests)**: —
 - **Verificación**: lectura: los manuales describen la métrica, el umbral, el servicio y el aviso de `doctor` con nombres iguales al código
 
 **Criterios de aceptación**
-- [ ] Nombres y defaults iguales al código
+- [x] Nombres y defaults iguales al código
 
 **Subtareas**
-- [ ] Actualizar los manuales
-- [ ] `usage-meter start/close` de la tarea
+- [x] Actualizar los manuales
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 0.06h (medido), 4m (la mayor parte de la redacción corrió dentro de la ventana de T-77).
 
-**Notas**: Estilo: `docs/operations.md`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (18) — notas de T-74 a T-79», T-78). Notas de fix1 en la sección «Compactación 2026-11-18 (20) — notas fix1 de T-74 a T-79».
 
 ### T-79 — Cierre de fase: suite completa y subida del mínimo
 
 - **Descripción**: Ejecuta la suite completa del servidor, anota el recuento `MEMORY_TEST_RESULT` y sube `KAIROS_MIN_TESTS` y `MIN_FLOOR` al número observado (la suite solo crece). Incluye también `cd client && npm test` en verde. Fuente: Puerta de fase; CA-38 (suite con 0 fallos y 0 omitidos).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: La CI exige ahora al menos 1477 pruebas del servidor (antes 1460); la suite completa pasa con 0 fallos y 0 omitidas.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 1h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real 0.04h (medido)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 37 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: T-78
@@ -2418,24 +2447,25 @@ test-plan: n/a (sin UI)
   - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
 
 **Criterios de aceptación**
-- [ ] `MEMORY_TEST_RESULT` con 0 fallos, 0 errores, 0 omitidos y `tests` ≥ 764 (≥ el recuento del cierre anterior)
-- [ ] `KAIROS_MIN_TESTS` en `.github/workflows/ci.yml` y `MIN_FLOOR` en `scripts/tests/test_ci_workflow.py` igualan el recuento observado, y la tabla de `docs/operations.md` lo repite
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas`
+- [x] `MEMORY_TEST_RESULT` con 0 fallos, 0 errores, 0 omitidos y `tests` ≥ 764 (≥ el recuento del cierre anterior)
+- [x] `KAIROS_MIN_TESTS` en `.github/workflows/ci.yml` y `MIN_FLOOR` en `scripts/tests/test_ci_workflow.py` igualan el recuento observado, y la tabla de `docs/operations.md` lo repite
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas`
 
 **Subtareas**
-- [ ] Ejecutar la suite completa (primer plano, un solo Docker a la vez) y anotar el recuento
-- [ ] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Ejecutar la suite completa (primer plano, un solo Docker a la vez) y anotar el recuento
+- [x] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 0.04h (medido), 2m (el build de ~14 min corrió en segundo plano).
 
-**Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Cierra la fase: no se abre la revisión adversarial con la suite en rojo.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (23) — notas de T-81 a T-85», T-79 (notas)).
 
 ### T-80 — Revisión adversarial de la fase (dos lentes)
 
 - **Descripción**: Revisión adversarial del diff de la fase con dos lentes: A (contrato, seguridad, regresiones, alcance declarado) y B (mutantes: cada control nuevo se quita y su prueba debe fallar). Cuidado: el aviso de cola no debe producir falsos positivos con la cola vacía. Cada hallazgo se corrige para la clase entera y se anota con intento y evidencia en `review.md`; cada intento abre y cierra `usage-meter`. Fuente: Lección de la retro de la Iniciativa 2: la revisión es partida propia (0,5 × la implementación; 1,0 × en C-03 y C-05).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: revisión adversarial de la fase 12; el servicio de sonda termina limpio al pararlo, su healthcheck refleja el bucle, solo monta su propio subdirectorio de copias y `kairos doctor` no da avisos falsos durante la compactación de la cola.
+- **Estado**: completado
 - **Tiempo humano**: est. 6.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.87h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.87h (estimado) · real 1.5h (estimado; un intento y una corrección)
 - **Supervisión**: est. 0.22h (≈25 % IA) · real —
 - **Previsión IA**: 239 k in / 21 k out tok · ⚠️ verificar €
 - **Dependencias**: T-79
@@ -2448,32 +2478,33 @@ test-plan: n/a (sin UI)
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
 
 **Criterios de aceptación**
-- [ ] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
-- [ ] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
-- [ ] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
-- [ ] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
+- [x] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
+- [x] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
+- [x] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
+- [x] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
 
 **Subtareas**
-- [ ] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
-- [ ] Lente B: mutantes en memoria sobre cada control nuevo
-- [ ] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
-- [ ] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
+- [x] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
+- [x] Lente B: mutantes en memoria sobre cada control nuevo
+- [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
+- [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas**: Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-80).
 
 ---
 
 ## Fase 13 — Abstención: señal absoluta, parámetro y contratos (C-05)
 
-**Estado**: borrador · **Hito**: B · **Estimado**: 33.6h (28.0h base, de ellas 14.0h de revisión adversarial) · **Real**: — · **Coste est.**: 1.680 € · **Tokens est.**: 1120 k
+**Estado**: completado · **Hito**: B · **Estimado**: 33.6h (28.0h base, de ellas 14.0h de revisión adversarial) · **Real**: — · **Coste est.**: 1.680 € · **Tokens est.**: 1120 k
 
 ### T-81 — Diseño de la señal de abstención: similitud semántica y `lexical_match`
 
 - **Descripción**: Decidir y documentar cómo se expone la mejor similitud semántica a la fusión y cómo se combina con `lexical_match` y el estado `degraded`. La decisión se registra en `Notas` y en `docs/architecture.md`. Fuente: CA-27, CA-29; M-01.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Se documenta cómo decide Kairos que no hay nada relevante: la mejor similitud semántica frente a un umbral por modelo, sin abstener nunca si hay coincidencia de palabras o la capa semántica falla.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 4h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.53h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.53h (estimado) · real 0.04h (medido)
 - **Supervisión**: est. 0.13h (≈25 % IA) · real —
 - **Previsión IA**: 147 k in / 13 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
@@ -2483,82 +2514,95 @@ test-plan: n/a (sin UI)
 - **Verificación**: lectura: `docs/architecture.md` describe la señal (mejor similitud coseno por modelo, ningún `lexical_match`, `degraded` sin señal) y por qué no se usa el RRF
 
 **Criterios de aceptación**
-- [ ] La decisión cubre capa semántica ausente o `degraded` (sin señal: no abstiene), `abstain` sin umbral (`abstention: "uncalibrated"`) y preguntas cercanas al tema de un recuerdo
-- [ ] Queda escrito qué métricas mediría la puerta (abstención correcta y falsa)
+- [x] La decisión cubre capa semántica ausente o `degraded` (sin señal: no abstiene), `abstain` sin umbral (`abstention: "uncalibrated"`) y preguntas cercanas al tema de un recuerdo
+- [x] Queda escrito qué métricas mediría la puerta (abstención correcta y falsa)
 
 **Subtareas**
-- [ ] Leer la fusión y la capa vectorial
-- [ ] Prototipar la señal sobre datos sembrados y anotar la medición
-- [ ] Redactar la decisión
-- [ ] `usage-meter start/close` de la tarea
+- [x] Leer la fusión y la capa vectorial
+- [x] Prototipar la señal sobre datos sembrados y anotar la medición
+- [x] Redactar la decisión
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 0.04h (medido).
 
-**Notas**: Patrón: `retrieval.py:172-190` (fusión RRF por rango, no mide relevancia absoluta), `store_vectors.py:101`, `:408` (similitud coseno) y `Hit.lexical_match`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (23) — notas de T-81 a T-85», T-81).
 
 ### T-82 — Implementación: `abstain`, `MEMORY_ABSTAIN_THRESHOLDS` y `MEMORY_ABSTAIN_DEFAULT`
 
 - **Descripción**: Implementar la abstención como parámetro opcional `abstain` y `MEMORY_ABSTAIN_DEFAULT` (`off` por defecto), con umbral por modelo (`MEMORY_ABSTAIN_THRESHOLDS`). Abstiene solo si la mejor similitud queda por debajo del umbral y ningún resultado tiene `lexical_match`: responde `abstained: true` e `items: []`. Fuente: CA-27, CA-29; M-01; P-04.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: La búsqueda acepta el parámetro opcional `abstain` (y `MEMORY_ABSTAIN_DEFAULT`, apagado por defecto) para responder «nada relevante» sin resultados cuando la similitud es baja; sin él la respuesta no cambia.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.67h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.67h (estimado) · real 0.41h (medido; 0.13h + 0.28h de fix1)
 - **Supervisión**: est. 0.17h (≈25 % IA) · real —
 - **Previsión IA**: 184 k in / 16 k out tok · ⚠️ verificar €
 - **Dependencias**: T-81
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/retrieval.py`, `server/memory_platform/models.py`, `server/memory_platform/config.py`, `server/memory_platform/store_vectors.py`, `server/memory_platform/app.py`, `server/memory_platform/tests/test_abstention.py`
+- **Archivos**: `server/memory_platform/retrieval.py`, `server/memory_platform/models.py`, `server/memory_platform/config.py`, `server/memory_platform/store_vectors.py`, `server/memory_platform/app.py`, `server/memory_platform/tests/test_abstention.py`, `docker-compose.yml`, `docs/configuration.md`, `docs/architecture.md`, `docs/roadmap/2026-11-15-reliable-operations/improvement-plan.md` (fix1 de la revisión de la fase 13, n.º 1, 2, 3, 4 y 7: variables en el Compose y el manual, regla léxica y de `uncalibrated` en la arquitectura y en el ítem (22))
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_abstention|test_retrieval|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Con `abstain` activo y similitud por debajo del umbral sin `lexical_match`: `items: []` y `abstained: true`
-- [ ] Sin `abstain` y con `MEMORY_ABSTAIN_DEFAULT=off` la respuesta es idéntica a la actual (prueba de no regresión por comparación campo a campo)
-- [ ] Sin umbral para el modelo: la búsqueda responde normal y añade `abstention: "uncalibrated"`; con la capa semántica `degraded` nunca abstiene
-- [ ] Una pregunta con `lexical_match` nunca abstiene
+- [x] Con `abstain` activo y similitud por debajo del umbral sin `lexical_match`: `items: []` y `abstained: true`
+- [x] Sin `abstain` y con `MEMORY_ABSTAIN_DEFAULT=off` la respuesta es idéntica a la actual (prueba de no regresión por comparación campo a campo)
+- [x] Sin umbral para el modelo: la búsqueda responde normal y añade `abstention: "uncalibrated"`; con la capa semántica `degraded` nunca abstiene
+- [x] Una pregunta con `lexical_match` nunca abstiene
 
 **Subtareas**
-- [ ] Escribir primero las pruebas (rojo)
-- [ ] Exponer la similitud a la fusión
-- [ ] Implementar el parámetro, las variables y el campo
-- [ ] Probar no regresión
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero las pruebas (rojo)
+- [x] Exponer la similitud a la fusión
+- [x] Implementar el parámetro, las variables y el campo
+- [x] Probar no regresión
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 0.13h (medido).
+  - usage-meter fix1 (`reliable-operations/T-82-fix1`): 0.28h (medido), 12 min de reloj.
 
-**Notas**: Patrón: `models.py:160` (`Search`), `:200` (`SearchResult`), `app.py:397` (`search`), `config.py:232-235`, `:292-295` (lectura de variables) y `retrieval.py:106` (`search`). Cambio visible para clientes: aditivo y opcional.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (23) — notas de T-81 a T-85», T-82).
+
+**Notas** (fix1): archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (25) — notas fix1 de T-81 a T-85»).
+
 
 ### T-83 — Contratos aditivos: `abstain`, `abstained` y `abstention`
 
 - **Descripción**: Añadir el parámetro `abstain` y los campos `abstained`/`abstention` como opcionales en `memory-platform.openapi.json` y `kairos-mcp.json` (incluido `result_schemas.search` con `additionalProperties: false`), regenerar `mcp/contract` y declararlo en los CHANGELOG con una nota para la Iniciativa 7. Fuente: CA-29; M-01; R-09.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Los contratos HTTP y MCP declaran `abstain` (petición) y `abstained`/`abstention` (respuesta) como campos opcionales; todo lo existente queda igual y los CHANGELOG avisan a la Iniciativa 7.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 2h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real 0.23h (medido; 0.21h + 0.02h de fix1)
 - **Supervisión**: est. 0.07h (≈25 % IA) · real —
 - **Previsión IA**: 74 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-82
 - **Tipo**: backend
-- **Archivos**: `scripts/export-contracts.py`, `docs/contracts/memory-platform.openapi.json`, `docs/contracts/kairos-mcp.json`, `mcp/contract/kairos-mcp.json`, `mcp/tests/tool_cases.py`, `server/memory_platform/tests/test_contract_additive.py`, `server/memory_platform/tests/test_mcp_contract_copy.py`, `CHANGELOG.md`, `CHANGELOG.es.md`
+- **Archivos**: `scripts/export-contracts.py`, `docs/contracts/memory-platform.openapi.json`, `docs/contracts/kairos-mcp.json`, `mcp/contract/kairos-mcp.json`, `mcp/tests/tool_cases.py`, `server/memory_platform/tests/test_contract_additive.py`, `server/memory_platform/tests/test_mcp_contract_copy.py`, `CHANGELOG.md`, `CHANGELOG.es.md`, `server/memory_platform/mcp.py`, `mcp/tests/test_contract_identity.py`, `mcp/tests/test_tools_t41.py`
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_contract_additive|test_mcp_contract_copy|test_tool_endpoint_parity|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] `abstain`, `abstained` y `abstention` son opcionales en ambos contratos y en `result_schemas.search`; `test_contract_additive.py` pasa
-- [ ] `mcp/contract/kairos-mcp.json` es idéntico al exportado (`test_mcp_contract_copy`) y las 34 herramientas conservan correspondencia con su endpoint
-- [ ] Los CHANGELOG declaran el cambio con una nota para la Iniciativa 7 (R-09: un cliente estricto rechazaría `abstained` si se activa por defecto)
+- [x] `abstain`, `abstained` y `abstention` son opcionales en ambos contratos y en `result_schemas.search`; `test_contract_additive.py` pasa
+- [x] `mcp/contract/kairos-mcp.json` es idéntico al exportado (`test_mcp_contract_copy`) y las 34 herramientas conservan correspondencia con su endpoint
+- [x] Los CHANGELOG declaran el cambio con una nota para la Iniciativa 7 (R-09: un cliente estricto rechazaría `abstained` si se activa por defecto)
 
 **Subtareas**
-- [ ] Regenerar con `scripts/export-contracts.py`
-- [ ] Comprobar el diff aditivo frente a `contracts_base`
-- [ ] Redactar la nota para la Iniciativa 7
-- [ ] `usage-meter start/close` de la tarea
+- [x] Regenerar con `scripts/export-contracts.py`
+- [x] Comprobar el diff aditivo frente a `contracts_base`
+- [x] Redactar la nota para la Iniciativa 7
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 0.21h (medido).
 
-**Notas**: Patrón: `scripts/export-contracts.py`, `tests/contracts_base/`, `tests/test_contract_additive.py`, `tests/test_mcp_contract_copy.py` y `tests/test_tool_endpoint_parity.py`. Contrato MCP solo aditivo (CLAUDE.md).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (23) — notas de T-81 a T-85», T-83).
+
+**Notas** (fix1): archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (25) — notas fix1 de T-81 a T-85»).
+
 
 ### T-84 — Pruebas de abstención y de no regresión por clase
 
 - **Descripción**: Cubrir la clase entera: cada combinación de modelo con/sin umbral, capa semántica sana/`degraded`, con/sin `lexical_match` y `abstain` explícito/por defecto, y que la respuesta sin `abstain` no cambia. Fuente: CA-27, CA-29.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: La abstención queda probada en todas las combinaciones (modelo con o sin umbral, capa semántica sana o degradada, con o sin coincidencia léxica) por servicio y por API, y sin `abstain` la respuesta no cambia.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 2h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real 0.07h (medido)
 - **Supervisión**: est. 0.07h (≈25 % IA) · real —
 - **Previsión IA**: 74 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-83
@@ -2568,25 +2612,27 @@ test-plan: n/a (sin UI)
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_abstention|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
 
 **Criterios de aceptación**
-- [ ] Tabla de combinaciones probada de extremo a extremo (API) y a nivel de servicio
-- [ ] Mutante comprobado: quitar la comprobación de `lexical_match`, de `degraded` o del umbral deja una prueba en rojo
-- [ ] La suite de recuperación existente (`test_retrieval.py`, `test_chunk_search.py`) pasa sin cambios
+- [x] Tabla de combinaciones probada de extremo a extremo (API) y a nivel de servicio
+- [x] Mutante comprobado: quitar la comprobación de `lexical_match`, de `degraded` o del umbral deja una prueba en rojo
+- [x] La suite de recuperación existente (`test_retrieval.py`, `test_chunk_search.py`) pasa sin cambios
 
 **Subtareas**
-- [ ] Tabla de combinaciones
-- [ ] Escribir las pruebas
-- [ ] Aplicar mutantes
-- [ ] `usage-meter start/close` de la tarea
+- [x] Tabla de combinaciones
+- [x] Escribir las pruebas
+- [x] Aplicar mutantes
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 0.07h (medido).
 
-**Notas**: Patrón: `tests/test_retrieval.py` y `tests/test_chunk_search.py`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (23) — notas de T-81 a T-85», T-84).
 
 ### T-85 — Cierre de fase: suite completa y subida del mínimo
 
 - **Descripción**: Ejecuta la suite completa del servidor, anota el recuento `MEMORY_TEST_RESULT` y sube `KAIROS_MIN_TESTS` y `MIN_FLOOR` al número observado (la suite solo crece).  Fuente: Puerta de fase; CA-38 (suite con 0 fallos y 0 omitidos).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: La CI exige ahora al menos 1519 pruebas del servidor (antes 1494); la suite completa pasa con 0 fallos y 0 omitidas.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 1h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real 0.11h (medido; 0.07h + 0.04h de fix1)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 37 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: T-84
@@ -2598,24 +2644,29 @@ test-plan: n/a (sin UI)
   - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
 
 **Criterios de aceptación**
-- [ ] `MEMORY_TEST_RESULT` con 0 fallos, 0 errores, 0 omitidos y `tests` ≥ 764 (≥ el recuento del cierre anterior)
-- [ ] `KAIROS_MIN_TESTS` en `.github/workflows/ci.yml` y `MIN_FLOOR` en `scripts/tests/test_ci_workflow.py` igualan el recuento observado, y la tabla de `docs/operations.md` lo repite
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas`
+- [x] `MEMORY_TEST_RESULT` con 0 fallos, 0 errores, 0 omitidos y `tests` ≥ 764 (≥ el recuento del cierre anterior)
+- [x] `KAIROS_MIN_TESTS` en `.github/workflows/ci.yml` y `MIN_FLOOR` en `scripts/tests/test_ci_workflow.py` igualan el recuento observado, y la tabla de `docs/operations.md` lo repite
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas`
 
 **Subtareas**
-- [ ] Ejecutar la suite completa (primer plano, un solo Docker a la vez) y anotar el recuento
-- [ ] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Ejecutar la suite completa (primer plano, un solo Docker a la vez) y anotar el recuento
+- [x] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 0.07h (medido).
+  - usage-meter fix1 (`reliable-operations/T-85-fix1`): 0.04h (medido).
 
-**Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Cierra la fase: no se abre la revisión adversarial con la suite en rojo.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (23) — notas de T-81 a T-85», T-85).
+
+**Notas** (fix1): archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (25) — notas fix1 de T-81 a T-85»).
+
 
 ### T-86 — Revisión adversarial de la fase (dos lentes)
 
 - **Descripción**: Revisión adversarial del diff de la fase con dos lentes: A (contrato, seguridad, regresiones, alcance declarado) y B (mutantes: cada control nuevo se quita y su prueba debe fallar). Superficie visible para clientes (revisión a 1,0 ×): contrato solo aditivo, respuesta idéntica sin `abstain`, R-09. Cada hallazgo se corrige para la clase entera y se anota con intento y evidencia en `review.md`; cada intento abre y cierra `usage-meter`. Fuente: Lección de la retro de la Iniciativa 2: la revisión es partida propia (0,5 × la implementación; 1,0 × en C-03 y C-05).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: revisión adversarial de la fase 13; la búsqueda nunca se abstiene si falla una capa léxica, avisa de «sin calibrar» también sin aciertos, valida el formato de los umbrales y las variables de abstención ya se pueden fijar en el Compose.
+- **Estado**: completado
 - **Tiempo humano**: est. 14h (base) · real —
-- **Tiempo IA (ejec.)**: est. 1.87h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 1.87h (estimado) · real 1.5h (estimado; dos intentos y una corrección)
 - **Supervisión**: est. 0.47h (≈25 % IA) · real —
 - **Previsión IA**: 515 k in / 45 k out tok · ⚠️ verificar €
 - **Dependencias**: T-85
@@ -2628,67 +2679,70 @@ test-plan: n/a (sin UI)
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
 
 **Criterios de aceptación**
-- [ ] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
-- [ ] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
-- [ ] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
-- [ ] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
+- [x] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
+- [x] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
+- [x] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
+- [x] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
 
 **Subtareas**
-- [ ] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
-- [ ] Lente B: mutantes en memoria sobre cada control nuevo
-- [ ] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
-- [ ] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
+- [x] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
+- [x] Lente B: mutantes en memoria sobre cada control nuevo
+- [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
+- [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
 
-**Notas**: Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (26) — notas de tareas cerradas (fases 1 a 14)», T-86).
 
 ---
 
 ## Fase 14 — Calibración de la abstención y puerta `retrieval-eval` (C-05)
 
-**Estado**: borrador · **Hito**: B · **Estimado**: 33.6h (28.0h base, de ellas 14.0h de revisión adversarial) · **Real**: — · **Coste est.**: 1.680 € · **Tokens est.**: 1120 k
+**Estado**: completado · **Hito**: B · **Estimado**: 33.6h (28.0h base, de ellas 14.0h de revisión adversarial) · **Real**: — · **Coste est.**: 1.680 € · **Tokens est.**: 1120 k
 
 ### T-87 — Conjunto `dataset-v1-negatives` (≥ 20 preguntas sin respuesta) y validación
 
 - **Descripción**: Crear `dataset-v1-negatives.jsonl` (≥ 20 preguntas ES/EN sin respuesta, incluidas cercanas al tema de un recuerdo existente), versionado aparte de `dataset-v1.jsonl`, que no cambia, y validarlo con `check_dataset.py`. Fuente: CA-26; M-01.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: conjunto de 24 preguntas sin respuesta (ES y EN, 12 cercanas a temas existentes) para medir cuándo la búsqueda debe abstenerse; no cambia el comportamiento del producto.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 4h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.53h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.53h (estimado) · real 0.31h (medido)
 - **Supervisión**: est. 0.13h (≈25 % IA) · real —
 - **Previsión IA**: 147 k in / 13 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
 - **Tipo**: test
-- **Archivos**: `server/memory_platform/tests/retrieval_eval/dataset-v1-negatives.jsonl`, `server/memory_platform/tests/retrieval_eval/check_dataset.py`, `server/memory_platform/tests/retrieval_eval/README.md`
+- **Archivos**: `server/memory_platform/tests/retrieval_eval/dataset-v1-negatives.jsonl`, `server/memory_platform/tests/retrieval_eval/check_dataset.py`, `server/memory_platform/tests/retrieval_eval/README.md`, `server/memory_platform/tests/retrieval_eval/test_metrics.py`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "check_dataset|MEMORY_TEST_RESULT"` → la validación del conjunto ampliado pasa y `MEMORY_TEST_RESULT` sin fallos
   - `git diff --stat -- server/memory_platform/tests/retrieval_eval/dataset-v1.jsonl` → sin cambios
 
 **Criterios de aceptación**
-- [ ] Hay ≥ 20 preguntas con `expected: []`, en ES y EN, y al menos 8 cercanas al tema de un recuerdo existente
-- [ ] `dataset-v1.jsonl` (72 preguntas) no cambia y `check_dataset.py` valida ambos ficheros
-- [ ] La procedencia y criterios de redacción quedan en el README de la puerta
+- [x] Hay ≥ 20 preguntas con `expected: []`, en ES y EN, y al menos 8 cercanas al tema de un recuerdo existente
+- [x] `dataset-v1.jsonl` (72 preguntas) no cambia y `check_dataset.py` valida ambos ficheros
+- [x] La procedencia y criterios de redacción quedan en el README de la puerta
 
 **Subtareas**
-- [ ] Redactar las preguntas
-- [ ] Extender `check_dataset.py`
-- [ ] Documentar la procedencia
-- [ ] `usage-meter start/close` de la tarea
+- [x] Redactar las preguntas
+- [x] Extender `check_dataset.py`
+- [x] Documentar la procedencia
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 0.31h (medido).
 
-**Notas**: Patrón: `tests/retrieval_eval/dataset-v1.jsonl` (formato, 0 `expected: []`), `check_dataset.py` y `README.md`.
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (25) — notas fix1 de T-81 a T-85», subsección T-87; JSON de usage-meter en «Mediciones de la fase 14»). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `e0a3257322bf`.
 
 ### T-88 — Métricas de abstención, `thresholds.json` y prueba de rojo en la CI
 
-- **Descripción**: Ampliar `retrieval-eval` con abstención correcta en negativas y abstención falsa en positivas, con umbrales en `thresholds.json` (metas: ≥ 70 % y ≤ 5 %), mientras recall@5 ≥ 0,80 y MRR ≥ 0,60 siguen cumpliéndose; el trabajo de CI las exige y un umbral absurdo lo deja en rojo. Fuente: CA-27, CA-28; M-01; P-05.
-- **Changelog**:
-- **Estado**: borrador
+- **Descripción**: Ampliar `retrieval-eval` con abstención correcta en negativas y abstención falsa en positivas, con umbrales en `thresholds.json` (metas por proveedor: modelo real ≥ 70 % y ≤ 5 %; proveedor simulado de la CI ≥ 50 % y ≤ 5 %, decisión del usuario del 2026-11-18 «12 de 24 en la CI», enmienda de P-05/CA-27), mientras recall@5 ≥ 0,80 y MRR ≥ 0,60 siguen cumpliéndose; el trabajo de CI las exige y un umbral absurdo lo deja en rojo. Fuente: CA-27, CA-28; M-01; P-05.
+- **Changelog**: Interno: la puerta de calidad de búsqueda mide también la abstención (acierta al no responder y no abstiene de más) y la CI falla si no cumple sus metas.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 4h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.53h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.53h (estimado) · real 0.39h (medido)
 - **Supervisión**: est. 0.13h (≈25 % IA) · real —
 - **Previsión IA**: 147 k in / 13 k out tok · ⚠️ verificar €
 - **Dependencias**: T-87, T-82
 - **Tipo**: test
-- **Archivos**: `server/memory_platform/tests/retrieval_eval/run.py`, `server/memory_platform/tests/retrieval_eval/thresholds.json`, `server/memory_platform/tests/retrieval_eval/test_metrics.py`, `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`
+- **Archivos**: `server/memory_platform/tests/retrieval_eval/run.py`, `server/memory_platform/tests/retrieval_eval/thresholds.json`, `server/memory_platform/tests/retrieval_eval/test_metrics.py`, `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `server/memory_platform/tests/retrieval_eval/README.md`, `docs/roadmap/2026-11-15-reliable-operations/spec.md`, `docs/roadmap/2026-11-15-reliable-operations/improvement-plan.md`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build -f server/memory_platform/Dockerfile --target retrieval-eval --progress=plain . 2>&1 | grep -E "abstention|gate"` → métricas de abstención dentro de los umbrales y la puerta `passed`
@@ -2696,56 +2750,60 @@ test-plan: n/a (sin UI)
   - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
 
 **Criterios de aceptación**
-- [ ] Con el umbral del proveedor simulado, la puerta responde `items: []` y `abstained: true` en al menos el porcentaje acordado de las negativas y la abstención falsa en positivas no supera el tope, con recall@5 ≥ 0,80 y MRR ≥ 0,60
-- [ ] El trabajo `retrieval-eval` de la CI exige las métricas de abstención; un umbral absurdo lo deja en rojo en una ejecución de prueba, anotada en `Notas`
-- [ ] Un umbral o subconjunto ausente falla la puerta (`threshold_missing`/`subset_missing`, patrón existente)
+- [x] Con el umbral del proveedor simulado, la puerta responde `items: []` y `abstained: true` en al menos el porcentaje acordado de las negativas y la abstención falsa en positivas no supera el tope, con recall@5 ≥ 0,80 y MRR ≥ 0,60 (enmienda 2026-11-18, decisión del usuario «12 de 24 en la CI»: el porcentaje acordado del simulado es 50 %, 12 de 24; el de un modelo real, 70 %)
+- [x] El trabajo `retrieval-eval` de la CI exige las métricas de abstención; un umbral absurdo lo deja en rojo en una ejecución de prueba, anotada en `Notas`
+- [x] Un umbral o subconjunto ausente falla la puerta (`threshold_missing`/`subset_missing`, patrón existente)
 
 **Subtareas**
-- [ ] Escribir primero las pruebas de métricas en `test_metrics.py` (rojo)
-- [ ] Añadir las métricas a `run.py` y los umbrales
-- [ ] Ejecutar la puerta en verde y con 0,99 en rojo
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir primero las pruebas de métricas en `test_metrics.py` (rojo)
+- [x] Añadir las métricas a `run.py` y los umbrales
+- [x] Ejecutar la puerta en verde y con 0,99 en rojo
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 0.39h (medido).
 
-**Notas**: Patrón: `tests/retrieval_eval/run.py:109-120` (`threshold_missing`/`subset_missing`), `thresholds.json`, `fake_embeddings.py:1-8` (embeddings simulados) y `ci.yml` (trabajo `retrieval-eval`).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (29) — cierre de la fase 14», T-88). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `40973e45bfac`.
 
 ### T-89 — Medición del umbral de `nomic-embed-text` con un Ollama efímero y aislado (P-05)
 
 - **Descripción**: Medir el umbral real con un Ollama efímero (contenedor y volumen propios, puerto distinto, desechados al terminar; nunca el Ollama del host en 11434). Si la descarga del modelo falla, el umbral queda `uncalibrated` y se mide en la Iniciativa 5. Fuente: CA-27 (umbral real); P-05; R-07.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: con el modelo real de embeddings ningún umbral de abstención cumple 70 % correcta y 5 % falsa; queda sin calibrar (`uncalibrated`) y la tabla de medidas está en el manual.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 2.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.33h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.33h (estimado) · real 4.87h (medido; 4.58 + 0.29 del fix1)
 - **Supervisión**: est. 0.08h (≈25 % IA) · real —
 - **Previsión IA**: 92 k in / 8 k out tok · ⚠️ verificar €
 - **Dependencias**: T-88
 - **Tipo**: test
-- **Archivos**: `server/memory_platform/tests/retrieval_eval/measure_abstention.py`, `server/memory_platform/tests/retrieval_eval/thresholds.json`, `docs/configuration.md`
+- **Archivos**: `server/memory_platform/tests/retrieval_eval/measure_abstention.py`, `server/memory_platform/tests/retrieval_eval/thresholds.json`, `docs/configuration.md`, `server/memory_platform/tests/retrieval_eval/run.py`, `server/memory_platform/tests/retrieval_eval/test_metrics.py`, `docs/operations.md`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `python -m memory_platform.tests.retrieval_eval.measure_abstention --ollama-container kairos-ops-ollama-f --port 18434` (desde `server/`) → informe con el umbral por modelo, o `uncalibrated` si falla la descarga; `docker ps -a --filter name=kairos-ops-ollama` y `docker volume ls --filter name=kairos-ops-ollama` → vacíos al terminar
   - `curl -s http://127.0.0.1:11434/api/version` no se ejecuta ni se referencia en el script (`grep -n 11434` → solo para rechazarlo)
 
 **Criterios de aceptación**
-- [ ] El Ollama efímero usa nombre de contenedor y volumen propios, puerto distinto de 11434 y se elimina al terminar, incluso si falla
-- [ ] El resultado es el umbral de `nomic-embed-text` medido sobre el conjunto ampliado o `uncalibrated` con el motivo; en ambos casos queda anotado en `Notas` y en `docs/configuration.md`
-- [ ] Si queda `uncalibrated`, `MEMORY_ABSTAIN_THRESHOLDS` no incluye `nomic-embed-text` y la búsqueda devuelve `abstention: "uncalibrated"`
+- [x] El Ollama efímero usa nombre de contenedor y volumen propios, puerto distinto de 11434 y se elimina al terminar, incluso si falla
+- [x] El resultado es el umbral de `nomic-embed-text` medido sobre el conjunto ampliado o `uncalibrated` con el motivo; en ambos casos queda anotado en `Notas` y en `docs/configuration.md`
+- [x] Si queda `uncalibrated`, `MEMORY_ABSTAIN_THRESHOLDS` no incluye `nomic-embed-text` y la búsqueda devuelve `abstention: "uncalibrated"`
 
 **Subtareas**
-- [ ] Anotar `docker ps`/`volume ls` y confirmar que 11434 no se usa
-- [ ] Escribir el medidor con limpieza garantizada (`try/finally`)
-- [ ] Ejecutarlo (primer plano) y anotar el umbral o el motivo del fallo
-- [ ] Reflejar el valor en `config.py` y `docs/configuration.md`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Anotar `docker ps`/`volume ls` y confirmar que 11434 no se usa
+- [x] Escribir el medidor con limpieza garantizada (`try/finally`)
+- [x] Ejecutarlo (primer plano) y anotar el umbral o el motivo del fallo
+- [x] Reflejar el valor en `config.py` y `docs/configuration.md`
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 4.58h (medido).
 
-**Notas**: Restricción dura: no el Ollama del host. Descarga ≈ 270 MB solo en el contenedor desechable. Tarea de P-05 decidida por el orquestador (delegada por el usuario). Patrón: `tests/ollama_proxy_probe.py` (sondas aisladas de Ollama).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (29) — cierre de la fase 14», T-89). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `35bf4bf5cff9`.
 
 ### T-90 — Pruebas de la puerta de abstención
 
 - **Descripción**: Pruebas unitarias de las métricas de abstención y de la prueba de rojo, para que la puerta no se pueda debilitar sin que falle una prueba. Fuente: CA-28.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: la puerta de abstención ya no se puede debilitar sin que falle una prueba: se comprobaron mutantes de la puerta y del paso de la CI y todos quedan en rojo.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 1h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real 0.07h (medido)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 37 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: T-89
@@ -2757,76 +2815,81 @@ test-plan: n/a (sin UI)
   - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
 
 **Criterios de aceptación**
-- [ ] Mutantes comprobados: quitar la métrica de abstención de `run.py` o del umbral deja `test_metrics.py` o `test_ci_workflow.py` en rojo
-- [ ] El recuento de `test_metrics` sube y `retrieval-eval` sigue fuera de la suite
+- [x] Mutantes comprobados: quitar la métrica de abstención de `run.py` o del umbral deja `test_metrics.py` o `test_ci_workflow.py` en rojo
+- [x] El recuento de `test_metrics` sube y `retrieval-eval` sigue fuera de la suite
 
 **Subtareas**
-- [ ] Escribir pruebas
-- [ ] Aplicar mutantes
-- [ ] `usage-meter start/close` de la tarea
+- [x] Escribir pruebas
+- [x] Aplicar mutantes
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 0.07h (medido).
 
-**Notas**: Patrón: `tests/retrieval_eval/test_metrics.py` (14 pruebas) y `scripts/tests/test_ci_workflow.py:272-326` (mutantes de CI).
+**Notas**: archivadas en `execution-history.md` (sección «Compactación 2026-11-18 (29) — cierre de la fase 14», T-90). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `15ab6321e8c5`.
 
 ### T-91 — Documentar la abstención y avisar a la Iniciativa 7
 
 - **Descripción**: Documentar la abstención (parámetro, variables, umbral por modelo, `uncalibrated`) y dejar la nota para la Iniciativa 7 sobre el cambio visible y la activación futura por defecto. Fuente: CA-29 (documentación); P-04.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: La abstención sigue apagada por defecto y sin umbral para ningún modelo (`uncalibrated`); el manual recoge la medida con el modelo real y los CHANGELOG avisan de lo que cambia al activarla.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 1.5h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.20h (estimado) · real 0.02h (medido)
 - **Supervisión**: est. 0.05h (≈25 % IA) · real —
 - **Previsión IA**: 55 k in / 5 k out tok · ⚠️ verificar €
 - **Dependencias**: T-90
 - **Tipo**: docs
-- **Archivos**: `docs/configuration.md`, `docs/operations.md`, `docs/manual.md`, `CHANGELOG.md`, `CHANGELOG.es.md`
+- **Archivos**: `docs/configuration.md`, `docs/operations.md`, `docs/manual.md`, `CHANGELOG.md`, `CHANGELOG.es.md`, `server/memory_platform/tests/test_abstention_docs.py`, `docs/roadmap/2026-11-15-reliable-operations/improvement-plan.md`
 - **Cubre (tests)**: —
 - **Verificación**: lectura: `docs/configuration.md` lista `MEMORY_ABSTAIN_THRESHOLDS` y `MEMORY_ABSTAIN_DEFAULT` con defaults iguales a `config.py`, y los CHANGELOG llevan la nota para la Iniciativa 7
 
 **Criterios de aceptación**
-- [ ] La nota dice que la abstención sigue apagada por defecto y que activarla cambia lo que ve `custom-agents`
+- [x] La nota dice que la abstención sigue apagada por defecto y que activarla cambia lo que ve `custom-agents`
 
 **Subtareas**
-- [ ] Actualizar manuales y CHANGELOG
-- [ ] `usage-meter start/close` de la tarea
+- [x] Actualizar manuales y CHANGELOG
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 0.02h (medido).
 
-**Notas**: Estilo: CHANGELOG de la Iniciativa 2.
+**Notas**: RED: `test_abstention_docs` no se cumplía sobre el HEAD anterior. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `4d339e9ef248`.
 
 ### T-92 — Cierre de fase: suite completa y subida del mínimo
 
 - **Descripción**: Ejecuta la suite completa del servidor, anota el recuento `MEMORY_TEST_RESULT` y sube `KAIROS_MIN_TESTS` y `MIN_FLOOR` al número observado (la suite solo crece).  Fuente: Puerta de fase; CA-38 (suite con 0 fallos y 0 omitidos).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: la suite del servidor pasa de 1519 a 1553 pruebas, todas en verde y sin omitidas, y la CI exige ese mínimo.
+- **Estado**: completado
+- **Cerrada**: 2026-11-18
 - **Tiempo humano**: est. 1h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real 3.75h (medido)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 37 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: T-91
 - **Tipo**: test
-- **Archivos**: `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `docs/operations.md`, `docs/contracts/kairos-mcp.json`
+- **Archivos**: `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `docs/operations.md`, `docs/contracts/kairos-mcp.json`, `README.md`
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
   - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
 
 **Criterios de aceptación**
-- [ ] `MEMORY_TEST_RESULT` con 0 fallos, 0 errores, 0 omitidos y `tests` ≥ 764 (≥ el recuento del cierre anterior)
-- [ ] `KAIROS_MIN_TESTS` en `.github/workflows/ci.yml` y `MIN_FLOOR` en `scripts/tests/test_ci_workflow.py` igualan el recuento observado, y la tabla de `docs/operations.md` lo repite
-- [ ] `usage-meter start/close` ejecutado; JSON anotado en `Notas`
+- [x] `MEMORY_TEST_RESULT` con 0 fallos, 0 errores, 0 omitidos y `tests` ≥ 764 (≥ el recuento del cierre anterior)
+- [x] `KAIROS_MIN_TESTS` en `.github/workflows/ci.yml` y `MIN_FLOOR` en `scripts/tests/test_ci_workflow.py` igualan el recuento observado, y la tabla de `docs/operations.md` lo repite
+- [x] `usage-meter start/close` ejecutado; JSON anotado en `Notas`
 
 **Subtareas**
-- [ ] Ejecutar la suite completa (primer plano, un solo Docker a la vez) y anotar el recuento
-- [ ] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Ejecutar la suite completa (primer plano, un solo Docker a la vez) y anotar el recuento
+- [x] Subir `KAIROS_MIN_TESTS` y `MIN_FLOOR` (nunca bajar) y la tabla de `docs/operations.md`
+- [x] `usage-meter start/close` de la tarea
+  - usage-meter close: 3.75h (medido).
 
-**Notas**: Patrón: `.github/workflows/ci.yml:17-20` y `scripts/tests/test_ci_workflow.py:290` (`MIN_FLOOR = 764`). Cierra la fase: no se abre la revisión adversarial con la suite en rojo.
+**Notas**: TDD n/a: ejecución de la suite y subida del mínimo, sin código que probar antes. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `bcac544fe305`.
 
 ### T-93 — Revisión adversarial de la fase (dos lentes)
 
 - **Descripción**: Revisión adversarial del diff de la fase con dos lentes: A (contrato, seguridad, regresiones, alcance declarado) y B (mutantes: cada control nuevo se quita y su prueba debe fallar). Cuidado: umbral calibrado con embeddings simulados (R-07), abstención falsa en positivas y ausencia de uso del Ollama del host; revisión a 1,0 ×. Cada hallazgo se corrige para la clase entera y se anota con intento y evidencia en `review.md`; cada intento abre y cierra `usage-meter`. Fuente: Lección de la retro de la Iniciativa 2: la revisión es partida propia (0,5 × la implementación; 1,0 × en C-03 y C-05).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Interno: revisión adversarial de la fase 14; metas de abstención por proveedor por decisión del usuario (simulado 50 %/5 % en la CI, modelos reales 70 %/5 %), y la calibración avisa de errores de medición y de restos sin verificar.
+- **Estado**: completado
 - **Tiempo humano**: est. 14h (base) · real —
-- **Tiempo IA (ejec.)**: est. 1.87h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 1.87h (estimado) · real 0.95h (medido: duración de los revisores, 0.73h; más 0.22h estimadas del cierre)
 - **Supervisión**: est. 0.47h (≈25 % IA) · real —
 - **Previsión IA**: 515 k in / 45 k out tok · ⚠️ verificar €
 - **Dependencias**: T-92
@@ -2839,37 +2902,37 @@ test-plan: n/a (sin UI)
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
 
 **Criterios de aceptación**
-- [ ] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
-- [ ] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
-- [ ] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
-- [ ] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas`
+- [x] Sin hallazgos Critical/Important abiertos al cerrar; los Minor aceptados quedan listados con motivo
+- [x] Cada control nuevo de la fase tiene una prueba que falla al quitarlo (mutante comprobado, no supuesto)
+- [x] La suite completa sigue en verde tras las correcciones y `scope-check.py` sale con 0
+- [x] `usage-meter` abierto y cerrado por intento; los JSON están en `Notas` (excepción: sin usage-meter en la revisión; horas medidas por la duración de los revisores, ver Notas)
 
 **Subtareas**
-- [ ] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
-- [ ] Lente B: mutantes en memoria sobre cada control nuevo
-- [ ] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
-- [ ] Registrar intentos en `review.md` y medir cada uno con `usage-meter`
+- [x] Lente A: leer el diff contra la spec (CA de la fase), `Archivos` y las restricciones duras
+- [x] Lente B: mutantes en memoria sobre cada control nuevo
+- [x] Corregir la clase entera de cada hallazgo y repetir hasta cero abiertos
+- [x] Registrar intentos en `review.md` y medir cada uno con `usage-meter` (medidos por la duración de los revisores, ver Notas)
 
-**Notas**: Los intentos de corrección no suman horas nuevas: el presupuesto de la fase es el de esta tarea (calibra `CALIBRATION.md`).
+**Notas** (2026-11-18): Cerrada en el intento 2. Intento 1: lentes A, B y C; 0 Critical, 2 Important (meta del simulado sin enmienda; meta sin prueba que la fije) y 9 Minor; decisión del usuario sobre A1, «12 de 24 en la CI»; fix1 `819035c`..`3a347f0`. Intento 2: A, B y C en un solo revisor; 10 de 11 gaps corregidos, A6 a medias y 2 Minor nuevos (N1, N2: punteros), corregidos por el orquestador al cerrar. Suite 1553 en verde (`kairos-test:i3p14f`, 0 fallos, errores y omitidos); `scope-check.py --base main` exit 0. Mutantes: la Lente A mató los 6 de `thresholds.json` en el intento 2; B1 con 3000 conjuntos aleatorios, 0 violaciones. usage-meter no se abrió para la revisión: las horas son la duración medida de los revisores (intento 1: 0.40h, tres lentes en paralelo; intento 2: 0.33h) más 0.22h estimadas del cierre. Tablas en `execution-history.md` (compactaciones 27 y 29, con SHA-256); resumen en `review.md`.
 
 ---
 
 ## Fase 15 — Cierre del hito B: desplegar y detectar
 
-**Estado**: borrador · **Hito**: B · **Estimado**: 2.4h (2.0h base, de ellas 0.0h de revisión adversarial) · **Real**: — · **Coste est.**: 120 € · **Tokens est.**: 80 k
+**Estado**: completado · **Hito**: B · **Estimado**: 2.4h (2.0h base, de ellas 0.0h de revisión adversarial) · **Real**: 3.51h · **Coste est.**: 120 € · **Tokens est.**: 80 k
 
 ### T-94 — Comprobaciones de cierre del hito B
 
 - **Descripción**: Comprobar migraciones aditivas, diff aditivo de contratos, ausencia de referencias a `knowledge-graphs-*` y 11434, alcance declarado, `retrieval-eval` y suite. Fuente: CA-38 (parte del hito B).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: `apply` y `--rollback` recrean `memory-probe` y `memory-backup` con los mismos ficheros de Compose con que se crearon (se conserva el override de `rclone`); si no son los conocidos, no los recrean, lo dicen en el informe (`*_recreate_skipped`) e imprimen la orden manual; la sonda envía `abstain: false` en todas sus búsquedas.
+- **Estado**: completado
 - **Tiempo humano**: est. 1h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real 3.41h (medido)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 37 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
 - **Tipo**: test
-- **Archivos**: `docs/roadmap/2026-11-15-reliable-operations/review.md`
+- **Archivos**: `docs/roadmap/2026-11-15-reliable-operations/review.md`, `CHANGELOG.md`, `CHANGELOG.es.md` (fix1 de la revisión del hito: los dos CHANGELOG recogen las fases 9 a 12)
 - **Cubre (tests)**: —
 - **Verificación**:
   - `python3 "$SHAREDKIT/scope-check.py" docs/roadmap/2026-11-15-reliable-operations` → exit 0
@@ -2877,25 +2940,31 @@ test-plan: n/a (sin UI)
   - `docker build -f server/memory_platform/Dockerfile --target retrieval-eval . 2>&1 | grep -i "passed"` → `passed: true`
 
 **Criterios de aceptación**
-- [ ] Suite con 0 fallos y 0 omitidos, `retrieval-eval` en verde, contratos y migraciones aditivos
-- [ ] Ninguna referencia nueva a `knowledge-graphs-*` o 11434 salvo para rechazarlos
-- [ ] Revisión del hito: lectura del diff completo del hito B con hallazgos en `review.md`
+- [x] Suite con 0 fallos y 0 omitidos, `retrieval-eval` en verde, contratos y migraciones aditivos
+- [x] Ninguna referencia nueva a `knowledge-graphs-*` o 11434 salvo para rechazarlos
+- [x] Revisión del hito: lectura del diff completo del hito B con hallazgos en `review.md`
 
 **Subtareas**
-- [ ] Ejecutar `scope-check.py`
-- [ ] Buscar referencias prohibidas
-- [ ] Ejecutar suite y puerta
-- [ ] `usage-meter start/close` de la tarea
+- [x] Ejecutar `scope-check.py`
+- [x] Buscar referencias prohibidas
+- [x] Ejecutar suite y puerta
+- [x] `usage-meter start/close` de la tarea
 
 **Notas**: Patrón: tarea de comprobaciones del hito A.
+
+**Notas de los fix de la revisión del hito**: fix1 (5 hallazgos del intento 1) y fix2 (N1 del intento 2) movidas a [execution-history.md](execution-history.md) («Compactación 2026-11-19 (31) — notas de T-94 (fix1 y fix2) y revisión del hito B, intento 3», SHA-256 `14642a90627a…`). El ítem (24) de Coordinación con `probe_recreate_skipped`/`backup_recreate_skipped` lo añadió el orquestador (commit `02ca457`). Intento 3 (último del bucle): 2 Important y 4 Minor sobre el fix2; el usuario decidió el 2026-11-19 «Haz el fix3» (fix3 fuera del bucle con comprobación dirigida).
+
+**fix3 de la revisión del hito** (R3-1..R3-5, 2026-11-19; medición en `execution-history.md`, «Medición de uso — fix3…», 0.35 h IA (medido)): orden manual con todos los `-f` de la etiqueta en orden, o marcador `-f '<files it was created with>'` sin etiqueta fiable; override de ensayo obligatorio (`*_recreate_skipped`); `oneoff=False` y etiquetas idénticas deduplicadas; control escapado con `printable`. RED contra fix2: R3-1 `['custom.yml'] != [docker-compose.yml, …rclone.yml, custom.yml]` y marcador ausente (3 casos); R3-2 `[[docker compose … up]] != []`; R3-3 `0 != 1`; R3-4 sin RED propio (la consulta ya llevaba `project=`; ahora los 3 dobles lanzan `AssertionError` si falta y `r34` lo exige); R3-5 ESC llega a stderr (`re.Match`). `MEMORY_TEST_RESULT` 0/0/0, 1568 pruebas; mínimo 1562 → 1568 en los 4 sitios; `test_ci_workflow` 48 OK. T-94 sigue abierta (la cierra el orquestador).
+
+**Cierre** (2026-11-19, orquestador): comprobación dirigida del fix3: un detalle más corregido con TDD (en un ensayo, la orden manual de un contenedor creado sin el override del ensayo lo añade al final; RED `[docker-compose.yml] != [docker-compose.yml, compose.override.yml]`); mutante sin el filtro de proyecto muerto (17 fallos); pruebas de despliegue del host OK. Suite `MEMORY_TEST_RESULT` 0/0/0, 1569 pruebas; mínimo 1568 → 1569 en los 4 sitios. `retrieval-eval` `passed: true`; contratos aditivos y las dos copias MCP idénticas; sin migraciones; `knowledge-graphs-*` y 11434 solo para rechazarlos. Hallazgos y veredicto en `review.md` («Hito B …»). Real 3.41 h (medido, ventana de T-94, incluye fix1..fix3 de los subagentes); JSON en `execution-history.md` («Medición de uso — T-94»).
 
 ### T-95 — Pull request del hito B (solo con OK del usuario)
 
 - **Descripción**: Abrir el PR del hito B desde `feat/reliable-operations`. El PR solo se abre con el OK expreso del usuario; la tarea no se marca hecha hasta que el PR exista. Fuente: P-09 (un PR por hito).
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: n/a (PR del hito; los cambios visibles están en las tareas de las fases 9 a 15).
+- **Estado**: completado
 - **Tiempo humano**: est. 1h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real 0.1h (estimado)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 37 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: T-94
@@ -2905,30 +2974,30 @@ test-plan: n/a (sin UI)
 - **Verificación**: `gh pr view --json number,state,headRefName` → PR abierto desde `feat/reliable-operations` (`state: OPEN`)
 
 **Criterios de aceptación**
-- [ ] Hay OK expreso del usuario anotado en `Notas`
-- [ ] El PR enlaza el ledger y el criterio de cierre 3 con su evidencia
+- [x] Hay OK expreso del usuario anotado en `Notas`
+- [x] El PR enlaza el ledger y el criterio de cierre 3 con su evidencia
 
 **Subtareas**
-- [ ] Pedir el OK al usuario
-- [ ] Abrir el PR
-- [ ] Anotar el número en `Notas`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Pedir el OK al usuario
+- [x] Abrir el PR
+- [x] Anotar el número en `Notas`
+- [x] `usage-meter start/close` de la tarea (n/a: sin marcador, real estimado; ver Notas)
 
-**Notas**: Atribución de commits y PR: la del recordatorio del sistema. No se hace merge.
+**Notas**: Atribución de commits y PR: la del recordatorio del sistema. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `c5438e938e31`.
 
 ---
 
 ## Fase 16 — Cierre de la iniciativa: ensayo, CHANGELOG y versión 0.4.1
 
-**Estado**: borrador · **Hito**: B · **Estimado**: 4.8h (4.0h base, de ellas 0.0h de revisión adversarial) · **Real**: — · **Coste est.**: 240 € · **Tokens est.**: 160 k
+**Estado**: completado · **Hito**: B · **Estimado**: 4.8h (4.0h base, de ellas 0.0h de revisión adversarial) · **Real**: 0.84h · **Coste est.**: 240 € · **Tokens est.**: 160 k
 
 ### T-96 — Ensayo aislado de cierre (CA-37): restauración, caída de base y sonda con worker parado
 
 - **Descripción**: Ejecutar en un único proyecto Compose aislado el ensayo completo: runbook de restauración (CA-07), parada y arranque de `memory-postgres` con trabajos en cola y sonda con `memory-worker` parado (CA-31). Deja la evidencia en el ledger. Fuente: CA-37, CA-07, CA-31; criterios de cierre 1, 2 y 3.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: n/a (ensayo de verificación; sin cambio visible).
+- **Estado**: completado
 - **Tiempo humano**: est. 2h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.27h (estimado) · real 0.14h (medido)
 - **Supervisión**: est. 0.07h (≈25 % IA) · real —
 - **Previsión IA**: 74 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
@@ -2940,55 +3009,55 @@ test-plan: n/a (sin UI)
   - `docker ps --filter name=knowledge-graphs` y `docker volume ls --filter name=knowledge-graphs` → idénticos antes y después
 
 **Criterios de aceptación**
-- [ ] Al parar y arrancar `memory-postgres` con trabajos en cola, `memory-worker` no se reinicia por error propio, la cola se vacía y ningún trabajo queda `failed` por esa caída
-- [ ] El mismo ensayo ejecuta CA-07 y CA-31 y deja la salida en `Notas`
-- [ ] Proyecto aislado retirado; nada `knowledge-graphs-*` ni Ollama del host
+- [x] Al parar y arrancar `memory-postgres` con trabajos en cola, `memory-worker` no se reinicia por error propio, la cola se vacía y ningún trabajo queda `failed` por esa caída
+- [x] El mismo ensayo ejecuta CA-07 y CA-31 y deja la salida en `Notas`
+- [x] Proyecto aislado retirado; nada `knowledge-graphs-*` ni Ollama del host
 
 **Subtareas**
-- [ ] Anotar recursos de la instalación antes
-- [ ] Ejecutar el ensayo completo (primer plano, de uno en uno)
-- [ ] Retirar el proyecto y comparar
-- [ ] `usage-meter start/close` de la tarea
+- [x] Anotar recursos de la instalación antes
+- [x] Ejecutar el ensayo completo (primer plano, de uno en uno)
+- [x] Retirar el proyecto y comparar
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: etapas `a`, `rollback` y `probe` del script de las fases 8, 10 y 12.
+**Notas**: TDD n/a: `--stage all` ya encadena las etapas `a`, `rollback` y `probe` en un proyecto; la tarea es ejecutarlo, sin cambio de código. `python scripts/rehearse-reliable-operations.py --project-name kairos-ops-z --embed-stub --stage all` → exit 0, `status: rehearsal_ok`, `cleanup: complete`, 20 pasos. CA-07: `restore` = `restored_and_content_verified` (26 tablas). CA-37: `worker_survived_db_restart` = `restarts_before 0`, `restarts_after 0`, `same_start true`, `pending_at_stop 246`, `jobs {succeeded: 301}`, `failed 0`, `down_seconds 30`. CA-31: `probe_worker_stopped` = `probe_failed`, `stage index`, `code timeout`, `exit 1`, `kairos_probe_success 0`, 29.5 s ≤ 30 s, `retired true`; `probe_healthy` = `probe_ok` (2.8 s) y `probe_recovered` = `probe_ok`. Listados de `docker ps -a`, `docker volume ls -q` y `docker network ls` filtrados por `knowledge-graphs` antes y después: idénticos (15, 7 y 6 líneas, `cmp` sin diferencias); `kairos-ops-z` sin contenedores, volúmenes ni redes; Ollama del host no usado. Medición usage-meter en `execution-history.md` («T-96 · usage-meter», 0.14h medido).
 
 ### T-97 — Versión 0.4.1 de servidor, MCP y cliente y CHANGELOG
 
 - **Descripción**: Subir `server/VERSION`, `mcp/VERSION` y `client/package.json` a 0.4.1 y pasar las entradas «sin publicar» de los CHANGELOG a la sección 0.4.1 (la 0.5.0 sigue reservada para retirar el MCP interno). Fuente: CA-38; P-10.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: Servidor, kairos-mcp y cliente pasan a la versión 0.4.1 (sin publicar); las entradas de los dos hitos de esta iniciativa quedan en la sección 0.4.1 de los CHANGELOG, con la nota para la Iniciativa 7.
+- **Estado**: completado
 - **Tiempo humano**: est. 1h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real 0.1h (medido)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 37 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: T-96
 - **Tipo**: docs
-- **Archivos**: `server/VERSION`, `mcp/VERSION`, `client/package.json`, `client/package-lock.json`, `server/memory_platform/tests/test_versions.py`, `CHANGELOG.md`, `CHANGELOG.es.md`, `server/memory_platform/app.py`
+- **Archivos**: `server/VERSION`, `mcp/VERSION`, `client/package.json`, `client/package-lock.json`, `server/memory_platform/tests/test_versions.py`, `CHANGELOG.md`, `CHANGELOG.es.md`, `server/memory_platform/app.py`, `client/lib/config.mjs`, `mcp/tests/test_health.py`, `mcp/README.md`, `client/README.md`, `README.md`, `docs/install.md`, `docs/integration.md`, `docs/release-cli.md`, `docs/code-analysis.md`, `docs/operations.md`, `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py` · `client/tests/lifecycle.test.mjs` (revisión de la fase 16: la prueba de actualización cubre también desde 0.4.0)
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_versions|MEMORY_TEST_RESULT"` → pruebas nombradas en `ok` y `MEMORY_TEST_RESULT` con 0 fallos, errores y omitidos
   - `cd client && npm test` → 0 fallos
 
 **Criterios de aceptación**
-- [ ] Las tres versiones valen 0.4.1 y `test_versions` pasa (comprueba que los CHANGELOG nombran la versión)
-- [ ] Ambos CHANGELOG tienen la sección 0.4.1 con las entradas de los dos hitos y la nota para la Iniciativa 7
-- [ ] Nada se publica
+- [x] Las tres versiones valen 0.4.1 y `test_versions` pasa (comprueba que los CHANGELOG nombran la versión)
+- [x] Ambos CHANGELOG tienen la sección 0.4.1 con las entradas de los dos hitos y la nota para la Iniciativa 7
+- [x] Nada se publica
 
 **Subtareas**
-- [ ] Subir las tres versiones
-- [ ] Actualizar los CHANGELOG
-- [ ] Ejecutar la suite y `npm test`
-- [ ] `usage-meter start/close` de la tarea
+- [x] Subir las tres versiones
+- [x] Actualizar los CHANGELOG
+- [x] Ejecutar la suite y `npm test`
+- [x] `usage-meter start/close` de la tarea
 
-**Notas**: Patrón: `tests/test_versions.py` y el cierre de la Iniciativa 2 (versión 0.4.0).
+**Notas**: RED: `ComponentVersionTests` (`test_versions.py`: `EXPECTED` 0.4.1 y la nueva `test_the_changelogs_close_the_release_section_with_both_milestones`) falló con `AssertionError: 0 != 1` (sin sección `## [0.4.1] - 2026-11-19`) y con 0.4.0 en los tres sitios · 2026-11-19. GREEN: `server/VERSION`, `mcp/VERSION`, `client/package.json` y `VERSION` de `client/lib/config.mjs` en 0.4.1 (`COMPATIBLE_VERSIONS` suma `'0.4.0'`); `mcp/tests/test_health.py` a 0.4.1. CHANGELOG: sección `## [0.4.1] - 2026-11-19` bajo una `[Unreleased]`/`[Sin publicar]` vacía; no había sección 0.4.0 (todo estaba sin publicar), así que pasan a ella todas las entradas, con los hitos A y B fechados y la nota para la Iniciativa 7; 0.5.0 sigue reservada. Sin `client/package-lock.json` (no existe en el repo) y `app.py` sin literal de versión: sin cambio. Rutas de tarball y runtime `0.4.1` y versión citada en `client/README.md`, `README.md`, `mcp/README.md` y `docs/` (`install`, `integration`, `release-cli`, `code-analysis`); las menciones «desde la 0.4.0» del MCP interno se dejan. `cd client && npm test` → `tests 100 · pass 100 · fail 0`. Suite: `MEMORY_TEST_RESULT` `tests: 1570`, 0 fallos, 0 errores, 0 omitidos, `passed: true`; `test_versions` (8) en `ok`. Mínimo 1569 → 1570 en `ci.yml`, `MIN_FLOOR`, `docs/operations.md` y `README.md:252`; `python -m unittest scripts.tests.test_ci_workflow` → 48 pruebas OK. Nada publicado (sin tags, releases ni `npm publish`). Medición usage-meter en `execution-history.md` («T-97 · usage-meter», 0.1h medido).
 
 ### T-98 — Comprobaciones finales (CA-38), manuales y estado del ledger
 
 - **Descripción**: Comprobar migraciones aditivas, diff aditivo de ambos contratos frente a `contracts_base`, ausencia de referencias a `knowledge-graphs-*` y 11434, suite con 0 fallos y 0 omitidos, `retrieval-eval` en verde y manuales actualizados; marcar el plan y el ledger como completados y actualizar el índice. Fuente: CA-38; todos los CA.
-- **Changelog**:
-- **Estado**: borrador
+- **Changelog**: `docs/architecture.md` describe las copias verificables, el worker que sobrevive a la base, el despliegue reversible y la detección (sonda, antigüedad de la cola y `kairos doctor`); `docs/operations.md` explica cómo activar la abstención.
+- **Estado**: completado
 - **Tiempo humano**: est. 1h (base) · real —
-- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real —
+- **Tiempo IA (ejec.)**: est. 0.13h (estimado) · real 0.6h (estimado)
 - **Supervisión**: est. 0.03h (≈25 % IA) · real —
 - **Previsión IA**: 37 k in / 3 k out tok · ⚠️ verificar €
 - **Dependencias**: T-97
@@ -3001,17 +3070,19 @@ test-plan: n/a (sin UI)
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
 
 **Criterios de aceptación**
-- [ ] `docs/architecture.md`, `docs/operations.md`, `docs/configuration.md` y los CHANGELOG reflejan lo implementado
-- [ ] Todos los CA de la spec tienen evidencia en `Notas` de su tarea
-- [ ] La spec pasa a `implementada` y el índice del roadmap refleja el cierre
+- [x] `docs/architecture.md`, `docs/operations.md`, `docs/configuration.md` y los CHANGELOG reflejan lo implementado
+- [x] Todos los CA de la spec tienen evidencia en `Notas` de su tarea
+- [x] La spec pasa a `implementada` y el índice del roadmap refleja el cierre
 
 **Subtareas**
-- [ ] Repasar los 38 CA contra las evidencias
-- [ ] Actualizar manuales, spec e índice
-- [ ] Ejecutar las comprobaciones finales
-- [ ] `usage-meter start/close` de la tarea
+- [x] Repasar los 38 CA contra las evidencias
+- [x] Actualizar manuales, spec e índice
+- [x] Ejecutar las comprobaciones finales
+- [x] `usage-meter start/close` de la tarea (n/a: sin marcador; real estimado, ver Notas)
 
 **Notas**: Patrón: cierre de la Iniciativa 2 (`docs/roadmap/README.md`, spec `implementada`).
+
+**Cierre** (2026-11-19, orquestador): TDD n/a (prosa, estado y verificación; los Minor de la revisión de la fase llevan su prueba o RED en `review.md`). Un repaso de solo lectura de los 38 CA contra sus evidencias da 34 directos. Hay 4 con matiz, anotados en la spec: CA-08 (la imagen, por construcción), CA-21 (cota enmendada), CA-27 (modelos reales diferidos a la Iniciativa 5, también en R-07) y CA-28 (en local; la CI del PR #5 no arrancó por facturación). Manuales: `docs/architecture.md` gana la sección «Operación fiable» y 3 filas de componentes; `docs/operations.md` explica cómo activar la abstención; `docs/configuration.md` ya lo cubría. Spec `implementada` (38 CA marcados), plan y ledger `completado`, índice `docs/roadmap/README.md` actualizado. Suite `MEMORY_TEST_RESULT` {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1570}; `npm test` 101/101; `ledger-lint` y `scope-check --base main` exit 0. Sin marcador de usage-meter: el orquestador hizo T-98 dentro de la sesión y el real es una estimación.
 
 ---
 
@@ -3022,67 +3093,20 @@ test-plan: n/a (sin UI)
 - 2026-11-16 · «Revisión de dos lentes — intento 1: Fase 4 (T-21..T-28) (T-21, T-22, T-23, T-24, T-25, T-26, T-27, T-28)» → [execution-history.md](execution-history.md) · SHA-256 `7f213e9959ade269b413081593ec5f19474f05f2ecabcc48ad5e4b2111380d2e`
 - 2026-11-16 · «Revisión de dos lentes — intento 1: Fase 5 (T-30..T-33) (T-30, T-31, T-32, T-33)» → [execution-history.md](execution-history.md) · SHA-256 `71140bcb0171ab5a63e75d39bd2a425b2099715951736841104ad8d7ca9fa6c7`
 - 2026-11-17 · «Revisión de dos lentes — intento 1: Fase 7 (T-44..T-48) (T-44, T-45, T-46, T-47, T-48)» → [execution-history.md](execution-history.md) · SHA-256 `fc5c46f1983e5eb56bc5fcc773e4fe46cba80cea9e6b9d6f58cbe4158cefbd03`
+- 2026-11-18 · 15 secciones «Revisión de dos lentes» de las fases 6, 7, 9, 10 y 11 (intentos 1 a 5) → [execution-history.md](execution-history.md) («Compactación 2026-11-18 (30) — resúmenes de revisión de las fases 6 a 11»), cada una con su SHA-256
+- 2026-11-19 · «Revisión de dos lentes — intento 1: Fase 13: abstención (señal, parámetro y contratos) (T-81, T-82, T-83, T-84, T-85)» → [execution-history.md](execution-history.md) · SHA-256 `995696a463218a6c20e6f754f2f8ebbd15d04f45d96c0be07080602514b35e8e`
+- 2026-11-19 · «Revisión de dos lentes — intento 1: Fase 14: calibración de la abstención y puerta retrieval-eval (T-87, T-88, T-89, T-90, T-91, T-92)» → [execution-history.md](execution-history.md) · SHA-256 `19cc42be8b6ab3ce701aae7dd58805bb6198fb6fde8928e7201c4490d9330671`
 
-## Revisión de dos lentes — intento 1: Fase 6 (T-35..T-42) (T-35, T-36, T-37, T-38, T-39, T-40, T-41, T-42)
+## Revisión de dos lentes — intento 1: Fase 12: cola atascada, servicio de sonda y kairos doctor (T-74, T-75, T-76, T-77, T-78, T-79)
 
-Lentes: A+B+C+D (C por `ci.yml`, `Dockerfile`, `test_auth_cache.py`, copias cifradas y `deploy-memory.py`; D por `backup.py`/`admin.py`). Diff `99079d8..3264049`. `scope-check.py --base 99079d8` exit 0. Veredicto A: todos los criterios de T-35 a T-42 ✓. 3 Important (B+C, D, B) y 14 Minor. Decisión del orquestador: fix1 corrige los 3 Important y los Minor n.º 4-14 de la tabla; n.º 15-17 quedan como deuda.
+Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (19) — revisión de la fase 12, intento 1»). Resumen: lentes A, B y C+D; 0 Critical, 0 Important, 7 Minor; la fase cierra con fix1.
 
-| # | Grado | Gap | Tarea | Corrección | Evidencia |
-|---|---|---|---|---|---|
-| 1 | Important | Un SIGTERM o un SIGKILL durante el hash o el cifrado deja `.kairos-partial-*/dump`, el volcado COMPLETO en claro, para siempre en `memory-backups`: el manejador solo cubre `pg_dump`, python es PID 1 sin `init` y nada lo barre (`prune` lo fija como `ignored`) | T-36, T-37, T-38 | corregido (fix1, e6bbc3f) | Lente B n.º 1, Lente C n.º 1 (CWE-459/312); `backup.py:170-196`, `test_backup_prune.py:72-79`, `docker-compose.yml:196-204` |
-| 2 | Important | Las huellas por tabla cargan cada tabla entera en RAM (`fetchall`, JSON y `join`) y ahora corren en cada `backup` y en cada despliegue: con 10-50 mil filas de embeddings son 2-9 GB en un VPS de 2-4 GB sin `mem_limit` | T-35, T-39 | corregido (fix1, e6bbc3f) | Lente D n.º 1 y 5; `backup.py:85-87,176`, `admin.py:451` |
-| 3 | Important | `content_sha256` se registra y nunca se compara: una copia cifrada, una vez descifrada, no se puede verificar contra su manifiesto (`X.dump` busca `X.dump.json`; el runbook falla) | T-36, T-39 | corregido (fix1, e6bbc3f) | Lente B n.º 2; `backup.py:4-5,274,295`, `admin.py:441-446`, `operations.md:174` |
-| 4 | Minor | Ningún cambio visible de la Fase 6 está en la coordinación con la Iniciativa 7 | T-42 | corregido (orquestador, 155dec0) | Lente A n.º 1; `improvement-plan.md:246` |
-| 5 | Minor | El efímero se llama `kairos-verify-<marca>` sin el proyecto, contra el criterio de T-39 y CA-05 | T-39 | corregido (fix1, 6372ca0) | Lente A n.º 2; `deploy-memory.py:323` |
-| 6 | Minor | El Changelog de T-39 promete restauración en todo despliegue (es opcional en la instalación y `integrity_only` con copia cifrada) | T-39 | corregido (fix1, 6372ca0) | Lente A n.º 3 |
-| 7 | Minor | `MEMORY_BACKUP_REQUIRE_ENCRYPTION` inválido da traza y no un código estable | T-36 | corregido (fix1, e6bbc3f) | Lente B n.º 3, Lente A (fuera de lente); `admin.py:411`, `config.py:304` |
-| 8 | Minor | Ni la copia ni el directorio se sincronizan con `fsync` antes del rename | T-35 | corregido (fix1, e6bbc3f) | Lente B n.º 4; `backup.py:178-194` |
-| 9 | Minor | Dos `--prune` concurrentes: `FileNotFoundError` cuenta como fallo y sale 1 | T-37 | corregido (fix1, e6bbc3f) | Lente B n.º 5; `backup.py:243-252` |
-| 10 | Minor | La limpieza del efímero puede declararse `incomplete` en falso si la red nunca se creó | T-39 | corregido (fix1, 6372ca0) | Lente B n.º 6; `deploy-memory.py:304,359` |
-| 11 | Minor | El manifiesto no tiene MAC ni firma: detecta corrupción, no manipulación; no está declarado | T-35 | corregido (fix1, 91ff043) | Lente C n.º 2 (CWE-345) |
-| 12 | Minor | El PostgreSQL efímero usa `trust` mientras contiene la restauración en claro; falta comprobar `--cap-drop`/`no-new-privileges` | T-39 | corregido (fix1, 6372ca0) | Lente C n.º 3 (CWE-1188), Lente B (fuera de lente); `deploy-memory.py:343` |
-| 13 | Minor | El efímero restaura con `maintenance_work_mem` 64 MB (HNSW lento, riesgo de agotar el plazo) y la copia ocupa 2× en `partial` | T-39 | corregido (fix1, 6372ca0) | Lente D n.º 3; `deploy-memory.py:335-347` |
-| 14 | Minor | `prune` recalcula el sha256 de todas las candidatas, también las que va a borrar; `restore-check --from-manifest` repite el hash de `verify-backup` | T-37, T-39 | parcial: `prune` corregido (fix1); el hash repetido de `restore-check` rebatido (ver intento 2, n.º 10) | Lente D n.º 4 y 5; `backup.py:230,297` |
-| 15 | Minor | El snapshot y el xmin se retienen durante huellas más volcado (bloat de `jobs`) | T-35 | deuda aceptada (acotado por la copia; se mide en el ensayo del hito A) | Lente D n.º 2 |
-| 16 | Minor | `age=1.2.1-1+b5` fijado por apt sobre trixie rompe la build cuando el espejo retire el paquete | T-36 | deuda → Iniciativa 9 (fijar por checksum del binario) | Lente A (fuera de lente) |
-| 17 | Minor | `content_manifest` carga todos los `body` de `documents` en RAM | — | deuda heredada → Iniciativa 9 | Lente D (heredado) |
 
-## Revisión de dos lentes — intento 2: Fase 6 tras fix1 (T-35, T-36, T-37, T-39)
+## Revisión de dos lentes — intento 2: Fase 13: abstención (fix1) (T-81, T-82, T-83, T-84, T-85)
 
-Lentes: A+B+C+D (re-evalúan lo corregido y lo que introduce el fix). Diff `155dec0..4b3782f`. Veredicto: n.º 1-13 del intento 1 cerrados (C: sin hallazgos); n.º 14 a medias (el hash repetido de `restore-check` queda rebatido con justificación en `operations.md`); n.º 4 hecho por el orquestador en 155dec0. 3 Important nuevos y 7 Minor. Decisión del orquestador: fix2 (último intento) corrige todo salvo el n.º 10.
+Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (24) — revisión de la fase 13, intento 2»). Resumen: lentes A, B y C; 7 gaps del intento 1 corregidos; 0 Critical, 0 Important y 1 Minor, corregido por el orquestador; la fase cierra.
 
-| # | Grado | Gap | Tarea | Corrección | Evidencia |
-|---|---|---|---|---|---|
-| 1 | Important | Las huellas por tramos releen la tabla entera en cada tramo: O(S²/B) lecturas (4096 filas con presupuesto pequeño = 65 lecturas completas; 1 GB de embeddings ≈ 27 pasadas, horas) y agotan `--backup-timeout` en `backup` y en `restore-check`, con el snapshot retenido (invalida el supuesto de la deuda n.º 15 del intento 1) | T-35, T-39 | corregido (fix2, 80a9a36) | Lente B n.º 1, Lente D n.º 1; `backup.py:127-147` |
-| 2 | Important | El barrido de parciales puede borrar el parcial de una copia VIVA: la actividad se mide por mtime y el parcial se crea antes de las huellas, que no escriben en él durante más de 1 h | T-37 | corregido (fix2, 80a9a36) | Lente B n.º 2 (reproducido), Lente C (fuera de lente); `backup.py:231-254,340,346` |
-| 3 | Important | La única evidencia real de `--verify-backup` (T-40) es anterior a fix1, que cambia el arranque del efímero (`--user postgres`, `--cap-drop ALL`, contraseña, DSN con `printf`); solo hay dobles | T-39, T-40 | corregido (fix2, 6a0a08b) | Lente A N1; `deploy-memory.py:351-363` |
-| 4 | Minor | El Changelog de T-36 describe solo el delta de fix1 y dice que «el volcado cifrado ya no toca el disco» (es el claro el que no lo toca) | T-36 | corregido (fix2, 80a9a36) | Lente A N2 |
-| 5 | Minor | El total 1145 no tiene salida `MEMORY_TEST_RESULT` pegada; la Verificación de T-42 sigue en 1122 | T-42, T-43 | corregido (fix2, ec6cd16) | Lente A N3 |
-| 6 | Minor | Estados de la tabla del intento 1 desajustados (n.º 4 «pendiente» ya hecho; n.º 14 «corregido» a medias) | T-43 | corregido por el orquestador en este registro | Lente A N4 |
-| 7 | Minor | El historial de 1145 rompe una frase del comentario de `ci.yml` y queda fuera de la lista en `MIN_FLOOR` | T-42 | corregido (fix2, ec6cd16) | Lente A N5; `ci.yml:16-17`, `test_ci_workflow.py:290` |
-| 8 | Minor | `stat()` de una candidata a borrar sin capturar `FileNotFoundError`: dos `--prune` concurrentes vuelven a salir con «Administration failed» y sin informe | T-37 | corregido (fix2, 80a9a36) | Lente B n.º 3 (reproducido); `backup.py:434` |
-| 9 | Minor | Un fallo de `age` a media copia se informa como fallo de `pg_dump` (EPIPE) y pierde `backup_encryption_failed`; la prueba no lo ve porque su `age` falso lee toda la entrada | T-36 | corregido (fix2, 80a9a36) | Lente B n.º 4 (reproducido); `backup.py:317-321`, `test_backup_encryption.py:186` |
-| 10 | Minor | `restore-check --from-manifest` vuelve a hashear la copia que `verify-backup` acaba de verificar | T-39 | descartado (rebatido): corre en otro contenedor y más tarde; justificado en `operations.md` y Notas de T-39 | Lente D n.º 2, Lente A n.º 14 |
-| 11 | Minor | El nombre del efímero (hostname) puede pasar de 63 caracteres con proyectos de más de 33 y romper la resolución | T-39 | corregido (fix2, 6a0a08b) | Lente B n.º 5; `deploy-memory.py:332,363` |
 
-## Revisión de dos lentes — intento 3: Fase 6 tras fix2 (T-35, T-36, T-37, T-39, T-40, T-42)
+## Revisión de dos lentes — intento 2: Fase 14: calibración de la abstención (fix1) (T-87, T-88, T-89, T-90, T-91, T-92)
 
-Lentes: A+B+D (re-evalúan lo corregido; C sin hallazgos en el intento 2). Diff `cdf79c7..1b0f736`. Veredicto: n.º 1-5, 7-9 y 11 del intento 2 cerrados (n.º 4 en parte, ver n.º 1); ensayo T-40 repetido con Docker real tras fix1/fix2 (`verified` en 38,65 s, aborto `backup_restore_mismatch`, `knowledge-graphs-*` idéntico). Sin Critical ni Important: **fase cerrada en el intento 3 de 3**. Suite 1154, 0 fallos.
-
-| # | Grado | Gap | Tarea | Corrección | Evidencia |
-|---|---|---|---|---|---|
-| 1 | Minor | El Changelog de T-36 perdió `verify-backup --manifest` / `restore-check --from-manifest <m>` y `backup_config_invalid` | T-36 | corregido en el cierre (T-43) | Lente A n.º 1; `tasks.md` T-36 |
-| 2 | Minor | Resto de la carrera de dos `--prune`: una copia que se está verificando para conservarla y que otro proceso borra deja escapar `FileNotFoundError` (`backup_prune_failed` falso) | T-37 | deuda → T-46 (servicio `memory-backup` programado, donde la concurrencia es real) | Lente B n.º 1 (reproducido); `backup.py:447-452,527-530` |
-| 3 | Minor | La recodificación por fila en Python domina el coste de las huellas (~2-15 MB/s según CPU): con 5 GB de embeddings en un vCPU lento se acerca a `--backup-timeout` | T-35, T-39 | deuda → T-50 (medir en el ensayo del hito A; si no cabe, huella por fila en el servidor) | Lente D n.º 1; `backup.py:96-97,119` |
-
-## Revisión de dos lentes — intento 2: Fase 7 tras fix1 (T-44, T-45, T-46, T-47, T-48)
-
-Lentes: A+B+C+D (A, B y C re-evalúan lo corregido; D aplica por primera vez: `sleep` acotado en `rehearse-restore.py:196`). Diff `1762a96..15b9a03`. Veredicto: n.º 1-9, 11 y 12 del intento 1 cerrados en las cuatro lentes; n.º 10 y 13 sin reabrir. Lente A: todos los criterios de T-44 a T-48 ✓ salvo T-48.3 (deuda aceptada, n.º 13), mínimos 1195 alineados en los cuatro sitios, Coordinación con los ítems (14) y (15). Lente D: sin hallazgos. Sin Critical ni Important: **fase cerrada en el intento 2 de 3**. Suite 1195, 0 fallos. El filtro `name=^x$` de `docker volume ls` y `docker network ls` respeta las anclas (comprobado por el orquestador con `bridge` y un volumen existente), así que `remaining()` del ensayo sí detecta restos.
-
-| # | Grado | Gap | Tarea | Corrección | Evidencia |
-|---|---|---|---|---|---|
-| 1 | Minor | Un fallo de la validación de arranque de `backup-cycle` (sin destinatarios, fichero ilegible, destino mal escrito) sale sin `record_failure`: con `restart: unless-stopped` el `.prom` se queda en 1 indefinidamente, contra `operations.md:198` | T-45 | deuda → T-50 | Lente B n.º 1; `admin.py:367-382` |
-| 2 | Minor | Un ciclo que falla en la retención local (`backup_prune_failed`) no deja `backup_cycle_failed` ni `log_event` en `--loop` | T-44, T-45 | deuda → T-50 | Lente B n.º 2, Lente A (fuera de lente); `offsite.py:379-384,398-400` |
-| 3 | Minor | Resto de la carrera del n.º 12: si el otro `--prune` borra copia y manifiesto antes de `read_manifest`, `backup_manifest_missing` sale como `skipped` y no como desaparecida (solo afecta al informe) | T-46 | deuda → T-50 | Lente B n.º 3; `backup.py:449-455,531-533` |
-| 4 | Minor | Ventana entre comprobar y subir: cabecera y sha256 se comprueban por ruta y `put` reabre la ruta siguiendo enlaces; un escritor con privilegios en `memory-backups` podría cambiar la copia por un enlace a un volcado en claro (la verificación posterior no sube el manifiesto, pero el fichero queda en el destino) | T-44 | deuda → T-50 (comprobar y subir desde un mismo descriptor con `O_NOFOLLOW`) | Lente C n.º 1 (CWE-367); `offsite.py:224-227,264-272` |
-| 5 | Minor | La introducción del runbook dice «sin red» para los pasos que ven el volcado en claro; el paso 6 usa una red interna | T-47 | deuda → T-50 | Lente A (fuera de lente); `operations.md` |
+Archivada en `execution-history.md` (sección «Compactación 2026-11-18 (29) — cierre de la fase 14»). Resumen: lentes A, B y C; 10 de 11 gaps del intento 1 corregidos; 0 Critical, 0 Important y 2 Minor (punteros), corregidos por el orquestador; la fase cierra.

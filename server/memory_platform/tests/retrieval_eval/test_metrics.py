@@ -7,9 +7,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from memory_platform.config import Settings
 from memory_platform.tests.retrieval_eval.fake_embeddings import vectorize
-from memory_platform.tests.retrieval_eval.run import (HERE, STRUCTURAL_KEYS, _measure, aggregate, check_dsn, connect_dsn, evaluate_gate, load_dataset,
-                                                      mrr, network_observation, recall_at_k, run)
+from memory_platform.tests.retrieval_eval.run import (FAKE_LABEL, HERE, STRUCTURAL_KEYS, _measure, _measure_abstention, abstention_threshold, aggregate, check_dsn, connect_dsn,
+                                                      evaluate_abstention, evaluate_gate, load_dataset, load_negatives, mrr, network_observation,
+                                                      pick_threshold, recall_at_k, run, CachedQueries, make_provider)
 
 
 class MetricTests(unittest.TestCase):
@@ -124,15 +126,267 @@ class MetricTests(unittest.TestCase):
 
     def test_determinism_flag_compares_the_structural_keys(self):
         report = {key: key for key in STRUCTURAL_KEYS}
-        report.update({'layers': {'fused': {'overall': {'recall@5': 1, 'mrr': 1}, 'subsets': {}}}, 'dataset_sha256': 'x'})
+        report.update({'layers': {'fused': {'overall': {'recall@5': 1, 'mrr': 1}, 'subsets': {}}}, 'dataset_sha256': 'x', 'embedding_provider': FAKE_LABEL})
         changed = dict(report, query_backends='different')
         module = 'memory_platform.tests.retrieval_eval.run.'
-        with mock.patch(module + 'build_report', side_effect=[report, changed]), mock.patch(module + 'evaluate_gate', return_value=[]):
+        with mock.patch(module + 'build_report', side_effect=[report, changed]), mock.patch(module + 'evaluate_gate', return_value=[]), mock.patch(module + 'evaluate_abstention', return_value=[]):
             result = run(dataset='unused', dsn='d', test_dsn='d')
         self.assertFalse(result['deterministic'])
         self.assertEqual([f['check'] for f in result['gate']['failures']], ['determinism'])
-        with mock.patch(module + 'build_report', side_effect=[report, dict(report)]), mock.patch(module + 'evaluate_gate', return_value=[]):
+        with mock.patch(module + 'build_report', side_effect=[report, dict(report)]), mock.patch(module + 'evaluate_gate', return_value=[]), mock.patch(module + 'evaluate_abstention', return_value=[]):
             self.assertTrue(run(dataset='unused', dsn='d', test_dsn='d')['deterministic'])
+
+    # --- Abstention (C-05, CA-27, CA-28) ---------------------------------------------------------------------------------------------------------------
+    GOALS = {'abstention': {'min_correct_rate': 0.70, 'max_false_rate': 0.05, 'simulated': {'threshold': 0.20, 'min_correct_rate': 0.50, 'max_false_rate': 0.05}}}
+
+    @staticmethod
+    def abstention_report(correct=0.75, false=0.0, threshold=0.3, negatives=24, with_items=0, measurement_errors=None):
+        report = {'abstention': {'model': 'm', 'threshold': threshold, 'correct_abstention': correct, 'false_abstention': false, 'abstained_with_items': with_items,
+                                 'negatives': {'n': negatives}, 'positives': {'n': 72}}}
+        if measurement_errors is not None:
+            report['abstention']['measurement_errors'] = measurement_errors
+        return report
+
+    def test_abstention_goals_pass_exactly_at_the_limits(self):
+        self.assertEqual(evaluate_abstention(self.abstention_report(correct=0.70, false=0.05), self.GOALS), [])
+        self.assertEqual([f['check'] for f in evaluate_abstention(self.abstention_report(correct=0.6999), self.GOALS)], ['abstention_correct'])
+        self.assertEqual([f['check'] for f in evaluate_abstention(self.abstention_report(false=0.0501), self.GOALS)], ['abstention_false'])
+
+    def test_the_offline_provider_is_judged_by_its_own_goals_and_a_real_model_by_the_top_ones(self):
+        simulated = self.abstention_report(correct=0.5, false=0.05)
+        simulated['abstention']['simulated'] = True
+        self.assertEqual(evaluate_abstention(simulated, self.GOALS), [])
+        simulated['abstention']['simulated'] = False
+        self.assertEqual([f['check'] for f in evaluate_abstention(simulated, self.GOALS)], ['abstention_correct'])
+        simulated['abstention'].update(simulated=True, correct=0.49, correct_abstention=0.49)
+        self.assertEqual([f['check'] for f in evaluate_abstention(simulated, self.GOALS)], ['abstention_correct'])
+        without = {'abstention': {'min_correct_rate': 0.7, 'max_false_rate': 0.05}}
+        self.assertEqual([f['check'] for f in evaluate_abstention(simulated, without)],
+                         ['threshold_missing:abstention.min_correct_rate', 'threshold_missing:abstention.max_false_rate'])
+
+    def test_an_absurd_threshold_leaves_the_gate_red(self):
+        # 0.99 abstains on almost every question: correct abstention is perfect and the false abstention on questions WITH an answer breaks its cap (CA-28)
+        failed = evaluate_abstention(self.abstention_report(correct=1.0, false=0.9, threshold=0.99), self.GOALS)
+        self.assertEqual([f['check'] for f in failed], ['abstention_false'])
+        # 0.0 never abstains: nothing is a correct abstention
+        failed = evaluate_abstention(self.abstention_report(correct=0.0, false=0.0, threshold=0.0), self.GOALS)
+        self.assertEqual([f['check'] for f in failed], ['abstention_correct'])
+
+    def test_a_missing_goal_threshold_or_measurement_fails_instead_of_passing(self):
+        self.assertEqual([f['check'] for f in evaluate_abstention({}, self.GOALS)], ['abstention_missing'])
+        self.assertEqual([f['check'] for f in evaluate_abstention(self.abstention_report(), {})],
+                         ['threshold_missing:abstention.min_correct_rate', 'threshold_missing:abstention.max_false_rate'])
+        for key in ('min_correct_rate', 'max_false_rate'):
+            goals = {'abstention': {k: v for k, v in self.GOALS['abstention'].items() if k != key}}
+            self.assertEqual([f['check'] for f in evaluate_abstention(self.abstention_report(), goals)], ['threshold_missing:abstention.' + key])
+        self.assertEqual([f['check'] for f in evaluate_abstention(self.abstention_report(threshold=None), self.GOALS)], ['threshold_missing:abstention.threshold'])
+        self.assertEqual([f['check'] for f in evaluate_abstention(self.abstention_report(negatives=19), self.GOALS)], ['abstention_negatives_too_few'])
+        self.assertEqual([f['check'] for f in evaluate_abstention(self.abstention_report(with_items=1), self.GOALS)], ['abstention_items'])
+
+    def test_the_committed_thresholds_carry_the_agreed_abstention_goals_and_keep_the_existing_gates(self):
+        thresholds = json.loads((HERE / 'thresholds.json').read_text(encoding='utf-8'))
+        self.assertEqual((thresholds['abstention']['min_correct_rate'], thresholds['abstention']['max_false_rate']), (0.70, 0.05))
+        simulated = thresholds['abstention']['simulated']  # R-07: with the offline provider 70 % correct needs 6.9 % false (measured), so it has goals of its own
+        self.assertIsInstance(simulated['threshold'], float)
+        self.assertLessEqual(simulated['max_false_rate'], 0.05)
+        # T-89: measured with the real model, no threshold reaches 70 %/5 %, so nomic-embed-text stays uncalibrated: no model has a threshold here (nor in the compose or the code)
+        self.assertEqual(thresholds['abstention']['models'], {})
+        self.assertEqual((thresholds['fused_recall_at_5'], thresholds['fused_mrr'], thresholds['max_subset_regression_points']), (0.80, 0.60, 2))
+
+    def test_the_simulated_abstention_goals_are_fixed_and_cannot_be_lowered_or_removed(self):
+        # User decision 2026-11-18 («12 de 24 en la CI»): goals per provider. The offline provider must keep >= 0.50 correct and <= 0.05 false as a regression guard (its cosines are not
+        # a real model's, R-07); a real model keeps >= 0.70 and <= 0.05. Lowering or deleting one of them would turn the CI gate into a pass without a test noticing (review phase 14, A2).
+        abstention = json.loads((HERE / 'thresholds.json').read_text(encoding='utf-8'))['abstention']
+        self.assertEqual((abstention['min_correct_rate'], abstention['max_false_rate']), (0.70, 0.05))
+        self.assertIn('simulated', abstention)
+        simulated = abstention['simulated']
+        self.assertEqual(sorted(simulated), ['max_false_rate', 'min_correct_rate', 'threshold'])
+        self.assertEqual(simulated['min_correct_rate'], 0.50)
+        self.assertEqual(simulated['max_false_rate'], 0.05)
+        self.assertIsInstance(simulated['threshold'], float)
+
+    def test_run_adds_the_abstention_failures_to_the_gate(self):
+        report = {key: key for key in STRUCTURAL_KEYS}
+        report.update({'layers': {'fused': {'overall': {'recall@5': 1, 'mrr': 1}, 'subsets': {}}}, 'dataset_sha256': 'x', 'embedding_provider': FAKE_LABEL})
+        module = 'memory_platform.tests.retrieval_eval.run.'
+        with mock.patch(module + 'build_report', side_effect=[report, dict(report)]), mock.patch(module + 'evaluate_gate', return_value=[]):
+            result = run(dataset='unused', dsn='d', test_dsn='d')
+        self.assertFalse(result['gate']['passed'])
+        self.assertEqual([f['check'] for f in result['gate']['failures']], ['abstention_missing'])
+
+    def test_the_threshold_under_test_comes_from_the_simulated_entry_or_the_model_entry(self):
+        config = {'abstention': {'simulated': {'threshold': 0.3}, 'models': {'nomic-embed-text': 0.55}}}
+        self.assertEqual(abstention_threshold(config, 'nomic-embed-text', True), 0.3)
+        self.assertEqual(abstention_threshold(config, 'nomic-embed-text:latest', False), 0.55)
+        self.assertIsNone(abstention_threshold(config, 'other-model', False))
+        self.assertIsNone(abstention_threshold({}, 'nomic-embed-text', True))
+        self.assertIsNone(abstention_threshold({'abstention': {'simulated': {'threshold': 0.3}}}, 'nomic-embed-text', False))
+
+    def test_pick_threshold_takes_the_middle_of_the_widest_interval_that_meets_both_goals(self):
+        def row(negative, best, protected=False):
+            return {'negative': negative, 'best': best, 'protected': protected}
+        # negatives at .10 .15 .20 .25 and one protected at .05; positives at .40 .50 .60 .70 and a low one (.18) protected by a lexical hit
+        rows = [row(True, b) for b in (0.10, 0.15, 0.20, 0.25)] + [row(True, 0.05, True)] + [row(False, b) for b in (0.40, 0.50, 0.60, 0.70)] + [row(False, 0.18, True), row(False, 0.30, True)]
+        picked = pick_threshold(rows, 0.70, 0.05)
+        self.assertEqual((picked['low'], picked['high']), (0.275, 0.35))
+        self.assertEqual(picked['threshold'], 0.3125)
+        self.assertEqual((picked['correct_abstention'], picked['false_abstention']), (0.8, 0.0))
+        # nothing reaches the goals when a positive without lexical protection sits below every negative
+        self.assertIsNone(pick_threshold(rows + [row(False, 0.02)], 0.70, 0.05))
+        self.assertIsNone(pick_threshold([row(True, 0.1)], 0.70, 0.05))
+        # a question with no cosine at all is protected: it can never abstain
+        self.assertIsNone(pick_threshold([row(True, None)] * 3 + [row(False, 0.9)], 0.70, 0.05))
+
+    def test_pick_threshold_never_returns_a_threshold_whose_rounding_misses_the_goals(self):
+        # Review phase 14, B1: the middle of a window narrower than 1e-4 was rounded to 0.5, where the correct abstention is 0.6 (< 0.70), and still reported as calibrated.
+        def row(negative, best):
+            return {'negative': negative, 'best': best, 'protected': False}
+        rows = [row(True, b) for b in (0.1, 0.15, 0.2, 0.25, 0.35, 0.45, 0.50001, 0.8, 0.85, 0.95)] + [row(False, b) for b in [0.3, 0.50003] + [0.9] * 18]
+        picked = pick_threshold(rows, 0.70, 0.05)
+        self.assertIsNotNone(picked)
+
+        def rates(t):
+            def rate(group):
+                return sum(1 for r in group if r['best'] < t) / len(group)
+            return rate([r for r in rows if r['negative']]), rate([r for r in rows if not r['negative']])
+        correct, false = rates(picked['threshold'])
+        self.assertGreaterEqual(correct, 0.70)
+        self.assertLessEqual(false, 0.05)
+        self.assertEqual((picked['correct_abstention'], picked['false_abstention']), (correct, false))  # the reported rates are those of the reported threshold
+        self.assertGreater(picked['threshold'], 0.50001)
+        self.assertLess(picked['threshold'], 0.50003)
+
+    def test_measure_abstention_counts_correct_and_false_abstentions_from_the_search_answers(self):
+        class Search:
+            def __init__(self, threshold):
+                self.threshold = threshold
+
+            async def search(self, actor, request):
+                assert request['abstain'] is True
+                best = {'n1': 0.1, 'n2': 0.2, 'p1': 0.9, 'p2': 0.25}[request['q']]
+                gone = best < self.threshold and request['q'] != 'p2'  # p2 is protected by a lexical hit
+                return {'items': [] if gone else [{'item_id': 'x'}], 'abstained': gone}
+
+        class Store:
+            def search_vectors(self, actor, projects, vector, model, limit):
+                return [{'score': vector[0]}, {'score': vector[0] / 2}]
+
+        class Provider:
+            async def embed(self, text, query=False):
+                return {'embedding': [{'n1': 0.1, 'n2': 0.2, 'p1': 0.9, 'p2': 0.25}[text]], 'model': 'm'}
+        negatives = [{'id': 'n-1', 'q': 'n1', 'near': False}, {'id': 'n-2', 'q': 'n2', 'near': True}]
+        positives = [{'id': 'p-1', 'q': 'p1'}, {'id': 'p-2', 'q': 'p2'}]
+        settings = type('S', (), {'embedding_model': 'm'})()
+        result = asyncio.run(_measure_abstention(Store(), {}, 'proj', positives, negatives, Provider(), settings, 0.15, retrieval=Search(0.15), probe=Search(1.0)))
+        self.assertEqual((result['correct_abstention'], result['false_abstention'], result['abstained_with_items']), (0.5, 0.0, 0))
+        self.assertEqual(result['negatives'], {'n': 2, 'abstained': 1, 'near_n': 1, 'near_abstained': 0})
+        self.assertEqual({r['id']: (r['best'], r['protected'], r['abstained']) for r in result['scores']},
+                         {'n-1': (0.1, False, True), 'n-2': (0.2, False, False), 'p-1': (0.9, False, False), 'p-2': (0.25, True, False)})
+        # an abstention that still carries items is reported, never counted as a correct one
+        class Leaky(Search):
+            async def search(self, actor, request):
+                return {'items': [{'item_id': 'x'}], 'abstained': True}
+        leaked = asyncio.run(_measure_abstention(Store(), {}, 'proj', positives, negatives, Provider(), settings, 0.15, retrieval=Leaky(0), probe=Search(1.0)))
+        self.assertEqual((leaked['correct_abstention'], leaked['abstained_with_items']), (0.0, 4))
+        # the calibration of this file picks a threshold that its own scores reproduce
+        self.assertEqual(pick_threshold(result['scores'], 0.5, 0.0)['false_abstention'], 0.0)
+
+    def test_a_failed_measurement_is_counted_and_fails_the_gate_instead_of_reading_as_no_abstention(self):
+        # Review phase 14, B3: `except Exception: scores = []` made a failed cosine a row that «does not abstain»; the cause stayed hidden.
+        class Search:
+            async def search(self, actor, request):
+                return {'items': [{'item_id': 'x'}], 'abstained': False}
+
+        class Store:
+            def search_vectors(self, actor, projects, vector, model, limit):
+                raise RuntimeError('vector index down')
+
+        class Provider:
+            async def embed(self, text, query=False):
+                return {'embedding': [0.5], 'model': 'm'}
+        settings = type('S', (), {'embedding_model': 'm'})()
+        negatives = [{'id': 'n-%d' % i, 'q': 'n', 'near': False} for i in range(2)]
+        positives = [{'id': 'p-1', 'q': 'p'}]
+        result = asyncio.run(_measure_abstention(Store(), {}, 'proj', positives, negatives, Provider(), settings, 0.3, retrieval=Search(), probe=Search()))
+        self.assertEqual(result['measurement_errors'], 3)
+        clean = asyncio.run(_measure_abstention(type('S2', (), {'search_vectors': lambda self, *a: [{'score': 0.4}]})(), {}, 'proj', positives, negatives, Provider(), settings, 0.3,
+                                                retrieval=Search(), probe=Search()))
+        self.assertEqual(clean['measurement_errors'], 0)
+        failures = evaluate_abstention(self.abstention_report(measurement_errors=3), self.GOALS)
+        self.assertEqual([f['check'] for f in failures], ['abstention_measurement_errors'])
+        self.assertEqual(failures[0]['value'], 3)
+        self.assertEqual(evaluate_abstention(self.abstention_report(measurement_errors=0), self.GOALS), [])
+        self.assertEqual(evaluate_abstention(self.abstention_report(), self.GOALS), [])  # a report without the field (older ones) is read as zero
+
+    def test_two_runs_that_abstain_differently_are_not_deterministic(self):
+        self.assertIn('abstention', STRUCTURAL_KEYS)
+        self.assertIn('negatives_sha256', STRUCTURAL_KEYS)
+        report = {key: key for key in STRUCTURAL_KEYS}
+        report.update({'layers': {'fused': {'overall': {'recall@5': 1, 'mrr': 1}, 'subsets': {}}}, 'dataset_sha256': 'x', 'embedding_provider': FAKE_LABEL})
+        module = 'memory_platform.tests.retrieval_eval.run.'
+        with mock.patch(module + 'build_report', side_effect=[report, dict(report, abstention='another')]), mock.patch(module + 'evaluate_gate', return_value=[]),                 mock.patch(module + 'evaluate_abstention', return_value=[]):
+            self.assertFalse(run(dataset='unused', dsn='d', test_dsn='d')['deterministic'])
+
+    def test_a_real_model_embeds_each_question_once_per_run(self):
+        # Observed (T-89): the gate asks the same question through 5 searches; with a real model each one is a CPU embedding, and the calibration took more than 35 minutes.
+        class Provider:
+            calls = 0
+            marker = 'delegated'
+
+            async def embed(self, text, query=False):
+                Provider.calls += 1
+                return {'embedding': [float(Provider.calls)], 'model': 'm'}
+
+            async def embed_many(self, texts, query=False):
+                return [await self.embed(t, query) for t in texts]
+        cached = CachedQueries(Provider())
+
+        async def go():
+            first = await cached.embed('q', query=True)
+            second = await cached.embed('q', query=True)
+            other = await cached.embed('r', query=True)
+            document = [await cached.embed('q'), await cached.embed('q')]  # not a query: never cached (what the worker stores)
+            return first, second, other, document
+        first, second, other, document = asyncio.run(go())
+        self.assertEqual((first, Provider.calls), (second, 4))  # q once, r once, the two document embeddings
+        self.assertNotEqual(first, other)
+        self.assertNotEqual(document[0], document[1])
+        self.assertEqual(cached.marker, 'delegated')  # the rest of the provider (embed_many for the worker...) is reached unchanged
+        self.assertEqual(len(asyncio.run(cached.embed_many(['a', 'b']))), 2)
+
+    def test_a_real_model_is_evaluated_once_and_determinism_is_not_claimed_for_it(self):
+        # Observed (T-89): indexing the corpus twice with a real model on a CPU took twice the time for a check that only the simulated provider can pass.
+        report = {key: key for key in STRUCTURAL_KEYS}
+        report.update({'layers': {'fused': {'overall': {'recall@5': 1, 'mrr': 1}, 'subsets': {}}}, 'dataset_sha256': 'x', 'embedding_provider': 'ollama:nomic-embed-text'})
+        module = 'memory_platform.tests.retrieval_eval.run.'
+        with mock.patch(module + 'build_report', side_effect=[report, dict(report, abstention='another')]) as build, mock.patch(module + 'evaluate_gate', return_value=[]),                 mock.patch(module + 'evaluate_abstention', return_value=[]):
+            result = run(dataset='unused', dsn='d', test_dsn='d')
+        self.assertEqual(build.call_count, 1)
+        self.assertIsNone(result['deterministic'])
+        self.assertEqual(result['gate']['failures'], [])
+
+    def test_a_real_model_gets_the_time_a_cpu_needs_to_index_the_long_documents(self):
+        # Observed (T-89): `embed job states {"failed": 4, "succeeded": 68}`: the default 60 s per batch is for a production host, not for a disposable Ollama on a loaded CPU.
+        env = {'MEMORY_RETRIEVAL_EVAL_PROVIDER': 'ollama', 'MEMORY_RETRIEVAL_EVAL_OLLAMA_URL': 'http://kairos-calib-ollama:21434'}
+        with mock.patch.dict('os.environ', env):
+            _, label, settings = make_provider('dsn')
+        self.assertEqual(label, 'ollama:nomic-embed-text')
+        self.assertGreaterEqual(settings.embedding_batch_timeout, 300)
+        self.assertGreaterEqual(settings.embedding_worker_timeout, 300)
+        self.assertGreaterEqual(settings.embedding_job_timeout_max, 1800)
+        with mock.patch.dict('os.environ', {'MEMORY_RETRIEVAL_EVAL_PROVIDER': 'fake'}):
+            self.assertEqual(make_provider('dsn')[2].embedding_batch_timeout, Settings('dsn').embedding_batch_timeout)  # the simulated provider keeps the defaults
+
+    def test_negatives_are_loaded_and_validated_against_the_corpus(self):
+        corpus, _ = load_dataset(HERE / 'dataset-v1.jsonl')
+        records, digest = load_negatives(HERE / 'dataset-v1-negatives.jsonl', corpus)
+        self.assertEqual((len(records), len(digest)), (24, 64))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'few.jsonl'
+            path.write_text(json.dumps(records[0]) + chr(10), encoding='utf-8')
+            with self.assertRaises(SystemExit) as raised:
+                load_negatives(path, corpus)
+        self.assertIn('without an answer', str(raised.exception))
 
     def test_fake_embeddings_are_deterministic_and_sized(self):
         self.assertEqual(vectorize('worker lease'), vectorize('worker lease'))
@@ -206,6 +460,71 @@ class MetricTests(unittest.TestCase):
         self.assertEqual((parts['hostaddr'], parts['host'], parts['port'], parts['dbname']), ('127.0.0.1', 'localhost', '55432', 'memory_test'))
 
 
+class NegativeDatasetTests(unittest.TestCase):
+    """T-87 (CA-26): the questions without an answer live in their own file; dataset-v1.jsonl stays frozen."""
+
+    def records(self):
+        return [json.loads(line) for line in (HERE / 'dataset-v1-negatives.jsonl').read_text(encoding='utf-8').splitlines() if line.strip()]
+
+    def test_the_negative_file_is_valid_bilingual_and_has_questions_close_to_existing_topics(self):
+        from memory_platform.tests.retrieval_eval.check_dataset import validate_negatives
+        records = self.records()
+        self.assertEqual(validate_negatives(records, load_dataset(HERE / 'dataset-v1.jsonl')[0])[2], [])
+        self.assertGreaterEqual(len(records), 20)
+        self.assertTrue(all(r['expected'] == [] for r in records))
+        self.assertGreaterEqual(sum(r['lang'] == 'es' for r in records), 8)
+        self.assertGreaterEqual(sum(r['lang'] == 'en' for r in records), 8)
+        self.assertGreaterEqual(sum(r['near'] for r in records), 8)
+
+    def test_validate_negatives_refuses_what_would_weaken_the_set(self):
+        from memory_platform.tests.retrieval_eval.check_dataset import validate_negatives
+        corpus = load_dataset(HERE / 'dataset-v1.jsonl')[0]
+        good = self.records()
+        def errors(records):
+            return validate_negatives(records, corpus)[2]
+        self.assertTrue(errors(good[:19]))                                                  # fewer than 20
+        self.assertTrue(errors([dict(good[0], expected=['m-en-01'])] + good[1:]))           # it has an answer
+        self.assertTrue(errors([dict(good[0], subset='es')] + good[1:]))                    # not a negative subset
+        self.assertTrue(errors([dict(good[0], near='yes')] + good[1:]))                     # near must be a boolean
+        self.assertTrue(errors([dict(good[0], id=good[1]['id'])] + good[1:]))               # duplicate id
+        self.assertTrue(errors([dict(good[0], id='q-001')] + good[1:]))                     # id of a question of dataset-v1
+        self.assertTrue(errors([dict(r, near=False) for r in good]))                        # none close to a topic
+        self.assertTrue(errors([dict(r, lang='en') for r in good]))                         # one language only
+        self.assertTrue(errors([dict(good[0], type='memory')] + good[1:]))                  # a corpus record in the negative set
+        self.assertTrue(errors([dict(good[0], q=' ')] + good[1:]))
+
+    def test_the_check_dataset_cli_validates_the_id_overlap_whatever_the_order_of_the_arguments(self):
+        # Review phase 14, B4: with the negatives first the corpus was still empty and an id shared with dataset-v1 went unnoticed.
+        import contextlib
+        import io
+        from memory_platform.tests.retrieval_eval import check_dataset
+        negatives = self.records()
+        clash = [dict(negatives[0], id='q-001')] + negatives[1:]
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = Path(tmp) / 'negatives-clash.jsonl'
+            bad.write_text(chr(10).join(json.dumps(r) for r in clash) + chr(10), encoding='utf-8')
+            good, dataset = str(HERE / 'dataset-v1-negatives.jsonl'), str(HERE / 'dataset-v1.jsonl')
+            for order in ((dataset, str(bad)), (str(bad), dataset)):
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as raised:
+                    check_dataset.main(['check_dataset', *order])
+                self.assertEqual(raised.exception.code, 1, order)
+                self.assertIn('INVALID', out.getvalue())
+                self.assertIn('q-001', out.getvalue())
+            for order in ((dataset, good), (good, dataset)):
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    check_dataset.main(['check_dataset', *order])
+                self.assertEqual(out.getvalue().count('OK'), 2, order)
+                self.assertNotIn('INVALID', out.getvalue())
+
+    def test_dataset_v1_is_frozen(self):
+        from memory_platform.tests.retrieval_eval.check_dataset import load
+        records, digest = load(HERE / 'dataset-v1.jsonl')
+        self.assertEqual(digest, json.loads((HERE / 'baseline.json').read_text(encoding='utf-8'))['dataset_sha256'])
+        self.assertEqual(sum(r['type'] == 'question' for r in records), 72)
+
+
 class ProviderSelectionTests(unittest.TestCase):
     """T-36: the gate can run with a real Ollama, but only one that the operator names for the evaluation and never the deployed one."""
 
@@ -264,6 +583,156 @@ class ProviderSelectionTests(unittest.TestCase):
                     'http://10.0.0.1:11434', 'http://[::ffff:172.17.0.1]:11434', 'http://172.17.0.1.:11434'):
             with self.assertRaises(SystemExit, msg=url):
                 check_ollama_url(url)
+
+
+class MeasureAbstentionTests(unittest.TestCase):
+    """T-89: the calibration with a disposable Ollama never leaves anything behind and never goes near the deployed one (no Docker needed here)."""
+
+    @staticmethod
+    def module():
+        from memory_platform.tests.retrieval_eval import measure_abstention
+        return measure_abstention
+
+    class FakeDocker:
+        """Records every docker call; `fail` maps a command prefix to a failure; `report` is what the evaluation container prints."""
+
+        def __init__(self, fail=(), report=None, leftovers=()):
+            self.calls, self.fail, self.report, self.leftovers = [], tuple(fail), report, tuple(leftovers)
+
+        def __call__(self, args, timeout=None):
+            self.calls.append(list(args))
+            joined = ' '.join(args)
+            if any(joined.startswith(prefix) for prefix in self.fail):
+                return type('R', (), {'returncode': 1, 'stdout': '', 'stderr': 'boom'})()
+            out = ''
+            if args[:1] == ['run'] and '--rm' in args:
+                out = 'RETRIEVAL_EVAL_RESULT ' + json.dumps(self.report) + chr(10)
+            if args[:2] in (['ps', '-a'], ['volume', 'ls'], ['network', 'ls']):
+                out = chr(10).join(self.leftovers) if args[:2] == ['ps', '-a'] else ''
+            return type('R', (), {'returncode': 0, 'stdout': out, 'stderr': ''})()
+
+    @staticmethod
+    def report(rows):
+        return {'model': 'nomic-embed-text', 'abstention': {'model': 'nomic-embed-text', 'scores': rows}, 'layers': {'fused': {'overall': {'recall@5': 1.0, 'mrr': 0.9}}}}
+
+    def test_names_must_be_the_disposable_ones_and_the_port_never_the_host_ollama(self):
+        ma = self.module()
+        ma.check_names('kairos-calib-ollama', 'kairos-calib-ollama-data', 'kairos-calib-net', 21434)
+        for args in (('kairos-ops-ollama', 'kairos-calib-v', 'kairos-calib-n', 21434), ('kairos-calib-o', 'knowledge-graphs_memory-data', 'kairos-calib-n', 21434),
+                     ('kairos-calib-o', 'kairos-calib-v', 'knowledge-graphs_inference', 21434), ('knowledge-graphs-ollama-1', 'kairos-calib-v', 'kairos-calib-n', 21434),
+                     ('kairos-calib-o', 'kairos-calib-v', 'kairos-calib-n', 11434), ('kairos-calib-o', 'kairos-calib-v', 'kairos-calib-n', 80),
+                     ('kairos-calib-o', 'kairos-calib-v', 'kairos-calib-n', '21434'), ('kairos-calib-o', 'kairos-calib-v', 'kairos-calib-n', 70000)):
+            with self.assertRaises(SystemExit, msg=args):
+                ma.check_names(*args)
+
+    def test_a_calibration_creates_runs_and_removes_everything_it_created(self):
+        ma = self.module()
+        rows = [{'id': 'n%d' % i, 'negative': True, 'best': 0.1 + i / 100, 'protected': False} for i in range(10)] + [{'id': 'p%d' % i, 'negative': False, 'best': 0.6 + i / 100, 'protected': False} for i in range(10)]
+        docker = self.FakeDocker(report=self.report(rows))
+        result = ma.measure(docker=docker, eval_image='img', server_dir='S')
+        self.assertEqual(result['status'], 'calibrated')
+        self.assertEqual(result['model'], 'nomic-embed-text')
+        self.assertGreater(result['threshold'], 0.19)
+        self.assertLess(result['threshold'], 0.6)
+        self.assertEqual(result['leftovers'], [])
+        commands = [' '.join(call) for call in docker.calls]
+        removal = [c for c in commands if c.startswith('rm -f ') or c.startswith('volume rm') or c.startswith('network rm')]
+        self.assertEqual(len(removal), 4)  # evaluation container, ollama container, volume, network
+        run = next(c for c in commands if c.startswith('run -d'))
+        self.assertIn('--name kairos-calib-ollama', run)
+        self.assertIn('-p 127.0.0.1:21434:21434', run)
+        self.assertNotIn('11434', ' '.join(commands))
+        self.assertNotIn('knowledge-graphs', ' '.join(commands))
+        evaluation = next(c for c in commands if c.startswith('run --rm'))
+        self.assertIn('MEMORY_RETRIEVAL_EVAL_OLLAMA_URL=http://kairos-calib-ollama:21434', evaluation)
+        self.assertIn('MEMORY_RETRIEVAL_EVAL_PROVIDER=ollama', evaluation)
+
+    def test_everything_is_removed_even_when_a_step_fails_and_a_failed_pull_is_uncalibrated(self):
+        ma = self.module()
+        docker = self.FakeDocker(fail=('exec kairos-calib-ollama ollama pull',))
+        result = ma.measure(docker=docker, eval_image='img', server_dir='S')
+        self.assertEqual(result['status'], 'uncalibrated')
+        self.assertIn('pull', result['reason'])
+        self.assertIsNone(result.get('threshold'))
+        commands = [' '.join(call) for call in docker.calls]
+        self.assertFalse(any(c.startswith('run --rm') for c in commands))  # no evaluation without the model
+        self.assertEqual(len([c for c in commands if c.startswith('rm -f ') or c.startswith('volume rm') or c.startswith('network rm')]), 4)
+        crashed = self.FakeDocker(fail=('run --rm',), report={})
+        with self.assertRaises(SystemExit):
+            ma.measure(docker=crashed, eval_image='img', server_dir='S')
+        self.assertEqual(len([' '.join(c) for c in crashed.calls if c[:1] == ['rm'] or c[:2] in (['volume', 'rm'], ['network', 'rm'])]), 4)
+
+    def test_leftovers_are_reported_on_the_error_path_and_a_failed_check_is_not_read_as_clean(self):
+        # Review phase 14, B2: the check of `kairos-calib-*` leftovers only reached the result on success, and a failing `docker ps/volume ls/network ls` read as «no leftovers».
+        import contextlib
+        import io
+        ma = self.module()
+        crashed = self.FakeDocker(fail=('run --rm',), report={}, leftovers=('kairos-calib-ollama',))
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
+            ma.measure(docker=crashed, eval_image='img', server_dir='S')
+        self.assertNotIn(raised.exception.code, (0, None))
+        self.assertIn('kairos-calib-ollama', stderr.getvalue())
+        self.assertIn('left', stderr.getvalue())
+        clean_crash = io.StringIO()
+        with contextlib.redirect_stderr(clean_crash), self.assertRaises(SystemExit):
+            ma.measure(docker=self.FakeDocker(fail=('run --rm',), report={}), eval_image='img', server_dir='S')
+        self.assertEqual(clean_crash.getvalue(), '')  # nothing left, nothing to add
+        for listing in ('ps -a', 'volume ls', 'network ls'):
+            blind = ma.measure(docker=self.FakeDocker(fail=(listing,), report=self.report([])), eval_image='img', server_dir='S')
+            self.assertEqual(blind['leftovers'], [], listing)
+            self.assertEqual(blind['leftovers_unverifiable'], [listing], listing)
+            with mock.patch.object(ma, 'measure', return_value=blind), contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as refused:
+                ma.main([])
+            self.assertIn('not verifiable', str(refused.exception))
+        sound = ma.measure(docker=self.FakeDocker(report=self.report([])), eval_image='img', server_dir='S')
+        self.assertEqual(sound['leftovers_unverifiable'], [])
+
+    def test_measurement_errors_make_the_calibration_uncalibrated_for_that_reason_not_for_the_goals(self):
+        ma = self.module()
+        rows = [{'id': 'n%d' % i, 'negative': True, 'best': 0.1 + i / 100, 'protected': False} for i in range(10)] + [{'id': 'p%d' % i, 'negative': False, 'best': 0.6 + i / 100, 'protected': False} for i in range(10)]
+        report = self.report(rows)
+        report['abstention']['measurement_errors'] = 4
+        result = ma.measure(docker=self.FakeDocker(report=report), eval_image='img', server_dir='S')
+        self.assertEqual(result['status'], 'uncalibrated')
+        self.assertIn('abstention_measurement_errors', result['reason'])
+        self.assertNotIn('no threshold reaches', result['reason'])
+        self.assertEqual(result['measurement_errors'], 4)
+        self.assertIsNone(result.get('threshold'))
+
+    def test_a_pull_that_exceeds_its_time_is_uncalibrated_not_a_hang(self):
+        ma = self.module()
+
+        def slow(args, timeout=None):
+            if args[:2] == ['exec', 'kairos-calib-ollama'] and 'pull' in args:
+                raise ma.subprocess.TimeoutExpired(args, timeout)
+            return self.FakeDocker()(args, timeout)
+        result = ma.measure(docker=slow, eval_image='img', server_dir='S', pull_timeout=5)
+        self.assertEqual(result['status'], 'uncalibrated')
+        self.assertIn('5', result['reason'])
+
+    def test_no_threshold_that_reaches_both_goals_is_reported_as_uncalibrated_with_the_closest_point(self):
+        ma = self.module()
+        rows = [{'id': 'n%d' % i, 'negative': True, 'best': 0.5, 'protected': False} for i in range(10)] + [{'id': 'p%d' % i, 'negative': False, 'best': 0.4, 'protected': False} for i in range(10)]
+        result = ma.measure(docker=self.FakeDocker(report=self.report(rows)), eval_image='img', server_dir='S')
+        self.assertEqual(result['status'], 'uncalibrated')
+        self.assertIn('goals', result['reason'])
+
+    def test_docker_output_is_read_as_utf8_with_replacement_never_in_the_console_code_page(self):
+        # Observed: `UnicodeDecodeError: 'charmap' codec can't decode byte 0x8f` in subprocess's reader thread lost the report of a 10-minute evaluation.
+        ma = self.module()
+        with mock.patch.object(ma.subprocess, 'run') as fake:
+            ma.run_docker(['ps'], timeout=3)
+        _, kwargs = fake.call_args
+        self.assertEqual((kwargs['encoding'], kwargs['errors'], kwargs['text'], kwargs['timeout']), ('utf-8', 'replace', True, 3))
+
+    def test_the_script_never_names_the_host_ollama_except_to_refuse_it(self):
+        text = (HERE / 'measure_abstention.py').read_text(encoding='utf-8')
+        lines = [line for line in text.splitlines() if '11434' in line]
+        self.assertEqual(len(lines), 1, lines)
+        self.assertIn('DEPLOYED_PORT', lines[0])
+        for forbidden in ('host.docker.internal', 'localhost:', '127.0.0.1:11'):
+            self.assertNotIn(forbidden, text.replace('127.0.0.1:%d:%d', ''))
 
 
 if __name__ == '__main__':

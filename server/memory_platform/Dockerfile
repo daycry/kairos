@@ -62,6 +62,11 @@ COPY --chown=postgres:postgres scripts/deploy-memory.py /app/scripts/deploy-memo
 COPY --chown=postgres:postgres scripts/diagnose-deployment.py /app/scripts/diagnose-deployment.py
 COPY --chown=postgres:postgres scripts/export-contracts.py /app/scripts/export-contracts.py
 COPY --chown=postgres:postgres docker-compose.yml /app/docker-compose.yml
+COPY --chown=postgres:postgres docker-compose.backup-rclone.yml /app/docker-compose.backup-rclone.yml
+# The manuals are read as text by the compose tests (variables, healthchecks and the Linux case must match the compose file).
+COPY --chown=postgres:postgres docs/configuration.md docs/operations.md /app/docs/
+# The example alerting rules are read as text by the metrics tests (every metric they name must exist).
+COPY --chown=postgres:postgres docs/examples/prometheus-rules.yml /app/docs/examples/prometheus-rules.yml
 # The portal's nginx.conf and Dockerfile are read as text by the nginx route tests.
 COPY --chown=postgres:postgres web/nginx.conf /app/web/nginx.conf
 COPY --chown=postgres:postgres web/Dockerfile /app/web/Dockerfile

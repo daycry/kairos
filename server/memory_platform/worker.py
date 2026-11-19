@@ -20,6 +20,9 @@ JOB_DEADLINE_MARGIN = 10  # seconds the job may outlive the provider's own deadl
 IDLE_SECONDS = 1.0  # wait between two claims when the queue is empty
 WRITE_RETRY_MAX = 5  # failed writes of one outcome (`complete_job`/`fail_job`) after which the worker stops repeating it, however well the renewal of the lease works
 BACKOFF_FIRST = 1.0  # ceiling of the wait after the first consecutive database failure; it doubles up to MEMORY_WORKER_DB_BACKOFF_MAX
+HEARTBEAT_FILE = '/tmp/kairos-worker-heartbeat'  # written by `Worker.beat` (tmpfs of memory-worker): the epoch second by which the next beat is due; the Compose healthcheck compares it with the clock (T-56)
+STORE_OK_MAX_AGE = 120.0  # seconds since the last access to the database that worked after which the worker stops writing the heartbeat file (R-01)
+HEARTBEAT_MARGIN = 60.0  # seconds added to the wait between two beats (a loop wait, or the renewal period lease/3) to get the deadline the file holds
 
 
 class Abandoned(Exception):
@@ -96,9 +99,11 @@ async def embed_receipt(provider, settings, payload, canonical_hash, item_vector
 
 
 class Worker:
-    def __init__(self, store, settings, providers=None, worker_id=None, *, clock=None, rng=None, waiter=None, heartbeat_wait=None):
+    def __init__(self, store, settings, providers=None, worker_id=None, *, clock=None, rng=None, waiter=None, heartbeat_wait=None, heartbeat_file=None, wall=None):
         """`clock` (monotonic seconds), `rng` (jitter, [0, 1)), `waiter` (the wait between claims; default: ends early when the worker is told to stop)
-        and `heartbeat_wait` (the pause of the lease heartbeat) exist so that a test drives time and does not wait for it."""
+        and `heartbeat_wait` (the pause of the lease heartbeat) exist so that a test drives time and does not wait for it. `heartbeat_file`: the file `beat`
+        writes (None: none; the service passes HEARTBEAT_FILE). `wall` (epoch seconds, default `time.time`; the injected `clock` when there is one and no `wall`)
+        is the reading `beat` turns into the deadline of the file: the healthcheck compares it with the wall clock of the container."""
         self.store, self.settings = store, settings
         self.store.max_attempts = settings.max_attempts  # the cap `claim_job` applies to a job whose lease expired (`attempts_exhausted`); same value as the retry policy below
         self.id = worker_id or socket.gethostname()+':'+str(uuid.uuid4())
@@ -113,8 +118,33 @@ class Worker:
         self.rng = rng or random.random
         self._wait = waiter or self._wait_or_stop
         self._heartbeat_wait = heartbeat_wait or asyncio.sleep
-        self.last_store_ok = self.clock()  # `clock()` of the last access to the database that worked (R-01: an outage must not look healthy)
+        self.wall = wall or (clock if clock else time.time)
+        self.last_store_ok = None  # `clock()` of the last access to the database that worked; None until the first one (R-01: an outage, or a start without database, must not look healthy)
         self.store_failures = 0  # consecutive failures of the database or of the loop; any access that works sets it back to 0
+        self.heartbeat_file = heartbeat_file
+        self._beat_failed = False
+
+    def beat(self, allowance=None):
+        """Write the heartbeat file: the DEADLINE (epoch seconds) by which the next beat is due, `allowance` + HEARTBEAT_MARGIN seconds from now (default: the longest
+        wait of a loop turn, MEMORY_WORKER_DB_BACKOFF_MAX; a lease renewal passes its period lease/3). It says whether it wrote. It writes nothing before the first access
+        to the database that worked, nor when the last one is older than STORE_OK_MAX_AGE: a worker that loops over a database it cannot reach must not look healthy
+        (R-01), and the deadline it left then simply passes, for any lease. The healthcheck is `unhealthy` once it has passed. A file that cannot be written is logged
+        once and never stops the worker."""
+        if not self.heartbeat_file:
+            return False
+        if self.last_store_ok is None or self.clock()-self.last_store_ok > STORE_OK_MAX_AGE:
+            return False
+        if allowance is None:
+            allowance = max(IDLE_SECONDS, getattr(self.settings, 'worker_db_backoff_max', DEFAULT_BACKOFF_MAX))
+        try:
+            with open(self.heartbeat_file, 'w', encoding='utf-8') as handle:
+                handle.write(f'{self.wall()+allowance+HEARTBEAT_MARGIN:.3f}' + chr(10))
+        except OSError as exc:
+            if not self._beat_failed:
+                self._beat_failed = True
+                observability.log_failure('heartbeat_file_failed', exc, 'warning')
+            return False
+        return True
 
     async def _wait_or_stop(self, seconds):
         """Wait `seconds`, or less when the worker is told to stop: a stop never waits for a backoff."""
@@ -213,6 +243,7 @@ class Worker:
                 try:
                     beat = self.clock()
                     renewed = await self._store('heartbeat', self.store.renew_lease, job['id'], job['fence'], self.settings.lease_seconds)
+                    self.beat(self.settings.lease_seconds/3)  # the renewal worked (`_store` advanced `last_store_ok`): a job that takes long is a worker that lives; the next beat is due in lease/3
                 except StoreUnavailable:
                     continue
                 except Exception as exc:
@@ -244,26 +275,53 @@ class Worker:
         started, outcome = time.monotonic(), 'failed'
         written = False  # the write of the outcome landed (also when the heartbeat had marked the lease lost and `_landed` proved it): the metric then says what really happened
         lease = [self.clock()+self.settings.lease_seconds]  # when this worker's own clock says the lease runs out; moved by every renewal that works
+        period = self.settings.lease_seconds/3
+        self.beat(period)  # the claim just worked (`_store` advanced `last_store_ok`): from here the next beat is the first renewal, due in lease/3, not the (shorter) wait of a loop turn
+        cap = getattr(self.settings, 'worker_db_backoff_max', DEFAULT_BACKOFF_MAX)
+        def retry_wait(misses):
+            """Wait before repeating a renewal that failed: the wait of a claim (growing, jittered, at most MEMORY_WORKER_DB_BACKOFF_MAX), and never past the lease this worker's clock keeps.
+            Once that lease has run out the period is back (the database refuses a lease that ran out anyway: `renew_lease` only renews a live one)."""
+            left = lease[0]-self.clock()
+            return period if left <= 0 else min(period, backoff_delay(misses, cap, self.rng), left)
+        work = []  # the task of the provider call (once it exists): the heartbeat cancels it when the lease is lost
+
+        def cancel_work():
+            """The lease is gone, so the result of the job can no longer be written (`complete_job` and `fail_job` refuse a fence that is not ours) and nobody beats for it: cancel the
+            provider call instead of letting it run on to its deadline, during which the worker would turn `unhealthy` (T-64, debt 6). The row is NOT touched: whoever claimed it
+            after the lease expired owns it."""
+            if work and not work[0].done():
+                work[0].cancel()
+
         async def heartbeat():
+            wait, misses = period, 0
             while True:
-                await self._heartbeat_wait(max(0.1, self.settings.lease_seconds/3))
+                await self._heartbeat_wait(max(0.1, wait))
+                wait = period
                 try:
                     beat = self.clock()
                     renewed = await self._store('heartbeat', self.store.renew_lease, job['id'], job['fence'], self.settings.lease_seconds)
+                    misses = 0
+                    self.beat(period)  # the renewal worked (`_store` advanced `last_store_ok`): a job that takes long is a worker that lives; the next beat is due in lease/3
                     if renewed:
                         lease[0] = beat+self.settings.lease_seconds
                     else:
                         observability.log_event('lease_lost', 'warning', destination=destination)
                         lost.set()
+                        cancel_work()
                         return
                 except StoreUnavailable:
-                    continue  # logged by `_store`: the lease is what the database says, so the next beat tries again; the job is lost only when it says so
+                    misses += 1
+                    wait = retry_wait(misses)
+                    continue  # logged by `_store`: the lease is what the database says, so it is asked again after a short wait; the job is lost only when it says so
                 except Exception as exc:
-                    if is_store_transient(exc):  # the database answered with an error worth repeating: the next beat tries again while the lease lives
+                    if is_store_transient(exc):  # the database answered with an error worth repeating: asked again after a short wait while the lease lives
                         observability.log_failure('store_retry', exc, 'warning', reason='heartbeat')
+                        misses += 1
+                        wait = retry_wait(misses)
                         continue
                     observability.log_failure('heartbeat_failed', exc, 'warning', destination=destination)
                     lost.set()
+                    cancel_work()
                     return
         async def failed(*args):
             nonlocal outcome, written
@@ -286,22 +344,31 @@ class Worker:
                 deadline = worker_deadline(self.settings, planned, stored_vector=False)
             else:
                 deadline = self.settings.provider_timeout+10
-            async with asyncio.timeout(deadline) as limit:
-                if job['destination'] == 'embed':
-                    stored = None
-                    if planned > 1:
-                        stored = await self._store('read', stored_item_vector, self.store, job['project_id'], job['item_id'], job['resource_type'], job['version'], job['canonical_hash'], self.settings.embedding_model)
-                        if stored:
-                            limit.reschedule(limit.when()+embedding_job_timeout(self.settings, 1))
-                    receipt = await embed_receipt(provider, self.settings, job['payload'], job['canonical_hash'], stored)
-                elif job['destination'] == 'extract':
+            async def compute():
+                async with asyncio.timeout(deadline) as limit:
+                    if job['destination'] == 'embed':
+                        stored = None
+                        if planned > 1:
+                            stored = await self._store('read', stored_item_vector, self.store, job['project_id'], job['item_id'], job['resource_type'], job['version'], job['canonical_hash'], self.settings.embedding_model)
+                            if stored:
+                                limit.reschedule(limit.when()+embedding_job_timeout(self.settings, 1))
+                        return await embed_receipt(provider, self.settings, job['payload'], job['canonical_hash'], stored)
                     # Extraction is explicitly scheduled, never inferred from a capture event.
                     # Store read views include routing IDs, refs and a nested raw
                     # payload. Those are not model output fields and encourage
                     # copying an invalid storage envelope instead of a memory.
                     view = job['payload']
                     source = view.get('payload', view)
-                    receipt = await provider.extract(source)
+                    return await provider.extract(source)
+            work.append(asyncio.create_task(compute()))
+            try:
+                receipt = await work[0]
+            except asyncio.CancelledError:
+                if lost.is_set() and work[0].cancelled() and not asyncio.current_task().cancelling():  # the heartbeat cancelled the call, not whoever runs this worker
+                    observability.log_event('job_cancelled', 'warning', destination=destination, reason='lease_lost')
+                    outcome = 'lost'
+                    return True
+                raise
             if lost.is_set():
                 return True
             if job['destination'] == 'embed' and not receipt.get('verified'):
@@ -356,6 +423,7 @@ class Worker:
         `backoff_delay` (growing, with jitter, up to MEMORY_WORKER_DB_BACKOFF_MAX) before the next claim; any access that works resets it."""
         cap = getattr(self.settings, 'worker_db_backoff_max', DEFAULT_BACKOFF_MAX)
         while not self.stopping.is_set():
+            self.beat()
             try:
                 worked = await self.run_once()
             except Exception as exc:
@@ -366,6 +434,7 @@ class Worker:
                     observability.log_failure('store_unavailable' if unavailable else 'worker_loop_error', exc, 'warning' if unavailable else 'error',
                                               reason='loop', count=self.store_failures)
             if self.store_failures:
+                self.beat()  # a job that ended with its renewals working may leave the last beat older than this wait: the deadline covers the wait that follows (a database that is down gives no beat)
                 await self._wait(backoff_delay(self.store_failures, cap, self.rng))
             elif not worked:
                 await self._wait(IDLE_SECONDS)
@@ -377,7 +446,7 @@ async def serve():
     store = Store(settings.dsn, settings.project_maps, embedding_enabled=getattr(settings, 'embed_enabled', True))
     store.extraction_enabled = getattr(settings, 'extract_enabled', False)
     attach_pool(store, settings, 'worker')
-    worker = Worker(store, settings)
+    worker = Worker(store, settings, heartbeat_file=HEARTBEAT_FILE)
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:

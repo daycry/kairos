@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from memory_platform.config import Settings
+from memory_platform.config import Settings, threshold_for
 
 HERE = Path(__file__).parent
 LAYERS = ('episodic', 'documental', 'semantic', 'fused')
@@ -40,7 +40,8 @@ LIBPQ_REDIRECT_ENV = ('PGHOSTADDR', 'PGHOST', 'PGPORT', 'PGDATABASE', 'PGSERVICE
 PROVIDER_ENV, OLLAMA_URL_ENV = 'MEMORY_RETRIEVAL_EVAL_PROVIDER', 'MEMORY_RETRIEVAL_EVAL_OLLAMA_URL'
 DEPLOYED_OLLAMA_HOSTS = ('ollama', 'host.docker.internal', 'gateway.docker.internal')  # the compose proxy and the host's Ollama (by name): the deployed installation
 FAKE_LABEL = 'fake-hashed-words-and-char-ngrams'
-STRUCTURAL_KEYS = ('query_backends', 'dataset', 'dataset_sha256', 'product_database_accessed', 'embedding_provider', 'model', 'limit', 'layers')
+STRUCTURAL_KEYS = ('query_backends', 'dataset', 'dataset_sha256', 'product_database_accessed', 'embedding_provider', 'model', 'limit', 'layers', 'negatives_sha256', 'abstention')
+NEGATIVES_MINIMUM = 20  # the gate refuses to measure abstention over fewer questions without an answer (CA-26)
 
 
 def network_observation():
@@ -144,6 +145,111 @@ def evaluate_gate(report, thresholds, baseline=None):
     return failures
 
 
+class CachedQueries:
+    """Embeds each QUERY text once per run: the evaluation asks every question through several searches, and with a real model each embedding is a CPU run (T-89).
+
+    Only ``embed(text, query=True)`` is remembered; document embeddings (the worker's ``embed_many`` and ``embed`` without ``query``) and every other attribute go to the provider unchanged.
+    """
+
+    def __init__(self, provider):
+        self._provider, self._queries = provider, {}
+
+    async def embed(self, text, query=False):
+        if not query:
+            return await self._provider.embed(text, query=query)
+        if text not in self._queries:
+            self._queries[text] = await self._provider.embed(text, query=True)
+        return self._queries[text]
+
+    def __getattr__(self, name):
+        return getattr(self._provider, name)
+
+
+def abstention_threshold(thresholds, model, simulated):
+    """The cosine threshold under test for ``model`` (CA-27): ``abstention.simulated.threshold`` with the offline provider, ``abstention.models[<model>]`` with a real one
+    (``:latest`` is the same model); None when there is none, which the gate reports as ``threshold_missing:abstention.threshold`` instead of measuring blind."""
+    config = thresholds.get('abstention')
+    config = config if isinstance(config, dict) else {}
+    if simulated:
+        return (config.get('simulated') or {}).get('threshold')
+    models = config.get('models')
+    return threshold_for(models, model) if isinstance(models, dict) else None
+
+
+def pick_threshold(rows, min_correct, max_false):
+    """Calibration (T-89): the threshold in the middle of the widest interval where the correct abstention is >= ``min_correct`` and the false abstention <= ``max_false``.
+
+    ``rows`` are the ``abstention.scores`` of a report (``negative``, ``best`` cosine, ``protected`` = a lexical hit or an incomplete lexical layer prevents abstaining).
+    A question abstains at threshold ``t`` when it is not protected and its best cosine is below ``t``; a question with no cosine is protected. Returns
+    ``{'threshold', 'low', 'high', 'correct_abstention', 'false_abstention'}`` or None when no threshold reaches both goals.
+    """
+    negatives, positives = [r for r in rows if r['negative']], [r for r in rows if not r['negative']]
+    if not negatives or not positives:
+        return None
+
+    def rates(t):
+        def rate(group):
+            return sum(1 for r in group if not r['protected'] and r.get('best') is not None and r['best'] < t) / len(group)
+        return rate(negatives), rate(positives)
+    points = sorted({r['best'] for r in rows if r.get('best') is not None})
+    candidates = [(a + b) / 2 for a, b in zip(points, points[1:])] + ([points[-1] + 0.001] if points else [])
+    good = [i for i, t in enumerate(candidates) if rates(t)[0] >= min_correct and rates(t)[1] <= max_false]
+    if not good:
+        return None
+    runs, current = [], [good[0]]
+    for before, after in zip(good, good[1:]):
+        if after == before + 1:
+            current.append(after)
+        else:
+            runs.append(current)
+            current = [after]
+    runs.append(current)
+    widest = max(runs, key=lambda run_: candidates[run_[-1]] - candidates[run_[0]])
+    low, high = candidates[widest[0]], candidates[widest[-1]]
+    # Rounded for reading, but the goals are checked again AT the rounded threshold: a window narrower than the rounding would otherwise report a threshold that misses them (review phase 14, B1).
+    for digits in (4, 5, 6, None):
+        middle = (low + high) / 2 if digits is None else round((low + high) / 2, digits)
+        correct, false = rates(middle)
+        if correct >= min_correct and false <= max_false:
+            fit = (lambda value: value) if digits is None else (lambda value: round(value, digits))
+            return {'threshold': middle, 'low': fit(low), 'high': fit(high), 'correct_abstention': round(correct, 6), 'false_abstention': round(false, 6)}
+    return None
+
+
+def evaluate_abstention(report, thresholds):
+    """Failed checks of the abstention goals (CA-27, CA-28; empty = they pass), same discipline as ``evaluate_gate``: a missing goal, threshold or measurement fails, never passes silently.
+
+    ``abstention_correct``: fewer than ``min_correct_rate`` of the questions without an answer got ``abstained: true``; ``abstention_false``: more than ``max_false_rate`` of the questions
+    with an answer did; ``abstention_measurement_errors``: a question whose best cosine could not be measured; ``abstention_items``: an abstention that still carried items; ``abstention_negatives_too_few``: the set shrank below 20 questions.
+    """
+    failures = []
+    config = thresholds.get('abstention')
+    config = config if isinstance(config, dict) else {}
+    if isinstance(report.get('abstention'), dict) and report['abstention'].get('simulated'):
+        config = config.get('simulated')  # the offline provider has its own goals (R-07: its cosines are not a real model's); the real model's are the top-level ones
+        config = config if isinstance(config, dict) else {}
+    for key in ('min_correct_rate', 'max_false_rate'):
+        if not isinstance(config.get(key), (int, float)) or isinstance(config.get(key), bool):
+            failures.append({'check': 'threshold_missing:abstention.' + key, 'value': None, 'required': 'abstention goal in thresholds.json (CA-27)'})
+    measured = report.get('abstention')
+    if not isinstance(measured, dict):
+        failures.append({'check': 'abstention_missing', 'value': None, 'required': 'abstention measurement over the questions with and without an answer'})
+        return failures
+    if measured.get('threshold') is None:
+        failures.append({'check': 'threshold_missing:abstention.threshold', 'value': None, 'required': 'cosine threshold of the model under test (simulated.threshold or models.<model>)'})
+    if measured.get('negatives', {}).get('n', 0) < NEGATIVES_MINIMUM:
+        failures.append({'check': 'abstention_negatives_too_few', 'value': measured.get('negatives', {}).get('n', 0), 'required': NEGATIVES_MINIMUM})
+    if measured.get('measurement_errors'):
+        failures.append({'check': 'abstention_measurement_errors', 'value': measured['measurement_errors'], 'required': 0})
+    if measured.get('abstained_with_items'):
+        failures.append({'check': 'abstention_items', 'value': measured['abstained_with_items'], 'required': 0})
+    if isinstance(config.get('min_correct_rate'), (int, float)) and measured.get('correct_abstention', 0) < config['min_correct_rate']:
+        failures.append({'check': 'abstention_correct', 'value': measured.get('correct_abstention', 0), 'required': config['min_correct_rate']})
+    if isinstance(config.get('max_false_rate'), (int, float)) and measured.get('false_abstention', 1) > config['max_false_rate']:
+        failures.append({'check': 'abstention_false', 'value': measured.get('false_abstention', 1), 'required': config['max_false_rate']})
+    return failures
+
+
 def check_dsn(dsn, test_dsn, environ=None):
     """Refuse anything that is not the harness' own temporary database.
 
@@ -234,7 +340,9 @@ def make_provider(dsn):
     if choice != 'ollama':
         raise SystemExit('retrieval-eval: %s must be `fake` or `ollama`' % PROVIDER_ENV)
     from memory_platform.providers import Embeddings
-    settings = Settings(dsn, request_timeout=60.0, embedding_query_timeout=30.0, ollama_url=check_ollama_url(os.environ.get(OLLAMA_URL_ENV)))
+    # A disposable Ollama on a loaded CPU needs minutes, not the 60 s per batch of a production host, for the long documents (T-89: 4 of 72 embed jobs failed with the defaults).
+    settings = Settings(dsn, request_timeout=60.0, embedding_query_timeout=30.0, embedding_worker_timeout=300.0, embedding_batch_timeout=300.0, embedding_job_timeout_max=3000.0,
+                        ollama_url=check_ollama_url(os.environ.get(OLLAMA_URL_ENV)))
     return Embeddings(settings), 'ollama:' + settings.embedding_model, settings
 
 
@@ -245,6 +353,17 @@ def load_dataset(path):
     errors = validate(records)[2]
     if errors:
         raise SystemExit('retrieval-eval refuses an invalid dataset: ' + '; '.join(errors[:5]))
+    return records, hashlib.sha256(raw).hexdigest()
+
+
+def load_negatives(path, corpus_records):
+    """The questions without an answer (dataset-v1-negatives.jsonl), validated against the corpus they are asked of, with the SHA-256 of the file."""
+    from memory_platform.tests.retrieval_eval.check_dataset import validate_negatives
+    raw = Path(path).read_bytes()
+    records = [json.loads(line) for line in raw.decode('utf-8').splitlines() if line.strip()]
+    errors = validate_negatives(records, corpus_records)[2]
+    if errors:
+        raise SystemExit('retrieval-eval refuses an invalid set of questions without an answer: ' + '; '.join(errors[:5]))
     return records, hashlib.sha256(raw).hexdigest()
 
 
@@ -345,6 +464,44 @@ async def _measure(store, actor, project, ids, questions, provider, settings, re
     return {layer: aggregate(rows[layer]) for layer in LAYERS}, query_backends
 
 
+async def _measure_abstention(store, actor, project, positives, negatives, provider, settings, threshold, retrieval=None, probe=None):
+    """Abstention as a client would ask for it (CA-27): every question with `abstain: true` through ``Retrieval.search`` at ``threshold`` (None = no threshold for the model).
+
+    Returns the ``abstention`` section of the report. ``scores`` keeps, per question, the best semantic cosine and whether something protects it from abstaining
+    (``protected``: a lexical hit, or a lexical layer that did not answer complete; read from a second search with the threshold at its maximum, 1.0), which is what
+    ``pick_threshold`` needs to calibrate a model without running the whole set once per candidate threshold.
+    """
+    from dataclasses import replace
+    if retrieval is None:
+        from memory_platform.retrieval import Retrieval
+        retrieval = Retrieval(store, replace(settings, abstain_thresholds={settings.embedding_model: threshold} if threshold is not None else {}), provider)
+        probe = Retrieval(store, replace(settings, abstain_thresholds={settings.embedding_model: 1.0}), provider)
+    rows, errors = [], 0
+    for negative, questions in ((True, negatives), (False, positives)):
+        for question in questions:
+            request = {'project_ids': [project], 'q': question['q'], 'layers': ['episodic', 'documental'], 'semantic': True, 'limit': LIMIT, 'abstain': True}
+            answer, probed = await retrieval.search(actor, request), await probe.search(actor, request)
+            try:
+                embedded = await provider.embed(question['q'], query=True)
+                scores = [float(h['score']) for h in store.search_vectors(actor, [project], embedded['embedding'], embedded['model'], LIMIT) if h.get('score') is not None]
+            except Exception:
+                scores, errors = [], errors + 1  # counted and reported (`measurement_errors`): a failed cosine is not a question that "does not abstain"
+            abstained = answer.get('abstained') is True
+            rows.append({'id': question['id'], 'negative': negative, 'near': bool(question.get('near')), 'best': round(max(scores), 6) if scores else None,
+                         'protected': probed.get('abstained') is not True, 'abstained': abstained and not answer['items'], 'with_items': abstained and bool(answer['items'])})
+    negative_rows, positive_rows = [r for r in rows if r['negative']], [r for r in rows if not r['negative']]
+
+    def rate(group):
+        return round(sum(1 for r in group if r['abstained']) / len(group), 6) if group else 0.0
+    return {'model': settings.embedding_model, 'threshold': threshold,
+            'correct_abstention': rate(negative_rows), 'false_abstention': rate(positive_rows),
+            'abstained_with_items': sum(1 for r in rows if r['with_items']), 'measurement_errors': errors,
+            'negatives': {'n': len(negative_rows), 'abstained': sum(1 for r in negative_rows if r['abstained']),
+                          'near_n': sum(1 for r in negative_rows if r['near']), 'near_abstained': sum(1 for r in negative_rows if r['near'] and r['abstained'])},
+            'positives': {'n': len(positive_rows), 'abstained': sum(1 for r in positive_rows if r['abstained'])},
+            'scores': [{k: r[k] for k in ('id', 'negative', 'best', 'protected', 'abstained')} for r in rows]}
+
+
 async def _fused_aggregate(retrieval, actor, project, ids, questions):
     """Aggregate of the fused search alone (what a fusion setting changes), over every question."""
     rows = []
@@ -388,35 +545,44 @@ def tune(spec, dsn=None, test_dsn=None, dataset=None):
             'layers_at_default': layers, 'grid': points}
 
 
-def build_report(dsn, test_dsn, dataset_path):
+def build_report(dsn, test_dsn, dataset_path, negatives_path=None, thresholds=None):
     check_dsn(dsn, test_dsn)
     dsn = connect_dsn(dsn)
     records, digest = load_dataset(dataset_path)
+    negatives, negatives_digest = load_negatives(negatives_path or HERE / 'dataset-v1-negatives.jsonl', records)
     provider, label, settings = make_provider(dsn)
+    provider = CachedQueries(provider)
+    threshold = abstention_threshold(thresholds or {}, settings.embedding_model, label == FAKE_LABEL)
     store, actor, project = _setup(dsn)
     ids, texts = _load_corpus(store, actor, project, records)
+    questions = [r for r in records if r['type'] == 'question']
 
     async def go():
         await _index(store, project, provider, settings)
-        return await _measure(store, actor, project, ids, [r for r in records if r['type'] == 'question'], provider, settings)
-    layers, query_backends = asyncio.run(go())
-    return {'dataset': Path(dataset_path).stem, 'dataset_sha256': digest, 'product_database_accessed': False,
+        layers, query_backends = await _measure(store, actor, project, ids, questions, provider, settings)
+        return layers, query_backends, await _measure_abstention(store, actor, project, questions, negatives, provider, settings, threshold)
+    layers, query_backends, abstention = asyncio.run(go())
+    abstention['simulated'] = label == FAKE_LABEL
+    return {'dataset': Path(dataset_path).stem, 'dataset_sha256': digest, 'negatives_sha256': negatives_digest, 'product_database_accessed': False,
             'embedding_provider': label, 'model': settings.embedding_model, 'limit': LIMIT,
-            'generated_at': datetime.now(timezone.utc).isoformat(timespec='seconds'), 'layers': layers, 'query_backends': query_backends}
+            'generated_at': datetime.now(timezone.utc).isoformat(timespec='seconds'), 'layers': layers, 'query_backends': query_backends, 'abstention': abstention}
 
 
-def run(report_path=None, dataset=None, thresholds=None, baseline=None, dsn=None, test_dsn=None):
-    """Run the evaluation twice (determinism check), evaluate the gate and print/write the report."""
+def run(report_path=None, dataset=None, thresholds=None, baseline=None, dsn=None, test_dsn=None, negatives=None):
+    """Run the evaluation (twice with the simulated provider, as a determinism check), evaluate the gate and print/write the report."""
     dataset = Path(dataset or HERE / 'dataset-v1.jsonl')
     thresholds = json.loads(Path(thresholds or HERE / 'thresholds.json').read_text(encoding='utf-8'))
+    negatives = Path(negatives or HERE / 'dataset-v1-negatives.jsonl')
     baseline_file = Path(baseline) if baseline else HERE / 'baseline.json'
     baseline_report = json.loads(baseline_file.read_text(encoding='utf-8')) if baseline_file.exists() else None
     dsn, test_dsn = dsn or os.environ.get('MEMORY_DSN'), test_dsn or os.environ.get('MEMORY_TEST_DSN')
-    first = build_report(dsn, test_dsn, dataset)
-    second = build_report(dsn, test_dsn, dataset)
-    deterministic = all(first[k] == second[k] for k in STRUCTURAL_KEYS)
-    failures = evaluate_gate(first, thresholds, baseline_report)
-    if not deterministic:
+    first = build_report(dsn, test_dsn, dataset, negatives, thresholds)
+    # Determinism is a property of the simulated provider. A real model is evaluated once (indexing the corpus twice on a CPU doubles an already long run, T-89) and `deterministic` is None.
+    real = first.get('embedding_provider') != FAKE_LABEL
+    second = None if real else build_report(dsn, test_dsn, dataset, negatives, thresholds)
+    deterministic = None if real else all(first[k] == second[k] for k in STRUCTURAL_KEYS)
+    failures = evaluate_gate(first, thresholds, baseline_report) + evaluate_abstention(first, thresholds)
+    if deterministic is False:
         failures.append({'check': 'determinism', 'value': 'reports differ between two runs', 'required': 'identical'})
     first.update(network_observation())  # observed once, outside the determinism comparison
     first['deterministic'] = deterministic
@@ -434,8 +600,9 @@ def main(argv=None):
     parser.add_argument('--dataset')
     parser.add_argument('--thresholds')
     parser.add_argument('--baseline')
+    parser.add_argument('--negatives')
     args = parser.parse_args(argv)
-    report = run(args.report, args.dataset, args.thresholds, args.baseline)
+    report = run(args.report, args.dataset, args.thresholds, args.baseline, negatives=args.negatives)
     if not report['gate']['passed']:
         raise SystemExit(1)
 

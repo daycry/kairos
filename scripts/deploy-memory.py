@@ -6,7 +6,9 @@ An existing installation must have its original volumes and secret files.
 from __future__ import annotations
 
 import argparse
+import contextlib
 from datetime import datetime, timezone
+import errno
 import hashlib
 import http.cookiejar
 import json
@@ -14,6 +16,10 @@ import os
 import re
 from pathlib import Path
 import secrets
+import shlex
+import signal
+import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -21,6 +27,15 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+
+try:  # the operating-system lock of the deployment (DeployLock): one of them exists on every platform this script runs on
+    import fcntl
+except ImportError:
+    fcntl = None
+try:
+    import msvcrt
+except ImportError:
+    msvcrt = None
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PROJECT = 'knowledge-graphs'
@@ -33,21 +48,402 @@ VERIFY_PROJECT_LABEL = 'com.kairos.project'
 VERIFY_NAME_PROJECT = 24  # the longest project text in a verify container name: `kairos-verify-pg-<project>-<mark>` is a hostname and must stay within 63 characters
 VERIFY_MAINTENANCE_WORK_MEM = '256MB'  # the restore rebuilds the vector indexes: the 64 MB default makes a big one slow enough to exhaust the plazo
 BACKUP_TIMEOUT_MAX_SECONDS = 86400  # a timeout is a bound: 0 or "no limit" would let a stuck copy hang the deployment
-ISOLATED_PRIVATE_FILES = ('memory-platform.env', 'compose.override.yml', 'deployment-status.json', 'deployment-status.tmp')
+EXIT_LOCKED, EXIT_NO_PREVIOUS_IMAGES, EXIT_ALREADY_AT_PREVIOUS = 3, 4, 5  # exit codes of `deployment_locked`, `no_previous_images` and `already_at_previous` (documented in docs/operations.md)
+LOCK_OFFSET = 1 << 30  # Windows: the byte that is locked lies far beyond the content, because a locked region cannot be read by other processes (a refusal reads the owner)
+LOCK_FILE = 'deployment.lock'  # in the private directory of the project: held with an operating-system lock by the deployment that runs, emptied (never deleted) when it ends (T-61, CA-23)
+ISOLATED_PRIVATE_FILES = ('memory-platform.env', 'compose.override.yml', 'deployment-status.json', 'deployment-status.tmp', LOCK_FILE)
 VOLUMES = (DEFAULT_PROJECT + '_memory-postgres-data', DEFAULT_PROJECT + '_memory-backups')
 SERVICES = ('memory-api', 'memory-worker', 'memory-mcp', 'memory-web')
+OPERATOR_SERVICES = (('memory-probe', 'probe', 'probe_recreated'), ('memory-backup', 'backup', 'backup_recreated'))  # (service, profile, report key): opt-in services of the `operator` image
 NEW_NETWORKS = ('mcp',)  # networks that an installation made before this release does not have yet: the start creates them, a missing one is not an error
 BACKFILL_TIMEOUT_SECONDS = 1800  # queues jobs in short transactions; the worker does the embedding after `start`
 BACKFILL_REPORT_KEYS = ('status', 'reason', 'enqueued', 'derived', 'failed', 'pending', 'remaining', 'batches', 'embedding_filled', 'stale_marked')  # counts only, never anything else
 STUB_SERVICE, STUB_PORT, STUB_DIMENSIONS = 'embed-stub', 11434, 768  # the simulated embedding provider of an isolated rehearsal (T-71, T-72); 768 = nomic-embed-text, the vector index
 REHEARSAL_PROJECT_ID = 'rehearsal'
 SPY_QUERY = f"import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:{STUB_PORT}/__spy',timeout=5).read().decode())"
+IMAGE_NAMES = ('api', 'worker', 'mcp', 'web', 'operator')  # what a deployment tags and a rollback restores; never `postgres`: the server of the data directory is not rolled back (T-62, CA-24)
+ROLLBACK_SERVICES = {'api': 'memory-api', 'worker': 'memory-worker', 'mcp': 'memory-mcp', 'web': 'memory-web'}  # the containers a rollback recreates
+TAGS_KEPT = 2  # the tagged images of the releases before the current one that are kept per image; the older tags are removed
+TAG_MARK = re.compile(r'\A[A-Za-z0-9_][A-Za-z0-9_.]*-([0-9]{8}T[0-9]{6}Z)\Z')  # exactly `<version>-<mark>`, anchored, of a tag this script made (always used with `fullmatch`: a manual `<version>-<mark>-x` is not ours)
+TAG_VERSION = re.compile(r'[A-Za-z0-9_][A-Za-z0-9_.]*')  # the version part of such a tag; with `-<mark>` the whole tag fits Docker's `[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}`
+TAG_MAX_LENGTH = 128
+IMAGE_ID = re.compile(r'sha256:[0-9a-f]{64}')  # an image id read from deployment-status.json: data on disk is never passed to docker as anything else (an option, a space, another reference)
+LOCK_ATTEMPTS = 5  # the lock file was deleted or replaced between our open and our lock: the open is repeated a few times
 PHASES = ('engine', 'configuration', 'build', 'database', 'inspect', 'backup',
           'migrate', 'bootstrap', 'backfill', 'start', 'verify')
+ROLLBACK_PHASES = ('engine', 'configuration', 'rollback', 'verify')  # `--rollback`: no backup, no migrate, no bootstrap, no backfill
 
 
 class DeploymentError(Exception):
     pass
+
+
+class NoPreviousImages(DeploymentError):
+    """`no_previous_images` (CA-24): `--rollback` has no recorded tags of an earlier release to go back to (or one of them is gone); no service was touched."""
+    code = 'no_previous_images'
+
+
+class AlreadyAtPrevious(DeploymentError):
+    """`already_at_previous` (CA-24, fix1, fix2, fix3): the state of a rollback is complete: the CONTAINERS of the four services run the images `--rollback` would go back to AND `:latest` of every
+    image (the operator one included) is that image; nothing was touched and nothing is reported as rolled back. A rollback with only one of the two done finishes the other."""
+    code = 'already_at_previous'
+
+
+def release_version(root):
+    """The version the tags carry: the one of the components (`client/package.json`), made safe for a Docker tag (`[A-Za-z0-9_][A-Za-z0-9_.]*`, at most 40 characters: with `-<mark>` it always
+    fits Docker's grammar); `unversioned` without it."""
+    try:
+        version = json.loads((Path(root) / 'client' / 'package.json').read_text(encoding='utf-8')).get('version')
+    except (OSError, ValueError, AttributeError):
+        version = None
+    if not (isinstance(version, str) and version):
+        return 'unversioned'
+    return re.sub(r'[^A-Za-z0-9_.]', '_', version)[:40].lstrip('.') or 'unversioned'
+
+
+def tag_version(candidate, fallback, mark):
+    """`candidate` (a version read from a report) if `<candidate>-<mark>` is a tag Docker accepts, else `fallback` (the version of the code)."""
+    if isinstance(candidate, str) and TAG_VERSION.fullmatch(candidate) and len(candidate) + 1 + len(mark) <= TAG_MAX_LENGTH:
+        return candidate
+    return fallback
+
+
+class Interrupted(BaseException):
+    """SIGTERM or SIGHUP (fix3, gap 2): not an `Exception` (nothing that handles failures swallows it), caught by `main`, which saves the report as `interrupted`, frees the lock and exits with 128 + signal."""
+
+    def __init__(self, signum):
+        super().__init__(signum)
+        self.signum = signum
+
+
+class DeploymentLocked(DeploymentError):
+    """`deployment_locked` (CA-23): another deployment of the project holds the operating-system lock, or the lock cannot be taken (any error of the system, a lock file that is a link, has more than
+    one name or is not a regular file included). Nothing here is ever broken by `--break-lock` (fix4): the option only names the take-over of a FREE lock whose file says another host wrote it.
+    `owner` is what the lock file says (may be empty)."""
+    code = 'deployment_locked'
+
+    def __init__(self, message, owner=None):
+        super().__init__(message)
+        self.owner = owner or {}
+
+
+def printable(value, limit=80):
+    """`value` as text that is safe to write to a terminal or a log (CWE-150, fix4, gap 8): every character that is not printable (ESC, the C0 and C1 controls, a newline, a bidirectional override...)
+    is written as its escape (`\\x1b`), and the text is cut at `limit` characters. What a lock file says is written by whoever can write the file."""
+    text = value if isinstance(value, str) else repr(value)
+    text = ''.join(char if char.isprintable() else ascii(char)[1:-1] for char in text[:limit * 4])
+    return text if len(text) <= limit else text[:limit - 1] + '\u2026'
+
+
+def owner_field(value):
+    """A field of the lock file for the report: a number stays a number, anything else is `printable` text (None stays None)."""
+    return value if value is None or (isinstance(value, int) and not isinstance(value, bool)) else printable(value)
+
+
+def owner_fields(owner):
+    return {key: owner_field(owner.get(key)) for key in ('pid', 'host', 'started_at')}
+
+
+@contextlib.contextmanager
+def ignoring_signals():
+    """SIGTERM, SIGHUP and SIGINT are ignored inside the block and put back after it (fix4, gap 2): the handlers of a failure and of an interruption save the report and write their warnings, and a
+    signal during them must not leave `main` with a traceback; the exit code stays the one of the first cause. (Not the main thread: the caller owns the signals, nothing is ignored.)"""
+    previous = {}
+    try:
+        for name in ('SIGTERM', 'SIGHUP', 'SIGINT'):
+            number = getattr(signal, name, None)
+            if number is None:
+                continue
+            while True:  # fix5, gap 3: a signal that was pending when SIG_IGN is set runs its handler right after the call; it is held off like any other and the next one is set
+                try:
+                    previous.setdefault(number, signal.getsignal(number))
+                    signal.signal(number, signal.SIG_IGN)
+                    break
+                except (KeyboardInterrupt, Interrupted):
+                    continue
+                except (ValueError, OSError):
+                    previous.pop(number, None)
+                    break
+        yield
+    finally:
+        for number, handler in previous.items():
+            if handler is not None:
+                try:
+                    signal.signal(number, handler)
+                except (ValueError, OSError):
+                    pass
+
+
+def windows_kernel():
+    """`kernel32` with the signature of `CreateFileW` (Windows only)."""
+    import ctypes
+    from ctypes import wintypes
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.CreateFileW.restype = wintypes.HANDLE
+    kernel.CreateFileW.argtypes = (wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE)
+    kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
+    return kernel
+
+
+def create_without_following(path):
+    """Windows (fix4, gap 9): open or create `path` as a file descriptor WITHOUT following a link: `CreateFileW` with OPEN_ALWAYS (never truncates) and `FILE_FLAG_OPEN_REPARSE_POINT`, which opens a
+    symbolic link or a junction itself instead of its target, so that one planted between the `lstat` of the caller and this call creates nothing and truncates nothing at its destination; the caller
+    then finds the reparse point in the attributes of the descriptor and refuses it."""
+    import ctypes
+    import msvcrt
+    kernel = windows_kernel()
+    handle = kernel.CreateFileW(str(path), 0xC0000000, 3, None, 4, 0x80 | 0x00200000, None)  # GENERIC_READ|WRITE, SHARE_READ|WRITE, OPEN_ALWAYS, NORMAL|OPEN_REPARSE_POINT
+    if handle is None or handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        return msvcrt.open_osfhandle(handle, 0)
+    except OSError:
+        kernel.CloseHandle(handle)
+        raise
+
+
+def process_stamp(pid):
+    """An identifier of THE process instance behind a PID (fix1, review of phase 10): PIDs are reused, above all after a restart. Linux: the boot id and the start time of the process
+    (`/proc`); Windows: its creation time. None if the process does not exist or the platform gives no reliable value (then the PID alone decides)."""
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return None
+    if os.name == 'nt':
+        import ctypes
+        from ctypes import wintypes
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel.OpenProcess.restype = ctypes.c_void_p
+        kernel.OpenProcess.argtypes = (ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong)
+        kernel.GetProcessTimes.argtypes = (ctypes.c_void_p,) + (ctypes.POINTER(wintypes.FILETIME),) * 4
+        kernel.CloseHandle.argtypes = (ctypes.c_void_p,)
+        handle = kernel.OpenProcess(0x1000, 0, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return None
+        try:
+            created, finished, kernel_time, user_time = (wintypes.FILETIME() for _ in range(4))
+            code = ctypes.c_ulong()
+            kernel.GetExitCodeProcess.argtypes = (ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong))
+            if not kernel.GetExitCodeProcess(handle, ctypes.byref(code)) or code.value != 259:  # an exited process whose handle is still open is not one
+                return None
+            if not kernel.GetProcessTimes(handle, created, finished, kernel_time, user_time):
+                return None
+            return f'nt:{(created.dwHighDateTime << 32) | created.dwLowDateTime}'
+        finally:
+            kernel.CloseHandle(handle)
+    try:
+        boot = Path('/proc/sys/kernel/random/boot_id').read_text(encoding='ascii').strip()
+        fields = Path(f'/proc/{pid}/stat').read_text(encoding='utf-8', errors='replace').rsplit(')', 1)[1].split()
+        return f'{boot}:{fields[19]}'  # field 22 of /proc/<pid>/stat: the start time, in ticks since boot
+    except (OSError, IndexError):
+        return None
+
+
+class DeployLock:
+    """One deployment at a time per project (CA-23): an OPERATING-SYSTEM lock on `deployment.lock` in the private directory of the project, held by an open file for the whole deployment
+    (`fcntl.flock` on POSIX, `msvcrt.locking` on Windows, a byte far beyond the content so that the file stays readable). The system frees it when the process ends, however it ends
+    (a SIGKILL, a power cut and a restart included), so a lock that can be taken has no live owner on this host by definition: nothing is renamed, linked back, compared or broken, and
+    there is no window between two owners (fix2, review of phase 10). The file is never deleted, renamed or replaced by a deployment: not to take the lock, not to release it, not by
+    `--break-lock` (fix3: a deletion has a window between checking the file and deleting it, and a deleted file that another process has locked leaves two owners).
+
+    The standard order (fix3, gaps 3 to 5; fix4, gap 9): open WITHOUT following a link (`O_NOFOLLOW`; on Windows `CreateFileW` with `FILE_FLAG_OPEN_REPARSE_POINT`, which opens a link itself), require of the
+    OPEN file (`fstat`) that it is a regular file with exactly one name (`S_ISREG`, `st_nlink == 1`: `O_NOFOLLOW` does not cover a hard link, and a lock taken on a file that is also another file would
+    truncate that one) and no reparse point, take the lock, compare the descriptor with the path (`fstat` against `lstat`: if the file was deleted or replaced in between, drop it and start again, a few
+    times), read what a deployment that did not end left, write the JSON of this one, and compare again. A planted link of any kind is `deployment_locked`; nothing it points to is opened, created or
+    truncated, and the file itself is left as it was.
+
+    The JSON in the file (PID, host, start, project, `stamp` of the process, token) is INFORMATIVE: written after the lock is taken and emptied before it is let go; a refusal shows it, and a
+    NON-EMPTY file found when the lock is taken is what a deployment that did not end left: `leftover`, which `main` reports on stderr and in the report (`previous_run_interrupted`, CA-23: «se informa»).
+    Nothing the file says reaches a terminal raw (`printable`). A lock that is held makes `acquire` raise `DeploymentLocked` and run nothing; so does any operating-system error taking it (never a traceback).
+    `--break-lock` only matters for a file that says ANOTHER host wrote it (a private directory on a shared disk, whose process cannot be checked here): when the system lets the lock be taken the leftover is
+    named a break (`broken`); it never takes a lock the system holds for a live process, of this host or of another that the system can see, and it deletes nothing. On such a disk the lock of the operating
+    system may not reach this machine at all: a leftover that names another host is therefore reported as «may still be running», not as dead.
+    """
+
+    def __init__(self, directory, project, break_lock=False):
+        self.path = Path(directory) / LOCK_FILE
+        self.project, self.break_lock = project, break_lock
+        self.token = uuid.uuid4().hex
+        self.held = False
+        self.broken = None  # the owner a `--break-lock` took the lock over from (a file of another host)
+        self.leftover = None  # what the file said when the lock was taken: None if it was empty, else the owner it names (`{}` if it names nobody usable)
+        self.descriptor = None
+
+    def owner(self):
+        """What the file says about its owner, `{}` if it says nothing usable (missing, empty, unreadable, not JSON, not an object)."""
+        try:
+            value = json.loads(self.path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    def describe(self, owner):
+        if not owner:
+            return 'whose owner the lock file does not say'
+        return f"started by PID {printable(owner.get('pid'))} on {printable(owner.get('host'))} at {printable(owner.get('started_at'))}"
+
+    def leftover_warning(self, owner):
+        """What stderr says when the lock was taken and the file was not empty: what is known, no more (fix4, gap 4). A deployment of this host (or an unreadable file) that left its information did not
+        end: the system freed its lock. One of another host may still be running: on a shared disk the lock of the operating system may not propagate to this machine."""
+        said = self.describe(owner)
+        if self.foreign(owner):
+            return (f'WARNING: the lock file still held the information of a deployment {said}. The lock was not held on this machine, but that host is not this one: if the private directory is on a shared disk '
+                    'the lock of the operating system may not reach this machine, so that deployment may still be running. Make sure it has finished before going on '
+                    '(--break-lock only names the take-over; it never takes a lock that is held).')
+        return (f'WARNING: a deployment {said} did not end: the lock file still held its information although nobody held the lock (its process died before it could empty the file). '
+                'Check the real state of the containers and of the migration before going on.')
+
+    @staticmethod
+    def _lock_file(descriptor):
+        """Take the operating-system lock without waiting: OSError if somebody holds it (or the system cannot lock this file)."""
+        if fcntl is not None:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        elif msvcrt is not None:
+            os.lseek(descriptor, LOCK_OFFSET, os.SEEK_SET)
+            try:
+                msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+            finally:
+                os.lseek(descriptor, 0, os.SEEK_SET)
+        else:  # pragma: no cover (no platform this script supports)
+            raise OSError('this platform has no file locking')
+
+    @staticmethod
+    def _unlock_file(descriptor):
+        if fcntl is not None:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        elif msvcrt is not None:
+            os.lseek(descriptor, LOCK_OFFSET, os.SEEK_SET)
+            try:
+                msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+            finally:
+                os.lseek(descriptor, 0, os.SEEK_SET)
+
+    @staticmethod
+    def _is_link(info):
+        return stat.S_ISLNK(info.st_mode) or bool(getattr(info, 'st_file_attributes', 0) & getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0x400))
+
+    def _open(self):
+        """Open or create the lock file WITHOUT following a link (CWE-59): `O_NOFOLLOW` where the system has it, `CreateFileW` with `FILE_FLAG_OPEN_REPARSE_POINT` on Windows (fix4); then the OPEN file
+        must be a regular file with one name and no reparse point (fix4, gap 9: `O_NOFOLLOW` does not cover a hard link). A file that is not is closed untouched: nothing is written to it."""
+        try:
+            info = os.lstat(self.path)
+        except FileNotFoundError:
+            info = None
+        except OSError as exc:
+            raise DeploymentLocked(f'the lock file {self.path} cannot be examined: {exc.strerror or exc}') from None
+        if info is not None and self._is_link(info):
+            raise DeploymentLocked(f'the lock file {self.path} is a symbolic link (or a reparse point): it is never followed; remove it if it is not yours')
+        try:
+            descriptor = create_without_following(self.path) if os.name == 'nt' else os.open(self.path, os.O_RDWR | os.O_CREAT | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NOFOLLOW', 0), 0o600)
+        except OSError as exc:
+            if exc.errno == errno.ELOOP:
+                raise DeploymentLocked(f'the lock file {self.path} is a symbolic link: it is never followed; remove it if it is not yours') from None
+            raise DeploymentLocked(f'the lock file {self.path} cannot be opened: {exc.strerror or exc}') from None
+        try:
+            info = os.fstat(descriptor)
+        except OSError as exc:
+            os.close(descriptor)
+            raise DeploymentLocked(f'the lock file {self.path} cannot be examined: {exc.strerror or exc}') from None
+        problem = None
+        if self._is_link(info):
+            problem = 'a symbolic link (or a reparse point): it is never followed; remove it if it is not yours'
+        elif not stat.S_ISREG(info.st_mode):
+            problem = 'not a regular file: it is never used; remove it if it is not yours'
+        elif info.st_nlink != 1:
+            problem = f'a hard link (the file has {info.st_nlink} names): a lock on it would truncate the other names, so it is never used; remove it if it is not yours'
+        if problem:
+            os.close(descriptor)
+            raise DeploymentLocked(f'the lock file {self.path} is {problem}')
+        return descriptor
+
+    def is_current(self, descriptor):
+        """The open file is the file at the path now (not deleted, not replaced, not a link): `fstat` of the descriptor against `lstat` of the path."""
+        try:
+            info = os.lstat(self.path)
+            return not self._is_link(info) and os.path.samestat(os.fstat(descriptor), info)
+        except OSError:
+            return False
+
+    @staticmethod
+    def _read_leftover(descriptor):
+        """None if the file is empty (what a deployment that ended leaves), else the owner it names (`{}` if it names nobody usable). Leaves the position at the start."""
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        raw = os.read(descriptor, 65536)
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        if not raw.strip():
+            return None
+        try:
+            value = json.loads(raw.decode('utf-8'))
+        except ValueError:
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    def acquire(self):
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise DeploymentLocked(f'the directory of the lock ({self.path.parent}) cannot be made: {exc.strerror or exc}') from None
+        for _ in range(LOCK_ATTEMPTS):
+            descriptor = self._open()
+            try:
+                self._lock_file(descriptor)
+            except OSError as exc:
+                owner = self.owner()
+                os.close(descriptor)
+                raise DeploymentLocked(self.refusal(owner, exc), owner) from None
+            if not self.is_current(descriptor):  # somebody deleted or replaced the file between our open and our lock: what we hold is a file nobody sees any more
+                self.close(descriptor)
+                continue
+            try:
+                left = self._read_leftover(descriptor)
+                os.ftruncate(descriptor, 0)
+                os.write(descriptor, json.dumps({'pid': os.getpid(), 'host': socket.gethostname(), 'started_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+                                                 'project': self.project, 'token': self.token, 'stamp': process_stamp(os.getpid())}).encode('utf-8'))
+            except OSError as exc:  # the lock is ours, but a file that cannot say who holds it would lie to the next one: it is not taken
+                self.close(descriptor)
+                raise DeploymentLocked(f'the lock file {self.path} cannot be written: {exc.strerror or exc}') from None
+            if not self.is_current(descriptor):  # replaced while we wrote: the owner is in a file nobody reads
+                self.close(descriptor)
+                continue
+            self.descriptor, self.held, self.leftover = descriptor, True, left
+            if left is not None and self.break_lock and self.foreign(left):
+                self.broken = left
+            return self
+        raise DeploymentLocked(f'the lock file {self.path} kept changing while it was taken; try again')
+
+    def close(self, descriptor):
+        try:
+            self._unlock_file(descriptor)
+        except OSError:
+            pass
+        finally:
+            os.close(descriptor)
+
+    def foreign(self, owner):
+        """The file says its owner is on another host (a PID of another machine means nothing here)."""
+        return isinstance(owner.get('host'), str) and bool(owner['host']) and owner['host'] != socket.gethostname()
+
+    def refusal(self, owner, error):
+        head = f'the project {self.project} is locked by a deployment {self.describe(owner)} (lock file {self.path}); no phase was run.'
+        contention = os.name == 'nt' or getattr(error, 'errno', None) in (errno.EAGAIN, errno.EACCES, errno.EWOULDBLOCK)
+        if not contention:
+            return f'the project {self.project} cannot be locked: the operating system refused the lock on {self.path} ({getattr(error, "strerror", None) or error}); no phase was run.'
+        if self.foreign(owner):
+            return (head + ' The file says that host is not this one, but the operating system still reports the lock as held, so it is not free to take: --break-lock never deletes a file whose lock is held. '
+                    'If that deployment is gone, free the lock where it is held (end its process, or release it on the file system of the shared disk) and try again.')
+        if owner and owner.get('host') == socket.gethostname():
+            return head + ' That deployment is still running here (the operating system holds the lock until its process ends): wait for it to end. --break-lock does not apply to a process of this host.'
+        return head + ' A deployment is holding it (it may be writing its information this moment): try again in a moment; --break-lock does not apply when the owner is not known to be on another host.'
+
+    def release(self):
+        """Let the lock go: the information is emptied first (the file is never deleted: that would open a window between two owners), then the system lock is dropped and the file closed."""
+        if not self.held:
+            return
+        self.held = False
+        descriptor, self.descriptor = self.descriptor, None
+        try:
+            os.ftruncate(descriptor, 0)
+        except OSError:
+            pass
+        self.close(descriptor)
 
 
 def validate_isolation(project, api_port, web_port):
@@ -149,6 +545,7 @@ services:
     ports: !override ['127.0.0.1:{web_port}:8080']
   memory-admin: {{image: {image('operator')}}}
   memory-backup: {{image: {image('operator')}}}
+  memory-probe: {{image: {image('operator')}}}
 {stub}networks:
   inference: {{name: {project}_inference}}
   webui: {{name: {project}_webui}}
@@ -260,6 +657,9 @@ class Deployment:
         self.compose = ['docker', 'compose', '-p', self.project, '--project-directory', str(root)]
         self.phase = 'engine'
         self.secret_values = []
+        recorded = self.load_status().get('images')  # the tags of the earlier releases outlive a deployment that stops before it tags again: a rollback still finds them
+        if recorded:
+            self.report['images'] = recorded
 
     def run(self, command, timeout=120, extra_env=None):
         """Run `command`; `extra_env` adds variables to ITS environment only (a secret that a `-e NAME` of docker takes from there, never from the argument list)."""
@@ -279,34 +679,305 @@ class Deployment:
             raise DeploymentError(f'Command failed during {self.phase}.')
         return result.stdout.strip()
 
+    def refresh_operator_services(self):
+        """The services that share the `operator` image and are opt-in (profiles `probe` and `backup`) are not named by the `up` of a deployment or of a rollback: one that is running would go on
+        with the image of the other release. Each one that is running is recreated, without waiting for its healthcheck (`memory-probe` has a start period of 120 s); one that is not running is not
+        started. `memory-backup` is recreated even in the middle of a copy: its SIGTERM (`stop_grace_period` 60 s) removes the partial copy and the next cycle makes it again, so nothing half
+        written is ever kept. A failure of the listing is not a failure of the deployment (these services are not part of what it verifies), a failure of the recreation is."""
+        profiles = [flag for service in OPERATOR_SERVICES for flag in ('--profile', service[1])]
+        try:
+            running = self.run(self.compose + profiles + ['ps', '--status', 'running', '--services']).split()
+        except DeploymentError:
+            self.report.pop('command_failure', None)  # the listing is a question, not a step
+            return
+        for service, profile, key in OPERATOR_SERVICES:
+            if service not in running:
+                continue
+            files, reason = self.recorded_compose_files(service)
+            if reason:
+                self.skip_recreation(service, profile, key, files, reason)
+                continue
+            self.run(self.compose_with(files) + ['--profile', profile, 'up', '-d', '--no-deps', '--force-recreate', service])
+            self.report[key] = True
+
+    def compose_with(self, files):
+        """`self.compose` with exactly `files` as its `-f` list (in that order) in the place of the first one."""
+        command, placed, skip = [], False, False
+        for part in self.compose:
+            if skip:
+                skip = False
+            elif part == '-f':
+                skip = True
+                if not placed:
+                    command.extend(piece for file in files for piece in ('-f', file))
+                    placed = True
+            else:
+                command.append(part)
+        return command if placed else command + [piece for file in files for piece in ('-f', file)]
+
+    def recorded_compose_files(self, service):
+        """The Compose files the container of `service` was created with (label `com.docker.compose.project.config_files` of its container, asked of the project only and leaving out the one-off
+        containers of `compose run`), as `(files, '')` when every one is ours: `docker-compose.yml`, `docker-compose.backup-rclone.yml` (the egress network of an `rclone:` destination) and, in a
+        rehearsal, the override this deployment wrote, which is then mandatory: without it the container is not the rehearsal's and recreating it would use the installation image and volumes. Anything
+        else gives `(names, reason)` with the names of the label exactly as it lists them (all of them, ours and not, in order), or `(None, reason)` when there is no reliable label (empty, unreadable,
+        or more than one different one): recreating with the files of `self.compose` would silently drop what the container was created with."""
+        allowed = [self.root / 'docker-compose.yml', self.root / 'docker-compose.backup-rclone.yml'] + ([self.private / 'compose.override.yml'] if self.isolated else [])
+        known = {os.path.normcase(str(path.resolve())): str(path) for path in allowed}
+        try:
+            label = self.run(['docker', 'ps', '-a', '--filter', 'label=com.docker.compose.project=' + self.project, '--filter', 'label=com.docker.compose.oneoff=False',
+                              '--filter', 'label=com.docker.compose.service=' + service, '--format', '{{.Label "com.docker.compose.project.config_files"}}'])
+        except DeploymentError:
+            self.report.pop('command_failure', None)  # a question, not a step
+            return None, 'the Compose files of its container could not be read'
+        lines = list(dict.fromkeys(line.strip() for line in label.split('\n') if line.strip()))  # stopped containers of the service repeat the same label
+        if len(lines) != 1:
+            return None, 'its container has no label with the Compose files it was created with' if not lines else 'more than one container answers for it'
+        names = [name.strip() for name in lines[0].split(',') if name.strip()]
+        files, foreign = [], []
+        for name in names:
+            found = known.get(os.path.normcase(str(Path(name).resolve())))
+            (files if found else foreign).append(found or name)
+        if foreign or not files:
+            return names, 'its container was created with Compose files that are not ours (' + ', '.join(printable(name, 500) for name in foreign) + ')'
+        if self.isolated and str(self.private / 'compose.override.yml') not in files:
+            # the manual command adds the rehearsal override: following it must never recreate a rehearsal service with the installation image and volumes
+            return names + [str(self.private / 'compose.override.yml')], ('its container was created without the rehearsal override; recreating it would use the installation image and volumes '
+                                                                           '(the command below adds the rehearsal override)')
+        return files, ''
+
+    def skip_recreation(self, service, profile, key, names, reason):
+        """A service that is not recreated is not a failed deployment: the report says so (`<name>_recreate_skipped`) and the console gives the command to run by hand, with the whole `-f` list of its
+        label as it names it (`names`); with no reliable label (`None`) it says that it could not be known and leaves the marker `-f <files it was created with>`, never a list made up here."""
+        known = names is not None
+        manual = shlex.join(self.compose_with([printable(name, 4000) for name in names] if known else ['<files it was created with>']) + ['--profile', profile, 'up', '-d', '--no-deps', '--force-recreate', service])
+        self.report[key.replace('_recreated', '_recreate_skipped')] = reason
+        advice = ('recreate it by hand with the Compose files it was created with' if known else
+                  'it could not be known with which Compose files it was created (replace the marker with its `-f` list; an `rclone:` destination includes docker-compose.backup-rclone.yml); '
+                  'the command, with the Compose files it was created with')
+        print(f'Kairos: {service} was NOT recreated: {reason}. It keeps running the previous image; {advice}: {manual}', file=sys.stderr, flush=True)
+
     def step(self, name):
         self.phase = name
         self.report['phases'].append(name)
         print(f'Kairos: {name}', flush=True)
 
     def operator(self, *args, timeout=120, name=None):
-        """One `memory-admin` command. A command with a `name` runs in a container of that name, which is stopped and removed if the command fails or times out: the client that
-        `subprocess` kills at the timeout is not the container, and a dump that kept running would leave a copy half written (the SIGTERM of `docker stop` makes the dump clean up)."""
+        """One `memory-admin` command. A command with a `name` runs in a container of that name, which is stopped and removed if the command fails, times out or is interrupted (Ctrl-C, SIGTERM): the client
+        that `subprocess` kills is not the container, and a dump or a migration that kept running would leave a copy half written or a second one next to a retry (the SIGTERM of `docker stop` makes
+        the dump clean up and rolls the migration back). Every `compose run` of a deployment is named (fix4, gap 3)."""
         command = self.compose + ['run', '--rm', '--no-deps', '-T'] + (['--name', name] if name else []) + ['memory-admin', *args]
+        return decode_json(self.run_reaping(command, name, timeout))
+
+    def container_name(self, what):
+        return f'kairos-deploy-{what}-{uuid.uuid4().hex[:10]}'
+
+    def run_reaping(self, command, name, timeout=120):
+        """`run(command)`; if it raises anything (an interruption included) the container `name` it started is reaped."""
         try:
-            return decode_json(self.run(command, timeout=timeout))
+            return self.run(command, timeout=timeout)
         except BaseException:
             if name:
                 self.reap(name)
             raise
 
     def reap(self, name):
-        """Stop (SIGTERM first, so the command removes what it had half written) and remove the container `name`; nothing here may hide the error that is propagating."""
-        for command, wait in ((['docker', 'stop', '--time', '20', name], 60), (['docker', 'rm', '--force', '--volumes', name], 60)):
+        """Stop (SIGTERM first, so the command removes what it had half written) and remove the container `name`; nothing here may hide the error that is propagating, and a signal during it is held off.
+        A container that docker could not be asked to remove is recorded (`unreaped_containers`) and warned about: it may still be running (fix4, gap 3)."""
+        while True:  # fix5, gap 3: a signal in the instants before the signals are held off (or after) does not cancel the reap: it is repeated (stop and remove are idempotent)
             try:
-                subprocess.run(command, capture_output=True, env=self.environment, timeout=wait)
-            except Exception:
-                pass
-        self.report.setdefault('reaped_containers', []).append(name)
+                self.reap_once(name)
+                return
+            except (KeyboardInterrupt, Interrupted):
+                continue
+
+    def reap_once(self, name):
+        cleared = False
+        with ignoring_signals():
+            for command, wait in ((['docker', 'stop', '--time', '20', name], 60), (['docker', 'rm', '--force', '--volumes', name], 60)):
+                try:
+                    done = subprocess.run(command, capture_output=True, env=self.environment, timeout=wait)
+                except Exception:
+                    continue
+                if command[1] == 'rm':
+                    said = getattr(done, 'stderr', b'')
+                    said = said.decode('utf-8', 'replace') if isinstance(said, bytes) else said if isinstance(said, str) else ''
+                    cleared = done.returncode == 0 or 'no such' in said.lower()  # removing what is not there is not a failure
+        if cleared:
+            if name not in self.report.setdefault('reaped_containers', []):
+                self.report['reaped_containers'].append(name)
+        elif name not in self.report.get('unreaped_containers', []):
+            self.report.setdefault('unreaped_containers', []).append(name)
+            self.warn(f'the container {name} could not be stopped and removed (docker did not answer): it may still be running. Check docker ps, and wait for it to end or remove it '
+                      f'(docker rm --force {name}) before retrying.')
 
     def image(self, name):
         """The image of a service of this project: the rehearsal's own tag, or the one docker-compose.yml fixes for the installed project."""
         return isolated_image(self.project, name) if self.isolated else f'kairos-{name}:latest'
+
+    def image_repo(self, name):
+        """The repository of that image without its tag: the tags `<version>-<mark>` live under it. An isolated project is always under `rehearsal-<project>-`, so it can never equal an installed name."""
+        return self.image(name).rsplit(':', 1)[0]
+
+    def probe(self, command, timeout=60):
+        """The output of a read-only command, or None if it failed; a failure never becomes `command_failure` of the report nor replaces the error being raised."""
+        kept = self.report.get('command_failure')
+        try:
+            return self.run(command, timeout=timeout) or None
+        except DeploymentError:
+            return None
+        finally:
+            if kept is None:
+                self.report.pop('command_failure', None)
+            else:
+                self.report['command_failure'] = kept
+
+    def load_status(self):
+        try:
+            value = json.loads(safe_path(self.private / 'deployment-status.json').read_text(encoding='utf-8'))
+        except (OSError, ValueError, DeploymentError):
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    def tags_of(self, name):
+        """The tags `<version>-<mark>` of this image, newest mark first."""
+        listed = self.probe(['docker', 'image', 'ls', self.image_repo(name), '--format', '{{.Tag}}']) or ''
+        found = [(match.group(1), tag) for tag in listed.split() for match in [TAG_MARK.fullmatch(tag)] if match]
+        return [tag for _, tag in sorted(found, reverse=True)]
+
+    def warn(self, text):
+        """A warning of the deployment: in the report (`warnings`) and on stderr."""
+        self.report.setdefault('warnings', []).append(text)
+        print('WARNING: ' + text, file=sys.stderr, flush=True)
+
+    def image_to_tag(self, name, status, good_ids):
+        """The id of the image to tag for `name`, or None: THE IMAGES OF THE LAST DEPLOYMENT THAT ENDED WELL (fix2, review of phase 10), never what is running or in `:latest` by now (a deployment
+        that failed has already replaced both). With a record (`images.good`, written when a deployment ends `complete` or `rolled_back`) that is its id, if the image still exists. Without
+        one (an installation made before the record existed, or a first deployment) the images in use are the good ones only if the last status says so (none, `complete`, `rolled_back`):
+        a service is then what its CONTAINER runs (`previous_images`, read in `apply` before anything changes; one without a container is not tagged), `operator` (no container: `memory-admin`
+        runs one command and goes) its `:latest`. After a failed status without a record nothing can be judged: None."""
+        if good_ids:
+            image_id = good_ids.get(name)
+            if isinstance(image_id, str) and IMAGE_ID.fullmatch(image_id):
+                return self.probe(['docker', 'image', 'inspect', '--format', '{{.Id}}', image_id])
+            if name in good_ids:  # data on disk: anything that is not `sha256:` and 64 lowercase hexadecimal digits never reaches docker (fix3, gap 6)
+                self.warn(f'images.good.ids.{name} of deployment-status.json is not an image id (sha256:<64 hexadecimal digits>): {str(image_id)[:60]!r}; that record is ignored and the image is not tagged')
+            return None
+        if status not in (None, 'complete', 'rolled_back'):
+            return None
+        service = ROLLBACK_SERVICES.get(name)
+        if service:
+            served = (self.report.get('previous_images') or {}).get(service)
+            return served if isinstance(served, str) and IMAGE_ID.fullmatch(served) else None
+        return self.probe(['docker', 'image', 'inspect', '--format', '{{.Id}}', self.image(name)])
+
+    def tag_previous_images(self):
+        """T-62 (CA-24, O-06): before the build replaces `:latest`, the images of the LAST GOOD RELEASE are tagged `<repository>:<version>-<mark>` so that `--rollback` has something to go back to.
+
+        The only source of truth is `images.good` of the report (ids and versions of the last deployment that ended `complete` or `rolled_back`), see `image_to_tag`; a deployment that fails
+        never promotes it and a retry of one finds the tag already made (an image that already has a tag, whichever its age, is not tagged again: retries do not use up the kept tags).
+        The TAGS_KEPT newest marks stay per image, plus the tag that is `previous` (never pruned: it is the target of the rollback); the others are removed (only the tag: an image a container uses
+        is never deleted). The version in a new tag is the one recorded for that image if `<version>-<mark>` is a tag Docker accepts, else the one of the code that tags it (the mark is the reliable
+        order). Without a record and after a failed status nothing can be judged: nothing is tagged and the tags already recorded stay the target. The report records `previous`, `kept`, `good`
+        (what was tagged: the same release, by id) and, after the build, `current` (the image ids now in `:latest`) and `current_versions`; `current` is promoted to `good` only when the deployment
+        ends well.
+        """
+        version, mark = release_version(self.root), datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+        status = self.load_status().get('status')
+        recorded = self.report.get('images') if isinstance(self.report.get('images'), dict) else {}
+        good = recorded.get('good') if isinstance(recorded.get('good'), dict) else {}
+        good_ids, good_versions = (good.get(key) if isinstance(good.get(key), dict) else {} for key in ('ids', 'versions'))
+        built_ids, built_versions = (recorded.get(key) if isinstance(recorded.get(key), dict) else {} for key in ('current', 'current_versions'))
+        ids = {name: self.image_to_tag(name, status, good_ids) for name in IMAGE_NAMES} if good_ids or status in (None, 'complete', 'rolled_back') else {}
+        if not ids or (not good_ids and any(not ids[name] for name in ROLLBACK_SERVICES)):  # fix5, gap 1: no judgment, or a release derived from the containers that lacks a service: nothing is tagged, the tags already recorded stay
+            carried, held = (recorded.get(key) if isinstance(recorded.get(key), dict) else {} for key in ('previous', 'kept'))
+            self.report['images'] = {'version': version, 'mark': mark, 'previous': dict(carried), 'kept': dict(held), 'current': {}, 'current_versions': {}}
+            return
+        previous, kept, promoted = {}, {}, {'ids': {}, 'versions': {}}
+        for name in IMAGE_NAMES:
+            image_id = ids[name]
+            if not image_id:
+                continue  # a first deployment, an installation that predates this image, or an image that is gone: nothing to go back to for it
+            repository = self.image_repo(name)
+            existing = next((tag for tag in self.tags_of(name) if self.probe(['docker', 'image', 'inspect', '--format', '{{.Id}}', f'{repository}:{tag}']) == image_id), None)
+            if existing:
+                previous[name], used = f'{repository}:{existing}', existing.rsplit('-', 1)[0]
+            else:
+                traced = good_versions.get(name) if good_ids else (built_versions.get(name) if built_ids.get(name) == image_id else None)
+                used = tag_version(traced, version, mark)
+                previous[name] = f'{repository}:{used}-{mark}'
+                self.run(['docker', 'tag', image_id, previous[name]])
+            promoted['ids'][name], promoted['versions'][name] = image_id, used
+            kept[name] = []
+            for number, tag in enumerate(self.tags_of(name)):
+                if number < TAGS_KEPT or f'{repository}:{tag}' == previous[name]:
+                    kept[name].append(f'{repository}:{tag}')
+                else:
+                    self.quietly(['docker', 'image', 'rm', f'{repository}:{tag}'])
+        self.report['images'] = {'version': version, 'mark': mark, 'previous': previous, 'kept': kept, 'current': {}, 'current_versions': {}, **({'good': promoted} if promoted['ids'] else {})}
+
+    def record_running_release(self):
+        """Fix4 (review of phase 10, attempt 4, gap 1): at the START of a deployment (after the lock and the engine check, which writes nothing, and before `configuration` and every other phase) a project with no `images.good` and a last state
+        that can be trusted (no report, or an old `complete` / `rolled_back`: the real state of an installation made before the record) has the release that RUNS recorded as good, by id, and saved
+        at once as `in_progress`: the images of its containers (and `:latest` of `operator`, same rule as `image_to_tag`). Any interruption or failure after this, whenever it comes, leaves a record
+        that `--rollback` and the next tagging can use. If the last state cannot be trusted (`failed`, `interrupted`, `in_progress`) and there is no record nothing is invented: a warning says so and
+        `--rollback` says why it cannot go back. A project that runs nothing (first installation) records nothing."""
+        recorded = self.report.get('images') if isinstance(self.report.get('images'), dict) else {}
+        good = recorded.get('good') if isinstance(recorded.get('good'), dict) else {}
+        if good.get('ids') and isinstance(good.get('ids'), dict):  # a record exists (whatever an entry of it says: `image_to_tag` ignores the invalid ones with a warning)
+            return
+        status = self.load_status().get('status')
+        served = self.served_images(SERVICES)
+        self.report['previous_images'] = served
+        if status not in (None, 'complete', 'rolled_back'):
+            if served:
+                self.warn(f'there is no record of a release that ended well (images.good) and the last deployment ended {printable(status)}: nothing says which images were good, so none is recorded and --rollback '
+                          'cannot go back until a deployment ends well')
+            return
+        if not served:  # a project that runs nothing (first installation, or every container gone) records nothing: `:latest` of `operator` alone is no release
+            return
+        if any(service not in served for service in ROLLBACK_SERVICES.values()):  # fix5, gap 1: a release that lacks a service is not a release: recording what is left would be a good that is not complete
+            self.warn('the container of ' + ', '.join(service for service in ROLLBACK_SERVICES.values() if service not in served) + ' does not exist, so the release that runs is incomplete: none is recorded as good '
+                      'and --rollback cannot go back until a deployment ends well')
+            return
+        ids, versions = {}, {}
+        built_ids, built_versions = (recorded.get(key) if isinstance(recorded.get(key), dict) else {} for key in ('current', 'current_versions'))
+        for name in IMAGE_NAMES:
+            image_id = self.image_to_tag(name, status, None)
+            if image_id:
+                ids[name] = image_id
+                if built_ids.get(name) == image_id and isinstance(built_versions.get(name), str):
+                    versions[name] = built_versions[name]
+        if not ids:
+            return
+        self.report['images'] = {**recorded, 'good': {'ids': ids, 'versions': versions}}
+        self.report['status'] = 'in_progress'  # durable before any phase: a stop from here on keeps the record, and `in_progress` is never taken as good
+        self.save_report()
+
+    def served_images(self, services):
+        """The image id each container of `services` runs (`service -> id`); a service without a container is not in it."""
+        served = {}
+        for service in services:
+            ids = self.run(['docker', 'ps', '-a', '--filter', 'label=com.docker.compose.project=' + self.project,
+                            '--filter', 'label=com.docker.compose.service=' + service, '--format', '{{.ID}}']).splitlines()
+            if len(ids) > 1:
+                raise DeploymentError('Multiple containers own the same service; resolve ownership before deployment')
+            if ids:
+                served[service] = self.run(['docker', 'inspect', '--format', '{{.Image}}', ids[0]])
+        return served
+
+    def promote_images(self, current, versions):
+        """A deployment (or a rollback) ended well: the images that are in `:latest` now are the last good release, the only target of the next rollback and the next tagging."""
+        images = self.report.setdefault('images', {'previous': {}})
+        images['current'], images['current_versions'] = dict(current), dict(versions)
+        images['good'] = {'ids': dict(current), 'versions': dict(versions)}
+
+    def record_current_images(self):
+        images = self.report.setdefault('images', {'previous': {}})
+        current, versions = images.setdefault('current', {}), images.setdefault('current_versions', {})
+        for name in IMAGE_NAMES:
+            image_id = self.probe(['docker', 'image', 'inspect', '--format', '{{.Id}}', self.image(name)])
+            if image_id:
+                current[name], versions[name] = image_id, release_version(self.root)
 
     def quietly(self, command, timeout=60):
         """Run a clean-up or probe command: True if it succeeded (or what it removes was not there), False if not; a failure never becomes `command_failure` of the report nor replaces the error being raised."""
@@ -392,7 +1063,7 @@ class Deployment:
 
     def long_operator(self, verb, *args):
         """A command that reads or dumps the whole database: the `--backup-timeout`, in a container that is reaped on failure."""
-        return self.operator(verb, *args, timeout=self.backup_timeout, name=f'kairos-deploy-{verb}-{uuid.uuid4().hex[:10]}')
+        return self.operator(verb, *args, timeout=self.backup_timeout, name=self.container_name(verb))
 
     def spy_report(self):
         report = decode_json(self.run(self.compose + ['exec', '-T', STUB_SERVICE, 'python', '-c', SPY_QUERY]))
@@ -427,14 +1098,24 @@ class Deployment:
         self.private.mkdir(parents=True, exist_ok=True)
         destination = safe_path(self.private / 'deployment-status.json')
         temporary = safe_path(self.private / 'deployment-status.tmp')
-        temporary.write_text(json.dumps(self.report, indent=2) + '\n', encoding='utf-8')
+        payload = (json.dumps(self.report, indent=2) + '\n').encode('utf-8')
+        with open(temporary, 'wb') as handle:  # written whole and flushed to disk BEFORE it replaces the old report: a kill leaves the old one or the new one, never half of one
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
         temporary.replace(destination)
+        if os.name != 'nt':  # the rename itself is made durable too
+            try:
+                descriptor = os.open(self.private, os.O_RDONLY)
+                try:
+                    os.fsync(descriptor)
+                finally:
+                    os.close(descriptor)
+            except OSError:
+                pass
 
-    def apply(self):
-        self.step('engine')
-        self.run(['docker', 'version', '--format', '{{.Server.Version}}'])
-        self.run(['docker', 'compose', 'version', '--short'])
-        # No secret creation, image build or service change precedes this check.
+    def prepare(self):
+        """The `configuration` phase, shared by `apply` and `rollback`: the project's own configuration, secrets and compose files, and what Compose resolves from them."""
         self.step('configuration')
         # An isolated rehearsal never reads the installed project's .env or private configuration.
         config = {} if self.isolated else read_env(self.root / '.env')
@@ -479,6 +1160,92 @@ class Deployment:
             raise DeploymentError('Compose resolves a different secret directory')
         if {value.get('name') for value in effective['volumes'].values()} != set(self.volumes):
             raise DeploymentError('Compose resolves different data volumes')
+        return effective
+
+    def invalid_previous(self, previous):
+        """What is wrong with `images.previous`: a key that is not one of IMAGE_NAMES (never `postgres`), or a tag that is not exactly `<image_repo(key)>:<version>-<mark>`."""
+        problems = []
+        for name, tag in previous.items():
+            if name not in IMAGE_NAMES:
+                problems.append(f'unknown image {str(name)[:40]!r}')
+            elif not (isinstance(tag, str) and re.fullmatch(re.escape(self.image_repo(name)) + r':[A-Za-z0-9_][A-Za-z0-9_.]{0,110}-[0-9]{8}T[0-9]{6}Z', tag)):
+                problems.append(f'{name}: {str(tag)[:80]!r}')
+        return problems
+
+    def rollback(self):
+        """`--rollback` (T-63, CA-24, O-06): the services go back to the images tagged by the previous deployment, WITHOUT migrating: no backup, no `migrate`, no bootstrap, no backfill, no data touched.
+
+        It relies on the migrations being additive (the code of the previous release works on the migrated database: docs/operations.md). Without recorded tags (or if one is gone) it ends with
+        `no_previous_images` before any service, image or volume is touched. The images are put back in `:latest` and only the services of the four tagged images are recreated, with
+        `--no-deps --no-build`; the content manifest is read before and after and must be equal; the runtime check (and the round trip with `--roundtrip`) closes it.
+        """
+        recorded = self.report.get('images')
+        previous = recorded.get('previous') if isinstance(recorded, dict) else None
+        if not isinstance(previous, dict) or not previous:
+            raise NoPreviousImages('no previous images are recorded for this project (deployment-status.json has no tags of an earlier release): there is nothing to go back to; no service was changed. '
+                                   + no_previous_reason(self.report, self.load_status().get('status')))
+        invalid = self.invalid_previous(previous)
+        if invalid:  # the file is data on disk: only `<repository of that image>:<version>-<mark>` of the images of a deployment is ever retagged to :latest
+            raise NoPreviousImages('the recorded previous images are not tags this script makes (' + '; '.join(invalid) + '): refusing to use them; no service was changed')
+        outside = [service for name, service in ROLLBACK_SERVICES.items() if name not in previous]
+        if outside:  # fix5, gap 1: a rollback that leaves a service on the release that failed is not a rollback
+            raise NoPreviousImages('the recorded previous images do not include ' + ', '.join(outside) + ': a rollback would leave ' + ('it' if len(outside) == 1 else 'them') + ' on the release that is running; no service was changed. '
+                                   + no_previous_reason(self.report, self.load_status().get('status')))
+        self.report['phases'] = []
+        self.step('engine')
+        self.run(['docker', 'version', '--format', '{{.Server.Version}}'])
+        self.run(['docker', 'compose', 'version', '--short'])
+        self.prepare()
+        self.step('rollback')
+        target = {name: self.probe(['docker', 'image', 'inspect', '--format', '{{.Id}}', tag]) for name, tag in previous.items()}
+        gone = [previous[name] for name, image_id in target.items() if not image_id]
+        if gone:
+            raise NoPreviousImages('the recorded images are no longer here: ' + ', '.join(gone) + '; no service was changed')
+        services = [ROLLBACK_SERVICES[name] for name in ROLLBACK_SERVICES if name in previous]
+        served = self.served_images(services)  # what the CONTAINERS run: `:latest` may be a build that failed (never served) or a rollback that was interrupted after its `docker tag`
+        wanted = {ROLLBACK_SERVICES[name]: target[name] for name in ROLLBACK_SERVICES if name in previous}
+        latest = {name: self.probe(['docker', 'image', 'inspect', '--format', '{{.Id}}', self.image(name)]) for name in previous}
+        stale = [name for name in previous if latest[name] != target[name]]  # `:latest` (the operator image too) that is not the target: a build that failed, or a rollback interrupted before its tag
+        differing = [service for service in services if served.get(service) != wanted[service]]  # the containers that do not run the target (a service without a container is one)
+        if not stale and not differing:  # complete: the containers AND `:latest` are the previous images; a rollback would only report one that did not happen (fix1, fix2, fix3)
+            raise AlreadyAtPrevious('the containers and :latest of every image already are the images of the previous deployment (' + ', '.join(previous.values()) + '): there is nothing to go back to; no service was changed. '
+                                    ':latest is that deployment\'s, so if a service is stopped, starting it again (docker compose ... up -d --no-build) runs those images; the next --apply builds again')
+        running = {name: served.get(ROLLBACK_SERVICES[name]) if name in ROLLBACK_SERVICES else latest[name] for name in previous}
+        before = self.long_operator('content-manifest')
+        self.report['rollback'] = {'from': running, 'to': dict(previous), 'migrated': False, 'retagged': list(stale), 'recreated': [service for service in differing]}
+        for name in stale:
+            self.run(['docker', 'tag', previous[name], self.image(name)])
+        if differing:  # only the containers that are not at the target: one that already is stays as it is (fix3)
+            self.run(self.compose + ['up', '-d', '--no-deps', '--no-build', '--wait', '--wait-timeout', '90', *differing])
+        self.refresh_operator_services()  # the operator image was retagged: what runs it (probe, copy cycle) goes back with it
+        self.step('verify')
+        final = self.long_operator('content-manifest')
+        compare_content(before, final)
+        self.report['verification'] = verify_runtime(final, self.secret_dir, self.args.verify_key_file, f'http://127.0.0.1:{self.web_port}', self.report.setdefault('warnings', []))
+        if self.roundtrip:
+            self.step('roundtrip')
+            self.report['roundtrip'] = self.run_roundtrip()
+        if self.embed_stub:
+            self.report['model_calls'] = self.check_no_language_model()
+        current = {name: image_id for name in IMAGE_NAMES if name in previous for image_id in [self.probe(['docker', 'image', 'inspect', '--format', '{{.Id}}', self.image(name)])] if image_id}  # only what is in the destination (fix5, gap 1)
+        earlier = self.report['images'] if isinstance(self.report.get('images'), dict) else {}
+        earlier_ids, earlier_versions = (earlier.get(key) if isinstance(earlier.get(key), dict) else {} for key in ('current', 'current_versions'))
+        mark = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+        versions = {name: previous[name].rsplit(':', 1)[1].rsplit('-', 1)[0] if name in previous else tag_version(earlier_versions.get(name) if earlier_ids.get(name) == image_id else None, release_version(self.root), mark)
+                    for name, image_id in current.items()}
+        self.promote_images(current, versions)  # the release it went back to is the last good one again
+        self.report.update(status='rolled_back', content_sha256=final['sha256'], documents=len(final['documents']), projects=len(final['projects']))
+        self.save_report()
+        print('Kairos rolled back to the images ' + ', '.join(previous.values()) + '; nothing was migrated. ' + verified_message(self.report['verification']) + ' Report: '
+              + ('.private/rehearsal-' + self.project + '/' if self.isolated else '.private/') + 'deployment-status.json')
+
+    def apply(self):
+        self.step('engine')
+        self.run(['docker', 'version', '--format', '{{.Server.Version}}'])
+        self.run(['docker', 'compose', 'version', '--short'])
+        self.record_running_release()  # after the engine check (which writes nothing), before `configuration` and every other phase
+        # No secret creation, image build or service change precedes this check.
+        effective = self.prepare()
         if not self.args.fresh:
             for volume in self.volumes:
                 self.run(['docker', 'volume', 'inspect', '--format', '{{.Name}}', volume])
@@ -491,22 +1258,20 @@ class Deployment:
                 continue
             observed = decode_json(self.run(['docker', 'network', 'inspect', '--format', '{{json .}}', desired['name']]))
             self.report['networks'].append(check_network(desired, observed))
-        previous = {}
-        for service in SERVICES:
-            ids = self.run(['docker', 'ps', '-a', '--filter', 'label=com.docker.compose.project='+self.project,
-                            '--filter', 'label=com.docker.compose.service='+service, '--format', '{{.ID}}']).splitlines()
-            if len(ids) > 1:
-                raise DeploymentError('Multiple containers own the same service; resolve ownership before deployment')
-            if ids:
-                previous[service] = self.run(['docker', 'inspect', '--format', '{{.Image}}', ids[0]])
+        previous = self.served_images(SERVICES)
         self.report['previous_images'] = previous
         self.step('build')
+        self.tag_previous_images()
+        self.report['status'] = 'in_progress'  # durable BEFORE the build (fix3, gap 2): a kill from here on leaves the record of the tags, and `in_progress` is never taken as good
+        self.save_report()
         self.run(self.compose + ['build', 'memory-postgres', *SERVICES, 'memory-admin'], timeout=1800)
+        self.record_current_images()
         self.step('database')
         self.run(self.compose + ['up', '-d', '--no-deps', '--wait', '--wait-timeout', '90', 'memory-postgres'])
-        self.run(self.compose + ['run', '--rm', '--no-deps', '-T', 'memory-files'])
+        name = self.container_name('files')
+        self.run_reaping(self.compose + ['run', '--rm', '--no-deps', '-T', '--name', name, 'memory-files'], name)
         self.step('inspect')
-        counts = self.operator('inspect')['tables']
+        counts = self.operator('inspect', name=self.container_name('inspect'))['tables']
         existing = counts.get('actors', 0) > 0
         if not existing and not self.args.fresh:
             raise DeploymentError('Expected the existing database; refusing to bootstrap an empty replacement')
@@ -529,10 +1294,10 @@ class Deployment:
             self.run(self.compose + ['stop', '--timeout', '30', 'memory-api', 'memory-worker'])
         # The first pgvector migration rewrites embeddings and builds HNSW indexes: no 120 s abort. Recorded in the report.
         self.report['migrate_timeout_seconds'] = MIGRATE_TIMEOUT_SECONDS
-        self.operator('migrate', timeout=MIGRATE_TIMEOUT_SECONDS)
+        self.operator('migrate', timeout=MIGRATE_TIMEOUT_SECONDS, name=self.container_name('migrate'))
         self.step('bootstrap')
         if not existing:
-            self.operator('bootstrap')
+            self.operator('bootstrap', name=self.container_name('bootstrap'))
         after = self.long_operator('content-manifest')
         if before:
             compare_content(before, after)
@@ -543,11 +1308,12 @@ class Deployment:
         # say there is nothing left: it stays stopped until `start` brings the new one up. Always, with or without --stop-services-before-migrate.
         self.report['worker_stopped_before_backfill'] = True  # before the command, for the same reason
         self.run(self.compose + ['stop', '--timeout', '30', 'memory-worker'])
-        result = self.operator('backfill-chunks', timeout=BACKFILL_TIMEOUT_SECONDS)
+        result = self.operator('backfill-chunks', timeout=BACKFILL_TIMEOUT_SECONDS, name=self.container_name('backfill-chunks'))
         self.report['backfill'] = {key: result[key] for key in BACKFILL_REPORT_KEYS if key in result}
         self.step('start')
         self.run(self.compose + ['up', '-d', '--no-deps', '--wait', '--wait-timeout', '90',
                                  *((STUB_SERVICE,) if self.embed_stub else ()), 'ollama', *SERVICES])
+        self.refresh_operator_services()
         self.step('verify')
         final = self.long_operator('content-manifest')
         if before:
@@ -560,6 +1326,7 @@ class Deployment:
             self.report['roundtrip'] = self.run_roundtrip()
         if self.embed_stub:
             self.report['model_calls'] = self.check_no_language_model()
+        self.promote_images(self.report['images']['current'], self.report['images']['current_versions'])  # ended well: these are the images the next rollback goes back to
         self.report.update(status='complete', content_sha256=final['sha256'],
                            documents=len(final['documents']), projects=len(final['projects']))
         self.save_report()
@@ -866,6 +1633,39 @@ def roundtrip(origin, password, private, root, wait_seconds=90, warnings=None):
                         raise
 
 
+def good_recorded(report):
+    """The report records a release as good (`images.good.ids` with at least one valid image id)."""
+    images = report.get('images') if isinstance(report.get('images'), dict) else {}
+    good = images.get('good') if isinstance(images.get('good'), dict) else {}
+    ids = good.get('ids') if isinstance(good.get('ids'), dict) else {}
+    return any(isinstance(value, str) and IMAGE_ID.fullmatch(value) for value in ids.values())
+
+
+def no_previous_reason(report, status):
+    """Why `--rollback` has no tags to go back to, exactly (fix4, gap 1)."""
+    if good_recorded(report):
+        return 'The release that runs is recorded as good (images.good) but no deployment has tagged it yet, so the containers and :latest already are it.'
+    return (f'No release is recorded as good (images.good): the last deployment ended {printable(status) if status else "without a report"} and the installation predates the record, so the script cannot tell which images were '
+            'good and invents none; a deployment that ends well records them (docs/operations.md, «Etiquetas locales de las imágenes»).')
+
+
+def rollback_note(report):
+    """What an interrupted or unfinished deployment may truthfully say about `--rollback` (fix4, gap 1): it goes back only if a release was tagged."""
+    images = report.get('images') if isinstance(report.get('images'), dict) else {}
+    if isinstance(images.get('previous'), dict) and images['previous']:
+        return 'the tags of the last good release are kept, so --rollback still goes back to it.'
+    if good_recorded(report):
+        return 'no release has been tagged yet (the release that runs is recorded as good), so --rollback has nothing to go back to: it ends with no_previous_images.'
+    return 'no release is recorded as good (images.good), so --rollback cannot go back: it ends with no_previous_images until a deployment ends well.'
+
+
+def container_note(report):
+    names = report.get('unreaped_containers')
+    if not names:
+        return ''
+    return (' The container ' + ', '.join(names) + ' may still be running (docker ps): wait for it to end or remove it (docker rm --force ' + ' '.join(names) + ') before retrying.')
+
+
 def failure_hints(report, phase):
     """Extra stderr lines for a failed deployment that leaves something in a state the operator must act on."""
     hints = []
@@ -878,7 +1678,7 @@ def failure_hints(report, phase):
     return hints
 
 
-def main(argv=None):
+def main(argv=None, root=ROOT):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply', action='store_true')
     parser.add_argument('--dry-run', action='store_true', help='Print the plan only (the default; it cannot be combined with --apply)')
@@ -901,9 +1701,16 @@ def main(argv=None):
                              'Default: on for an isolated --project-name, off for the installed project')
     parser.add_argument('--stop-services-before-migrate', action='store_true',
                         help='Stop memory-api and memory-worker before the migrate phase (they are started again by the start phase); default: leave them running')
+    parser.add_argument('--rollback', action='store_true',
+                        help='Go back to the images tagged by the previous deployment (kairos-*:<version>-<mark>) WITHOUT migrating; no_previous_images if there are none, already_at_previous if the containers AND :latest already are those images (it finishes whichever is missing). '
+                             'Not for --fresh, --stop-services-before-migrate or --verify-backup')
+    parser.add_argument('--break-lock', action='store_true',
+                        help='Only for a lock file that says ANOTHER host wrote it (a private directory on a shared disk): when the operating system lets the lock be taken, the leftover is named a break (stderr and report lock_broken). It deletes nothing and never takes a lock that the system holds (deployment_locked). A lock whose process died on this host needs no flag: the operating system freed it')
     args = parser.parse_args(argv)
     if args.apply and args.dry_run:
         parser.error('--dry-run and --apply exclude each other')
+    if args.rollback and (args.fresh or args.stop_services_before_migrate or args.verify_backup is not None):
+        parser.error('--rollback goes back to the previous images without migrating: it takes no --fresh, --stop-services-before-migrate or --verify-backup')
     if not args.apply:
         try:
             validate_isolation(args.project_name, args.api_port, args.web_port)
@@ -915,32 +1722,111 @@ def main(argv=None):
         except DeploymentError as exc:
             parser.error(str(exc))
         verifying = args.verify_backup if args.verify_backup is not None else args.project_name != DEFAULT_PROJECT
+        if args.rollback:
+            print(json.dumps({'mode': 'dry-run', 'phases': ROLLBACK_PHASES + (('roundtrip',) if args.roundtrip else ()), 'rollback': True, 'services': [ROLLBACK_SERVICES[n] for n in ROLLBACK_SERVICES],
+                              'project': args.project_name, 'migrate': False, 'data_removed': False}, indent=2))
+            return 0
         phases = PHASES[:PHASES.index('backup') + 1] + (('verify_backup',) if verifying else ()) + PHASES[PHASES.index('backup') + 1:] + (('roundtrip',) if args.roundtrip else ())
         print(json.dumps({'mode': 'dry-run', 'phases': phases, 'services': SERVICES + ((STUB_SERVICE,) if args.embed_stub else ()), 'fresh': args.fresh, 'project': args.project_name,
                           'backup_timeout_seconds': check_backup_timeout(args.backup_timeout), 'verify_backup': verifying, 'volumes': project_volumes(args.project_name), 'models': 'simulated embedding provider; no language model' if args.embed_stub else 'preserve configuration',
                           'data_removed': False}, indent=2))
         return 0
     try:
-        deployment = Deployment(args)
+        deployment = Deployment(args, root)
     except DeploymentError as exc:
         parser.error(str(exc))
+    lock = DeployLock(deployment.private, deployment.project, break_lock=args.break_lock)
     try:
-        deployment.apply()
-    except Exception as exc:
-        deployment.report.update(status='failed', failed_phase=deployment.phase,
-                                 error_code=type(exc).__name__,
-                                 message=str(exc) if isinstance(exc, DeploymentError) else 'Unexpected failure; inspect the local phase without sharing credentials')
-        if deployment.phase != 'engine':
-            deployment.save_report()
-        reason = str(exc) if isinstance(exc, DeploymentError) else 'Unexpected failure.'
-        print(f'Kairos stopped during {deployment.phase}. {reason} No later phase was run. '
-              'Inspect the current state before retrying; credentials are not printed.', file=sys.stderr)
-        if deployment.report.get('command_failure'):
+        lock.acquire()
+    except DeploymentLocked as exc:  # before any phase and without touching the report of the deployment that holds the lock
+        print(f'{exc.code}: {exc}', file=sys.stderr)
+        return EXIT_LOCKED
+    put_back = install_signal_handlers()
+    try:
+        try:
+            if lock.broken is not None:
+                deployment.report['lock_broken'] = owner_fields(lock.broken)
+                print(f'WARNING: lock broken: it was held by a deployment {lock.describe(lock.broken)}. The lock was free on this machine, and the leftover is named a break.', file=sys.stderr)
+            elif lock.leftover is not None:  # CA-23 «se informa»: the file was not empty, so the deployment that wrote it did not end (or, on a shared disk, may still be running)
+                deployment.report['previous_run_interrupted'] = owner_fields(lock.leftover)
+                print(lock.leftover_warning(lock.leftover), file=sys.stderr)
+            deployment.rollback() if args.rollback else deployment.apply()
+            return 0
+        except (NoPreviousImages, AlreadyAtPrevious) as exc:  # nothing was touched, and the report (with the tags) is left as it is
+            with ignoring_signals():
+                print(f'{exc.code}: {exc}', file=sys.stderr)
+            return EXIT_NO_PREVIOUS_IMAGES if isinstance(exc, NoPreviousImages) else EXIT_ALREADY_AT_PREVIOUS
+        except (Exception, KeyboardInterrupt, Interrupted) as exc:
+            return settle(deployment, exc)
+    except (KeyboardInterrupt, Interrupted) as late:  # a signal in the instants before `settle` held the signals off
+        return settle(deployment, late)
+    finally:  # a phase that fails, an unexpected error, Ctrl-C and SIGTERM all release the lock, and a signal while it is released is held off
+        try:
+            while True:
+                try:
+                    put_back.disarm()
+                    break
+                except (KeyboardInterrupt, Interrupted):  # fix5, gap 2: a signal that arrives as the deployment is over changes nothing: the code stays the one of the cause, and the lock is released below
+                    continue
+            with ignoring_signals():
+                lock.release()
+        finally:
+            put_back()
+
+
+def settle(deployment, exc):
+    """The end of a deployment that stopped: the report is saved (`failed`, or `interrupted` for Ctrl-C and the signals: never as good), the warnings are written and the exit code is returned: 1 for a
+    failure, 130 for Ctrl-C and 128 + the number of the signal. A signal during all this is held off (fix4, gap 2): the code stays the one of the first cause."""
+    with ignoring_signals():
+        if isinstance(exc, (KeyboardInterrupt, Interrupted)):
+            label, code = ('SIGINT', 130) if isinstance(exc, KeyboardInterrupt) else (signal.Signals(exc.signum).name, 128 + exc.signum)
+            deployment.report.update(status='interrupted', interrupted_by=label, failed_phase=deployment.phase)
+            headline = f'Kairos interrupted by {label} during {deployment.phase}. No later phase was run.{container_note(deployment.report)} Inspect the current state before retrying; '
+            tail = rollback_note(deployment.report)
+        else:
+            deployment.report.update(status='failed', failed_phase=deployment.phase, error_code=type(exc).__name__,
+                                     message=str(exc) if isinstance(exc, DeploymentError) else 'Unexpected failure; inspect the local phase without sharing credentials')
+            reason = str(exc) if isinstance(exc, DeploymentError) else 'Unexpected failure.'
+            code = 1
+            headline = f'Kairos stopped during {deployment.phase}. {reason} No later phase was run.{container_note(deployment.report)} Inspect the current state before retrying; '
+            tail = 'credentials are not printed.'
+        try:
+            if deployment.phase != 'engine':
+                deployment.save_report()
+        except (OSError, DeploymentError) as error:
+            print(f'WARNING: the report could not be saved: {printable(getattr(error, "strerror", None) or str(error))}', file=sys.stderr)
+        print(headline + tail, file=sys.stderr)
+        if code == 1 and deployment.report.get('command_failure'):
             print(deployment.report['command_failure']['details'], file=sys.stderr)
         for hint in failure_hints(deployment.report, deployment.phase):
             print(hint, file=sys.stderr)
-        return 1
-    return 0
+        return code
+
+
+def install_signal_handlers():
+    """SIGTERM and SIGHUP end the deployment like an exception (`Interrupted`, which `main` turns into the `interrupted` report and the exit code 128 + signal), so that the lock is released on the way
+    out; returns the function that puts the old handlers back."""
+    armed = [True]
+
+    def stop(signum, frame):
+        if armed[0]:
+            raise Interrupted(signum)
+    previous = {}
+    for name in ('SIGTERM', 'SIGHUP'):
+        number = getattr(signal, name, None)
+        if number is None:
+            continue
+        try:
+            previous[number] = signal.signal(number, stop)
+        except (ValueError, OSError):  # not the main thread: the caller owns the signals
+            pass
+
+    def put_back():
+        armed[0] = False
+        for number, handler in previous.items():
+            signal.signal(number, handler)
+    put_back.disarm = lambda: armed.__setitem__(0, False)  # the deployment is over: a signal from here on changes nothing, `main` is only releasing the lock
+    return put_back
 
 
 if __name__ == '__main__':
