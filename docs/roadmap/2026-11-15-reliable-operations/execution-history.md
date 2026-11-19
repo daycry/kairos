@@ -2514,3 +2514,42 @@ Salida de `usage-meter close` (clave `reliable-operations/T-94-fix1`), 2026-11-1
   "ventana_id": "win-2877d9b393c647988931523523ace151", "revision_medicion": 2
 }
 ```
+
+### Medición de uso — fix2 de la revisión del hito B (T-94)
+
+Salida de `usage-meter close` (clave `reliable-operations/T-94-fix2`), 2026-11-19, sin el campo `avisos` (calibración y precio sin verificar, `eur` nulo).
+
+```json
+{
+  "artefacto": "reliable-operations/T-94-fix2",
+  "inicio": "2026-11-19T10:15:15Z",
+  "fin": "2026-11-19T11:16:43Z",
+  "fuente": "medido",
+  "tokens_reales": {
+    "entrada": 74,
+    "salida": 14160,
+    "cache_creacion": 89537,
+    "cache_lectura": 3389566,
+    "respuestas": 37
+  },
+  "eur": null,
+  "horas_ia": 0.35,
+  "duracion": "21m",
+  "duracion_reloj": "1h 1m",
+  "ratio_usado": 300000,
+  "ratio_origen": "default no calibrado (300000)",
+  "tokens_procedencia": "transcript",
+  "tokens_cobertura": "completa",
+  "transcripts_leidos": 2,
+  "transcripts_subagente": 1,
+  "transcripts_con_error": 0,
+  "coste_procedencia": "sin_coste",
+  "coste_cobertura": "sin_coste",
+  "coste_sin_precio": [],
+  "tarifa_verificada_el": null,
+  "medicion_persistida": true,
+  "fuente_id": "src-8ffaaac4e3b9a11805b5148dbea387f65be01b42fba05cbf3ca54c4b799a95c8",
+  "ventana_id": "win-c53270dae1df4a31aa67346abcef4fe7",
+  "revision_medicion": 3
+}
+```
