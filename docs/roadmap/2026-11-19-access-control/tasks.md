@@ -55,7 +55,7 @@ test-plan: test-plan.md
 
 | Fase | Completadas | Total | Progreso | H. humanas (real/est) | H. IA ejec. (real/est) | Supervisión (real/est) | Tokens (real/est) |
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
-| Fase 1 — Medición de scrypt y guarda del resolvedor (CA-09, CA-38 a) | 1 | 5 | 20% | 0 / 19.8h | 0.38 / 6.3h | 0 / 1.6h | 0 / 1570 k |
+| Fase 1 — Medición de scrypt y guarda del resolvedor (CA-09, CA-38 a) | 2 | 5 | 40% | 0 / 19.8h | 0.51 / 6.3h | 0 / 1.6h | 0 / 1570 k |
 | Fase 2 — Esquema 13, scrypt y contraseñas (C-01) | 0 | 7 | 0% | 0 / 36.0h | 0 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 3 — Usuarios, permisos y sesiones (C-01) | 0 | 6 | 0% | 0 / 36.0h | 0 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01) | 0 | 7 | 0% | 0 / 48.0h | 0 / 4.9h | 0 / 1.2h | 0 / 1232 k |
@@ -73,7 +73,7 @@ test-plan: test-plan.md
 | Fase 16 — Identidad: guía probada y extensibilidad (C-05) | 0 | 5 | 0% | 0 / 23.4h | 0 / 2.4h | 0 / 0.6h | 0 / 601 k |
 | Fase 17 — Revisión del hito C y revisión de seguridad (C-07) | 0 | 5 | 0% | 0 / 27.0h | 0 / 5.3h | 0 / 1.3h | 0 / 1320 k |
 | Fase 18 — Cierre del hito C y de la iniciativa: ensayo, versión 0.4.2 y PR | 0 | 4 | 0% | 0 / 11.4h | 0 / 1.2h | 0 / 0.3h | 0 / 293 k |
-| **TOTAL** | **1** | **106** | **1%** | **0 / 616.2h** | **0.38 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
+| **TOTAL** | **2** | **106** | **2%** | **0 / 616.2h** | **0.51 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -115,10 +115,11 @@ TDD n/a: medición. Medida con `scripts/measure-scrypt.py` (7 repeticiones, medi
 ### T-02 — Guarda del resolvedor: `is_admin`, excepciones cerradas y módulos autorizados a escribir (CA-38 a)
 
 - **Descripción**: Ampliar el recorrido de `test_auth_cache.py:461` para que detecte toda lectura de `project_grants`, de los permisos de una clave y de `actors.is_admin` (en SQL y en accesos `['is_admin']` o `.get('is_admin')`) fuera del resolvedor, con la lista cerrada de excepciones de DC-1 y su justificación. Añadir la lista de módulos que pueden escribir las tablas de permisos: `store_auth.py`, `store_access.py`, `auth.py` y `probe.py` (1 h, coste extra de O2). Nace en rojo por los cuatro lectores de DC-1. Fuente: CA-38 (a); DC-1; D-02; design.md §O2.
-- **Changelog**: Interno: guardas de pruebas sobre quién decide y quién escribe permisos.
-- **Estado**: borrador
+- **Changelog**: Interno: una prueba comprueba que solo el resolvedor lee permisos y que solo cuatro módulos escriben las tablas de permisos y credenciales.
+- **Estado**: completado
+- **Cerrada**: 2026-11-20
 - **Tiempo humano**: est. 4h · real —
-- **Tiempo IA (ejec.)**: est. 0.41h · real —
+- **Tiempo IA (ejec.)**: est. 0.41h · real 0.13h (medido)
 - **Supervisión**: est. 0.10h · real —
 - **Previsión IA**: 113 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
@@ -128,13 +129,15 @@ TDD n/a: medición. Medida con `scripts/measure-scrypt.py` (7 repeticiones, medi
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_auth_cache|MEMORY_TEST_RESULT"` → el test nuevo falla solo por los cuatro lectores de DC-1 (rojo esperado; verde en T-03)
 
 **Criterios de aceptación**
-- [ ] Una lectura nueva fuera del resolvedor y de la lista deja el test en rojo, y cada excepción lleva su justificación en el propio test
-- [ ] Un `INSERT`, `UPDATE` o `DELETE` sobre `actors`, `project_grants`, `api_keys` o `web_sessions` fuera de los cuatro módulos deja el test en rojo (mutante comprobado)
-- [ ] El rojo inicial enumera exactamente los cuatro lectores de DC-1 y queda anotado como `RED:`
+- [x] Una lectura nueva fuera del resolvedor y de la lista deja el test en rojo, y cada excepción lleva su justificación en el propio test
+- [x] Un `INSERT`, `UPDATE` o `DELETE` sobre `actors`, `project_grants`, `api_keys` o `web_sessions` fuera de los cuatro módulos deja el test en rojo (mutante comprobado)
+- [x] El rojo inicial enumera exactamente los cuatro lectores de DC-1 y queda anotado como `RED:`
 
 **Subtareas**
-- [ ] Recorrido de lectores con `is_admin` y excepciones
-- [ ] Lista de módulos escritores y mutante
+- [x] Recorrido de lectores con `is_admin` y excepciones
+- [x] Lista de módulos escritores y mutante
+
+**Notas**: `ResolverBoundaryTests` (5 pruebas, `test_auth_cache.py`) sustituye a `test_no_function_reads_the_permission_tables_...` (más laxa; el nuevo la subsume). Recorrido AST con la función más interna como dueña de la lectura: `RESOLVER` (DC-1), `READ_EXCEPTIONS` por (fichero, función) con tablas permitidas, solo `FOR SHARE` donde toca y justificación escrita, y `PERMISSION_WRITERS`. Un `INSERT ... RETURNING is_admin` no es lectura. Límite conocido, para T-05: `SELECT *` sobre `actors` no cuenta como lectura de `is_admin` (lo hacen `_load_active`, `authenticate_*`, `login`). Los mutantes son fuentes sintéticas añadidas al paquete real (16 formas de leer, 10 de escribir, 7 precisiones, y la excepción no cubre otra tabla ni un lock fuera de las dos funciones). RED: ResolverBoundaryTests.test_only_the_resolver_and_the_closed_list_read_permissions_and_is_admin falló con AssertionError: 4 lectores fuera del resolvedor: app.py:metrics_admin [is_admin]; auth.py:_actor [api_keys, is_admin, project_grants]; store_auth.py:list_projects [is_admin, project_grants]; store_auth.py:list_keys [is_admin, project_grants] · 2026-11-20 (ejecutado el bloque de la clase fuera de Docker, es AST puro; las otras 4 pruebas en verde, 0,5 s). La suite completa en Docker corre en T-03. usage-meter close access-control/T-02: 0.13 h IA (medido), 28 in / 12196 out tok.
 
 ### T-03 — Lectores de permisos al resolvedor: `_describe`, `_visible_projects`, `_admin_somewhere` y `/metrics`
 

@@ -14,6 +14,7 @@ What these tests hold, each with a mutant that turns it red (the mutants are lis
 
 Real PostgreSQL (the isolated test database); no test waits for a clock."""
 import ast
+import functools
 import hashlib
 import inspect
 import os
@@ -458,18 +459,195 @@ class EveryTransactionTests(unittest.TestCase):
         stale = sorted(set(self.NOT_REQUEST_PATHS) - set(without))
         self.assertEqual(stale, [], 'on the reviewed list but it now resolves permissions (or no longer exists): remove it from the list')
 
-    def test_no_function_reads_the_permission_tables_for_a_decision_outside_the_helpers(self):
-        # the cached helpers are the only readers that DECIDE access; the others take FOR SHARE locks (a lock must hit the database) or build the actor dict of a credential just proven
-        readers = re.compile(r'FROM\s+memory\.(project_grants|api_keys)\b', re.I)
-        allowed = {('store_auth.py', '_load_active'), ('store_auth.py', '_require'), ('store_auth.py', 'list_users'), ('store_auth.py', 'list_keys'), ('store_auth.py', 'revoke_key'),
-                   ('store_auth.py', 'list_projects'), ('auth.py', '_actor'), ('auth.py', 'authenticate_bearer'),
-                   ('probe.py', 'provision_locked'), ('probe.py', 'probe_state')}  # `probe_state`: the one "is this project the probe's?" check that provisioning and purge share (grants of that project)  # the probe provisioning is an operator command: it reads the grants of its project (is it ours?) and api_keys to rotate its own keys; whether a key still WORKS goes through `Auth` (`valid_key` reads no table)
-        found = set()
-        for path in sorted(PACKAGE.glob('*.py')):
-            for node in ast.walk(ast.parse(path.read_text(encoding='utf-8'))):
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and any(isinstance(n, ast.Constant) and isinstance(n.value, str) and readers.search(n.value) and 'FOR SHARE' not in n.value for n in ast.walk(node)):
-                    found.add((path.name, node.name))
-        self.assertEqual(sorted(found - allowed), [])
+
+# ---- who decides an access and who may write the permission tables (CA-38 a, DC-1, design.md O2) ----
+# The resolver: the only code that READS `project_grants`, the permissions of a key (`api_keys`) or `actors.is_admin` to decide whether a request goes on or which rows it sees.
+RESOLVER = {('store_auth.py', name) for name in ('_load_active', '_active', '_global_admin', '_require', '_delegate', '_describe', '_visible_projects', '_admin_somewhere')} | {
+    ('auth.py', 'authenticate_bearer'), ('auth.py', 'authenticate_session')}
+# The closed list of reads that do NOT decide an access (DC-1). (file, function) -> (tables it may read, only `FOR SHARE` locks?, why it does not decide). '*' is every function of the file.
+READ_EXCEPTIONS = {
+    ('corpus_answers.py', '_authorized'): ({'project_grants', 'api_keys'}, True, 'a FOR SHARE lock: it discards the rows and calls the resolver afterwards, after `invalidate_auth`'),
+    ('extended_store.py', '_require'): ({'project_grants', 'api_keys'}, True, 'a FOR SHARE lock: it discards the rows and calls the resolver afterwards, after `invalidate_auth`'),
+    ('store_auth.py', 'list_users'): ({'project_grants'}, False, 'shows the permissions of other users to someone `_global_admin` already admitted'),
+    ('store_auth.py', 'list_keys'): ({'api_keys'}, False, 'reads keys as the resource listed, not the credential of the caller; each row goes through `_require`'),
+    ('store_auth.py', 'revoke_key'): ({'api_keys'}, False, 'reads the key to revoke as the resource; each of its projects goes through `_require`'),
+    ('probe.py', '*'): ({'project_grants', 'api_keys', 'is_admin'}, False, 'operator command on a direct connection, with no request actor'),
+}
+# The only modules that may write the tables of permissions and credentials (design.md O2: `store_access.py` is the new door for access changes).
+PERMISSION_WRITERS = {'store_auth.py', 'store_access.py', 'auth.py', 'probe.py'}
+READ_TABLES = ('project_grants', 'api_keys')
+WRITE_TABLES = ('actors', 'project_grants', 'api_keys', 'web_sessions')
+_TABLE = r'(?:ONLY\s+)?(?:"?memory"?\s*\.\s*)?"?(%s)"?\b'
+_READ = re.compile(r'(?<!DELETE )\b(?:FROM|JOIN|USING)\s+' + _TABLE % '|'.join(READ_TABLES) + r'|,\s*' + _TABLE % '|'.join(READ_TABLES), re.I)
+_WRITE = re.compile(r'\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE(?:\s+TABLE)?|MERGE\s+INTO)\s+' + _TABLE % '|'.join(WRITE_TABLES), re.I)
+
+
+def sql_reads(text):
+    """(kind, locked) of every restricted read in one SQL string; `kind` is a table of READ_TABLES or 'is_admin'."""
+    sql = ' '.join(text.split())
+    found = {(m.group(1) or m.group(2)).lower() for m in _READ.finditer(sql)}
+    statement = re.match(r'\(?\s*(INSERT|UPDATE|DELETE|TRUNCATE|MERGE)\b', sql, re.I)
+    tail = re.split(r'\b(?:WHERE|SELECT)\b', sql, maxsplit=1, flags=re.I)[1:]  # a write names `is_admin` as a column it sets or returns: that is not a read
+    if re.search(r'\bis_admin\b', sql, re.I) and (not statement or tail and re.search(r'\bis_admin\b', tail[0], re.I)):
+        found.add('is_admin')
+    return {(kind, bool(re.search(r'\bFOR\s+SHARE\b', sql, re.I))) for kind in found}
+
+
+def sql_writes(text):
+    return {m.group(1).lower() for m in _WRITE.finditer(' '.join(text.split()))}
+
+
+class _Scan(ast.NodeVisitor):
+    """Each restricted read, attributed to the innermost function that holds it (docstrings and bare strings are prose)."""
+    def __init__(self):
+        self.stack, self.reads, self.writes = ['<module>'], [], []
+
+    def visit_FunctionDef(self, node):
+        self.stack.append(node.name)
+        self.generic_visit(node)
+        self.stack.pop()
+
+    visit_AsyncFunctionDef = visit_FunctionDef
+
+    def visit_Expr(self, node):
+        if not isinstance(node.value, ast.Constant):
+            self.generic_visit(node)
+
+    def visit_Constant(self, node):
+        if isinstance(node.value, str):
+            self.reads += [(self.stack[-1], kind, locked) for kind, locked in sql_reads(node.value)]
+            self.writes += [(self.stack[-1], table) for table in sql_writes(node.value)]
+
+    def visit_Subscript(self, node):
+        if isinstance(node.slice, ast.Constant) and node.slice.value == 'is_admin':
+            self.reads.append((self.stack[-1], 'is_admin', False))
+        self.generic_visit(node)
+
+    def visit_Call(self, node):
+        if isinstance(node.func, ast.Attribute) and node.func.attr == 'get' and node.args and isinstance(node.args[0], ast.Constant) and node.args[0].value == 'is_admin':
+            self.reads.append((self.stack[-1], 'is_admin', False))
+        self.generic_visit(node)
+
+
+@functools.lru_cache(maxsize=None)
+def scan(source):
+    visitor = _Scan()
+    visitor.visit(ast.parse(source))
+    return visitor
+
+
+def reads_outside_the_resolver(sources):
+    """({'file:function': kinds}, stale exceptions): each read that is neither in the resolver nor within its listed exception, and the exceptions that no longer cover any read."""
+    outside, used = {}, set()
+    for file, source in sorted(sources.items()):
+        for function, kind, locked in scan(source).reads:
+            if (file, function) in RESOLVER:
+                continue
+            entry = next((key for key in ((file, function), (file, '*')) if key in READ_EXCEPTIONS), None)
+            if entry and kind in READ_EXCEPTIONS[entry][0] and (locked or not READ_EXCEPTIONS[entry][1]):
+                used.add(entry)
+                continue
+            outside.setdefault('%s:%s' % (file, function), set()).add(kind)
+    return {key: sorted(kinds) for key, kinds in outside.items()}, sorted(set(READ_EXCEPTIONS) - used)
+
+
+def writes_outside_the_writers(sources):
+    return sorted({'%s:%s %s' % (file, function, table) for file, source in sources.items() if file not in PERMISSION_WRITERS for function, table in scan(source).writes})
+
+
+def package_sources():
+    return {str(path.relative_to(PACKAGE)).replace('\\', '/'): path.read_text(encoding='utf-8') for path in sorted(PACKAGE.rglob('*.py'))
+            if 'tests' not in path.relative_to(PACKAGE).parts and '__pycache__' not in path.parts}
+
+
+class ResolverBoundaryTests(unittest.TestCase):
+    """Only the resolver decides an access (CA-38 a): a read of `project_grants`, of the permissions of a key or of `actors.is_admin` anywhere else fails here unless it is one of the
+    closed list of DC-1, each with its reason. And only four modules write the tables of permissions and credentials."""
+
+    def test_only_the_resolver_and_the_closed_list_read_permissions_and_is_admin(self):
+        sources = package_sources()
+        self.assertGreaterEqual(len(sources), 30)
+        outside, stale = reads_outside_the_resolver(sources)
+        self.assertEqual(outside, {}, 'these functions read permissions or `is_admin` outside the resolver (move the read into it, or add the DC-1 exception with its reason): '
+                         + '; '.join('%s [%s]' % (k, ', '.join(v)) for k, v in outside.items()))
+        self.assertEqual(stale, [], 'on the closed list but it no longer reads (or no longer exists): remove it')
+        for key, (tables, locked, reason) in READ_EXCEPTIONS.items():
+            self.assertGreater(len(reason), 30, key)
+
+    def test_only_four_modules_write_the_tables_of_permissions_and_credentials(self):
+        sources = package_sources()
+        self.assertEqual(writes_outside_the_writers(sources), [], 'only %s may write actors, project_grants, api_keys or web_sessions' % sorted(PERMISSION_WRITERS))
+        # the writers do write: a scan that finds nothing would pass for the wrong reason
+        self.assertEqual({file for file, source in sources.items() if scan(source).writes} & PERMISSION_WRITERS, {'store_auth.py', 'auth.py', 'probe.py'})
+
+    def test_the_read_scan_sees_each_way_of_reading_outside_the_resolver(self):
+        # mutants: a source that adds ONE read to the package must be reported; each variant is a way of dodging a plain text search
+        reads = [
+            "def leak(c):\n    return c.execute('SELECT g.* FROM memory.project_grants AS g WHERE g.actor_id=%s', (1,))",
+            "def leak(c):\n    return c.execute('SELECT * FROM project_grants')",
+            "def leak(c):\n    return c.execute('select permission  from\\n   MEMORY . project_grants')",
+            "def leak(c):\n    return c.execute('WITH g AS (SELECT * FROM memory.project_grants) SELECT count(*) FROM g')",
+            "def leak(c):\n    return c.execute('SELECT 1 FROM memory.projects p JOIN memory.api_keys k ON k.id=p.id')",
+            "def leak(c):\n    return c.execute('SELECT 1 FROM memory.projects p, memory.api_keys k')",
+            "def leak(c):\n    return c.execute('INSERT INTO memory.audit_events SELECT 1 FROM memory.project_grants')",
+            "def leak(c):\n    return c.execute('DELETE FROM memory.audit_events USING memory.project_grants g')",
+            "def leak(c):\n    return c.execute('SELECT id FROM memory.actors WHERE is_admin')",
+            "def leak(c):\n    return c.execute('SELECT a.is_admin FROM memory.actors a')",
+            "def leak(c):\n    return c.execute('UPDATE memory.audit_events SET x=1 WHERE EXISTS (SELECT 1 FROM memory.actors WHERE is_admin)')",
+            "def leak(row):\n    return row['is_admin']",
+            "def leak(actor):\n    return actor.get('is_admin')",
+            "def leak(actor):\n    def inner():\n        return actor['is_admin']\n    return inner",
+            "def leak(c):\n    return c.execute(f'SELECT * FROM memory.api_keys WHERE id=%s {x}')",
+            "def leak(c):\n    return c.execute('SELECT 1 FROM memory.api_keys FOR SHARE')",  # a lock outside the two listed functions is not covered by their exception
+        ]
+        base = package_sources()
+        for read in reads:
+            with self.subTest(read=read):
+                outside, _ = reads_outside_the_resolver({**base, 'newmod.py': read + '\n'})
+                self.assertTrue(any(key.startswith('newmod.py:') for key in outside), read)
+        # the same text inside a listed function is covered only for the tables and the locks that exception names
+        outside, _ = reads_outside_the_resolver({**base, 'store_auth.py': base['store_auth.py'] + "\n\ndef list_users(c):\n    return c.execute('SELECT * FROM memory.api_keys')\n"})
+        self.assertIn('store_auth.py:list_users', outside)
+        outside, _ = reads_outside_the_resolver({**base, 'corpus_answers.py': base['corpus_answers.py'] + "\n\ndef _authorized(c):\n    return c.execute('SELECT * FROM memory.api_keys WHERE id=%s')\n"})
+        self.assertIn('corpus_answers.py:_authorized', outside)
+
+    def test_the_read_scan_does_not_flag_what_is_not_a_read(self):
+        # precision: writes, prose and unrelated tables are not decisions
+        quiet = [
+            "def w(c):\n    c.execute('DELETE FROM memory.project_grants WHERE actor_id=%s', (1,))",
+            "def w(c):\n    c.execute('INSERT INTO memory.actors(id,username,password_hash,is_admin) VALUES(%s,%s,%s,true) RETURNING id,username,is_admin', (1, 2, 3))",
+            "def w(c):\n    c.execute('UPDATE memory.api_keys SET revoked_at=now() WHERE id=%s', (1,))",
+            "def w(c):\n    '''Reads project_grants FROM memory.project_grants and is_admin: prose'''\n    return 1",
+            "def w(c):\n    return c.execute('SELECT id FROM memory.projects')",
+            "def w(c):\n    return c.execute('SELECT id FROM memory.actors WHERE id=%s FOR SHARE', (1,))",
+            "def w(row):\n    return row['username'], row.get('disabled')",
+        ]
+        for source in quiet:
+            with self.subTest(source=source):
+                self.assertEqual(scan(source).reads, [])
+
+    def test_the_write_scan_sees_each_way_of_writing_the_permission_tables_outside_the_four_modules(self):
+        writes = [
+            "def w(c):\n    c.execute('INSERT INTO memory.project_grants VALUES(%s,%s,%s)')",
+            "def w(c):\n    c.execute('insert  into\\n memory.api_keys(id) values(1)')",
+            "def w(c):\n    c.execute('UPDATE memory.actors SET is_admin=true WHERE id=%s')",
+            "def w(c):\n    c.execute('UPDATE ONLY memory.actors a SET disabled=true')",
+            "def w(c):\n    c.execute('DELETE FROM memory.web_sessions WHERE actor_id=%s')",
+            "def w(c):\n    c.execute('WITH d AS (DELETE FROM memory.api_keys RETURNING id) SELECT count(*) FROM d')",
+            "def w(c):\n    c.execute('UPDATE actors SET disabled=false')",
+            "def w(c):\n    c.execute('TRUNCATE TABLE memory.project_grants')",
+            "def w(c):\n    c.execute('MERGE INTO memory.project_grants g USING x ON true WHEN MATCHED THEN DELETE')",
+            "def w(c):\n    c.execute('INSERT INTO \"memory\".\"web_sessions\" VALUES(1)')",
+        ]
+        base = package_sources()
+        for write in writes:
+            for module in ('store.py', 'admin.py', 'newmod.py', 'portal_store.py'):
+                with self.subTest(write=write, module=module):
+                    self.assertTrue(writes_outside_the_writers({**base, module: base.get(module, '') + '\n' + write + '\n'}), write)
+            # the same text in an allowed module is not a violation
+            self.assertEqual(writes_outside_the_writers({'store_access.py': write}), [])
+        for text in ("SELECT * FROM memory.actors", "INSERT INTO memory.audit_events VALUES(1)", "UPDATE memory.projects SET title=%s"):
+            self.assertEqual(sql_writes(text), set(), text)
 
 
 def store_calls(store, actor, pid, other, key_id):
