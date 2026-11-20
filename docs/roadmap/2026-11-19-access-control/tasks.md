@@ -2943,3 +2943,21 @@ Lentes: A+B+C+D sobre `a543807..HEAD` (fix4: `a5cb447`, `e16d51e`, `585e9be`), r
 | 8 | Minor | Nota RED de fix4 con desglose que no suma 18; Changelog de T-04 en 1585 y nota fix4 de T-04 sin la subida 1585 → 1586; viñeta de límites de `:790` exagera el límite de `USING`/`JOIN … ON` (lente A) | T-02, T-04 | corregido (fix5, 9bfc441) | `tasks.md` T-02 y T-04; `test_auth_cache.py:790` |
 
 Siguiente: decisión del usuario. Propuesta del orquestador: retirar todos los silencios de escritura de `is_admin` por forma del SQL y declarar por función, en la lista cerrada, los dos únicos escritores reales (`store_auth.py:54` y `probe.py:791`, este ya en la lista).
+
+
+## Revisión de dos lentes — intento 6: Fase 1 (fix5, fuera del bucle) (T-01, T-02, T-03, T-04) — 1 Important residual del principio de fix5
+
+Lentes: A+B+C+D sobre `585e9be..HEAD` (fix5: `9bfc441`, `0e91e52`), revisado entero como código nuevo. Gaps del intento 5: 1-8 corregidos (8 con un residuo en la viñeta de límites). Ninguna lectura perdida frente a `c73e85e`, `d0eb7ae`, `a543807` y `585e9be` (lentes A y B, más de 1000 literales). B, C y D sin Critical ni Important; D: las clases estáticas bajan de unos 24,5 s a unos 17 s.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | Queda un silencio por forma en el kind `is_admin:row`: `sql_reads` borra `RETURNING` hasta el primer `)` (o hasta el final, tragándose la sentencia tras `;`) antes de buscar la estrella. `…RETURNING id; SELECT * FROM memory.actors WHERE id=%s` y `UPDATE memory.actors … RETURNING *` quedan en silencio; contradice el principio de fix5, su nota en T-02, la nota DC-1 y el docstring (lente A; no es regresión) | T-02 | pendiente | `test_auth_cache.py:568`, `:1046` (`quiet`) |
+| 2 | Minor | La lista cerrada identifica la función por su nombre sin la clase: otro `bootstrap_user` en `store_auth.py` (método de otra clase o redefinición de módulo) hereda la excepción, y la entrada no sale obsoleta si el real deja de escribir (lentes B y C; mecanismo de fix1) | T-02 | pendiente | `test_auth_cache.py:478, :645, :716` |
+| 3 | Minor | `re.I` de `_reads_is_admin` sin mutante (lente B) | T-02 | pendiente | `test_auth_cache.py:556` |
+| 4 | Minor | La razón de `provision_locked` en la lista cerrada no declara su escritura de `is_admin=false` (`probe.py:791`) (lente A) | T-02 | pendiente | `test_auth_cache.py:481` |
+| 5 | Minor | Lecturas de la fila completa de `actors` sin detectar ni declarar: `TABLE memory.actors`, `SELECT ALL *`, `memory.actors.*`, `(memory.actors).*`, `SELECT a FROM memory.actors a`, `ROW(a.*)` (lentes B y C; heredado) | T-02 | pendiente | `test_auth_cache.py:550` |
+| 6 | Minor | Otros silencios heredados: `/* … */` dentro de un literal SQL, consultas en `bytes`, `.format`/f-string con constantes que componen `is_admin` (lente B) | T-02 | pendiente | `test_auth_cache.py:525, :603, :620-621, :655-656` |
+| 7 | Minor | Viñeta de límites de `:771` inexacta: tras la coma de un `JOIN … ON` sin prefijo `memory.` escapan también f-string, `% t`, `.format` y `+`; tras `USING` se detecta todo (lente A) | T-02 | pendiente | `test_auth_cache.py:771` |
+| 8 | Minor | El desglose de la nota RED de fix5 nombra «la sentencia tras `;`» (ya era rojo) y omite el upsert con `EXCLUDED` (lente A) | T-02 | pendiente | `tasks.md` T-02 Notas fix5 |
+
+Siguiente: fix6 dentro de la decisión del usuario del intento 5 («de raíz»: ningún silencio por forma del SQL), y revisión del fix6.
