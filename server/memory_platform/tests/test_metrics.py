@@ -490,7 +490,12 @@ class MetricsRouteTests(unittest.TestCase):
 
     def test_admin_mode_requires_an_administrator(self):
         app, store, auth = metrics_app('admin')
-        from memory_platform.errors import Unauthorized
+        from memory_platform.errors import Forbidden, Unauthorized
+
+        def resolver(c, actor):  # what `Store._global_admin` answers: only `root` is an administrator with a session
+            if actor['id'] != 'root':
+                raise Forbidden()
+        store._global_admin.side_effect = resolver
         auth.authenticate_bearer.side_effect = auth.authenticate_session.side_effect = Unauthorized()
         with TestClient(app) as client:
             self.assertEqual(client.get('/metrics').status_code, 401)
@@ -501,6 +506,21 @@ class MetricsRouteTests(unittest.TestCase):
             response = client.get('/metrics', headers={'Authorization': 'Bearer fixture', 'X-Forwarded-For': '203.0.113.9'})
         self.assertEqual(response.status_code, 200)
         self.assertIn('kairos_retrieval_layer_seconds', response.text)
+
+    def test_admin_mode_asks_the_resolver_and_ignores_the_is_admin_of_the_actor_dictionary(self):
+        # CA-38 a: the permission is decided by `_global_admin` inside a transaction, not by a flag that travels in the dictionary
+        from memory_platform.errors import Forbidden
+        app, store, auth = metrics_app('admin')
+        with TestClient(app) as client:
+            store._global_admin.side_effect = Forbidden()
+            auth.authenticate_bearer.return_value = {'id': 'x', 'credential_type': 'bearer', 'is_admin': True}
+            self.assertEqual(client.get('/metrics', headers={'Authorization': 'Bearer fixture'}).status_code, 403)
+            store._global_admin.side_effect = None
+            auth.authenticate_bearer.return_value = {'id': 'x', 'credential_type': 'bearer', 'is_admin': False}
+            self.assertEqual(client.get('/metrics', headers={'Authorization': 'Bearer fixture'}).status_code, 200)
+        self.assertGreaterEqual(store.transaction.call_count, 2)
+        for call in store._global_admin.call_args_list:
+            self.assertEqual(call.args[1]['id'], 'x')
 
     def test_a_database_failure_does_not_take_the_metrics_down(self):
         app, store, _ = metrics_app('internal')

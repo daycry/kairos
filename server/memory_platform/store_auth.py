@@ -83,6 +83,39 @@ class AuthMixin:
         if permission not in allowed and 'admin' not in allowed:
             raise Forbidden()
 
+    def _describe(self, c, row, credential_type, credential_id=None):
+        """The actor of a credential just proven (`Auth` calls it after finding the token): its permissions and projects."""
+        grants = c.execute('SELECT project_id,permission FROM memory.project_grants WHERE actor_id=%s', (row['id'],)).fetchall()
+        actor = {'id': row['id'], 'username': row['username'], 'is_admin': row['is_admin'], 'credential_type': credential_type,
+                 'scopes': sorted(SCOPES if row['is_admin'] else {g['permission'] for g in grants}),
+                 'project_ids': sorted({g['project_id'] for g in grants}), 'grants': grants}
+        if credential_type == 'bearer':
+            key = c.execute('SELECT * FROM memory.api_keys WHERE id=%s', (credential_id,)).fetchone()
+            actor.update(is_admin=False, key_id=credential_id, scopes=key['scopes'], project_ids=key['project_ids'])
+        else:
+            actor['session_id'] = credential_id
+        actor['permissions'] = actor['scopes']
+        return actor
+
+    def _visible_projects(self, c, actor):
+        """The project rows the caller sees (before the page limit): all of them for an administrator without key, the key's for an administrator's key, else the granted ones."""
+        row, key = self._active(c, actor)
+        if row['is_admin'] and not key:
+            return c.execute('SELECT * FROM memory.projects ORDER BY id').fetchall()
+        if row['is_admin']:
+            return c.execute('SELECT * FROM memory.projects WHERE id=ANY(%s) ORDER BY id', (key['project_ids'],)).fetchall()
+        rows = c.execute('SELECT DISTINCT p.* FROM memory.projects p JOIN memory.project_grants g ON g.project_id=p.id WHERE g.actor_id=%s ORDER BY p.id', (actor['id'],)).fetchall()
+        return [r for r in rows if r['id'] in key['project_ids']] if key else rows
+
+    def _admin_somewhere(self, c, actor):
+        """Whether the caller may list keys: raises Forbidden unless it administers a project. Returns (key, every_key): `every_key` is true for an administrator without key."""
+        row, key = self._active(c, actor)
+        if key and 'admin' not in key['scopes']:
+            raise Forbidden()
+        if not row['is_admin'] and not c.execute("SELECT 1 FROM memory.project_grants WHERE actor_id=%s AND permission='admin' LIMIT 1", (actor['id'],)).fetchone():
+            raise Forbidden()
+        return key, bool(row['is_admin']) and not key
+
     def require_permission(self, actor, project_id, permission):
         with self.transaction() as c:
             self._require(c, actor, project_id, permission)
@@ -92,16 +125,7 @@ class AuthMixin:
 
     def list_projects(self, actor):
         with self.transaction() as c:
-            row, key = self._active(c, actor)
-            if row['is_admin'] and not key:
-                rows = c.execute('SELECT * FROM memory.projects ORDER BY id').fetchall()
-            elif row['is_admin']:
-                rows = c.execute('SELECT * FROM memory.projects WHERE id=ANY(%s) ORDER BY id', (key['project_ids'],)).fetchall()
-            else:
-                rows = c.execute('SELECT DISTINCT p.* FROM memory.projects p JOIN memory.project_grants g ON g.project_id=p.id WHERE g.actor_id=%s ORDER BY p.id', (actor['id'],)).fetchall()
-                if key:
-                    rows = [r for r in rows if r['id'] in key['project_ids']]
-            rows = rows[:100]
+            rows = self._visible_projects(c, actor)[:100]
             metadata = c.execute("""SELECT p.id,
                 (SELECT count(*) FROM memory.memory_items i WHERE i.project_id=p.id AND NOT i.deleted AND i.superseded_by IS NULL) AS notes,
                 (SELECT count(*) FROM memory.documents d WHERE d.project_id=p.id AND NOT d.deleted) AS documents,
@@ -205,12 +229,8 @@ class AuthMixin:
 
     def list_keys(self, actor):
         with self.transaction() as c:
-            row, key = self._active(c, actor)
-            if key and 'admin' not in key['scopes']:
-                raise Forbidden()
-            if not row['is_admin'] and not c.execute("SELECT 1 FROM memory.project_grants WHERE actor_id=%s AND permission='admin' LIMIT 1",(actor['id'],)).fetchone():
-                raise Forbidden()
-            if key or not row['is_admin']:
+            key, every_key = self._admin_somewhere(c, actor)
+            if not every_key:
                 rows = c.execute('SELECT id,name,prefix,project_ids,scopes,revoked_at,created_at FROM memory.api_keys WHERE actor_id=%s ORDER BY created_at,id', (actor['id'],)).fetchall()
                 if key:
                     rows = [r for r in rows if set(r['project_ids']) <= set(key['project_ids']) and set(r['scopes']) <= set(key['scopes'])]

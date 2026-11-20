@@ -199,8 +199,8 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
     elif settings.metrics_mode == 'admin':
         @app.get('/metrics', include_in_schema=False)
         def metrics_admin(actor=Depends(identity)):
-            if actor.get('is_admin') is not True:
-                raise Forbidden()
+            with store.transaction() as c:
+                store._global_admin(c, actor)  # the resolver decides, not the `is_admin` that travels in the actor dictionary
             return metrics_response()
 
     @app.post('/v1/auth/login', operation_id='memory_login')

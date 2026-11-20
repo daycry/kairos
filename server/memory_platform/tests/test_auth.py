@@ -1,6 +1,7 @@
 import uuid
 
 import unittest
+from unittest.mock import patch
 
 from memory_platform.auth import Auth, hash_password, verify_password
 from memory_platform.errors import Forbidden, MemoryError, NotFound, Unauthorized
@@ -70,3 +71,31 @@ class AuthTests(unittest.TestCase):
         with self.assertRaises(MemoryError) as caught:
             auth.login(username,'invalid',ip)
         assert caught.exception.status_code==429
+
+
+class ResolverDelegationTests(unittest.TestCase):
+    """The reads that decide an access live in the resolver of `store_auth.py` (CA-38 a, DC-1): the actor of a proven credential, the visible projects and the right to list keys."""
+
+    def test_the_actor_of_a_proven_credential_is_described_by_the_resolver(self):
+        store, admin, pid = create_core()
+        token = store.create_key(admin, {'name': 'k', 'project_ids': [pid], 'scopes': ['read']})['token']
+        with patch.object(store, '_describe', wraps=store._describe) as describe:
+            actor = Auth(store).authenticate_bearer(token)
+        describe.assert_called_once()
+        self.assertEqual((actor['credential_type'], actor['project_ids'], actor['scopes'], actor['is_admin']), ('bearer', [pid], ['read'], False))
+
+    def test_list_projects_asks_the_resolver_which_projects_the_caller_sees(self):
+        store, admin, pid = create_core()
+        with patch.object(store, '_visible_projects', wraps=store._visible_projects) as visible:
+            projects = store.list_projects(admin)
+        visible.assert_called_once()
+        self.assertIn(pid, [p['id'] for p in projects])
+
+    def test_list_keys_asks_the_resolver_whether_the_caller_administers_somewhere(self):
+        store, admin, pid = create_core()
+        reader = store.create_user(admin, {'username': 'reader-' + uuid.uuid4().hex[:10], 'password': 'synthetic-password-123', 'project_ids': [pid], 'scopes': ['read']})
+        with patch.object(store, '_admin_somewhere', wraps=store._admin_somewhere) as somewhere:
+            store.list_keys(admin)
+            with self.assertRaises(Forbidden):
+                store.list_keys({'id': reader['id'], 'credential_type': 'bootstrap'})
+        self.assertEqual(somewhere.call_count, 2)

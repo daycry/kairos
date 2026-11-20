@@ -41,17 +41,7 @@ class Auth:
         self.session_ttl = session_ttl
 
     def _actor(self, c, row, credential_type, credential_id=None):
-        grants = c.execute('SELECT project_id,permission FROM memory.project_grants WHERE actor_id=%s', (row['id'],)).fetchall()
-        actor = {'id': row['id'], 'username': row['username'], 'is_admin': row['is_admin'], 'credential_type': credential_type,
-                 'scopes': sorted(SCOPES if row['is_admin'] else {g['permission'] for g in grants}),
-                 'project_ids': sorted({g['project_id'] for g in grants}), 'grants': grants}
-        if credential_type == 'bearer':
-            key = c.execute('SELECT * FROM memory.api_keys WHERE id=%s', (credential_id,)).fetchone()
-            actor.update(is_admin=False, key_id=credential_id, scopes=key['scopes'], project_ids=key['project_ids'])
-        else:
-            actor['session_id'] = credential_id
-        actor['permissions'] = actor['scopes']
-        return actor
+        return self.store._describe(c, row, credential_type, credential_id)  # permissions are resolved in one place (store_auth.py)
 
     def authenticate_bearer(self, token):
         if not token:

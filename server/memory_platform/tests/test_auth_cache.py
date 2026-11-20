@@ -426,7 +426,7 @@ class WritersEmptyTheCacheTests(unittest.TestCase):
 class EveryTransactionTests(unittest.TestCase):
     """The walk over the transactions of the package: each function that opens one (`.transaction()`) resolves permissions through the cached helpers, or is one of the reviewed few that
     do not and why. A new transaction that skips the permission check, or that resolves it with its own query, fails here."""
-    RESOLVERS = {'_require', '_active', '_global_admin', '_delegate', 'require_permission', '_authorized', '_generation'}
+    RESOLVERS = {'_require', '_active', '_global_admin', '_delegate', '_visible_projects', '_admin_somewhere', 'require_permission', '_authorized', '_generation'}
     NOT_REQUEST_PATHS = {
         ('admin.py', 'store_fingerprints'): 'operator command on a direct connection', ('admin.py', 'inspect_store'): 'operator command', ('admin.py', 'content_manifest'): 'operator command',
         ('backup.py', 'create_backup'): 'operator command: one exported snapshot for the fingerprints and the dump', ('admin.py', 'mark_stale_unchunked'): 'operator command', ('admin.py', 'backfill_chunks'): 'operator command', ('admin.py', 'prune_tables'): 'operator command', ('admin.py', 'main'): 'operator command',

@@ -18,6 +18,11 @@
       "kind": "function",
       "signature": "(self, c, actor)"
     },
+    "_admin_somewhere": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, c, actor)"
+    },
     "_audit": {
       "contextmanager": false,
       "kind": "function",
@@ -32,6 +37,11 @@
       "contextmanager": false,
       "kind": "function",
       "signature": "(self, c, actor, projects, scopes)"
+    },
+    "_describe": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, c, row, credential_type, credential_id=None)"
     },
     "_global_admin": {
       "contextmanager": false,
@@ -92,6 +102,11 @@
       "contextmanager": false,
       "kind": "function",
       "signature": "(self, c, projects, model, categories, tags, limit, *, stream=False, identities=None)"
+    },
+    "_visible_projects": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, c, actor)"
     },
     "bootstrap_user": {
       "contextmanager": false,

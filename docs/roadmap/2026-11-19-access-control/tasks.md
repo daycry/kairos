@@ -55,7 +55,7 @@ test-plan: test-plan.md
 
 | Fase | Completadas | Total | Progreso | H. humanas (real/est) | H. IA ejec. (real/est) | Supervisión (real/est) | Tokens (real/est) |
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
-| Fase 1 — Medición de scrypt y guarda del resolvedor (CA-09, CA-38 a) | 2 | 5 | 40% | 0 / 19.8h | 0.51 / 6.3h | 0 / 1.6h | 0 / 1570 k |
+| Fase 1 — Medición de scrypt y guarda del resolvedor (CA-09, CA-38 a) | 3 | 5 | 60% | 0 / 19.8h | 0.74 / 6.3h | 0 / 1.6h | 0 / 1570 k |
 | Fase 2 — Esquema 13, scrypt y contraseñas (C-01) | 0 | 7 | 0% | 0 / 36.0h | 0 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 3 — Usuarios, permisos y sesiones (C-01) | 0 | 6 | 0% | 0 / 36.0h | 0 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01) | 0 | 7 | 0% | 0 / 48.0h | 0 / 4.9h | 0 / 1.2h | 0 / 1232 k |
@@ -73,7 +73,7 @@ test-plan: test-plan.md
 | Fase 16 — Identidad: guía probada y extensibilidad (C-05) | 0 | 5 | 0% | 0 / 23.4h | 0 / 2.4h | 0 / 0.6h | 0 / 601 k |
 | Fase 17 — Revisión del hito C y revisión de seguridad (C-07) | 0 | 5 | 0% | 0 / 27.0h | 0 / 5.3h | 0 / 1.3h | 0 / 1320 k |
 | Fase 18 — Cierre del hito C y de la iniciativa: ensayo, versión 0.4.2 y PR | 0 | 4 | 0% | 0 / 11.4h | 0 / 1.2h | 0 / 0.3h | 0 / 293 k |
-| **TOTAL** | **2** | **106** | **2%** | **0 / 616.2h** | **0.51 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
+| **TOTAL** | **3** | **106** | **3%** | **0 / 616.2h** | **0.74 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -142,10 +142,11 @@ TDD n/a: medición. Medida con `scripts/measure-scrypt.py` (7 repeticiones, medi
 ### T-03 — Lectores de permisos al resolvedor: `_describe`, `_visible_projects`, `_admin_somewhere` y `/metrics`
 
 - **Descripción**: Mover al resolvedor de `store_auth.py` las cuatro lecturas que deciden fuera de él: `Auth._actor` delega en `_describe`, `list_projects` en `_visible_projects`, `list_keys` en `_admin_somewhere`, y `/metrics` en modo `admin` llama a `_global_admin` dentro de una transacción. Refactor sin cambio de comportamiento. Fuente: CA-38 (a); DC-1.
-- **Changelog**: Interno: los permisos se resuelven en un único punto.
-- **Estado**: borrador
+- **Changelog**: Interno: los permisos de una credencial, los proyectos visibles, el derecho a listar claves y el acceso a las métricas se deciden en un único punto del servidor, sin cambiar ninguna respuesta.
+- **Estado**: completado
+- **Cerrada**: 2026-11-20
 - **Tiempo humano**: est. 3.5h · real —
-- **Tiempo IA (ejec.)**: est. 0.36h · real —
+- **Tiempo IA (ejec.)**: est. 0.36h · real 0.23h (medido)
 - **Supervisión**: est. 0.09h · real —
 - **Previsión IA**: 99 k in / 9 k out tok · ⚠️ verificar €
 - **Dependencias**: T-02
@@ -155,14 +156,16 @@ TDD n/a: medición. Medida con `scripts/measure-scrypt.py` (7 repeticiones, medi
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_auth_cache|test_auth|test_metrics|test_api_limits|MEMORY_TEST_RESULT"` → nombradas en `ok`; 0 fallos y 0 omitidos
 
 **Criterios de aceptación**
-- [ ] El test de T-02 pasa a verde sin ampliar la lista de excepciones
-- [ ] `/metrics` en modo `admin` deja de fiarse del `is_admin` del diccionario del actor y responde igual que antes
-- [ ] Las respuestas de `/v1/auth/me`, `/v1/projects` y `/v1/keys` no cambian; `store_surface.json` solo crece
+- [x] El test de T-02 pasa a verde sin ampliar la lista de excepciones
+- [x] `/metrics` en modo `admin` deja de fiarse del `is_admin` del diccionario del actor y responde igual que antes
+- [x] Las respuestas de `/v1/auth/me`, `/v1/projects` y `/v1/keys` no cambian; `store_surface.json` solo crece
 
 **Subtareas**
-- [ ] Extraer las tres funciones
-- [ ] Cambiar `/metrics`
-- [ ] Suite
+- [x] Extraer las tres funciones
+- [x] Cambiar `/metrics`
+- [x] Suite
+
+**Notas**: `store_auth.py` gana `_describe` (sale de `Auth._actor`, que ahora delega), `_visible_projects(c, actor)` (devuelve las filas antes del tope de 100) y `_admin_somewhere(c, actor)` (lanza Forbidden o devuelve `(key, every_key)`; `list_keys` ya no lee `is_admin` ni `project_grants`). `/metrics` en modo `admin` abre una transacción y llama a `_global_admin`. Sin ampliar `READ_EXCEPTIONS`. Desviación declarada: `EveryTransactionTests.RESOLVERS` (en `test_auth_cache.py`, ya en Archivos) suma `_visible_projects` y `_admin_somewhere`, porque `list_projects` ya no llama a `_active` directamente. `store_surface.json` solo crece (3 métodos privados; regenerado con `surface()` en un contenedor `--network=none`, CRLF conservado). `test_metrics`: el test de modo `admin` simula el resolvedor en el `store` y una prueba nueva fija que el `is_admin` del diccionario se ignora. RED: ResolverDelegationTests (3 errores: Store sin `_describe`, `_visible_projects`, `_admin_somewhere`) y test_admin_mode_asks_the_resolver_and_ignores_the_is_admin_of_the_actor_dictionary (AssertionError: 200 != 403) fallaron, más el de T-02 (4 lectores), en contenedor de prueba con PostgreSQL efímero · 2026-11-20. Verde: `docker build --target test` (`kairos-test:i4p1`), `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "passed": true, "skipped": 0, "tests": 1578}`; las 8 pruebas de `ResolverBoundaryTests` y `ResolverDelegationTests`, y `test_admin_mode_*`, en `ok`. usage-meter close access-control/T-03: 0.23 h IA (medido), 66 in / 24152 out tok.
 
 ### T-04 — Cierre de fase: suites y subida del mínimo
 
