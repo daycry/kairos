@@ -55,7 +55,7 @@ test-plan: test-plan.md
 
 | Fase | Completadas | Total | Progreso | H. humanas (real/est) | H. IA ejec. (real/est) | Supervisión (real/est) | Tokens (real/est) |
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
-| Fase 1 — Medición de scrypt y guarda del resolvedor (CA-09, CA-38 a) | 3 | 5 | 60% | 0 / 19.8h | 0.74 / 6.3h | 0 / 1.6h | 0 / 1570 k |
+| Fase 1 — Medición de scrypt y guarda del resolvedor (CA-09, CA-38 a) | 4 | 5 | 80% | 0 / 19.8h | 0.79 / 6.3h | 0 / 1.6h | 0 / 1570 k |
 | Fase 2 — Esquema 13, scrypt y contraseñas (C-01) | 0 | 7 | 0% | 0 / 36.0h | 0 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 3 — Usuarios, permisos y sesiones (C-01) | 0 | 6 | 0% | 0 / 36.0h | 0 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01) | 0 | 7 | 0% | 0 / 48.0h | 0 / 4.9h | 0 / 1.2h | 0 / 1232 k |
@@ -73,7 +73,7 @@ test-plan: test-plan.md
 | Fase 16 — Identidad: guía probada y extensibilidad (C-05) | 0 | 5 | 0% | 0 / 23.4h | 0 / 2.4h | 0 / 0.6h | 0 / 601 k |
 | Fase 17 — Revisión del hito C y revisión de seguridad (C-07) | 0 | 5 | 0% | 0 / 27.0h | 0 / 5.3h | 0 / 1.3h | 0 / 1320 k |
 | Fase 18 — Cierre del hito C y de la iniciativa: ensayo, versión 0.4.2 y PR | 0 | 4 | 0% | 0 / 11.4h | 0 / 1.2h | 0 / 0.3h | 0 / 293 k |
-| **TOTAL** | **3** | **106** | **3%** | **0 / 616.2h** | **0.74 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
+| **TOTAL** | **4** | **106** | **4%** | **0 / 616.2h** | **0.79 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -170,10 +170,11 @@ TDD n/a: medición. Medida con `scripts/measure-scrypt.py` (7 repeticiones, medi
 ### T-04 — Cierre de fase: suites y subida del mínimo
 
 - **Descripción**: Protocolo de cierre de fase (cabecera) con las suites: servidor.
-- **Changelog**: Interno: cierre de fase.
-- **Estado**: borrador
+- **Changelog**: Interno: la CI exige ahora al menos 1578 pruebas del servidor.
+- **Estado**: completado
+- **Cerrada**: 2026-11-20
 - **Tiempo humano**: est. 0.5h · real —
-- **Tiempo IA (ejec.)**: est. 0.05h · real —
+- **Tiempo IA (ejec.)**: est. 0.05h · real 0.05h (medido)
 - **Supervisión**: est. 0.01h · real —
 - **Previsión IA**: 14 k in / 1 k out tok · ⚠️ verificar €
 - **Dependencias**: T-03
@@ -185,10 +186,12 @@ TDD n/a: medición. Medida con `scripts/measure-scrypt.py` (7 repeticiones, medi
   - `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `OK`
 
 **Criterios de aceptación**
-- [ ] Suites con 0 fallos y 0 omitidos; el mínimo iguala el recuento observado en los cuatro sitios y el equivalente local queda anotado
+- [x] Suites con 0 fallos y 0 omitidos; el mínimo iguala el recuento observado en los cuatro sitios y el equivalente local queda anotado
 
 **Subtareas**
-- [ ] Suites, mínimo y archivo de las notas de la fase
+- [x] Suites, mínimo y archivo de las notas de la fase
+
+**Notas**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain -t kairos-test:i4p1 .` (exit 0, 771 s): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1578}`. Mínimo 1570 → 1578 en los cuatro sitios (`ci.yml` con su historia, `MIN_FLOOR`, `docs/operations.md`, `README.md:252`). CI externa no ejecutada: cierra la ejecución local. RED: SuiteGateStepTests.test_current_step_structure_and_effective_minimum y test_the_current_script_passes_the_good_log_and_fails_every_bad_one fallaron con AssertionError: KAIROS_MIN_TESTS 1570 is below the baseline 1578 (MIN_FLOOR ya en 1578, `ci.yml` aún en 1570) · 2026-11-20; verde tras subir `ci.yml`: `python -m unittest scripts.tests.test_ci_workflow` → Ran 48 tests, OK. Archivo de las notas de la fase (`ledger-archive.py --apply`) pendiente hasta T-05: la fase sigue `en-progreso`. usage-meter close access-control/T-04: 0.05 h IA (medido), 30 in / 6709 out tok.
 
 ### T-05 — Revisión adversarial de la fase (dos lentes)
 
