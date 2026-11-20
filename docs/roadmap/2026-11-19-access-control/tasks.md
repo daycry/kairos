@@ -2888,3 +2888,19 @@ Lentes: A+B+C+D sobre `de26620..HEAD` (fix1: `24cc9bd`, `109ba7b`, `c73e85e`), r
 | 10 | Minor | Límites residuales del escáner por regex (lentes A, B y C): composición en dos pasos (`+=`, `str.join`); alcance de `DYNAMIC_SQL` por función y no por sentencia; `sql.Composed`/`sql.SQL(...).join` con verbo de escritura en `table_digest`; `TABLE` fuera de principio de sentencia; `--` dentro de un literal; `to_jsonb(a)`/`row_to_json(a.*)`/`json_agg(a)` sobre `actors`; `RETURNING` sin `)` | T-02 | aceptado: límite declarado (docstring de `ResolverBoundaryTests`) | `test_auth_cache.py:509, :515, :540-565, :588-600, :662-664, :697-723` |
 
 Siguiente: fix2 (gaps 1-9; el 10 se acepta como límite declarado de un escáner por regex si fix2 lo documenta en el docstring de la guarda) y revisión, intento 3 de 3, sobre el diff completo de fix2.
+
+
+## Revisión de dos lentes — intento 3: Fase 1 (fix2) (T-01, T-02, T-03, T-04) — 1 Important abierto: decisión del usuario
+
+Lentes: A+B+C+D sobre `c73e85e..HEAD` (fix2: `7626727`, `b4a2469`, `d0eb7ae`), revisado entero como código nuevo. Gaps del intento 2: 1-8 corregidos y 10 aceptado como límite declarado (con la salvedad del gap 1 de abajo en su primera viñeta); el 9 corregido en sus casos, pero abre el gap 1. D: sin bloqueo (ninguna regex con retroceso catastrófico). Las cuatro lentes coinciden en el gap 1.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | Puerta abierta por fix2 (gap 9): `_reads_is_admin` exige una palabra SQL en el mismo literal para contar `is_admin`. Dejan de detectarse lecturas que la guarda de `c73e85e` veía: `itemgetter('is_admin')`, `attrgetter`, `__getitem__`, `.pop`, `.setdefault`, `'is_admin' in row`, `k='is_admin'; row[k]`, `match row: case {'is_admin': True}`, `row['is_'+'admin']`, y las piezas SQL de una composición en dos pasos (`q += ' AND is_admin'`, `COLS='id, is_admin'`, `' ORDER BY is_admin'`). También dentro de `login`. Sin mutante que lo fije (lentes A, B y C; C: CWE-863) | T-02 | pendiente: decisión del usuario (3.º intento) | `test_auth_cache.py:553`; mutantes rojos con la guarda de `c73e85e`, verdes con HEAD |
+| 2 | Minor | Una clave `'WEB_SESSIONS'` o `'"web_sessions"'` en `RETENTION_TABLES` escapa al control del predicado exacto (que solo mira la clave `'web_sessions'`) (lente A) | T-02 | pendiente | `test_auth_cache.py:497, :738`; `admin.py:310-312` |
+| 3 | Minor | `_DYNAMIC` reconoce un hueco de tabla en una lista con comas solo en la segunda posición; un hueco entre comillas dobles (`memory."%s"`, `f'… "{t}"'`) tampoco se reconoce (lentes B y C) | T-02 | pendiente | `test_auth_cache.py:584-586` |
+| 4 | Minor | El relleno del `%` no reconoce anchura ni otros tipos (`%20s`, `%-20s`, `%i`) y desalinea los posicionales; el control `%%`→`%` no tiene mutante (lentes A y B) | T-02 | pendiente | `test_auth_cache.py:613-618` |
+| 5 | Minor | La nota RED de fix2 en T-02 lista como fallos `JOIN %s`, `DELETE FROM %s`, `UPDATE %s` e `INSERT INTO %s`, que el escáner de `c73e85e` ya detectaba (el número, 6 de 10, es correcto) (lente A) | T-02 | pendiente | `tasks.md` T-02 Notas |
+| 6 | Minor | `test_each_control_of_the_closed_lists_has_its_mutant` llama 11 veces a `dynamic_table_violations()`, que relee el paquete unas 5 veces por llamada: la clase de guardas pasa de unos 6 s a unos 13 s (≈ 0,9 % de la suite) (lente D) | T-02 | pendiente | `test_auth_cache.py:727, :755, :904-925` |
+
+Bucle agotado (3 de 3) con un Important abierto: la decisión (seguir con un fix3 fuera del bucle, re-planificar o aceptar como deuda) vuelve al usuario.
