@@ -2961,3 +2961,21 @@ Lentes: A+B+C+D sobre `585e9be..HEAD` (fix5: `9bfc441`, `0e91e52`), revisado ent
 | 8 | Minor | El desglose de la nota RED de fix5 nombra «la sentencia tras `;`» (ya era rojo) y omite el upsert con `EXCLUDED` (lente A) | T-02 | corregido (fix6, 0068149) | `tasks.md` T-02 Notas fix5 |
 
 Siguiente: fix6 dentro de la decisión del usuario del intento 5 («de raíz»: ningún silencio por forma del SQL), y revisión del fix6.
+
+
+## Revisión de dos lentes — intento 7: Fase 1 (fix6, fuera del bucle) (T-01, T-02, T-03, T-04) — 2 Important: una regresión y un recorrido que no es lineal
+
+Lentes: A+B+C+D sobre `0e91e52..HEAD` (fix6: `0068149`, `6f81924`, `b78f616`), revisado entero como código nuevo. Gaps del intento 6: 1-8 corregidos, cada uno con su mutante. El nombre calificado resiste homónimos, herencia, reasignación, duplicados y clases homónimas en otro módulo (lentes B y C). Paquete real en verde. A y C sin Important.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | Regresión de fix6: `SELECT DISTINCT ON (username) * FROM memory.actors` ya no se detecta (el nuevo `_STAR` exige calificador tras `DISTINCT ON (…)`); `d0eb7ae`, `a543807`, `585e9be` y `0e91e52` lo daban como `is_admin:row` (lente B) | T-02 | pendiente | `test_auth_cache.py:551` |
+| 2 | Important | El recorrido «lineal» de la cláusula FROM es O(nº de FROM × longitud) y más lento que la regex que sustituye (`'FROM a, ' * 4000`: 31-43 s frente a 4,7-6,9 s; `'SELECT 1 FROM a ' * 4000`: 64 s frente a 0,02 s); la nota de fix6 («0,03 s») y el docstring («linear scan») no se sostienen, y se borró la viñeta del límite cuadrático. Sin efecto con el SQL real del paquete (lente D; A y B lo ven Minor) | T-02 | pendiente | `test_auth_cache.py:623-640, :873`; `tasks.md` T-02 nota fix6 |
+| 3 | Minor | Falsos positivos nuevos realistas para la fase 3: `_RETURNING_STAR` cruza sentencias y CTE (`WITH u AS (UPDATE memory.actors … RETURNING id) INSERT INTO memory.audit_events … RETURNING *` → `is_admin:row`); el arranque `\(` de `_STAR` no comprueba el alias (`count(p.*)` con `JOIN memory.actors a`); `_CLAUSE_END` no corta en `;` ni en `ON CONFLICT … SET` (lente B) | T-02 | pendiente | `test_auth_cache.py:551, :560, :620` |
+| 4 | Minor | Formas de fila completa de `actors` aún sin detectar ni declarar: `RETURNING id, *`, `RETURNING (a).*`, `RETURNING a`, `RETURNING to_json(a.*)` tras escribir `actors` (el destino de UPDATE/DELETE/MERGE no es fuente), `MERGE INTO memory.actors … RETURNING *`, `COPY memory.actors TO STDOUT`, `UPDATE … FROM memory.actors a … RETURNING a.*`, alias en la lista del SELECT tras algo con `FROM` (`extract(epoch FROM now()), a`), `DISTINCT ON (…) a`, `(a)`, `a::text`, `ARRAY(SELECT a …)` (lentes A, B y C; heredado) | T-02 | pendiente | `test_auth_cache.py:521, :551, :560, :563-587` |
+| 5 | Minor | El recorrido del FROM no salta comillas: `ON a.k = 'x)', {t}` y `memory."order", {t}` cortan el recorrido; `"order"` entre comillas pierde una detección que tenía la regex (lentes A y B) | T-02 | pendiente | `test_auth_cache.py:623-640` |
+| 6 | Minor | Controles de fix6 sin mutante: `_reads_is_admin` sobre el literal crudo (y no sobre el texto sin comentarios), la comprobación de duplicados en todas las listas, `_find_function` por nombre calificado (lente A) | T-02 | pendiente | `test_auth_cache.py:599, :782, :806` |
+| 7 | Minor | Viñeta de regex cuadráticas borrada aunque la de banderas del `%` sigue siéndolo; `_RETURNING_STAR` y `SELECT(.*?)FROM` también lo son con entradas artificiales (lentes A y D) | T-02 | pendiente | `test_auth_cache.py:560, :574, :670` |
+| 8 | Minor | El desglose RED de fix6 cuenta 6 formas que solo fallan porque `Auth.login` no existe en `0e91e52`; las de fondo son 3 (`bytes`, `'is_{}'.format`, `f'is_{"admin"}'`) más los 4 errores de los huecos tras `JOIN … ON` (lente A) | T-02 | pendiente | `tasks.md` T-02 nota fix6 |
+
+Siguiente: fix7 dentro de la decisión del usuario del intento 5, acotado a corregir la regresión y lo que el fix6 afirma y no cumple, y revisión del fix7.

@@ -14,6 +14,7 @@ What these tests hold, each with a mutant that turns it red (the mutants are lis
 
 Real PostgreSQL (the isolated test database); no test waits for a clock."""
 import ast
+import bisect
 import functools
 import hashlib
 import inspect
@@ -516,7 +517,7 @@ DYNAMIC_SQL = {
     ('store_jobs.py', 'JobsMixin.complete_job'): (lambda sources: spelled_tables(sources, 'store_jobs.py', 'JobsMixin.complete_job'), set(), 'worker: reads the resource of a job; the two tables are constants of the function', None),
     ('store_vectors.py', 'migrate_vector_indexes'): (lambda sources: {'embeddings', 'embedding_chunks'}, set(), 'migration: `CREATE INDEX` on the two embedding tables', None),
 }
-_KEYWORDS = r'WHERE|JOIN|ON|USING|LEFT|RIGHT|INNER|OUTER|FULL|CROSS|NATURAL|LATERAL|GROUP|ORDER|LIMIT|OFFSET|FETCH|FOR|UNION|EXCEPT|INTERSECT|HAVING|WINDOW|RETURNING|SET|TO|FROM|SELECT|AS'
+_KEYWORDS = r'WHERE|JOIN|ON|USING|LEFT|RIGHT|INNER|OUTER|FULL|CROSS|NATURAL|LATERAL|GROUP|ORDER|LIMIT|OFFSET|FETCH|FOR|UNION|EXCEPT|INTERSECT|HAVING|WINDOW|RETURNING|SET|TO|FROM|SELECT|AS|VALUES|DEFAULT|OVERRIDING|WITH|AND|OR'
 _TABLE = r'(?:ONLY\s+)?(?:"?memory"?\s*\.\s*)?"?(%s)"?\b(?:\s+(?:AS\s+)?(?!(?:' + _KEYWORDS + r')\b)(\w+))?'
 _LEAD = (r'(?<!DELETE )\b(?:FROM|JOIN|USING)\s+', r',\s*', r'^\(?\s*TABLE\s+', r'\bCOPY\s+')
 
@@ -548,7 +549,83 @@ def _locked_names(sql):
     return names
 
 
-_STAR = re.compile(r'(?:\bSELECT\s+(?:ALL\s+|DISTINCT\s+(?:ON\s*\([^)]*\)\s*)?)?|,\s*|\(\s*)(?:(?:"?\w+"?\s*\.\s*){1,2}|\(\s*(?:"?\w+"?\s*\.\s*)*"?\w+"?\s*\)\s*\.\s*)\*|\bSELECT\s+(?:ALL\s+|DISTINCT\s+)?\*|,\s*\*', re.I)
+_QUAL = r'(?:(?:"?\w+"?\s*\.\s*){1,2}|\(\s*(?:"?\w+"?\s*\.\s*)*"?\w+"?\s*\)\s*\.\s*)'  # `a.`, `memory.actors.`, `(a).`, `(memory.actors).`
+_PAREN_STAR = re.compile(r'\(\s*(%s)\*' % _QUAL)  # `f(a.*)`: a qualifier is required, `count(*)` is not a row
+_TARGET = re.compile(r'\b(?:UPDATE|INSERT\s+INTO|MERGE\s+INTO|DELETE\s+FROM)\s+' + _TABLE % 'actors', re.I)  # the target of a write on `actors` is a source too, with its alias
+_WRITE_KEYWORD = re.compile(r'\b(?:INSERT\s+INTO|(?<!DO )(?<!FOR )UPDATE|DELETE\s+FROM|MERGE\s+INTO)\b', re.I)  # not the `DO UPDATE` of an upsert nor a `FOR UPDATE` lock
+_LIST_STOPS = re.compile(r'(?:FROM|SELECT|WHERE|GROUP|ORDER|HAVING|LIMIT|OFFSET|UNION|EXCEPT|INTERSECT|RETURNING|FOR|WINDOW|ON\s+CONFLICT)\b', re.I)
+_NO_STOP = re.compile(r'(?!x)x')
+
+
+def _top_level_list(sql, start, stops):
+    """(end, commas): where the list that begins at `start` ends (the first top-level `;`, keyword of `stops`, or `)` that closes the group, else the end) and the top-level commas before it.
+    Quoted literals and identifiers are skipped. ONE pass over the list, which stops at the next keyword of `stops`: the cost of all the lists of a text is its length."""
+    depth, i, n, commas = 0, start, len(sql), []
+    while i < n:
+        char = sql[i]
+        if char in '\'"':
+            j = sql.find(char, i + 1)
+            while j != -1 and sql[j + 1:j + 2] == char:
+                j = sql.find(char, j + 2)
+            i = n if j == -1 else j + 1
+            continue
+        if char == '(':
+            depth += 1
+        elif char == ')':
+            depth -= 1
+            if depth < 0:
+                return i, commas
+        elif depth == 0:
+            if char == ';':
+                return i, commas
+            if char == ',':
+                commas.append(i)
+            elif char.isalpha() and not (sql[i - 1].isalnum() or sql[i - 1] == '_') and stops.match(sql, i):
+                return i, commas
+        i += 1
+    return n, commas
+
+
+def _items(sql, start, stops):
+    end, commas = _top_level_list(sql, start, stops)
+    cuts = [start] + [c + 1 for c in commas]
+    return [sql[a:b] for a, b in zip(cuts, [c for c in commas] + [end])]
+
+
+def _actor_names(sql):
+    return {name for table, alias in _sources(sql, ('actors',)) + [(m.group(1).lower(), (m.group(2) or '').lower()) for m in _TARGET.finditer(sql)] for name in (table, alias) if name}
+
+
+def _row_in_list(items, names):
+    """An item of a select or RETURNING list that is a whole row of `actors`: `*`, `a.*`, `(a).*`, `a`, `(a)`, `a::text`, or `f(a.*)` over one of its names."""
+    for item in items:
+        item = re.sub(r'^\s*(?:ALL|DISTINCT(?:\s+ON\s*\((?:[^()]|\([^()]*\))*\))?)\s*', '', item, flags=re.I).strip()
+        item = re.sub(r'\s*::\s*[\w.\[\]]+$', '', item)
+        unwrapped = re.fullmatch(r'\(\s*([^()]*?)\s*\)', item)
+        item = unwrapped.group(1) if unwrapped else item
+        if re.fullmatch(r'(?:%s)?\*' % _QUAL, item):
+            return True
+        if any(re.fullmatch(r'%s(?:\s+(?:AS\s+)?\w+)?' % re.escape(name), item, re.I) for name in names):
+            return True
+        if any(re.findall(r'\w+', m.group(1))[-1].lower() in names for m in _PAREN_STAR.finditer(item)):
+            return True
+    return False
+
+
+def _balanced(sql, start, end):
+    """The text between a write keyword and its RETURNING closes every group it opens, opens none it leaves, and holds no `;`: it is ONE statement."""
+    depth, i = 0, start
+    while i < end:
+        char = sql[i]
+        if char in '\'"':
+            j = sql.find(char, i + 1)
+            i = end if j == -1 else j + 1
+            continue
+        depth += (char == '(') - (char == ')')
+        if depth < 0 or char == ';':
+            return False
+        i += 1
+    return depth == 0
 
 
 def _reads_is_admin(sql):
@@ -557,33 +634,28 @@ def _reads_is_admin(sql):
     return bool(re.search(r'\bis_admin\b', sql, re.I))
 
 
-_RETURNING_STAR = re.compile(r'\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(?:ONLY\s+)?(?:"?memory"?\s*\.\s*)?"?actors"?\b.*?\bRETURNING\s+(?:(?:"?\w+"?\s*\.\s*){1,2})?\*', re.I)
+_WHOLE_TABLE = re.compile(r'\(?\s*(?:TABLE|COPY)\s+(?:ONLY\s+)?(?:"?memory"?\s*\.\s*)?"?actors"?\b', re.I)
 
 
 def _whole_row_of_actors(sql):
-    """A whole row of `actors` (which carries `is_admin`): `*`, `a.*`, `memory.actors.*`, `(a).*` or `f(a.*)` over it, `TABLE actors`, `RETURNING *` of a write to it, or its alias (or its name)
-    as an item of a select list. Nothing is cut out of the text before the search (a `RETURNING` swallows no statement after it)."""
-    sources = _sources(sql, ('actors',))
-    if _RETURNING_STAR.search(sql):
+    """A whole row of `actors` (which carries `is_admin`): `*`, `a.*`, `memory.actors.*`, `(a).*`, `f(a.*)`, the alias or the name, `(a)`, `a::text` as an item of a select list, or of the
+    RETURNING list of a write on `actors` (or of a write whose FROM/USING names it), `TABLE actors`, `COPY actors TO`. The only text cut out before the search is the SQL comments."""
+    if _WHOLE_TABLE.match(sql):
         return True
-    if not sources:
-        return False
-    if _STAR.search(sql) or re.match(r'\(?\s*TABLE\b', sql, re.I):
-        return True
-    aliases = {name for table, alias in sources for name in (table, alias) if name}
-    for listing in re.findall(r'\bSELECT\b(.*?)\bFROM\b', sql, re.I):
-        items, depth, current = [], 0, ''
-        for char in listing:
-            depth += (char == '(') - (char == ')')
-            if char == ',' and depth == 0:
-                items.append(current)
-                current = ''
-            else:
-                current += char
-        for item in items + [current]:
-            item = re.sub(r'^\s*(?:ALL|DISTINCT)\s+', '', item.strip(), flags=re.I)
-            if any(re.fullmatch(r'%s(?:\s+(?:AS\s+)?\w+)?' % re.escape(alias), item, re.I) for alias in aliases):
+    names = _actor_names(sql)
+    if names:
+        for m in re.finditer(r'\bSELECT\b', sql, re.I):
+            if _row_in_list(_items(sql, m.end(), _LIST_STOPS), names):
                 return True
+    starts = [m.start() for m in _WRITE_KEYWORD.finditer(sql)]
+    for m in re.finditer(r'\bRETURNING\b', sql, re.I):
+        before = bisect.bisect_left(starts, m.start())
+        for start in reversed(starts[max(0, before - 3):before]):  # the nearest write keyword that makes ONE statement with this RETURNING (not an earlier statement, not a CTE that closed)
+            if _balanced(sql, start, m.start()):
+                owner = _actor_names(sql[start:m.start()])
+                if owner and _row_in_list(_items(sql, m.end(), _NO_STOP), owner):
+                    return True
+                break
     return False
 
 
@@ -617,26 +689,15 @@ def sql_writes(text):
 
 
 _HOLE = re.compile(r'\s*"?(?:"?memory"?\s*\.\s*)?"?(?:\{[^{}]*\}|\x00)')
-_CLAUSE_END = re.compile(r'\b(?:WHERE|GROUP|ORDER|HAVING|LIMIT|OFFSET|UNION|EXCEPT|INTERSECT|RETURNING|FOR|WINDOW)\b', re.I)
 
 
 def _hole_in_a_from_list(sql):
-    """A hole right after a comma at the top level of a FROM clause (`FROM a JOIN b ON x=y, <hole>`): one linear pass per FROM, no regular expression that backtracks."""
-    for from_ in re.finditer(r'\bFROM\b', sql, re.I):
-        depth, i = 0, from_.end()
-        while i < len(sql):
-            char = sql[i]
-            if char == '(':
-                depth += 1
-            elif char == ')':
-                depth -= 1
-                if depth < 0:
-                    break
-            elif depth == 0 and char == ',' and _HOLE.match(sql, i + 1):
-                return True
-            elif depth == 0 and char.isalpha() and (i == 0 or not sql[i - 1].isalnum()) and _CLAUSE_END.match(sql, i):
-                break
-            i += 1
+    """A hole right after a top-level comma of a FROM clause (`FROM a JOIN b ON x=y, <hole>`). Each FROM is scanned up to the next FROM, SELECT or `;` at its level, so the cost is O(length)
+    except on input that nests parentheses artificially."""
+    for m in re.finditer(r'\bFROM\b', sql, re.I):
+        _, commas = _top_level_list(sql, m.end(), _LIST_STOPS)
+        if any(_HOLE.match(sql, c + 1) for c in commas):
+            return True
     return False
 
 
@@ -870,11 +931,13 @@ class ResolverBoundaryTests(unittest.TestCase):
 
     The scan is a DETECTOR OF REGRESSIONS, not a proof of absence: it reads the SQL strings of the package with regular expressions. Known limits, accepted (fix2, gap 10):
     * a statement built in two steps (`sql += ...`, `' '.join(...)`) is seen piece by piece: a piece that spells `is_admin`, or a restricted table WITH its `FROM`/`JOIN`/comma, is caught; one that spells the bare table name, only a verb or only a hole is not;
-    * a hole as the SUFFIX of a table name (`memory.api_{kind}`) is not recognised as a hole; a bare `%s` in a RAW constant (no Python `%` applied) is a parameter as far as the scan can tell; a hole after `USING` or after the comma of a `JOIN ... ON` IS caught, whatever builds it (fix6: a linear scan of the FROM clause, no backtracking regex);
+    * a hole as the SUFFIX of a table name (`memory.api_{kind}`) is not recognised as a hole; a bare `%s` in a RAW constant (no Python `%` applied) is a parameter as far as the scan can tell; a hole after `USING` or after the comma of a `JOIN ... ON` IS caught, whatever builds it (fix6: one pass per FROM clause that ends at the next FROM, SELECT or `;`, no backtracking regex);
     * `DYNAMIC_SQL` admits a FUNCTION, not each statement of it: a second composed statement in a listed function is covered by the same entry (its tables are checked as a set);
     * `sql.Composed` / `sql.SQL(...).join(...)` with a write verb in a function that may reach any table (`inspect_store`, `table_digest`) is not told apart from a SELECT beyond its text;
     * `TABLE x` is read only at the start of a statement; `--` or `/* ... */` inside a string literal of the SQL hides the text it covers from the table search (the column `is_admin` is searched in the raw literal);
     * `to_jsonb(a)`, `row_to_json(a)` or `json_agg(a)` over `actors` carries `is_admin` without naming it or starring it;
+    * cost, measured in fix7 on `'FROM a, ' * 4000`, `'SELECT 1 FROM a ' * 4000`, `'copied from the source and ' * 4000` and `'INSERT INTO x SELECT y FROM b; ' * 2000`: at most 0.05 s each (the FROM walk of fix6
+      took 26, 42, 83 and 22 s); `'%' + '-' * 4000 + 's'` takes 0.0 s. Not measured on artificially nested parentheses, where a list may be scanned once per enclosing level;
     PRINCIPLE (fix5): there is no silence by the shape of the SQL. Any `is_admin` in a literal outside the resolver is a read, also when it is written; a legitimate writer (`bootstrap_user`,
     `provision_locked`) is declared BY FUNCTION on the closed list, and inside that function any `is_admin` passes. That is the accepted cost.
     A new way of reading goes in `reads` below with its mutant, and a legitimate new reader or writer goes on the closed lists with its reason."""
@@ -1099,6 +1162,14 @@ class ResolverBoundaryTests(unittest.TestCase):
         self.assertNotEqual(quiet, base['store_auth.py'])
         _, stale = reads_outside_the_resolver({**base, 'store_auth.py': quiet + '\n\nclass Other:\n    def bootstrap_user(self, c):\n        return ' + write + '\n'})
         self.assertIn('store_auth.py:AuthMixin.bootstrap_user reads is_admin', stale)
+        for second in ('\n\nclass AuthMixin:\n    def _active(self, c):\n        return c.execute("SELECT * FROM memory.project_grants")\n',):  # RESOLVER
+            outside, _ = reads_outside_the_resolver({**base, 'store_auth.py': base['store_auth.py'] + second})
+            self.assertTrue(any('duplicate definition' in kind for kinds in outside.values() for kind in kinds), second)
+        outside, _ = reads_outside_the_resolver({**base, 'store_jobs.py': base['store_jobs.py'] + '\n\nclass JobsMixin:\n    def claim_job(self, c, t):\n        return c.execute("SELECT 1 FROM memory." + t)\n'})  # DYNAMIC_SQL
+        self.assertTrue(any('duplicate definition' in kind for kinds in outside.values() for kind in kinds))
+        before = 'class Other:\n    def claim_job(self):\n        return "memory.api_keys"\n\n' + base['store_jobs.py']  # a homonym BEFORE the real class does not change what the real one can reach
+        self.assertEqual(spelled_tables({**base, 'store_jobs.py': before}, 'store_jobs.py', 'JobsMixin.claim_job'), spelled_tables(base, 'store_jobs.py', 'JobsMixin.claim_job'))
+        self.assertTrue(spelled_tables(base, 'store_jobs.py', 'JobsMixin.claim_job'))
         # the resolver and the dynamic entries are qualified too: a homonym of `_active` or of a job function does not inherit
         outside, _ = reads_outside_the_resolver({**base, 'store_auth.py': base['store_auth.py'] + '\n\nclass Other:\n    def _active(self, c):\n        return c.execute(\'SELECT * FROM memory.project_grants\')\n'})
         self.assertIn('store_auth.py:Other._active', outside)
@@ -1114,6 +1185,13 @@ class ResolverBoundaryTests(unittest.TestCase):
             "DELETE FROM memory.actors WHERE id=%s RETURNING a.*", "TABLE memory.actors", "SELECT ALL * FROM memory.actors", "SELECT DISTINCT * FROM memory.actors", "SELECT memory.actors.* FROM memory.actors",
             "SELECT (memory.actors).* FROM memory.actors", "SELECT (a).* FROM memory.actors a", "SELECT a FROM memory.actors a", "SELECT id, a FROM memory.actors AS a", "SELECT actors FROM memory.actors",
             "SELECT ROW(a.*) FROM memory.actors a", "SELECT to_json(a.*) FROM memory.actors a",
+            # fix7 gap 1: DISTINCT ON; gap 4: the target of a write is a source, a list item may be the alias, a cast, a parenthesised alias, a subselect, an item after a FROM inside a function
+            "SELECT DISTINCT ON (username) * FROM memory.actors", "SELECT DISTINCT ON(username)* FROM memory.actors", "SELECT DISTINCT ON (a.x) * FROM memory.actors a",
+            "SELECT DISTINCT ON (lower(username)) * FROM memory.actors", "SELECT DISTINCT ON (id) a FROM memory.actors a",
+            "UPDATE memory.actors SET disabled=true WHERE id=%s RETURNING id, *", "UPDATE memory.actors a SET disabled=true RETURNING (a).*", "UPDATE memory.actors a SET disabled=true RETURNING a",
+            "UPDATE memory.actors a SET disabled=true RETURNING to_json(a.*)", "MERGE INTO memory.actors a USING x ON true WHEN MATCHED THEN DELETE RETURNING *", "COPY memory.actors TO STDOUT",
+            "UPDATE memory.audit_events SET x=1 FROM memory.actors a WHERE a.id=%s RETURNING a.*", "SELECT extract(epoch FROM now()), a FROM memory.actors a", "SELECT (a) FROM memory.actors a",
+            "SELECT a::text FROM memory.actors a", "SELECT ARRAY(SELECT a FROM memory.actors a)",
         ]
         for form in forms:
             with self.subTest(form=form):
@@ -1121,7 +1199,12 @@ class ResolverBoundaryTests(unittest.TestCase):
                 outside, _ = reads_outside_the_resolver({**base, 'newmod.py': 'def leak(c):\n    return c.execute(%r)\n' % form})
                 self.assertEqual(outside['newmod.py:leak'], ['is_admin:row'], form)
         for form in ("SELECT count(*) FROM memory.actors", "SELECT * FROM memory.projects", "INSERT INTO memory.projects(id) VALUES(%s) RETURNING *", "SELECT a FROM memory.projects a",
-                     "SELECT 1 FROM memory.actors a WHERE a.id=%s", "UPDATE memory.projects SET title=%s WHERE id=%s RETURNING a.*", "SELECT a.id FROM memory.actors a", "SELECT count(a.*) FROM memory.projects a"):
+                     "SELECT 1 FROM memory.actors a WHERE a.id=%s", "UPDATE memory.projects SET title=%s WHERE id=%s RETURNING a.*", "SELECT a.id FROM memory.actors a", "SELECT count(a.*) FROM memory.projects a",
+                     # fix7 gap 3: a RETURNING that is not the one of a write on `actors`, and `count(p.*)` over another alias, are not a whole row
+                     "WITH u AS (UPDATE memory.actors SET disabled=true WHERE id=%s RETURNING id) INSERT INTO memory.audit_events(id) VALUES(%s) RETURNING *",
+                     "UPDATE memory.actors SET disabled=true WHERE id=%s RETURNING id; INSERT INTO memory.audit_events(id) VALUES(%s) RETURNING *",
+                     "SELECT count(p.*) FROM memory.projects p JOIN memory.actors a ON true", "UPDATE memory.actors SET disabled=true WHERE id=%s RETURNING id, username",
+                     "INSERT INTO memory.actors(id,username) VALUES(%s,%s) RETURNING id"):
             self.assertEqual(sql_reads(form), set(), form)
 
     def test_the_column_is_read_in_any_case_in_bytes_and_when_a_format_or_an_f_string_spells_it(self):
@@ -1129,7 +1212,8 @@ class ResolverBoundaryTests(unittest.TestCase):
         base = package_sources()
         for body in ("return c.execute('SELECT IS_ADMIN FROM memory.actors')", "return c.execute('SELECT Is_Admin FROM memory.actors')", "return c.execute(b'SELECT is_admin FROM memory.actors')",
                      "return row['is_{}'.format('admin')]", "return row[f'is_{\"admin\"}']", "return row['is_%s' % 'admin']", "return c.execute('SELECT {} FROM memory.actors'.format('is_admin'))",
-                     "return c.execute(f'SELECT {\"is_admin\"} FROM memory.actors')", "return c.execute(('SELECT is_adm' 'in FROM memory.actors'))"):
+                     "return c.execute(f'SELECT {\"is_admin\"} FROM memory.actors')", "return c.execute(('SELECT is_adm' 'in FROM memory.actors'))",
+                     "return c.execute(\"SELECT 1 FROM memory.projects WHERE note <> '--' AND is_admin\")", "return c.execute('SELECT 1 /* x */ FROM memory.actors WHERE is_admin')"):
             with self.subTest(body=body):
                 outside, _ = reads_outside_the_resolver({**base, 'newmod.py': 'def leak(row, c):\n    ' + body + '\n'})
                 self.assertIn('newmod.py:leak', outside, body)
@@ -1141,9 +1225,25 @@ class ResolverBoundaryTests(unittest.TestCase):
             with self.subTest(body=body):
                 outside, _ = reads_outside_the_resolver({**base, 'newmod.py': 'def leak(c, t):\n    ' + body + '\n'})
                 self.assertEqual(outside['newmod.py:leak'], ['unknown table'], body)
-        for body in ("return c.execute(f'SELECT 1 FROM memory.projects WHERE id IN (1, {t})')", "return c.execute(f'SELECT {t}, 1 FROM memory.projects ORDER BY a, {t}')",
+        for body in ("return c.execute(f\"SELECT 1 FROM a JOIN b ON a.k = 'x)', {t}\")", "return c.execute(f'SELECT 1 FROM memory.\"order\", {t}')", "return c.execute('SELECT 1 FROM \"order\", ' + t)",
+                     "return c.execute('SELECT 1 FROM a; ' + 'SELECT 1 FROM b, ' + t)"):
+            with self.subTest(body=body):
+                outside, _ = reads_outside_the_resolver({**base, 'newmod.py': 'def leak(c, t):\n    ' + body + '\n'})
+                self.assertEqual(outside['newmod.py:leak'], ['unknown table'], body)
+        for body in ("return c.execute(f'SELECT 1 FROM memory.projects WHERE id IN (1, {t})')",
+                     "return c.execute(f'INSERT INTO memory.audit_events(id) SELECT id FROM memory.projects ON CONFLICT (id) DO UPDATE SET title = {t}')",
+                     "return c.execute(f'SELECT 1 FROM memory.projects; SELECT a, {t} FROM memory.projects')", "return c.execute(f'SELECT {t}, 1 FROM memory.projects ORDER BY a, {t}')",
                      "return c.execute(f'SELECT coalesce(a, {t}) FROM memory.projects GROUP BY 1')"):
             self.assertEqual(scan('def w(c, t):\n    ' + body + '\n').reads, [], body)
+
+    def test_the_scans_stay_linear_on_artificial_input(self):
+        # fix7 gap 2: each of these took tens of seconds in fix6; a generous bound so that a slow machine does not fail it (they take well under a second)
+        import time
+        for text in ('FROM a, ' * 4000, 'SELECT 1 FROM a ' * 4000, 'copied from the source and ' * 4000, 'INSERT INTO x SELECT y FROM b; ' * 2000, 'SELECT ' * 4000):
+            started = time.monotonic()
+            sql_dynamic(text)
+            sql_reads(text)
+            self.assertLess(time.monotonic() - started, 5, text[:30])
 
     def test_the_percent_fill_follows_the_conversion_specifications(self):
         # fix3 gap 4: width, flags, precision and other types each consume ONE argument; `%%` is a `%` and consumes none
