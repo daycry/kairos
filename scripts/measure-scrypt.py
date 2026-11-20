@@ -113,6 +113,11 @@ def docker(*args, **kw):
     return subprocess.run(['docker', *args], capture_output=True, text=True, **kw)
 
 
+def measure_containers(names):
+    """The containers this script started: those whose name BEGINS with `kairos-measure-` (Docker's `name=` filter matches anywhere in the name, so `x-kairos-measure-y` would pass it)."""
+    return [name for name in names.split() if name.startswith('kairos-measure-')]
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--image-target', default='operator')
@@ -148,7 +153,7 @@ def main(argv=None):
                 if report['gil_released'] is None:
                     report['gil_released'] = data['gil']['gil_released']
     finally:
-        for left in docker('ps', '-aq', '--filter', 'name=kairos-measure-').stdout.split():
+        for left in measure_containers(docker('ps', '-a', '--format', '{{.Names}}', '--filter', 'name=kairos-measure-').stdout):
             docker('rm', '-f', left)
         if not args.skip_build and not args.keep_image:
             docker('rmi', tag)
