@@ -2873,3 +2873,20 @@ Siguiente: fix7 dentro de la decisión del usuario del intento 5, acotado a corr
 - 2026-11-20 · «Revisión de dos lentes — intento 4: Fase 1 (fix3, fuera del bucle) (T-01, T-02, T-03, T-04) — 3 Important en silencios heredados» → [execution-history.md](execution-history.md) · SHA-256 `aba50bf35a1563a8f13cf927f1823daf42771103c8e98915128eeb98e609413c`
 - 2026-11-20 · «Revisión de dos lentes — intento 5: Fase 1 (fix4, fuera del bucle) (T-01, T-02, T-03, T-04) — 3 Important en los silencios de escritura» → [execution-history.md](execution-history.md) · SHA-256 `bc7b12d6dadcabf32b3ba7dc1167800982bb60767d8016097395f9dd0f89aef1`
 - 2026-11-20 · «Revisión de dos lentes — intento 6: Fase 1 (fix5, fuera del bucle) (T-01, T-02, T-03, T-04) — 1 Important residual del principio de fix5» → [execution-history.md](execution-history.md) · SHA-256 `07472db88488c1f633829a690480a8a48379b8c0cf864f879da2b67b9e548414`
+
+
+## Revisión de dos lentes — intento 8: Fase 1 (fix7, fuera del bucle) (T-01, T-02, T-03, T-04) — 3 Important: regresiones del escáner por regex
+
+Lentes: A+B+C+D sobre `b78f616..3a51fbd` (fix7) y `1c33aa2` (archivo del ledger, verificado por SHA-256 sin pérdida). Gaps del intento 7: 1, 2 (FROM), 5, 6 y 8 corregidos con mutante; 3 con reservas; 4 y 7 en parte. Cifras de tiempo del FROM reproducibles; el test de tiempo no es frágil (0,34 s frente a cota de 5 s). Paquete real en verde.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | Regresión: el dueño de un `RETURNING` se busca con `_WRITE_KEYWORD` sin saltar literales; `UPDATE memory.actors SET …, note='admin update' … RETURNING *` y `… 'insert into' … RETURNING *` dejan de detectarse (lentes A, B y C) | T-02 | pendiente: decisión del usuario | `test_auth_cache.py:555, :650-658` |
+| 2 | Important | Regresión: la lista del SELECT se corta en el primer `FROM`/`GROUP` de su nivel; `a.id IS DISTINCT FROM %s, a.*` y `WITHIN GROUP (…), a.*` dejan de detectarse; también `f(a.*)` fuera de una lista (`LATERAL to_jsonb(a.*)`, `WHERE to_jsonb(a.*) @> %s`, `ORDER BY row(a.*)`) (lentes A, B y C) | T-02 | pendiente: decisión del usuario | `test_auth_cache.py:556, :646-649` |
+| 3 | Important | La búsqueda del dueño de cada `RETURNING` es O(nº de RETURNING × longitud), regresión frente a fix6 (`'UPDATE memory.actors SET x=1 ' + 'RETURNING id ' * 2000`: 0,009 s → 23,5 s); el docstring vuelve a decir «lineal». Sin efecto con el SQL real (lente D; A y B lo ven Minor) | T-02 | pendiente: decisión del usuario | `test_auth_cache.py:562, :650-658, :939-940` |
+| 4 | Minor | Comillas `$$…$$` y `E'\''` no reconocidas: regresiones de lectura y de hueco de tabla (lentes B y C) | T-02 | pendiente | `test_auth_cache.py:566-571, :620-626` |
+| 5 | Minor | `MERGE … WHEN MATCHED THEN UPDATE … RETURNING *` sobre `actors` sin detectar (PG17) (lentes A, B y C) | T-02 | pendiente | `test_auth_cache.py:555, :653-656` |
+| 6 | Minor | Falsos positivos nuevos realistas para las fases 3 y 4 (`RETURNING s.*` de `web_sessions` con `USING memory.actors a`; `RETURNING k.*` de `api_keys`; `INSERT … SELECT … FROM memory.actors a … RETURNING *`; `COPY memory.actors FROM STDIN`) (lentes A y B) | T-02 | pendiente | `test_auth_cache.py:606, :637, :655` |
+| 7 | Minor | Controles de fix7 sin mutante (`_balanced`, corte en `;`, `ON CONFLICT`, `(?<!FOR )`); viñeta de la regex del `%` mide una entrada que no es la mala; citas de línea erróneas en la tabla del intento 7; `DISTINCT ON` con dos niveles de paréntesis; alias entre comillas o con lista de columnas (lentes A, B y C) | T-02 | pendiente | `test_auth_cache.py:555-556, :579-580, :602, :615-628, :731, :939-940`; `tasks.md` tabla del intento 7 |
+
+Diagnóstico del orquestador: siete fixes sobre un escáner de SQL por expresiones regulares; cada uno cierra huecos y abre otros (comillas, alcance de sentencias, alias). El método no converge. Siguiente: decisión de diseño del usuario.

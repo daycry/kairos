@@ -48,6 +48,10 @@ RUN python3 -m venv /opt/memory-venv
 ENV PATH=/opt/memory-venv/bin:$PATH PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 COPY server/memory_platform/requirements.txt /tmp/memory-requirements.txt
 RUN pip install --no-cache-dir -r /tmp/memory-requirements.txt
+# `pglast` (PostgreSQL 17 parser, libpg_query 17) for the guard of the permission resolver in test_auth_cache.py: a dependency of THIS target only, never of `api`, `operator` or `worker`.
+# 7.x tracks the grammar of PostgreSQL 17 (8.x tracks 18); 7.24 is the latest 7.x and has a manylinux wheel for CPython 3.11 (bookworm's python3).
+COPY server/requirements-test.txt /tmp/memory-requirements-test.txt
+RUN pip install --no-cache-dir -r /tmp/memory-requirements-test.txt
 WORKDIR /app
 # The test image mirrors the repository layout (server/, mcp/, scripts/, docs/ under /app), so the tests resolve the repository root the same way here and in a checkout.
 COPY --chown=postgres:postgres server/memory_platform /app/server/memory_platform
