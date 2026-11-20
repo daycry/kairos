@@ -103,6 +103,8 @@ Lista cerrada de excepciones del test:
 | `list_keys`, `revoke_key` y la rotación nueva (`store_auth.py:206-235`) | Leen claves como recurso (la clave listada, revocada o rotada), no la credencial de quien llama. Cada fila pasa por `_require` |
 | `probe.py:678-681,722-733,780-793` | Comando de operador en conexión directa, sin actor de petición |
 
+> **Nota 2026-11-20 (fase 1, fix2).** El test añade, frente a esta lista, las excepciones que el recorrido real exige. Ninguna decide un acceso. `auth.py:login`: solo la lectura de fila completa (`SELECT *` sobre `actors`), que entrega entera a `_actor` → `_describe`, el único que mira `is_admin`; leer `is_admin` por nombre en `login` falla. `admin.py:inspect_store` y `backup.py:table_digest`: componen un `SELECT` sobre cualquier tabla del esquema para contar o resumir filas, y solo se admiten mientras compongan solo `SELECT`. `admin.py:prune_tables`: quinto escritor de `web_sessions`, acotado a sesiones ya muertas (caducadas o revocadas antes del corte, predicado exacto fijado en el test): ningún acceso cambia, no hay permisos que vaciar en una transacción de operador, y cada ejecución deja un evento `retention_prune`, no uno por fila. También quedan en la lista cerrada de SQL con tabla compuesta (`DYNAMIC_SQL`) las funciones que eligen entre dos tablas constantes (`store_jobs.py`, `derive_single_fragment`) y `migrate_vector_indexes`.
+
 El test amplía el recorrido que ya existe en `test_auth_cache.py:461`. Añade `actors.is_admin` (en SQL y en accesos `['is_admin']` o `.get('is_admin')`) y exige una justificación escrita por excepción. Es la primera tarea del hito A.
 
 Las ampliaciones futuras entran así (base de la nota de CA-38 c en `docs/architecture.md`):

@@ -2869,3 +2869,23 @@ Lentes: A+B+C+D (`review-lens-select.py`: C por `auth.py`, `store_auth.py`, `ci.
 Fuera de las lentes, para la revisión de seguridad del hito (no es gap de este diff): `_load_active` (`store_auth.py:27-29`) acepta `credential_type: 'bootstrap'` sin comprobar credencial; hoy ningún camino HTTP lo produce (lente C).
 
 Siguiente: fix1 del implementador (gaps 1-6, 8 y 9) y revisión, intento 2 de 3, sobre el diff completo del fix.
+
+
+## Revisión de dos lentes — intento 2: Fase 1 (fix1) (T-01, T-02, T-03, T-04) — 2 Important en la guarda
+
+Lentes: A+B+C+D sobre `de26620..HEAD` (fix1: `24cc9bd`, `109ba7b`, `c73e85e`), revisado entero como código nuevo. Gaps del intento 1: 1, 3, 4, 5, 6, 8 y 9 corregidos; el 2 corregido en el escenario declarado (`RETENTION_TABLES` con tablas de credenciales falla), con el residuo del gap 2 de abajo. D sin hallazgos (la clase de guardas pasa de unos 2 s a unos 3 s). C sin Critical ni Important (sus 4 Minor se funden abajo).
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | Puerta relajada por el fix: `('auth.py', 'login'): {'is_admin'}` se pidió para el `SELECT *` de la fila, pero admite cualquier lectura de `is_admin` en `login` (subíndice, `.get`, `WHERE ... is_admin`); DC-1 no lista `login` (lentes A y C) | T-02 | pendiente | `test_auth_cache.py:476`; mutantes `if row['is_admin']` y `AND NOT is_admin` en `login`: rojo con la guarda de `de26620`, verde con la de HEAD |
+| 2 | Important | SQL compuesto con `%` sin `memory.` delante pasa la guarda: `'SELECT scopes FROM %s WHERE id=%%s' % 'memory.api_keys'`, `'... FROM %s' % t`, `'COPY %s TO STDOUT' % t`; la nota de fix1 dice cubrir `%` (lentes B y A) | T-02 | pendiente | `test_auth_cache.py:572-575` (`_DYNAMIC`), `:594-595` (`sql_text` descarta el lado derecho del `%`) |
+| 3 | Minor | `_web_sessions_only_dead` comprueba dos subcadenas, no el predicado: pasan `... OR true` y `expires_at > cutoff OR revoked_at IS NOT NULL`; quitar `web_sessions` de la retención falla con un mensaje engañoso (lentes B y C) | T-02 | pendiente | `test_auth_cache.py:491-493` |
+| 4 | Minor | El alcance de `DYNAMIC_SQL` distingue mayúsculas y comillas (`'API_KEYS'`, `'"actors"'`, `'api_keys '` pasan) (lente B) | T-02 | pendiente | `test_auth_cache.py:722-723, :492` |
+| 5 | Minor | Controles nuevos sin mutante en test: obsoleta por (función, tabla), «composes no table», «spells no table» (lente A) | T-02 | pendiente | `test_auth_cache.py:697-698, :721` |
+| 6 | Minor | `design.md` (DC-1 y los escritores de O2) no recoge las excepciones nuevas del test (`login`, `inspect_store`, `backup.table_digest`, `prune_tables` como quinto escritor de `web_sessions`) ni consta como desviación declarada (lente A) | T-02 | pendiente | `design.md:97-104` frente a `test_auth_cache.py:476, :496-506` |
+| 7 | Minor | Ledger y documentación: historia de `MIN_FLOOR` sin 1581; Changelog de T-04 dice 1578; T-04 con `Cerrada` estando `en-progreso`; TOTAL de horas IA 0,79 frente a 1,26 de la fase (lente A) | T-04 | pendiente | `scripts/tests/test_ci_workflow.py:313`; `tasks.md` resumen y T-04 |
+| 8 | Minor | `MetricsAdminModeRealStoreTests` inicia sesión con `client_ip=''` y comparte el contador de 10 intentos en 15 min con `test_probe_provisioning.py:254`; repetir la suite sobre la misma base de pruebas puede dar 429 (lente B) | T-03 | pendiente | `test_auth_cache.py:934, :937`; `auth.py:69-71`; patrón correcto en `test_native.py:105` |
+| 9 | Minor | Falsos positivos que obligarían a ampliar la lista cerrada cuando llegue `store_access.py`: un literal `'is_admin'` como clave de parámetro (`%(is_admin)s`), clave de diccionario de respuesta o columna asignada en `SET (a, is_admin) = (...)` / `ON CONFLICT ... SET` cuenta como lectura (lente B) | T-02 | pendiente | `test_auth_cache.py:540, :547-548, :634-636` |
+| 10 | Minor | Límites residuales del escáner por regex (lentes A, B y C): composición en dos pasos (`+=`, `str.join`); alcance de `DYNAMIC_SQL` por función y no por sentencia; `sql.Composed`/`sql.SQL(...).join` con verbo de escritura en `table_digest`; `TABLE` fuera de principio de sentencia; `--` dentro de un literal; `to_jsonb(a)`/`row_to_json(a.*)`/`json_agg(a)` sobre `actors`; `RETURNING` sin `)` | T-02 | pendiente | `test_auth_cache.py:509, :515, :540-565, :588-600, :662-664, :697-723` |
+
+Siguiente: fix2 (gaps 1-9; el 10 se acepta como límite declarado de un escáner por regex si fix2 lo documenta en el docstring de la guarda) y revisión, intento 3 de 3, sobre el diff completo de fix2.
