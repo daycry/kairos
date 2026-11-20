@@ -23,7 +23,7 @@ generacion:
 | | |
 |---|---|
 | **Fecha** | 2026-11-20 |
-| **Estado** | borrador |
+| **Estado** | en-progreso |
 | **Tipo** | Nueva Funcionalidad |
 | **Prioridad** | Alta |
 | **Solicitante** | Daycry (plan director, Iniciativa 4) |

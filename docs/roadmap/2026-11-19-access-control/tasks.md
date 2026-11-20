@@ -21,7 +21,7 @@ test-plan: test-plan.md
 
 | | |
 |---|---|
-| **Estado** | borrador |
+| **Estado** | en-progreso |
 | **Fecha** | 2026-11-20 |
 | **Plan** | [`improvement-plan.md`](./improvement-plan.md) |
 | **Diseño** | [`design.md`](./design.md) — opción O2 «Costuras de acceso» |
@@ -81,7 +81,7 @@ test-plan: test-plan.md
 
 ## Fase 1 — Medición de scrypt y guarda del resolvedor (CA-09, CA-38 a)
 
-**Estado**: borrador · **Hito**: A · **Estimado**: 19.8h (16.5h base, de ellas 4h de revisión adversarial) · **Real**: — · **Coste est.**: 990 € · **Tokens est.**: 1570 k
+**Estado**: en-progreso · **Hito**: A · **Estimado**: 19.8h (16.5h base, de ellas 4h de revisión adversarial) · **Real**: — · **Coste est.**: 990 € · **Tokens est.**: 1570 k
 
 ### T-01 — Medición previa de scrypt en `memory-api`, `memory-bootstrap` y `memory-admin` (CA-09)
 
