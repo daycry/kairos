@@ -495,10 +495,12 @@ WEB_SESSIONS_DEAD = '(t.expires_at < %(cutoff)s OR (t.revoked_at IS NOT NULL AND
 def _web_sessions_only_dead():
     """The exact predicate, blanks normalised. A web_sessions that leaves the retention is NOT a failure (it deletes nothing); any other predicate must be reviewed and put here."""
     keys = [key for key in admin.RETENTION_TABLES if str(key).replace('"', '').strip().lower() == 'web_sessions']  # `'WEB_SESSIONS'` and `'"web_sessions"'` are that table too
-    if not keys:
-        return []
-    predicate = ' '.join(str(admin.RETENTION_TABLES[keys[0]][0]).split())
-    return [] if len(keys) == 1 and predicate == WEB_SESSIONS_DEAD else ['the retention of web_sessions changed: %r is not %r; review that it deletes only dead sessions, then update WEB_SESSIONS_DEAD' % (predicate, WEB_SESSIONS_DEAD)]
+    problems = ['web_sessions appears under several keys of the retention: %r' % keys] if len(keys) > 1 else []
+    for key in keys:
+        predicate = ' '.join(str(admin.RETENTION_TABLES[key][0]).split())
+        if predicate != WEB_SESSIONS_DEAD:
+            problems.append('the retention of web_sessions (key %r) changed: %r is not %r; review that it deletes only dead sessions, then update WEB_SESSIONS_DEAD' % (key, predicate, WEB_SESSIONS_DEAD))
+    return problems
 
 
 DYNAMIC_SQL = {
@@ -548,18 +550,28 @@ _STATEMENT = re.compile(r'\(?\s*(INSERT|UPDATE|DELETE|TRUNCATE|MERGE)\b', re.I)
 _STAR = re.compile(r'(?:\bSELECT\s+(?:DISTINCT\s+(?:ON\s*\([^)]*\)\s*)?)?|,\s*)(?:"?\w+"?\s*\.\s*)?\*', re.I)
 
 
+_ACTORS_WRITE = re.compile(r'\(?\s*(INSERT\s+INTO|UPDATE)\s+(?:ONLY\s+)?(?:"?memory"?\s*\.\s*)?"?actors"?\b', re.I)
+
+
 def _reads_is_admin(sql):
-    """`is_admin` as a value: in a SELECT, a WHERE, the SET or FROM of an UPDATE; not as a column that is written or returned (`SET is_admin=`, the column list of an INSERT, `RETURNING`)."""
-    sql = re.sub(r'%\(\w+\)s', ' ', sql)  # a named parameter is a key of a dict, not a column
+    """`is_admin` anywhere, except what an `INSERT INTO memory.actors` or an `UPDATE memory.actors` WRITES to it: its column in the column list, its value in `VALUES (...)` (a `%(is_admin)s` there),
+    its target in the SET list (`SET is_admin = ...`, `SET (..., is_admin) = (...)`, `ON CONFLICT ... DO UPDATE SET is_admin = EXCLUDED.is_admin`) and, in an INSERT only, the row it stores in a
+    `RETURNING` that has no subquery. Everything else is a read: a `WHERE`, a select list, a `CASE`, a `RETURNING` of an UPDATE or a DELETE, another table, a named placeholder anywhere else.
+    When in doubt, red: a false positive costs an exception with its reason on the closed list; a read that escapes is a hole."""
     if not re.search(r'\bis_admin\b', sql, re.I):
-        return False  # a literal `'is_admin'` is a read wherever it is; what is NOT one is recognised by its shape (a dict key: `visit_Dict`; the named placeholder above; the statements below)
-    if not _STATEMENT.match(sql):
+        return False
+    m = _ACTORS_WRITE.match(sql)
+    if not m:
         return True
-    body = re.sub(r'\bRETURNING\b[^)]*', ' ', sql, flags=re.I)
-    body = re.sub(r'\bEXCLUDED\s*\.\s*is_admin\b', ' ', body, flags=re.I)
-    body = re.sub(r'(INSERT\s+INTO\s+\S+)\s*\([^()]*\)', r'\1', body, flags=re.I)
-    body = re.sub(r'\bSET\s*\([^()]*\)\s*=', ' SET ', body, flags=re.I)  # `SET (a, is_admin) = (...)`: the columns it writes
-    body = re.sub(r'(?:\bSET\b|,)\s*(?:\w+\s*\.\s*)?is_admin\s*=(?!=)', ' ', body, flags=re.I)
+    body = sql
+    if m.group(1).upper().startswith('INSERT'):
+        body = re.sub(r'\bRETURNING\b(?!.*\b(?:SELECT|FROM|USING)\b).*$', ' ', body, flags=re.I)
+        body = re.sub(r'(INSERT\s+INTO\s+\S+)\s*\([^()]*\)', r'\1', body, count=1, flags=re.I)
+        body = re.sub(r'\bVALUES\s*\((?:[^()]|\([^()]*\))*\)', lambda v: v.group(0).replace('%(is_admin)s', ' '), body, flags=re.I)
+        body = re.sub(r'\bEXCLUDED\s*\.\s*is_admin\b', ' ', body, flags=re.I)
+    body = re.sub(r'\bSET\s*\([^()]*\)\s*=\s*\((?:[^()]|\([^()]*\))*\)', ' SET ', body, flags=re.I)
+    body = re.sub(r'(\bSET\b)(.*?)(?=\bWHERE\b|\bFROM\b|\bRETURNING\b|$)',
+                  lambda t: t.group(1) + re.sub(r'(?:^|,)\s*(?:\w+\s*\.\s*)?is_admin\s*=(?!=)\s*(?:%\(is_admin\)s)?', ' ', t.group(2)), body, flags=re.I)
     return bool(re.search(r'\bis_admin\b', body, re.I))
 
 
@@ -617,8 +629,10 @@ def sql_text(node):
             for _ in range(m.group(0).count('*')):  # `%*d`: the width is an argument too
                 next(positional, None)
             arg = named.get(m.group(1)) if m.group(1) else next(positional, None)
-            return arg.value if isinstance(arg, ast.Constant) and isinstance(arg.value, str) else '\x00'
-        return re.sub(r'%%|%(?:\((\w+)\))?[#0\- +]*(?:\*|\d+)?(?:\.(?:\*|\d+))?[hlL]?[diouxXeEfFgGcrsa]', fill, sql_text(node.left))
+            if not (isinstance(arg, ast.Constant) and isinstance(arg.value, str)) or m.group(2) == '*':
+                return '\x00'
+            return arg.value[:int(m.group(2))] if m.group(2) and m.group(3) in 'sra' else arg.value  # `%.15s` truncates the constant as Python does
+        return re.sub(r'%%|%(?:\((\w+)\))?[#0\- +]*(?:\*|\d+)?(?:\.(\*|\d+))?[hlL]?([diouxXeEfFgGcrsa])', fill, sql_text(node.left))
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == 'format':
         return sql_text(node.func.value)
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == 'SQL' and node.args:
@@ -670,12 +684,6 @@ class _Scan(ast.NodeVisitor):
             self.sql(sql_text(node))
         self.generic_visit(node)
 
-    def visit_Dict(self, node):  # the key of a dict literal names a field, it reads nothing; a `case {'is_admin': ...}` (MatchMapping) is not a Dict and stays a read
-        for key, value in zip(node.keys, node.values):
-            if key is not None and not (isinstance(key, ast.Constant) and key.value == 'is_admin'):
-                self.visit(key)
-            self.visit(value)
-
     def visit_Subscript(self, node):
         if isinstance(node.slice, ast.Constant) and node.slice.value == 'is_admin':
             self.read('is_admin')
@@ -690,6 +698,8 @@ class _Scan(ast.NodeVisitor):
         name = node.func.attr if isinstance(node.func, ast.Attribute) else node.func.id if isinstance(node.func, ast.Name) else ''
         literal = node.args and isinstance(node.args[0], ast.Constant) and node.args[0].value
         if name == 'get' and isinstance(node.func, ast.Attribute) and literal == 'is_admin' or name == 'getattr' and len(node.args) > 1 and getattr(node.args[1], 'value', None) == 'is_admin':
+            self.read('is_admin')
+        if name == 'dict' and any(keyword.arg == 'is_admin' for keyword in node.keywords):  # `dict(is_admin=...)` names the field like a literal key does: a read
             self.read('is_admin')
         if name == 'Identifier':  # a table named by an identifier object is as unseen as an f-string
             self.read('dynamic')
@@ -776,7 +786,9 @@ class ResolverBoundaryTests(unittest.TestCase):
     closed list of DC-1, each with its reason. And only four modules write the tables of permissions and credentials.
 
     The scan is a DETECTOR OF REGRESSIONS, not a proof of absence: it reads the SQL strings of the package with regular expressions. Known limits, accepted (fix2, gap 10):
-    * a statement built in two steps (`sql += ...`, `' '.join(...)`) is seen piece by piece: each piece is judged on its own (one that spells `is_admin` or a restricted table is caught, one that spells only a verb or a hole is not);
+    * a statement built in two steps (`sql += ...`, `' '.join(...)`) is seen piece by piece: a piece that spells `is_admin`, or a restricted table WITH its `FROM`/`JOIN`/comma, is caught; one that spells the bare table name, only a verb or only a hole is not;
+    * a hole as the SUFFIX of a table name (`memory.api_{kind}`), after `USING`, or after the comma that follows a `JOIN ... ON`, is not recognised as a hole (declared, not pursued);
+    * two regular expressions (the comma list of `_DYNAMIC`, the flags of the `%` conversion) are quadratic on artificial input (`'FROM a, ' * 4000` takes seconds); no literal of the package has that shape;
     * `DYNAMIC_SQL` admits a FUNCTION, not each statement of it: a second composed statement in a listed function is covered by the same entry (its tables are checked as a set);
     * `sql.Composed` / `sql.SQL(...).join(...)` with a write verb in a function that may reach any table (`inspect_store`, `table_digest`) is not told apart from a SELECT beyond its text;
     * `TABLE x` is read only at the start of a statement; `--` inside a string literal of the SQL hides the rest of its line;
@@ -937,10 +949,40 @@ class ResolverBoundaryTests(unittest.TestCase):
                 self.assertIn('newmod.py:leak', outside, body)
                 outside, _ = reads_outside_the_resolver({**base, 'auth.py': base['auth.py'] + '\n\ndef login(row, c):\n    ' + body + '\n'})
                 self.assertIn('auth.py:login', outside, body)
-        # what stays quiet is recognised by its SHAPE, not by the absence of SQL: the key of a dict literal, `dict(is_admin=...)`, a named placeholder
-        for source in ("def w():\n    return {'is_admin': True, 'id': 1}", "def w():\n    return dict(is_admin=True)", "def w(c):\n    return c.execute('SELECT 1 FROM memory.projects WHERE id=%(is_admin)s', {'is_admin': 1})",
-                       "def w(c):\n    return c.execute('UPDATE memory.actors SET is_admin=true WHERE id=%s')", "def w(c):\n    return c.execute('UPDATE memory.actors SET (disabled, is_admin) = (%s, %s) WHERE id=%s')"):
+        # what stays quiet is a VALUE WRITTEN to `actors.is_admin`, nothing else (fix4: when in doubt, red)
+        for source in ("def w(c):\n    return c.execute('UPDATE memory.actors SET is_admin=true WHERE id=%s')", "def w(c):\n    return c.execute('UPDATE memory.actors SET (disabled, is_admin) = (%s, %s) WHERE id=%s')",
+                       "def w(c):\n    return c.execute('INSERT INTO memory.actors(id,username,is_admin) VALUES(%(id)s,%(username)s,%(is_admin)s)', {'id': 1})",
+                       "def w(c):\n    return c.execute('UPDATE memory.actors SET is_admin=%(is_admin)s WHERE id=%(id)s', {'id': 1})",
+                       "def w(c):\n    return c.execute('UPDATE memory.actors SET disabled=%(d)s, is_admin = %(is_admin)s WHERE id=%(id)s', {'id': 1})",
+                       "def w(c):\n    return c.execute('INSERT INTO memory.actors(id,username,password_hash,is_admin) VALUES(%s,%s,%s,true) RETURNING id,username,is_admin', (1, 2, 3))"):
             self.assertEqual(scan(source).reads, [], source)
+
+    def test_is_admin_is_silent_only_as_a_written_value_and_red_in_every_other_position(self):
+        # fix4 gaps 1-4: the placeholder, the key of a dict, RETURNING and `, is_admin =` are reads unless they are the value or the column written to `memory.actors`
+        bodies = [
+            "return c.execute('SELECT 1 FROM memory.projects WHERE %(is_admin)s OR owner_id=%(id)s', actor)", "return c.execute('SELECT %(is_admin)s', actor)",
+            "return c.execute('SELECT CASE WHEN %(is_admin)s THEN 1 ELSE 0 END', actor)", "return c.execute('INSERT INTO memory.audit_events(action) VALUES (%(is_admin)s)', actor)",
+            "return c.execute('UPDATE memory.actors SET disabled=true WHERE id=%(is_admin)s', actor)",
+            "PUBLIC = {'username': 'name', 'is_admin': 'admin'}\n    return {v: row[k] for k, v in PUBLIC.items()}", "return {'is_admin': True}.items() <= row.items()",
+            "for k in {'is_admin': 1}:\n        return row[k]", "return {'x': 1, 'is_admin': 2}", "return dict(is_admin=True).items() <= row.items()",
+            "return c.execute('UPDATE memory.actors SET disabled=true WHERE id=%s RETURNING is_admin')", "return c.execute('DELETE FROM memory.actors WHERE id=%s RETURNING is_admin')",
+            "return c.execute('UPDATE memory.audit_events SET x=1 FROM memory.actors a WHERE a.id=%s RETURNING a.is_admin')",
+            "return c.execute('DELETE FROM memory.audit_events USING memory.actors a WHERE true RETURNING a.is_admin')",
+            "return c.execute('INSERT INTO memory.actors(id,username) VALUES(%s,%s) RETURNING (SELECT is_admin FROM memory.actors WHERE id=%s)')",
+            "return c.execute('INSERT INTO memory.audit_events(action) VALUES(%s) RETURNING (SELECT is_admin FROM memory.actors WHERE id=%s)')",
+            "return c.execute('SELECT id, is_admin = true FROM memory.actors')", "return c.execute('UPDATE memory.audit_events SET a=1, is_admin = 2')",
+            "return c.execute('INSERT INTO memory.audit_events(id,is_admin) VALUES(%s,%s)')",
+        ]
+        base = package_sources()
+        for body in bodies:
+            with self.subTest(body=body):
+                outside, _ = reads_outside_the_resolver({**base, 'newmod.py': 'def leak(row, c, actor):\n    ' + body + '\n'})
+                self.assertIn('newmod.py:leak', outside, body)
+                outside, _ = reads_outside_the_resolver({**base, 'auth.py': base['auth.py'] + '\n\ndef login(row, c, actor):\n    ' + body + '\n'})
+                self.assertIn('auth.py:login', outside, body)
+        # a value that is stored in the dict of a response is a read too, and the real INSERT of `bootstrap_user` is not
+        self.assertTrue(any(kind == 'is_admin' for _, kind, _ in scan("def w(row):\n    return {'x': row['is_admin']}").reads))
+        self.assertEqual(scan(base['store_auth.py']).reads and [r for r in scan(base['store_auth.py']).reads if r[0] == 'bootstrap_user'], [])
 
     def test_the_percent_fill_follows_the_conversion_specifications(self):
         # fix3 gap 4: width, flags, precision and other types each consume ONE argument; `%%` is a `%` and consumes none
@@ -950,6 +992,9 @@ class ResolverBoundaryTests(unittest.TestCase):
         self.assertEqual(text("'WHERE id=%%s AND n>=%5.2f FROM %s' % (1.5, 'memory.api_keys')"), 'WHERE id=%s AND n>=\x00 FROM memory.api_keys')
         self.assertEqual(text("'100%% FROM %(t)s' % {'t': 'memory.api_keys'}"), '100% FROM memory.api_keys')
         self.assertEqual(text("'FROM %*d x %s' % (5, 1, 'memory.api_keys')"), 'FROM \x00 x memory.api_keys')
+        self.assertEqual(text("'FROM %.15s' % 'memory.api_keys_'"), 'FROM memory.api_keys')  # fix4 gap 7: the precision truncates the constant as Python does
+        outside, _ = reads_outside_the_resolver({**package_sources(), 'newmod.py': "def leak(c):\n    return c.execute('SELECT 1 FROM %.15s' % 'memory.api_keys_')\n"})
+        self.assertEqual(outside['newmod.py:leak'], ['api_keys'])
         outside, _ = reads_outside_the_resolver({**package_sources(), 'newmod.py': "def leak(c):\n    return c.execute('SELECT %5d, %-3s FROM %s' % (1, 'x', 'memory.api_keys'))\n"})
         self.assertEqual(outside['newmod.py:leak'], ['api_keys'])
 
@@ -972,6 +1017,15 @@ class ResolverBoundaryTests(unittest.TestCase):
         for name in ('API_KEYS', '"actors"', 'api_keys ', ' Project_Grants'):
             with patch.dict(admin.RETENTION_TABLES, {name: ('true', '')}):
                 self.assertTrue(dynamic_table_violations(), name)
+        # fix4 gap 5: two keys of web_sessions at once, the culprit named; the quote of a hole after `memory.` where no keyword precedes it
+        with patch.dict(admin.RETENTION_TABLES, {'WEB_SESSIONS': (WEB_SESSIONS_DEAD, '')}):
+            self.assertTrue(any('several keys' in problem for problem in dynamic_table_violations()))
+        with patch.dict(admin.RETENTION_TABLES, {'WEB_SESSIONS': ('true', '')}):
+            admin.RETENTION_TABLES.pop('web_sessions')
+            self.assertTrue(any("'WEB_SESSIONS'" in problem for problem in dynamic_table_violations()), 'the message names the key that changed')
+        self.assertTrue(sql_dynamic('SELECT 1 FROM a JOIN b ON a.x=b.x, memory."%s"'))
+        self.assertTrue(sql_dynamic('SELECT 1 FROM a JOIN b ON a.x=b.x, memory.%s'))
+        self.assertFalse(sql_dynamic('SELECT 1 FROM memory.projects WHERE id=%s'))
         key = ('store_auth.py', 'list_keys')
         with patch.dict(READ_EXCEPTIONS, {key: ({'api_keys', 'project_grants'}, False, READ_EXCEPTIONS[key][2])}):
             self.assertEqual(reads_outside_the_resolver(base)[1], ['store_auth.py:list_keys reads project_grants'])
@@ -1002,12 +1056,9 @@ class ResolverBoundaryTests(unittest.TestCase):
             "def w(c, x):\n    return c.execute('SELECT 1 FROM memory.projects WHERE title=%s' % 'x')",
             "def w(x):\n    return '%d ms' % x",
             # fix2 gap 9: `is_admin` as a parameter name, a column that is written, or a key of a dict
-            "def w(c):\n    return c.execute('UPDATE memory.actors SET disabled=%(d)s WHERE id=%(is_admin)s', {'d': 1, 'is_admin': 2})",
             "def w(c):\n    return c.execute('UPDATE memory.actors SET (disabled, is_admin) = (%s, %s) WHERE id=%s')",
             "def w(c):\n    return c.execute('INSERT INTO memory.actors(id,username) VALUES(%s,%s) ON CONFLICT (id) DO UPDATE SET username=EXCLUDED.username, is_admin = EXCLUDED.is_admin')",
             "def w(c):\n    return c.execute('INSERT INTO memory.actors(id,username) VALUES(%s,%s) ON CONFLICT (id) DO UPDATE SET is_admin = EXCLUDED.is_admin RETURNING id')",
-            "def w():\n    return {'is_admin': True}",
-            "def w(c):\n    return c.execute('SELECT 1 FROM memory.projects WHERE id=%(id)s', {'id': 1, 'is_admin': False})",
         ]
         for source in quiet:
             with self.subTest(source=source):

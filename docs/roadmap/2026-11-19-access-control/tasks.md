@@ -2904,3 +2904,24 @@ Lentes: A+B+C+D sobre `c73e85e..HEAD` (fix2: `7626727`, `b4a2469`, `d0eb7ae`), r
 | 6 | Minor | `test_each_control_of_the_closed_lists_has_its_mutant` llama 11 veces a `dynamic_table_violations()`, que relee el paquete unas 5 veces por llamada: la clase de guardas pasa de unos 6 s a unos 13 s (≈ 0,9 % de la suite) (lente D) | T-02 | corregido (fix3, 76a87a6) | `test_auth_cache.py:727, :755, :904-925` |
 
 Bucle agotado (3 de 3) con un Important abierto: la decisión (seguir con un fix3 fuera del bucle, re-planificar o aceptar como deuda) vuelve al usuario.
+
+
+## Revisión de dos lentes — intento 4: Fase 1 (fix3, fuera del bucle) (T-01, T-02, T-03, T-04) — 3 Important en silencios heredados
+
+Lentes: A+B+C+D sobre `d0eb7ae..HEAD` (fix3: `76a87a6`, `1ee44a3`, `f0dd3aa`, `a543807`), revisado entero como código nuevo. Gaps del intento 3: 1-6 corregidos (las 13 lecturas perdidas vuelven a rojo, también en `login`; ninguna lectura de `d0eb7ae` se pierde). D sin hallazgos: la clase de guardas baja de unos 14 s a entre 2 y 6 s. Es el primer fix de la fase que no abre una puerta nueva: los tres Important son silencios heredados demasiado anchos, cada uno visto por una sola lente.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | El placeholder `%(is_admin)s` se silencia en cualquier posición: un `WHERE %(is_admin)s` con el dict del actor decide la visibilidad fuera del resolvedor. Viene de fix2 (gap 9); `c73e85e` lo detectaba (lente C, CWE-863) | T-02 | pendiente: decisión del usuario | `test_auth_cache.py:553`; fijado como silencio en `:940-943` |
+| 2 | Important | La clave `'is_admin'` de un literal de dict se silencia se use como se use: un mapa de campos (`{'username': 'name', 'is_admin': 'admin'}` iterado para leer la fila), un iterable de claves o un patrón (`{'is_admin': True}.items() <= row.items()`). Viene de fix2; `c73e85e` lo detectaba (lente B; A y C lo ven Minor) | T-02 | pendiente: decisión del usuario | `test_auth_cache.py:673-677` |
+| 3 | Important | `RETURNING` borra cualquier `is_admin` de la sentencia, también el de otra tabla (`UPDATE … FROM memory.actors a … RETURNING a.is_admin`) o el valor guardado (`UPDATE memory.actors … RETURNING is_admin`). Viene de T-02 (`c73e85e` igual) (lente A; B lo ve Minor) | T-02 | pendiente: decisión del usuario | `test_auth_cache.py:558, :575` |
+| 4 | Minor | `, is_admin =` se borra en cualquier sitio de un INSERT, UPDATE o DELETE, también como comparación (`SELECT id, is_admin = true FROM memory.actors`) (lentes B y C; heredado) | T-02 | pendiente | `test_auth_cache.py:562-564` |
+| 5 | Minor | Controles de fix3 sin mutante: `visit_Dict` sin visitar valores o claves, `"?` de la alternativa 2 de `_DYNAMIC`, `len(keys) == 1` del control de `web_sessions` (con dos claves, el mensaje imprime la clave equivocada) (lentes A y B) | T-02 | pendiente | `test_auth_cache.py:501, :586, :673-677, :968-971` |
+| 6 | Minor | Docstring de límites: la primera viñeta dice que se detecta una pieza que nombra una tabla restringida; solo si la pieza lleva su `FROM`/`JOIN`/coma (lentes A y B) | T-02 | pendiente | `test_auth_cache.py:779` |
+| 7 | Minor | La precisión `%.Ns` no trunca la constante (`'… FROM %.15s' % 'memory.api_keys_'` ejecuta `memory.api_keys` y la guarda ve `api_keys_`) (lente B) | T-02 | pendiente | `test_auth_cache.py:620` |
+| 8 | Minor | Hueco de tabla no reconocido como sufijo (`memory.api_{kind}`), tras `USING` o tras la coma de un `JOIN … ON` (lentes A y B; heredado) | T-02 | pendiente | `test_auth_cache.py:585-588` |
+| 9 | Minor | La nota RED de fix3 suma 21 fallos y anuncia 22: falta `test_a_table_name_that_is_not_literal…` (lente A) | T-02 | pendiente | `tasks.md` T-02 Notas |
+
+Observación de la lente D, sin gap: dos regex nuevas (lista con comas de `_DYNAMIC`, banderas del `%`) son cuadráticas con entradas artificiales (`'FROM a, ' * 4000` tarda 14,6 s); ningún literal del paquete tiene esa forma.
+
+Siguiente: decisión del usuario (fix4 acotado a los tres silencios o deuda aceptada).
