@@ -6,7 +6,7 @@ creado: "2026-11-20"
 actualizado: "2026-11-20"
 spec: spec.md
 evaluacion: "evaluation.md"
-plan: pendiente
+plan: improvement-plan.md
 adr: "docs/knowledge/candidates/pending/2026-11-20-access-seams-server-capabilities.md"   # sha256 82c84969b6f7aa0f69e0aa780d2220973e11cbe43300506e3999469d7d9d7635
 opcion_elegida: "O2"
 generacion:
@@ -26,7 +26,7 @@ generacion:
 
 # Diseño — Control de acceso y privacidad (Iniciativa 4)
 
-> **Spec:** [`spec.md`](spec.md) (aprobada) · **Evaluación:** [`evaluation.md`](evaluation.md) (go con condiciones, 3 hitos) · **Plan:** pendiente · **ADR:** propuesta en [`2026-11-20-access-seams-server-capabilities.md`](../../knowledge/candidates/pending/2026-11-20-access-seams-server-capabilities.md), a la espera de `knowledge-curator`
+> **Spec:** [`spec.md`](spec.md) (aprobada) · **Evaluación:** [`evaluation.md`](evaluation.md) (go con condiciones, 3 hitos) · **Plan:** [`improvement-plan.md`](improvement-plan.md) (borrador) · **ADR:** propuesta en [`2026-11-20-access-seams-server-capabilities.md`](../../knowledge/candidates/pending/2026-11-20-access-seams-server-capabilities.md), a la espera de `knowledge-curator`
 
 | | |
 |---|---|

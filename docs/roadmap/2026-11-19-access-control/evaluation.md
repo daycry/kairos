@@ -25,7 +25,7 @@ generacion:
 | **Prioridad global** | Alta |
 | **Solicitante** | Daycry (plan director, Iniciativa 4; encargo del orquestador `/dev-cycle`) |
 | **Spec** | [`spec.md`](spec.md) |
-| **Plan** | pendiente (handoff a `planner`) |
+| **Plan** | [`improvement-plan.md`](improvement-plan.md) · [`tasks.md`](tasks.md) (borrador, 2026-11-20) |
 | **Características evaluadas** | 8 |
 
 ---

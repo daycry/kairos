@@ -6,7 +6,7 @@ creado: 2026-11-19
 actualizado: 2026-11-20
 evaluacion: evaluation.md
 design: design.md
-plan: pendiente
+plan: improvement-plan.md
 generacion:
   inicio: 2026-11-19T16:25:09Z
   fin: 2026-11-19T16:41:35Z
@@ -26,7 +26,7 @@ generacion:
 
 > **Evaluación:** [evaluation.md](evaluation.md) — go con condiciones (2026-11-19)
 > **Diseño:** [design.md](design.md) — aprobado (2026-11-20), opción O2 «Costuras de acceso»; cierra D-01 a D-07
-> **Plan de implementación:** pendiente
+> **Plan de implementación:** [improvement-plan.md](improvement-plan.md) · [tasks.md](tasks.md) · [test-plan.md](test-plan.md) — borrador (2026-11-20), 106 tareas en 18 fases y 3 hitos
 > **Origen:** [plan director](../2026-11-10-platform-audit/plan.md), «Iniciativa 4 — Control de acceso y privacidad» (líneas 143-154), §4 «Restricciones permanentes» y decisión abierta 3; [auditoría](../2026-11-10-platform-audit/audit.md): S-01, S-02, S-03, S-07, S-08, S-10, S-11 y §6.1 (severidades elevadas por el VPS); [integración con custom-agents](../2026-11-10-platform-audit/custom-agents-integration.md), líneas 77-80 y 112.
 
 > **Terminología:**
