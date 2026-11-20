@@ -213,10 +213,10 @@ Los rellenan las tareas de medición antes de que ninguna tarea fije un valor. H
 
 | Valor | Provisional (spec) | Medido / definitivo | Margen declarado | Tarea |
 |---|---|---|---|---|
-| Coste de scrypt (`n`, `r`, `p`) | `n=2^17, r=8, p=1`; alternativa `n=2^16, p=2` | pendiente | — | T-01 |
-| Huecos de `MEMORY_LOGIN_CONCURRENCY` | según la memoria medida | pendiente | pendiente | T-01 |
-| `MEMORY_BOOTSTRAP_MEM_LIMIT` | 256 MB | pendiente | pendiente | T-01 |
-| ¿`hashlib.scrypt` libera el GIL? Memoria de la API en reposo | hipótesis | pendiente | — | T-01 |
+| Coste de scrypt (`n`, `r`, `p`) | `n=2^17, r=8, p=1`; alternativa `n=2^16, p=2` | **`n=2^17, r=8, p=1`** (confirma el provisional). Medido en los tres contenedores: mediana 0,57-0,90 s por derivación (mín-máx 0,51-1,38 s, host con carga), 128 MB por derivación y pico de proceso 164-188 MB; vuelve a la línea base tras derivar. `n=2^16, p=2` cuesta 0,49-0,63 s y 64 MB: queda como reserva. Con `n=2^17` hace falta `maxmem` explícito en `hashlib.scrypt` (el defecto, 32 MiB, lo rechaza) | `memory-bootstrap` (256 MB): pico 163,5 MB, quedan 92 MB (36 %) para el pool y el driver (no medidos, sin base de datos); una derivación a la vez (con dos, OOM). `memory-admin` 1 GB: hasta 6 simultáneas. Detalle: `execution-history.md` | T-01 |
+| Huecos de `MEMORY_LOGIN_CONCURRENCY` | según la memoria medida | **2 por defecto**; tope aconsejado `(mem_limit − 460 MB) × 0,8 / 128 MB`: 3 con 1 GB (VPS), 9 con 2 GB | 460 MB = ~100 MB de base de la API + 360 MB de una respuesta máxima (comentario del Compose). Con 2 huecos y 1 GB: 100 + 360 + 2 × 128 = 716 MB (70 %); con 3: 844 MB (82 %); con 4: 972 MB (95 %, no). Medido en la API de 1 GB: 6 derivaciones simultáneas de 128 MB llegan a 814 MB y 8 a 967 MB, sin OOM pero sin margen para respuestas | T-01 |
+| `MEMORY_BOOTSTRAP_MEM_LIMIT` | 256 MB | **256 MB, no se sube**: `n=2^17` cabe con una derivación | Pico 163,5 MB de 256 MB; `memory-bootstrap` deriva de una en una (T-07 lo fija con una prueba) | T-01 |
+| ¿`hashlib.scrypt` libera el GIL? Memoria de la API en reposo | hipótesis | **Sí libera el GIL** (un hilo reloj de 1 ms no se detiene: hueco máximo 1,3-17 ms frente a 0,26-0,80 s de derivación). **API en reposo: ~60 MB** de RSS con el módulo importado (sin pool ni respuestas); tras derivar `n=2^17` vuelve a 60 MB | — | T-01 |
 | Tasa y ráfaga por credencial (`MEMORY_RATE_LIMIT_*`) | sin valor | pendiente | pendiente | T-35 |
 | Cubo de la clase `identity` | sin valor | pendiente | pendiente | T-35 |
 | Cuota diaria (`MEMORY_WRITE_QUOTA_PER_DAY`) y lote de escritura | lote de 20 | pendiente | pendiente | T-35 |

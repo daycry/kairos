@@ -55,7 +55,7 @@ test-plan: test-plan.md
 
 | Fase | Completadas | Total | Progreso | H. humanas (real/est) | H. IA ejec. (real/est) | Supervisión (real/est) | Tokens (real/est) |
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
-| Fase 1 — Medición de scrypt y guarda del resolvedor (CA-09, CA-38 a) | 0 | 5 | 0% | 0 / 19.8h | 0 / 6.3h | 0 / 1.6h | 0 / 1570 k |
+| Fase 1 — Medición de scrypt y guarda del resolvedor (CA-09, CA-38 a) | 1 | 5 | 20% | 0 / 19.8h | 0.38 / 6.3h | 0 / 1.6h | 0 / 1570 k |
 | Fase 2 — Esquema 13, scrypt y contraseñas (C-01) | 0 | 7 | 0% | 0 / 36.0h | 0 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 3 — Usuarios, permisos y sesiones (C-01) | 0 | 6 | 0% | 0 / 36.0h | 0 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01) | 0 | 7 | 0% | 0 / 48.0h | 0 / 4.9h | 0 / 1.2h | 0 / 1232 k |
@@ -73,7 +73,7 @@ test-plan: test-plan.md
 | Fase 16 — Identidad: guía probada y extensibilidad (C-05) | 0 | 5 | 0% | 0 / 23.4h | 0 / 2.4h | 0 / 0.6h | 0 / 601 k |
 | Fase 17 — Revisión del hito C y revisión de seguridad (C-07) | 0 | 5 | 0% | 0 / 27.0h | 0 / 5.3h | 0 / 1.3h | 0 / 1320 k |
 | Fase 18 — Cierre del hito C y de la iniciativa: ensayo, versión 0.4.2 y PR | 0 | 4 | 0% | 0 / 11.4h | 0 / 1.2h | 0 / 0.3h | 0 / 293 k |
-| **TOTAL** | **0** | **106** | **0%** | **0 / 616.2h** | **0 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
+| **TOTAL** | **1** | **106** | **1%** | **0 / 616.2h** | **0.38 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -86,29 +86,31 @@ test-plan: test-plan.md
 ### T-01 — Medición previa de scrypt en `memory-api`, `memory-bootstrap` y `memory-admin` (CA-09)
 
 - **Descripción**: Medir tiempo y memoria pico de una derivación scrypt con los candidatos `n=2^17, r=8, p=1` y `n=2^16, r=8, p=2` (y el actual `n=2^14`) dentro de los tres contenedores que derivan scrypt, cada uno con su `mem_limit`: `memory-api` (1 GB del VPS y 2 GB por defecto), `memory-bootstrap` (256 MB) y `memory-admin` (1 GB). Medir también si `hashlib.scrypt` libera el GIL y la memoria de la API en reposo. Fuente: CA-09; P-04; DC-5; R-02.
-- **Changelog**: Interno: medición previa de scrypt.
-- **Estado**: borrador
+- **Changelog**: Interno: medición previa del coste de scrypt en los contenedores que lo derivan; confirma n=2^17.
+- **Estado**: completado
+- **Cerrada**: 2026-11-20
 - **Tiempo humano**: est. 4.5h · real —
-- **Tiempo IA (ejec.)**: est. 4.00h · real —
+- **Tiempo IA (ejec.)**: est. 4.00h · real 0.38h (medido)
 - **Supervisión**: est. 1.00h · real —
 - **Previsión IA**: 1104 k in / 96 k out tok · ⚠️ verificar €
 - **Dependencias**: ninguna
 - **Tipo**: devops
-- **Archivos**: `scripts/measure-scrypt.py`, `docs/roadmap/2026-11-19-access-control/improvement-plan.md` (tabla «Valores medidos»)
+- **Archivos**: `scripts/measure-scrypt.py`, `docs/roadmap/2026-11-19-access-control/improvement-plan.md` (tabla «Valores medidos»), `docs/roadmap/2026-11-19-access-control/execution-history.md` (JSON de la medición; fichero nuevo del historial, añadido con nota)
 - **Cubre (tests)**: —
 - **Verificación**: `python scripts/measure-scrypt.py --image-target operator` → JSON con una fila por contenedor y candidato (`seconds`, `peak_mb`, `fits`) y `gil_released`
 
 **Criterios de aceptación**
-- [ ] La medición queda en `Notas` y en «Valores medidos» **antes** de T-07: parámetros definitivos, huecos de `MEMORY_LOGIN_CONCURRENCY` y si hay que subir `MEMORY_BOOTSTRAP_MEM_LIMIT`
-- [ ] Corre con `docker run --memory=<mem_limit> --network=none` sobre una imagen local, de uno en uno; nada `knowledge-graphs-*`
-- [ ] Si `n=2^17` no cabe en 256 MB, la decisión (subir el límite de `memory-bootstrap` o usar `n=2^16, p=2`) queda escrita con su motivo
+- [x] La medición queda en `Notas` y en «Valores medidos» **antes** de T-07: parámetros definitivos, huecos de `MEMORY_LOGIN_CONCURRENCY` y si hay que subir `MEMORY_BOOTSTRAP_MEM_LIMIT`
+- [x] Corre con `docker run --memory=<mem_limit> --network=none` sobre una imagen local, de uno en uno; nada `knowledge-graphs-*`
+- [x] Si `n=2^17` no cabe en 256 MB, la decisión (subir el límite de `memory-bootstrap` o usar `n=2^16, p=2`) queda escrita con su motivo
 
 **Subtareas**
-- [ ] Escribir el script (imagen `operator` local, un contenedor por límite)
-- [ ] Ejecutar y anotar las tres hipótesis de DC-5
-- [ ] Proponer valores y escribirlos en el plan
+- [x] Escribir el script (imagen `operator` local, un contenedor por límite)
+- [x] Ejecutar y anotar las tres hipótesis de DC-5
+- [x] Proponer valores y escribirlos en el plan
 
 **Notas**: Estimada en 4 h IA: usa contenedores y repite mediciones (retro de la Iniciativa 3). Los dos contenedores añadidos por la aclaración 3 del 2026-11-20 suman 1,5 h sobre la evaluación.
+TDD n/a: medición. Medida con `scripts/measure-scrypt.py` (7 repeticiones, mediana; imagen local `kairos-measure:operator`, contenedores `kairos-measure-*` con `--rm --network=none --memory=--memory-swap=<límite>`, sin `--cpus`: el Compose declara 0; la API se midió con 2g y con 1g). Resultado y valores en «Valores medidos» (plan) y JSON en `execution-history.md`: `n=2^17, r=8, p=1` cabe en los tres (mediana 0,57-0,90 s, 128 MB por derivación, pico 164-188 MB); `memory-bootstrap` (256 MB) deriva de una en una (pico 163,5 MB, con dos OOM) y no hace falta subir su límite; `MEMORY_LOGIN_CONCURRENCY=2` por defecto (716 MB de 1 GB con una respuesta máxima); `hashlib.scrypt` libera el GIL; API en reposo ~60 MB. Sin DECISIÓN ABIERTA: la medición no contradice `n=2^17`. T-07 debe pasar `maxmem` explícito (el defecto de 32 MiB rechaza `n=2^17`). Sin contacto con `knowledge-graphs-*`: `docker ps -a`, `volume ls` y `network ls` filtrados, antes y después, idénticos (15, 7 y 6 entradas); imagen y contenedores `kairos-measure-*` retirados. usage-meter close access-control/T-01: 0.38 h IA (medido), 62 in / 39725 out tok; JSON en `execution-history.md`.
 
 ### T-02 — Guarda del resolvedor: `is_admin`, excepciones cerradas y módulos autorizados a escribir (CA-38 a)
 
