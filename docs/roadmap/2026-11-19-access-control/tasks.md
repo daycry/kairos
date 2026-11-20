@@ -2925,3 +2925,21 @@ Lentes: A+B+C+D sobre `d0eb7ae..HEAD` (fix3: `76a87a6`, `1ee44a3`, `f0dd3aa`, `a
 Observación de la lente D, sin gap: dos regex nuevas (lista con comas de `_DYNAMIC`, banderas del `%`) son cuadráticas con entradas artificiales (`'FROM a, ' * 4000` tarda 14,6 s); ningún literal del paquete tiene esa forma.
 
 Siguiente: decisión del usuario (fix4 acotado a los tres silencios o deuda aceptada).
+
+
+## Revisión de dos lentes — intento 5: Fase 1 (fix4, fuera del bucle) (T-01, T-02, T-03, T-04) — 3 Important en los silencios de escritura
+
+Lentes: A+B+C+D sobre `a543807..HEAD` (fix4: `a5cb447`, `e16d51e`, `585e9be`), revisado entero como código nuevo. Gaps del intento 4: 1-7 y 9 corregidos y 8 aceptado como límite declarado. El paquete real no pasa a rojo con la guarda estricta. D sin hallazgos. Patrón: cada silencio por forma del SQL deja una forma de esconder una lectura; los tres Important están en los silencios de escritura sobre `memory.actors` que el fix4 conservó.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | Regresión del fix4: la regex de `SET (…) = (…)` borra todo el lado derecho, también subconsultas: `UPDATE memory.actors SET (disabled) = (SELECT is_admin FROM memory.actors WHERE id=%s)` y `SET (disabled, username) = (NOT is_admin, %s)` quedan en silencio; `c73e85e`, `d0eb7ae` y `a543807` los detectaban; ningún test exige ese borrado (lentes A, B y C; C: CWE-863) | T-02 | pendiente: decisión del usuario | `test_auth_cache.py:572` |
+| 2 | Important | El silencio de `RETURNING` de un `INSERT INTO memory.actors` llega hasta el final de la cadena: se traga una sentencia tras `;` (`…RETURNING id; UPDATE memory.actors SET disabled = NOT is_admin`) (lente B) | T-02 | pendiente: decisión del usuario | `test_auth_cache.py:568` |
+| 3 | Important | `INSERT INTO memory.actors … ON CONFLICT … DO UPDATE … RETURNING id, is_admin` devuelve el `is_admin` ya guardado: una lectura encubierta bajo el silencio permitido (lentes B y C; A lo deja como observación) | T-02 | pendiente: decisión del usuario | `test_auth_cache.py:568` |
+| 4 | Minor | `%(is_admin)s` calla en cualquier posición de un `VALUES` de `INSERT INTO memory.actors` (`NOT %(is_admin)s`, `CASE WHEN %(is_admin)s`, un `VALUES` de otra sentencia), y `EXCLUDED.is_admin` en cualquier parte del upsert (lentes A, B y C) | T-02 | pendiente | `test_auth_cache.py:570-571` |
+| 5 | Minor | Dentro de la región `SET`, `(?:^\|,)\s*is_admin\s*=` toma por destino una comparación en argumentos de función (`coalesce(%s, is_admin = true)`), y la región cruza `;` (lentes A, B y C; heredado) | T-02 | pendiente | `test_auth_cache.py:573-574` |
+| 6 | Minor | Controles de `_reads_is_admin` sin mutante (M4, M5, M6, M7, M9 de la lente A) | T-02 | pendiente | `test_auth_cache.py:570, :573, :574` |
+| 7 | Minor | `%.s` (precisión vacía) no consume su argumento; `(a).*` no cuenta como fila completa de `actors` (lente B; heredados) | T-02 | pendiente | `test_auth_cache.py:550, :635` |
+| 8 | Minor | Nota RED de fix4 con desglose que no suma 18; Changelog de T-04 en 1585 y nota fix4 de T-04 sin la subida 1585 → 1586; viñeta de límites de `:790` exagera el límite de `USING`/`JOIN … ON` (lente A) | T-02, T-04 | pendiente | `tasks.md` T-02 y T-04; `test_auth_cache.py:790` |
+
+Siguiente: decisión del usuario. Propuesta del orquestador: retirar todos los silencios de escritura de `is_admin` por forma del SQL y declarar por función, en la lista cerrada, los dos únicos escritores reales (`store_auth.py:54` y `probe.py:791`, este ya en la lista).
