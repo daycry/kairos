@@ -87,7 +87,7 @@ test-plan: test-plan.md
 
 - **Descripción**: Medir tiempo y memoria pico de una derivación scrypt con los candidatos `n=2^17, r=8, p=1` y `n=2^16, r=8, p=2` (y el actual `n=2^14`) dentro de los tres contenedores que derivan scrypt, cada uno con su `mem_limit`: `memory-api` (1 GB del VPS y 2 GB por defecto), `memory-bootstrap` (256 MB) y `memory-admin` (1 GB). Medir también si `hashlib.scrypt` libera el GIL y la memoria de la API en reposo. Fuente: CA-09; P-04; DC-5; R-02.
 - **Changelog**: Interno: medición previa del coste de scrypt en los contenedores que lo derivan; confirma n=2^17.
-- **Estado**: completado
+- **Estado**: en-progreso
 - **Cerrada**: 2026-11-20
 - **Tiempo humano**: est. 4.5h · real —
 - **Tiempo IA (ejec.)**: est. 4.00h · real 0.38h (medido)
@@ -116,7 +116,7 @@ TDD n/a: medición. Medida con `scripts/measure-scrypt.py` (7 repeticiones, medi
 
 - **Descripción**: Ampliar el recorrido de `test_auth_cache.py:461` para que detecte toda lectura de `project_grants`, de los permisos de una clave y de `actors.is_admin` (en SQL y en accesos `['is_admin']` o `.get('is_admin')`) fuera del resolvedor, con la lista cerrada de excepciones de DC-1 y su justificación. Añadir la lista de módulos que pueden escribir las tablas de permisos: `store_auth.py`, `store_access.py`, `auth.py` y `probe.py` (1 h, coste extra de O2). Nace en rojo por los cuatro lectores de DC-1. Fuente: CA-38 (a); DC-1; D-02; design.md §O2.
 - **Changelog**: Interno: una prueba comprueba que solo el resolvedor lee permisos y que solo cuatro módulos escriben las tablas de permisos y credenciales.
-- **Estado**: completado
+- **Estado**: en-progreso
 - **Cerrada**: 2026-11-20
 - **Tiempo humano**: est. 4h · real —
 - **Tiempo IA (ejec.)**: est. 0.41h · real 0.13h (medido)
@@ -143,7 +143,7 @@ TDD n/a: medición. Medida con `scripts/measure-scrypt.py` (7 repeticiones, medi
 
 - **Descripción**: Mover al resolvedor de `store_auth.py` las cuatro lecturas que deciden fuera de él: `Auth._actor` delega en `_describe`, `list_projects` en `_visible_projects`, `list_keys` en `_admin_somewhere`, y `/metrics` en modo `admin` llama a `_global_admin` dentro de una transacción. Refactor sin cambio de comportamiento. Fuente: CA-38 (a); DC-1.
 - **Changelog**: Interno: los permisos de una credencial, los proyectos visibles, el derecho a listar claves y el acceso a las métricas se deciden en un único punto del servidor, sin cambiar ninguna respuesta.
-- **Estado**: completado
+- **Estado**: en-progreso
 - **Cerrada**: 2026-11-20
 - **Tiempo humano**: est. 3.5h · real —
 - **Tiempo IA (ejec.)**: est. 0.36h · real 0.23h (medido)
@@ -171,7 +171,7 @@ TDD n/a: medición. Medida con `scripts/measure-scrypt.py` (7 repeticiones, medi
 
 - **Descripción**: Protocolo de cierre de fase (cabecera) con las suites: servidor.
 - **Changelog**: Interno: la CI exige ahora al menos 1578 pruebas del servidor.
-- **Estado**: completado
+- **Estado**: en-progreso
 - **Cerrada**: 2026-11-20
 - **Tiempo humano**: est. 0.5h · real —
 - **Tiempo IA (ejec.)**: est. 0.05h · real 0.05h (medido)
@@ -2848,3 +2848,24 @@ TDD n/a: medición. Medida con `scripts/measure-scrypt.py` (7 repeticiones, medi
 **Subtareas**
 - [ ] Pedir el OK y abrir el PR
 - [ ] Anotar el número en `Notas`
+
+
+## Revisión de dos lentes — intento 1: Fase 1 (T-01, T-02, T-03, T-04) — 3 Important en la guarda del resolvedor
+
+Lentes: A+B+C+D (`review-lens-select.py`: C por `auth.py`, `store_auth.py`, `ci.yml` y los tests de auth; D por contenido en `store_auth.py`, `auth.py` y `measure-scrypt.py`). Rango `f54318e..HEAD`. C y D sin hallazgos. T-01, T-03 y T-04 conformes: el refactor de T-03 no cambia ninguna respuesta (A, B y C por lectura línea a línea). Los gaps están en la guarda de T-02.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | Puerta relajada: `('probe.py', '*')` exime cualquier función de `probe.py`; DC-1 cierra la lista a tres rangos (design.md:104) y el test antiguo solo admitía `provision_locked` y `probe_state` (lentes A y B) | T-02 | pendiente | `test_auth_cache.py:474`; mutante «función nueva en probe.py que lee `project_grants`» no detectado (A y B lo ejecutaron) |
+| 2 | Important | Las pasadas de lecturas y escrituras solo ven SQL literal. Ya hay una escritura real de `web_sessions` fuera de los cuatro módulos que no se detecta ni consta como excepción: `admin.py:312` (`DELETE FROM memory.{table}`, `RETENTION_TABLES` en `admin.py:267`). Si alguien añade `api_keys` a `RETENTION_TABLES`, se borran credenciales sin `invalidate_auth` ni auditoría (Invariante 2, design.md:71) y la guarda sigue en verde (lentes A y B) | T-02 | pendiente | `test_auth_cache.py:481-482`; no detectados: concatenación, f-string con tabla variable, `%`, `sql.Identifier` (`backup.py:113`, `admin.py:63`) |
+| 3 | Important | Acceso indirecto a `is_admin` no detectado (superficie declarada de T-05): `SELECT *` o `t.*` sobre `actors`, y acceso por atributo `.is_admin` (lente A) | T-02 | pendiente | `test_auth_cache.py:516-528`; mutantes `select_star_actors` y `attribute_is_admin` no detectados. Hoy ningún código fuera del resolvedor lo usa |
+| 4 | Minor | Otras evasiones de lectura: `TABLE memory.x`, `COPY ... TO`, comentario `/*x*/` antes de la tabla, `UPDATE ... SET y=a.is_admin FROM memory.actors a` (el `is_admin` antes del `WHERE`), y `FOR SHARE OF p` cuenta como bloqueo de las concesiones aunque no las bloquee (lente B) | T-02 | pendiente | `test_auth_cache.py:481,490`, `sql_reads` |
+| 5 | Minor | Una función anidada con nombre del resolvedor queda exenta: la lectura se atribuye solo a `self.stack[-1]` (lente A) | T-02 | pendiente | `test_auth_cache.py:518` |
+| 6 | Minor | `test_metrics.py` simula `_global_admin` con un comportamiento que contradice al real (clave `root` → 200; el real y el código anterior dan 403); no hay prueba con el store real (lente A) | T-03 | pendiente | `test_metrics.py:495-506` frente a `store_auth.py:65` |
+| 7 | Minor | La Verificación declarada de T-02 (`docker build ... \| grep test_auth_cache`) no se ejecutó; se sustituyó por la pasada AST fuera de Docker; el rojo en contenedor consta en T-03 (lente A) | T-02 | aceptado: desviación declarada con evidencia equivalente | `tasks.md` T-02 Verificación frente a Notas |
+| 8 | Minor | Subtarea «archivo de las notas de la fase» marcada `[x]` en T-04 con `ledger-archive.py --apply` pendiente (lente A) | T-04 | pendiente | `tasks.md` T-04 Subtareas frente a Notas |
+| 9 | Minor | `measure-scrypt.py:151-152` borra con `rm -f` todo contenedor cuyo nombre contenga `kairos-measure-` (el filtro `name=` de Docker busca subcadenas) (lente A, fuera de su lente) | T-01 | pendiente | `scripts/measure-scrypt.py:151-152` |
+
+Fuera de las lentes, para la revisión de seguridad del hito (no es gap de este diff): `_load_active` (`store_auth.py:27-29`) acepta `credential_type: 'bootstrap'` sin comprobar credencial; hoy ningún camino HTTP lo produce (lente C).
+
+Siguiente: fix1 del implementador (gaps 1-6, 8 y 9) y revisión, intento 2 de 3, sobre el diff completo del fix.

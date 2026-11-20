@@ -492,8 +492,8 @@ class MetricsRouteTests(unittest.TestCase):
         app, store, auth = metrics_app('admin')
         from memory_platform.errors import Forbidden, Unauthorized
 
-        def resolver(c, actor):  # what `Store._global_admin` answers: only `root` is an administrator with a session
-            if actor['id'] != 'root':
+        def resolver(c, actor):  # what `Store._global_admin` answers (`store_auth.py`): an administrator WITH A SESSION; a key never is one, whatever its owner is
+            if actor['id'] != 'root' or actor['credential_type'] != 'session':
                 raise Forbidden()
         store._global_admin.side_effect = resolver
         auth.authenticate_bearer.side_effect = auth.authenticate_session.side_effect = Unauthorized()
@@ -503,7 +503,10 @@ class MetricsRouteTests(unittest.TestCase):
             auth.authenticate_bearer.return_value = {'id': 'u', 'credential_type': 'bearer', 'is_admin': False}
             self.assertEqual(client.get('/metrics', headers={'Authorization': 'Bearer fixture'}).status_code, 403)
             auth.authenticate_bearer.return_value = {'id': 'root', 'credential_type': 'bearer', 'is_admin': True}
-            response = client.get('/metrics', headers={'Authorization': 'Bearer fixture', 'X-Forwarded-For': '203.0.113.9'})
+            self.assertEqual(client.get('/metrics', headers={'Authorization': 'Bearer fixture'}).status_code, 403, 'a key of an administrator is not an administrator session')
+            auth.authenticate_session.side_effect = None
+            auth.authenticate_session.return_value = {'id': 'root', 'credential_type': 'session', 'is_admin': True}
+            response = client.get('/metrics', headers={'X-Forwarded-For': '203.0.113.9'}, cookies={'memory_session': 'fixture'})
         self.assertEqual(response.status_code, 200)
         self.assertIn('kairos_retrieval_layer_seconds', response.text)
 
