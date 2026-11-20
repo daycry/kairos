@@ -109,6 +109,8 @@ Lista cerrada de excepciones del test:
 
 > **Nota 2026-11-20 (fase 1, fix8).** La guarda ya no interpreta SQL con expresiones regulares: analiza cada literal SQL con el parser de PostgreSQL 17 (`pglast` 7.24, libpg_query 17), una dependencia solo de la imagen de pruebas (`server/requirements-test.txt`, etapa `test` del Dockerfile; no está en `api`, `operator` ni `worker`). El árbol dice qué tablas se leen y escriben, si se toma una fila completa de `actors` (con alcance por consulta, CTE, subconsulta y sentencia) y qué bloqueos `FOR SHARE` hay; `is_admin` sigue siendo cualquier literal que escriba la palabra. Lo que no se parsea y nombra una tabla de la guarda, o lleva un hueco, es rojo (`unparseable SQL`) salvo en las funciones de la lista cerrada. No cambia qué decide un acceso ni la lista de excepciones, salvo seis funciones que arman SQL por fragmentos y solo quedan exentas de ese tipo.
 
+> **Nota 2026-11-20 (fase 1, fix9; corrige la de fix8).** La guarda analiza todo literal SQL que nombre una tabla vigilada o lleve un hueco, empiece como empiece (fragmentos, `EXPLAIN`, `DO $$...$$`), y cuando no parsea informa también de las tablas que nombra y de los huecos de tabla; las seis exenciones de `unparseable SQL` de fix8 sobran y se retiran. Queda un límite declarado: lo que ni nombra una tabla vigilada ni lleva un hueco no se analiza.
+
 El test amplía el recorrido que ya existe en `test_auth_cache.py:461`. Añade `actors.is_admin` (en SQL y en accesos `['is_admin']` o `.get('is_admin')`) y exige una justificación escrita por excepción. Es la primera tarea del hito A.
 
 Las ampliaciones futuras entran así (base de la nota de CA-38 c en `docs/architecture.md`):

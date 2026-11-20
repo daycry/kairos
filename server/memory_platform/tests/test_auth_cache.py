@@ -479,17 +479,9 @@ READ_EXCEPTIONS = {
     # `is_admin:row` is a read of the WHOLE row (`SELECT *`, `a.*` on `actors`), not of the column by name: login may do the first and not the second
     ('auth.py', 'Auth.login'): ({'is_admin:row'}, False, 'proves a password: `SELECT *` of the actor row, handed whole to `_actor` -> `_describe` of the resolver, which is the only code that looks at `is_admin` in it'),
     ('store_auth.py', 'AuthMixin.bootstrap_user'): ({'is_admin'}, False, 'first start only: writes `is_admin=true` of the first actor and returns the row it stored; it decides no access (the advisory lock and the `Conflict` when an actor exists limit it to the first run)'),
-    # fix8: SQL assembled from fragments and holes that does not parse as a whole where it is written (a template with `{after}`, `FROM ({union}) r{x}`, `{extra}` clauses). Only the kind
-    # `unparseable SQL` is waived: any table of the guard or `is_admin` in these functions is still red. None of their literals names `project_grants`, `api_keys` or `actors`.
-    ('admin.py', '<module>'): ({'unparseable SQL'}, False, 'module-level templates of the backfill queries (`{after}`): fragments of documents and items, completed by the functions below; they name no table of the guard'),
-    ('admin.py', 'backfill_query'): ({'unparseable SQL'}, False, 'assembles the backfill query from the templates of this module and its pending/failed predicates (holes in a subquery position); reads documents and items only'),
-    ('admin.py', 'backfill_failed'): ({'unparseable SQL'}, False, 'counts the failed backfill candidates over the union of the templates of this module (a hole in a subquery position); reads documents and items only'),
-    ('admin.py', 'backfill_remaining'): ({'unparseable SQL'}, False, 'counts the pending backfill candidates over the union of the templates of this module (a hole in a subquery position); reads documents and items only'),
-    ('store_jobs.py', '<module>'): ({'unparseable SQL'}, False, 'module-level queries of the job queue that take an extra clause by a hole (`... clock_timestamp() {extra}`); they read `jobs` only'),
-    ('store_vectors.py', 'VectorsMixin._vector_candidates'): ({'unparseable SQL'}, False, 'vector search over items and documents whose filters are assembled from fragments (holes in condition position); reads embeddings, items and documents only'),
     ('probe.py', 'probe_state'): ({'project_grants', 'is_admin'}, False, _PROBE + 'it reads whether the probe project already has grants of another actor and whether the service actor is an administrator, to refuse to adopt them'),
     ('probe.py', 'admin_actor'): ({'is_admin'}, False, _PROBE + 'it finds the administrator the command acts as (named by the operator, or the first one), no request is being decided'),
-    ('probe.py', 'provision_locked'): ({'is_admin', 'api_keys'}, False, _PROBE + 'it refuses a service actor that became administrator, WRITES its own `is_admin=false` when it creates it (`probe.py` INSERT of the service actor) and looks up its own key by hash to rotate it, under an advisory lock'),
+    ('probe.py', 'provision_locked'): ({'is_admin', 'api_keys', 'project_grants'}, False, _PROBE + 'it refuses a service actor that became administrator, WRITES its own `is_admin=false` when it creates it (`probe.py` INSERT of the service actor), inserts the grants of that actor and reads `RETURNING 1` to know which were new, and looks up its own key by hash to rotate it, under an advisory lock'),
 }
 # The only modules that may write the tables of permissions and credentials (design.md O2: `store_access.py` is the new door for access changes).
 PERMISSION_WRITERS = {'store_auth.py', 'store_access.py', 'auth.py', 'probe.py'}
@@ -527,13 +519,24 @@ DYNAMIC_SQL = {
     ('store_vectors.py', 'migrate_vector_indexes'): (lambda sources: {'embeddings', 'embedding_chunks'}, set(), 'migration: `CREATE INDEX` on the two embedding tables', None),
 }
 # ---- the SQL of a literal, read with the parser of PostgreSQL 17 (pglast) ----
-# A literal that, once its constants are filled in, begins with a statement keyword is parsed; its tree says which tables it reads and writes, whether it takes a whole row of `actors`, which
-# `FOR SHARE` locks it holds and whether a table name is not literal. Every hole that is not a constant is replaced by an identifier no one writes (`kairos_hole_N_`) before parsing.
-# Whatever does not parse and names a table of the guard (or holds a hole) is red (`unparseable SQL`), unless it is on the closed list. When in doubt, red.
+# Every literal that, once its constants are filled in, names a table of the guard (`\b`) or holds a hole that is not a constant is analysed, whatever it begins with. It is parsed; its tree says
+# which tables it reads and writes, whether it takes a whole row of `actors`, which `FOR SHARE` locks it holds and whether a table name is not literal. Every hole (a non-constant expression,
+# the `{}` of a template, a `%s` placeholder) is replaced by an identifier no one writes (`kairos_hole_N_`) before parsing. When the text does not parse (or is too big for the parser, or too deep
+# for this walk) it is reported as `unparseable SQL` AND by the tables it names, the writes a word of writing before them shows, and the holes after FROM/JOIN/INTO/UPDATE/TABLE/USING/TRUNCATE or a comma.
+# A text with a hole that names none of the tables is parsed too, but if it does not parse only a hole in a table position is reported (messages with f-strings are everywhere). When in doubt, red.
 _SENTINEL = 'kairos_hole_'
-_STATEMENT_START = re.compile(r'(?:\s|\(|--[^\n]*\n|/\*.*?\*/)*(?:SELECT|WITH|INSERT|UPDATE|DELETE|MERGE|TABLE|COPY|TRUNCATE|VALUES)\b', re.I | re.S)
-_TOKEN = re.compile(r"""(?P<quoted>(?<![\w$])[eE]'(?:[^'\\]|\\.|'')*'|'(?:[^']|'')*'|"(?:[^"]|"")*"|\$(?P<tag>\w*)\$.*?\$(?P=tag)\$|--[^\n]*|/\*.*?\*/)|(?P<percent>%%|%\(\w+\)[sbt]|%[sbt])|(?P<hole>\{[^{}]*\})""", re.S)
+_MAX_PARSED = 32768  # characters; the parser of libpg_query crashes (SIGSEGV) on about 50 000 terms and the largest literal of the package is 1 896 characters
 _RESTRICTED_WORD = re.compile(r'\b(?:%s)\b' % '|'.join(sorted(set(READ_TABLES) | set(WRITE_TABLES) | {'actors'})), re.I)
+_AFTER_SCHEMA = re.compile(r'\bmemory\s*\.\s*"?%')
+_HOLE_TABLE = re.compile(r'\b(?:FROM|JOIN|INTO|UPDATE|TABLE|USING|TRUNCATE)\b\s*(?:"?memory"?\s*\.\s*)?"?' + _SENTINEL + r'|\bmemory\s*\.\s*"?\w*' + _SENTINEL, re.I)
+_HOLE_AFTER_COMMA = re.compile(r',\s*(?:"?memory"?\s*\.\s*)?"?' + _SENTINEL)  # only looked for after a FROM: a comma before a hole is an argument, a column or a table
+_SQL_WORD = re.compile(r'\b(?:SELECT|FROM|JOIN|INTO|UPDATE|DELETE|INSERT|MERGE|TABLE|USING|COPY|TRUNCATE|WITH|VALUES|RETURNING|WHERE|EXISTS)\b', re.I)
+_WRITE_WORD = re.compile(r'\b(?:INSERT|UPDATE|DELETE|MERGE|TRUNCATE|COPY|INTO)\b', re.I)
+_PLACEHOLDER = re.compile(r'%%|%\(\w+\)[sbt]|%[sbt]')
+_BRACE = re.compile(r'\{[^{}]*\}')
+_PLAIN = re.compile(r"[^'\"\-/$%{]+")
+_DOLLAR = re.compile(r'\$(\w*)\$')
+_SQL_STRING = ('SELECT', 'WITH', 'INSERT', 'UPDATE', 'DELETE', 'MERGE', 'TABLE', 'COPY', 'VALUES', 'TRUNCATE')
 _QUERIES = ('SelectStmt', 'InsertStmt', 'UpdateStmt', 'DeleteStmt', 'MergeStmt')
 
 
@@ -544,21 +547,81 @@ def _reads_is_admin(sql):
 
 
 def _prepare(text):
-    """The text the parser gets: a hole (NUL, or the `{}` of a template) is an identifier; a psycopg placeholder is `$1`; quoted text, dollar quotes and comments are left alone."""
+    """The text the parser gets, in ONE linear pass: every hole is an identifier (a NUL, the `{}` of a template, a psycopg placeholder `%s`/`%(x)s`; `%%` is a `%`); quoted text, dollar quotes
+    and comments are copied as they are. A quote, comment or dollar quote that never closes takes the rest of the text, so the cost is the length of the text."""
     counter = itertools.count()
-    text = re.sub(r'\x00', lambda m: '%s%d_' % (_SENTINEL, next(counter)), text)
 
-    def replace(m):
-        after_schema = re.search(r'\bmemory\s*\.\s*$', m.string[max(0, m.start() - 16):m.start()], re.I)  # psycopg cannot bind an identifier: `memory.%s` is a hole of a Python `%`
-        if m.group('quoted') is not None:
-            token = m.group(0)
-            if after_schema and re.fullmatch(r'"%(?:\(\w+\))?[sbt]"', token):
-                return '%s%d_' % (_SENTINEL, next(counter))
-            return re.sub(r'\{[^{}]*\}', lambda h: '%s%d_' % (_SENTINEL, next(counter)), token) if token.startswith('"') else token
-        if m.group('percent') is not None:
-            return '%' if m.group(0) == '%%' else '%s%d_' % (_SENTINEL, next(counter)) if after_schema else '$1'
+    def hole():
         return '%s%d_' % (_SENTINEL, next(counter))
-    return _TOKEN.sub(replace, text)
+    text = re.sub(r'\x00', lambda m: hole(), text)
+    out, i, n = [], 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == "'":
+            escapes = i > 0 and text[i - 1] in 'eE' and (i < 2 or not (text[i - 2].isalnum() or text[i - 2] in '_$'))
+            j = i + 1
+            if escapes:
+                while j < n:
+                    if text[j] == '\\':
+                        j += 2
+                    elif text[j] == "'":
+                        if text[j + 1:j + 2] == "'":
+                            j += 2
+                        else:
+                            j += 1
+                            break
+                    else:
+                        j += 1
+                j = min(j, n)
+            else:
+                j = text.find("'", j)
+                while j != -1 and text[j + 1:j + 2] == "'":
+                    j = text.find("'", j + 2)
+                j = n if j == -1 else j + 1
+            out.append(text[i:j])
+            i = j
+        elif c == '"':
+            j = text.find('"', i + 1)
+            while j != -1 and text[j + 1:j + 2] == '"':
+                j = text.find('"', j + 2)
+            j = n if j == -1 else j + 1
+            token = text[i:j]
+            if re.fullmatch(r'"%(?:\(\w+\))?[sbt]"', token) and re.search(r'\bmemory\s*\.\s*$', ''.join(out[-3:])):
+                out.append(hole())
+            else:
+                out.append(re.sub(r'\{[^{}]*\}', lambda m: hole(), token))
+            i = j
+        elif c == '-' and text.startswith('--', i):
+            j = text.find('\n', i)
+            j = n if j == -1 else j
+            out.append(text[i:j])
+            i = j
+        elif c == '/' and text.startswith('/*', i):
+            j = text.find('*/', i + 2)
+            j = n if j == -1 else j + 2
+            out.append(text[i:j])
+            i = j
+        elif c == '$':
+            m = _DOLLAR.match(text, i)
+            j = i + 1
+            if m:
+                k = text.find(m.group(0), m.end())
+                j = n if k == -1 else k + len(m.group(0))
+            out.append(text[i:j])
+            i = j
+        elif c == '%':
+            m = _PLACEHOLDER.match(text, i)
+            out.append('%' if m and m.group(0) == '%%' else hole() if m else '%')
+            i = m.end() if m else i + 1
+        elif c == '{':
+            m = _BRACE.match(text, i)
+            out.append(hole() if m else '{')
+            i = m.end() if m else i + 1
+        else:
+            m = _PLAIN.match(text, i)
+            out.append(m.group(0) if m else c)
+            i = m.end() if m else i + 1
+    return ''.join(out)
 
 
 def _children(node):
@@ -580,10 +643,13 @@ def _names_in_from(items, table):
     """The names (the table's, and its alias when it has one) under which `table` is in a FROM list."""
     found = set()
     for item in items:
+        if isinstance(item, pg.RangeTableSample):
+            item = item.relation
         if isinstance(item, pg.RangeVar) and item.relname.lower() == table:
             found |= {table} | ({item.alias.aliasname.lower()} if item.alias else set())
         elif isinstance(item, pg.JoinExpr):
-            found |= _names_in_from([item.larg, item.rarg], table)
+            inner = _names_in_from([item.larg, item.rarg], table)
+            found |= inner | ({item.alias.aliasname.lower()} if inner and item.alias else set())  # `(actors a JOIN projects p ON ...) j`: `j.*` carries the row
     return found
 
 
@@ -605,22 +671,26 @@ def _indirection_row(node, names):
     return isinstance(node.indirection[0], pg.A_Star) and isinstance(last, pg.String) and last.sval.lower() in names
 
 
-def _mentions_row(node, names, star_ok):
-    if isinstance(node, pg.ColumnRef):
-        return _row_ref(node, names, star_ok)
-    if isinstance(node, pg.A_Indirection) and isinstance(node.arg, pg.ColumnRef):
-        return _indirection_row(node, names) or (len(node.arg.fields) > 1 and any(_mentions_row(c, names, star_ok) for _, c in _children(node) if c is not node.arg))
-    return any(_mentions_row(child, names, star_ok) for _, child in _children(node))
-
-
 class _Tree:
     """What one statement does to the tables of the guard. `chain` is the names of `actors` visible at the level (this query and the ones around it), `own` the ones of this level alone (what an
     unqualified `*` expands), `lock` the `FOR SHARE` of the query: None, '*' or the names it limits itself to. A CTE body and a statement after `;` start again with nothing."""
     def __init__(self):
         self.reads, self.writes, self.dynamic = set(), set(), False
 
+    def merge(self, other):
+        self.reads |= other.reads
+        self.writes |= other.writes
+        self.dynamic = self.dynamic or other.dynamic
+
     def row(self):
         self.reads.add(('is_admin:row', False))
+
+    def holes_as_row(self, items, own):
+        """A hole alone as an item of a select or RETURNING list of a level that has `actors` may be `a` or `*`."""
+        for item in items or ():
+            val = getattr(item, 'val', None)
+            if own and isinstance(val, pg.ColumnRef) and len(val.fields) == 1 and isinstance(val.fields[0], pg.String) and _SENTINEL in val.fields[0].sval:
+                self.row()
 
     def hole(self, range_var):
         if _SENTINEL in (range_var.relname or '') or _SENTINEL in (range_var.schemaname or ''):
@@ -638,6 +708,7 @@ class _Tree:
             lock = None
             if kind == 'SelectStmt':
                 own = _names_in_from(node.fromClause or (), 'actors')
+                self.holes_as_row(node.targetList, own)
                 for clause in node.lockingClause or ():
                     if clause.strength.name == 'LCS_FORSHARE':
                         lock = '*' if not clause.lockedRels or lock == '*' else (lock or frozenset()) | {r.relname.lower() for r in clause.lockedRels}
@@ -645,10 +716,11 @@ class _Tree:
             else:
                 items = [node.relation] + list(getattr(node, 'fromClause', None) or getattr(node, 'usingClause', None) or ()) + ([node.sourceRelation] if kind == 'MergeStmt' and node.sourceRelation else [])
                 own = _names_in_from(items, 'actors')
+                self.holes_as_row(node.returningList, own)
                 self.write(node.relation)
                 target = node.relation.relname.lower()
-                if target in READ_TABLES and any(_mentions_row(r, {target} | ({node.relation.alias.aliasname.lower()} if node.relation.alias else set()), True) for r in node.returningList or ()):
-                    self.reads.add((target, False))  # the rows it returns are read from the table
+                if target in READ_TABLES and node.returningList:
+                    self.reads.add((target, False))  # the rows it returns, whole or by column, are read from the table
                 skip = ('relation',)
             chain = tuple(chain) + (own,)
         elif kind == 'CommonTableExpr':
@@ -662,6 +734,17 @@ class _Tree:
         elif kind == 'ColumnRef':
             if _row_ref(node, frozenset().union(*chain) if chain else frozenset(), bool(own)):
                 self.row()
+        elif kind == 'String':
+            if node.sval.lower() == 'is_admin':
+                self.reads.add(('is_admin', False))  # the column by any spelling the parser decodes (`U&"is\\005fadmin"`)
+        elif kind == 'A_Const':
+            if isinstance(node.val, pg.String) and node.val.sval.lstrip()[:8].upper().startswith(_SQL_STRING):
+                self.merge(_analysis(node.val.sval))  # SQL given as a string (`query_to_xml('select ...')`)
+        elif kind == 'DoStmt':
+            for arg in node.args or ():
+                if arg.defname == 'as' and isinstance(arg.arg, pg.String):
+                    self.merge(_analysis(arg.arg.sval))  # the body of DO, a string for the parser
+            return
         elif kind == 'A_Indirection' and isinstance(node.arg, pg.ColumnRef):
             if _indirection_row(node, frozenset().union(*chain) if chain else frozenset()):
                 self.row()
@@ -696,20 +779,37 @@ class _Analysis:
         self.reads, self.writes, self.dynamic = frozenset(reads), frozenset(writes), dynamic
 
 
+def _fallback(text, prepared):
+    """What a text that cannot be parsed (a syntax error, too big, too deep) is reported as: `unparseable SQL` when it names a table of the guard (a text with only a hole, like a message with an
+    f-string, names nothing and is silent unless the hole is in a table position), each table of the guard it names (a read; `actors` as a whole row; a write when a word of
+    writing comes before it) and a hole after FROM/JOIN/INTO/UPDATE/TABLE/USING/TRUNCATE, a comma or `memory.`."""
+    if not _SQL_WORD.search(text):
+        return _Analysis()  # a bare name or a message that names a table without a word of SQL (`'web_sessions'` in a list of retention windows) is not SQL
+    named = {word.lower() for word in _RESTRICTED_WORD.findall(text)}
+    reads = ({('unparseable SQL', False)} if named else set()) | {(table, False) for table in named if table in READ_TABLES} | ({('is_admin:row', False)} if 'actors' in named else set())
+    writes = set()
+    for table in named & set(WRITE_TABLES):
+        first = re.search(r'\b%s\b' % table, text, re.I)
+        if _WRITE_WORD.search(text[:first.start()]):
+            writes.add(table)
+    from_ = re.search(r'\bFROM\b', prepared, re.I)
+    return _Analysis(reads, writes, bool(_HOLE_TABLE.search(prepared)) or bool(from_ and _HOLE_AFTER_COMMA.search(prepared, from_.end())))
+
+
 @functools.lru_cache(maxsize=None)
 def _analysis(text):
-    if not _STATEMENT_START.match(text):
+    if not _RESTRICTED_WORD.search(text) and '\x00' not in text and not _AFTER_SCHEMA.search(text):
         return _Analysis()
     prepared = _prepare(text)
+    if len(prepared) > _MAX_PARSED:
+        return _fallback(text, prepared)
     try:
         statements = parse_sql(prepared)
-    except Exception:  # pglast.parser.ParseError, or anything the parser raises on this text
-        named = _RESTRICTED_WORD.findall(text)
-        writes = {name.lower() for name in named if name.lower() in WRITE_TABLES}
-        return _Analysis({('unparseable SQL', False)} if named or _SENTINEL in prepared else (), writes)
-    tree = _Tree()
-    for statement in statements:
-        tree.visit(statement.stmt)
+        tree = _Tree()
+        for statement in statements:
+            tree.visit(statement.stmt)
+    except Exception:  # a syntax error (pglast.parser.ParseError), RecursionError on a deep tree, anything else: report, never fail
+        return _fallback(text, prepared)
     return _Analysis(tree.reads, tree.writes, tree.dynamic)
 
 
@@ -774,7 +874,7 @@ class _Scan(ast.NodeVisitor):
     """Each restricted read, attributed to EVERY function that holds it (the innermost and the ones around it: a nested function does not exempt the outer one; docstrings and bare strings
     are prose), and each SQL whose table name is not literal (kind 'dynamic')."""
     def __init__(self):
-        self.stack, self.reads, self.writes, self.dynamics, self.defs, self.composing = [], [], [], [], {}, 0
+        self.stack, self.reads, self.writes, self.dynamics, self.defs = [], [], [], [], {}
 
     def owners(self):
         names = [name for name, _ in self.stack]
@@ -815,18 +915,39 @@ class _Scan(ast.NodeVisitor):
         elif isinstance(node.value, bytes):
             self.sql(node.value.decode('utf-8', 'replace'))
 
+    def pieces(self, node):
+        """The parts of a composition that was already read whole (`sql_text`): its constants are not read again one by one, and what is not text (an argument, an expression) is visited as usual."""
+        if isinstance(node, ast.Constant):
+            return
+        if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Mod)):
+            self.pieces(node.left)
+            if isinstance(node.op, ast.Add):
+                self.pieces(node.right)
+            else:
+                self.visit(node.right)
+        elif isinstance(node, ast.JoinedStr):
+            for value in node.values:
+                if isinstance(value, ast.FormattedValue):
+                    self.visit(value.value)
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == 'format':
+            self.pieces(node.func.value)
+            for argument in [*node.args, *(k.value for k in node.keywords)]:
+                self.visit(argument)
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == 'SQL' and node.args:
+            self.pieces(node.args[0])
+        else:
+            self.visit(node)
+
     def visit_JoinedStr(self, node):
-        if not self.composing:
-            self.sql(sql_text(node))
-        self.generic_visit(node)
+        self.sql(sql_text(node))
+        self.pieces(node)
 
     def visit_BinOp(self, node):
-        scanned = isinstance(node.op, (ast.Add, ast.Mod)) and not self.composing
-        if scanned:  # the whole composition once: its prefixes are not statements, and a hole in a prefix is not a hole of a table name
+        if isinstance(node.op, (ast.Add, ast.Mod)):  # the whole composition once: its prefixes are not statements, and a hole in a prefix is not a hole of a table name
             self.sql(sql_text(node))
-        self.composing += scanned
-        self.generic_visit(node)
-        self.composing -= scanned
+            self.pieces(node)
+        else:
+            self.generic_visit(node)
 
     def visit_Subscript(self, node):
         if isinstance(node.slice, ast.Constant) and node.slice.value == 'is_admin':
@@ -845,6 +966,8 @@ class _Scan(ast.NodeVisitor):
             self.read('is_admin')
         if name == 'format' and isinstance(node.func, ast.Attribute):
             self.sql(sql_text(node))
+            self.pieces(node)
+            return
         if name == 'dict' and any(keyword.arg == 'is_admin' for keyword in node.keywords):  # `dict(is_admin=...)` names the field like a literal key does: a read
             self.read('is_admin')
         if name == 'Identifier':  # a table named by an identifier object is as unseen as an f-string
@@ -859,7 +982,10 @@ class _Scan(ast.NodeVisitor):
 @functools.lru_cache(maxsize=None)
 def scan(source):
     visitor = _Scan()
-    visitor.visit(ast.parse(source))
+    try:
+        visitor.visit(ast.parse(source))
+    except RecursionError:  # a source nested deeper than the walk can follow: red for the whole module, never an error
+        visitor.reads.append(('<module>', 'unparseable SQL', False))
     return visitor
 
 
@@ -960,24 +1086,29 @@ class ResolverBoundaryTests(unittest.TestCase):
     """Only the resolver decides an access (CA-38 a): a read of `project_grants`, of the permissions of a key or of `actors.is_admin` anywhere else fails here unless it is one of the
     closed list of DC-1, each with its reason. And only four modules write the tables of permissions and credentials.
 
-    METHOD (fix8): each SQL literal that, once its constants are filled in, begins with a statement keyword is parsed with the parser of PostgreSQL 17 (`pglast`, a dependency of the test image
-    only); the tree says which tables it reads and writes, whether it takes a whole row of `actors` (`*`, `a.*`, `a`, `(a).*`, `RETURNING *`, `TABLE`, `COPY ... TO`; scoped by query, CTE, subquery
-    and statement), which `FOR SHARE` locks it holds and whether a table name is a hole. A write target is not a read, except that a RETURNING of the whole row of a restricted table reads it.
-    `is_admin` is the one rule that is not the parser's: any literal that spells the word is a read, parsed or not. A literal that does not parse and names a table of the guard, or holds a
-    hole, is red (`unparseable SQL`) unless its function is on the closed list (which then waives only that kind).
+    METHOD (fix8, fix9): every SQL literal that, once its constants are filled in, names a table of the guard (`\b`) or holds a hole that is not a constant is parsed with the parser of PostgreSQL 17
+    (`pglast`, a dependency of the test image only), whatever it begins with (a fragment, `EXPLAIN`, `PREPARE`, `DO $$...$$`, a SQL string inside a call). The tree says which tables it reads and
+    writes, whether it takes a whole row of `actors` (`*`, `a.*`, `a`, `(a).*`, `RETURNING *`, `TABLE`, `COPY ... TO`; scoped by query, CTE, subquery and statement), which `FOR SHARE` locks it
+    holds and whether a table name is a hole. A write target is not a read, except that what a RETURNING gives back from a restricted table (whole or by column) is read from it.
+    `is_admin` is the one rule that is not the parser's: any literal that spells the word, or any identifier the parser decodes to it, is a read. When the text does not parse, is too big for the
+    parser (more than 32 768 characters; the parser crashes on about 50 000 terms and the largest literal of the package has 1 896) or is too deep for the walk, it is reported as `unparseable SQL`
+    when it names a table of the guard, together with each table it names (a read, `actors` as a whole row, a write when a word of writing comes before it) and with `unknown table` when a hole
+    stands after FROM/JOIN/INTO/UPDATE/TABLE/USING/TRUNCATE, `memory.` or a comma after a FROM; a text with a SQL word that names none of the tables and has no such hole is silent (messages built
+    with f-strings are everywhere). The exemptions of the closed list waive one kind only.
 
     The scan is a DETECTOR OF REGRESSIONS, not a proof of absence. Known limits, accepted:
-    * SQL built in several steps (`sql += ...`, `' '.join(...)`) that never reaches one literal is judged piece by piece: a piece that spells `is_admin`, or begins with a statement keyword and names
-      a table, is caught by itself; a bare piece (`'memory.api_keys'`, `' WHERE x'`) is not;
+    * SQL built in several steps (`sql += ...`, `' '.join(...)`) that never reaches one literal is judged piece by piece: a piece that spells `is_admin`, or names a table with a word of SQL, is caught
+      by itself; a bare piece (`'memory.api_keys'`, `' WHERE x'`) is not;
     * a hole whose value is DATA and names a table is `unknown table` where it stands in a table position, and the tables it may take are checked only per function (`DYNAMIC_SQL`), not per statement;
-    * inside a function of the closed list any `is_admin` passes, as in the functions of `probe.py` (the cost of having no silence by the shape of the SQL); the entries of kind `unparseable SQL`
-      waive that kind only;
-    * a literal that does not begin with a statement keyword is not parsed (`CREATE ... AS SELECT`, `EXPLAIN ...`, `PREPARE`), and a statement behind another expression neither;
+      a hole in a select list is taken for `a` or `*` when it stands alone and the level has `actors`; a hole in an alias or in any other column position is not;
+    * inside a function of the closed list any `is_admin` passes, as in the functions of `probe.py` (the cost of having no silence by the shape of the SQL);
+    * a literal that names no table of the guard and has no hole is not parsed, so a table that only a string at run time names (`query_to_xml` with a variable) is out of reach; a string argument
+      that is SQL (a constant that begins with a statement keyword) and a body of `DO` are analysed again;
     * a table reached through a function in FROM (`FROM {fn}(...)`), a view or a rule is not a RangeVar of the guard; a column named like the alias of `actors` is taken for its row;
     * `sql.Composed` / `sql.SQL(...).join(...)` with a write verb in a function that may reach any table (`inspect_store`, `table_digest`) is not told apart from a SELECT beyond its text;
     * the column `is_admin` is searched in the raw literal: a comment that names it is a false positive worth an exception, never a hole;
-    * `%s` in a raw constant is a parameter, except right after `memory.` (a hole of a Python `%` applied elsewhere); the parser is the one of PostgreSQL 17: syntax a later server accepts does not parse;
-    * cost, measured in fix8 (see the notes of T-02): the artificial inputs of `test_the_scans_stay_linear_on_artificial_input`, including 2000 statements with a RETURNING each.
+    * the parser is the one of PostgreSQL 17: syntax a later server accepts does not parse (and then the fallback applies);
+    * cost, measured in fix9 (notes of T-02): the artificial inputs of `test_the_scans_stay_linear_on_artificial_input`, among them comments, dollar quotes and quotes that never close.
     PRINCIPLE (fix5): there is no silence by the shape of the SQL. Any `is_admin` in a literal outside the resolver is a read, also when it is written; a legitimate writer (`bootstrap_user`,
     `provision_locked`) is declared BY FUNCTION on the closed list. A new way of reading goes in `reads` below with its mutant, and a legitimate new reader or writer goes on the closed lists
     with its reason."""
@@ -1262,7 +1393,8 @@ class ResolverBoundaryTests(unittest.TestCase):
     def test_the_parser_tells_which_table_a_statement_reads_writes_and_locks(self):
         # fix8: kinds by the tree of the statement
         self.assertEqual(sql_reads("UPDATE memory.api_keys k SET revoked_at=now() FROM memory.actors a WHERE k.actor_id=a.id RETURNING k.*"), {('api_keys', False)})
-        self.assertEqual(sql_reads("UPDATE memory.api_keys SET revoked_at=now() WHERE id=%s RETURNING id"), set())  # a write target is not a read
+        self.assertEqual(sql_reads("UPDATE memory.api_keys SET revoked_at=now() WHERE id=%s"), set())  # a write target is not a read
+        self.assertEqual(sql_reads("UPDATE memory.api_keys SET revoked_at=now() WHERE id=%s RETURNING id"), {('api_keys', False)})  # but what it returns is
         self.assertEqual(sql_reads("DELETE FROM memory.project_grants WHERE actor_id=%s RETURNING *"), {('project_grants', False)})
         self.assertEqual(sql_writes("COPY memory.actors FROM STDIN"), {'actors'})
         self.assertEqual(sql_writes("WITH d AS (DELETE FROM memory.api_keys RETURNING id) SELECT count(*) FROM d"), {'api_keys'})
@@ -1272,15 +1404,90 @@ class ResolverBoundaryTests(unittest.TestCase):
         self.assertEqual(sql_reads("SELECT 1 FROM memory.api_keys FOR NO KEY UPDATE"), {('api_keys', False)})
         self.assertEqual(sql_reads("SELECT 1 FROM memory.api_keys k WHERE k.id IN (SELECT id FROM memory.api_keys)"), {('api_keys', False)})
         self.assertEqual(sql_reads("SELECT 1 FROM memory.projects FOR SHARE"), set())
-        self.assertEqual(sql_reads("SELECT FROM WHERE memory.api_keys (("), {('unparseable SQL', False)})
-        self.assertEqual(sql_reads("SELECT {} FROM memory.embeddings e WHERE e.v {}"), {('unparseable SQL', False)})
+        self.assertEqual(sql_reads("SELECT FROM WHERE memory.api_keys (("), {('unparseable SQL', False), ('api_keys', False)})
+        self.assertEqual(sql_reads("SELECT \x00 FROM memory.embeddings e WHERE e.v \x00"), set())  # a hole outside a table position, in a text that names none of the tables: nothing
         self.assertEqual(sql_reads("Update the cache and say so"), set())  # prose that begins like a statement and names none of the tables: nothing
-        for text in ("SELECT 1 FROM memory.api_{kind}", "SELECT 1 FROM {}", "DELETE FROM memory.{t} WHERE true", "SELECT 1 FROM a, \x00 b", "SELECT 1 FROM memory.\x00", "SELECT 1 FROM \"{t}\"", "TRUNCATE {t}", "COPY \x00 TO STDOUT"):
+        for text in ("SELECT 1 FROM memory.api_\x00", "SELECT 1 FROM \x00", "DELETE FROM memory.\x00 WHERE true", "SELECT 1 FROM a, \x00 b", "SELECT 1 FROM memory.\x00", "SELECT 1 FROM \"\x00\"", "TRUNCATE \x00", "COPY \x00 TO STDOUT"):
             self.assertTrue(sql_dynamic(text), text)
-        self.assertFalse(sql_dynamic("SELECT {x}, 1 FROM memory.projects WHERE a = {y}"))
+        self.assertFalse(sql_dynamic("SELECT \x00, 1 FROM memory.projects WHERE a = \x00"))
+        self.assertEqual(sql_reads("Update {x} failed"), set())  # prose with braces and no table of the guard: not analysed
         for text in ("DELETE FROM memory.%s WHERE id=%s", 'DELETE FROM memory."%s" WHERE id=%s', "SELECT 1 FROM a JOIN b ON a.x=b.x, memory.%(t)s"):
             self.assertTrue(sql_dynamic(text), text)  # a raw `%s` after the schema can only be a hole of a Python `%` applied elsewhere
         self.assertFalse(sql_dynamic("SELECT 1 FROM memory.projects WHERE id IS DISTINCT FROM %s"))
+
+    def test_every_literal_that_names_a_table_of_the_guard_or_holds_a_hole_is_analysed_whatever_it_begins_with(self):
+        # fix9 gaps 1 and 2: fragments, EXPLAIN, PREPARE, CALL, DECLARE, CREATE ... AS SELECT, SET LOCAL; and the tables a literal that does not parse names
+        base = package_sources()
+        for body in ("return c.execute(' JOIN memory.project_grants g ON true')", "q = ''\n    q += ' WHERE EXISTS (SELECT 1 FROM memory.project_grants)'\n    return c.execute(q)",
+                     "return c.execute(f'{cols} FROM memory.api_keys')", "return c.execute('SET LOCAL x = 1; SELECT 1 FROM memory.api_keys')", "return c.execute('EXPLAIN ANALYZE SELECT 1 FROM memory.api_keys')",
+                     "return c.execute('PREPARE p AS SELECT * FROM memory.api_keys')", "return c.execute('CALL f((SELECT 1 FROM memory.api_keys))')",
+                     "return c.execute('DECLARE c CURSOR FOR SELECT * FROM memory.api_keys')", "return c.execute('CREATE TEMP TABLE t AS SELECT * FROM memory.api_keys')",
+                     "return c.execute(\"SELECT query_to_xml('select * from memory.api_keys', true, true, '')\")", "return c.execute('SELECT 1 FROM memory.api_keys WHERE x = (( )')"):
+            with self.subTest(body=body):
+                outside, _ = reads_outside_the_resolver({**base, 'newmod.py': 'def leak(c, cols):\n    ' + body + '\n'})
+                self.assertIn('api_keys' if 'project_grants' not in body else 'project_grants', outside.get('newmod.py:leak', []), body)
+        # writes the parser sees through EXPLAIN, and a body of DO that the parser gives as a string
+        for statement in ('EXPLAIN ANALYZE DELETE FROM memory.project_grants WHERE true', 'DO $$ BEGIN DELETE FROM memory.api_keys; END $$', 'EXPLAIN (ANALYZE) UPDATE memory.actors SET disabled=true'):
+            self.assertTrue(writes_outside_the_writers({**base, 'newmod.py': 'def w(c):\n    c.execute(%r)\n' % statement}), statement)
+        # what the guard reports of a literal that does not parse: the unparseable kind AND each table it names, its writes, its non-literal tables
+        reads = sql_reads('DO $$ BEGIN DELETE FROM memory.api_keys; END $$')
+        self.assertEqual(reads, {('unparseable SQL', False), ('api_keys', False)})
+        self.assertEqual(sql_writes('DO $$ BEGIN DELETE FROM memory.api_keys; END $$'), {'api_keys'})
+        self.assertEqual(sql_reads('SELECT FROM WHERE memory.actors ((')  , {('unparseable SQL', False), ('is_admin:row', False)})
+        self.assertTrue(sql_dynamic('SELECT x FROM \x00 WHERE (( '), 'a hole after FROM in a literal that does not parse')
+        self.assertTrue(sql_dynamic('FROM a, \x00 WHERE (('))
+        self.assertTrue(sql_dynamic('SELECT 1 FROM memory.api_\x00 WHERE (('))
+        # the exempt functions waive ONLY `unparseable SQL`: a table of the guard or a hole of a table, injected in each of them (and at module level and in a class body), is red by its own kind
+        for name, qualified in (('admin.py', 'backfill_query'), ('store_vectors.py', 'VectorsMixin._vector_candidates')):
+            for piece, kinds in (("c.execute('SELECT k.scopes FROM memory.api_keys k WHERE ' + a + ' ' + b)", {'api_keys'}), ("c.execute(f'SELECT 1 FROM memory.{t} WHERE {cond} {extra}')", {'unknown table'})):
+                outside, _ = reads_outside_the_resolver({**base, name: inject(base[name], qualified, piece)})
+                self.assertTrue(kinds <= set(outside['%s:%s' % (name, qualified)]), (qualified, piece))
+        for name in ('admin.py', 'store_jobs.py'):
+            for piece, kinds in (("q = 'SELECT k.scopes FROM memory.api_keys k WHERE ' + a + ' ' + b", {'api_keys'}), ("q = f'SELECT 1 FROM memory.{t} WHERE {cond} {extra}'", {'unknown table'}),
+                                 ("class C:\n    q = 'SELECT k.scopes FROM memory.api_keys k WHERE ' + a + ' ' + b", {'api_keys'})):
+                outside, _ = reads_outside_the_resolver({**base, name: base[name] + '\n\n' + piece + '\n'})
+                self.assertTrue(kinds <= set(outside['%s:<module>' % name]), (name, piece))
+
+    def test_a_raw_placeholder_in_the_position_of_a_table_is_a_hole_and_a_value_is_not(self):
+        # fix9 gap 4
+        base = package_sources()
+        for body in ("return c.execute('DELETE FROM %s WHERE id=%%s' % t)", "return c.execute('SELECT 1 FROM memory.projects p JOIN %s k ON true' % t)", "return c.execute('SELECT 1 FROM \"memory\".%s' % t)",
+                     "return c.execute('SELECT 1 FROM memory.projects p, %s k' % (t,))", "return c.execute('INSERT INTO %s(id) VALUES(%%s)' % t)", "return c.execute('TRUNCATE %s' % t)"):
+            with self.subTest(body=body):
+                outside, _ = reads_outside_the_resolver({**base, 'newmod.py': 'def leak(c, t):\n    ' + body + '\n'})
+                self.assertEqual(outside['newmod.py:leak'], ['unknown table'], body)
+        for text in ("SELECT 1 FROM memory.projects WHERE id=%s", "SELECT 1 FROM memory.projects WHERE id=%(id)s AND a IS DISTINCT FROM %s", "SELECT * FROM memory.projects LIMIT %s OFFSET %s",
+                     "UPDATE memory.projects SET title=%s WHERE id=%s", "SELECT 1 FROM memory.projects WHERE id=ANY(%s::text[])"):
+            self.assertEqual(sql_reads(text), set(), text)
+            self.assertFalse(sql_dynamic(text), text)
+
+    def test_the_guard_does_not_break_on_deep_nesting_a_huge_literal_or_odd_input(self):
+        # fix9 gap 5: RecursionError, the size the parser cannot take, openers that never close
+        base = package_sources()
+        nested = 'SELECT 1 FROM memory.api_keys WHERE x IN (' * 800 + 'SELECT 1' + ')' * 800
+        self.assertEqual(sql_reads(nested) & {('unparseable SQL', False), ('api_keys', False)}, {('unparseable SQL', False), ('api_keys', False)})
+        huge = 'SELECT 1 FROM memory.api_keys WHERE ' + 'a OR ' * 20000 + 'b'
+        self.assertEqual(sql_reads(huge) & {('unparseable SQL', False), ('api_keys', False)}, {('unparseable SQL', False), ('api_keys', False)})
+        deep = 'def f(a):\n    return ' + ' + '.join(['a'] * 1500) + '\n'
+        outside, _ = reads_outside_the_resolver({**base, 'newmod.py': deep})
+        self.assertEqual(outside['newmod.py:<module>'], ['unparseable SQL'])
+        for odd in ('/*' * 5000 + ' FROM memory.api_keys', "$a$" * 3000 + ' FROM memory.api_keys', "'" * 5000 + ' FROM memory.api_keys', "E'" * 3000 + ' FROM memory.api_keys', '"' * 5000 + ' FROM memory.api_keys'):
+            self.assertIn(('api_keys', False), sql_reads(odd), odd[:20])
+
+    def test_more_forms_of_a_whole_row_and_of_the_column(self):
+        # fix9 gap 6
+        base = package_sources()
+        for form in ("SELECT j.* FROM (memory.actors a JOIN memory.projects p ON true) j", "SELECT a.* FROM memory.actors a TABLESAMPLE SYSTEM (10)", "SELECT a FROM memory.actors a TABLESAMPLE BERNOULLI (5)"):
+            self.assertIn(('is_admin:row', False), sql_reads(form), form)
+        self.assertEqual(sql_reads("SELECT x.* FROM memory.projects p JOIN memory.projects x ON true"), set())
+        self.assertEqual(sql_reads("SELECT 1 FROM memory.api_keys k TABLESAMPLE SYSTEM (10)"), {('api_keys', False)})
+        for text in ("INSERT INTO memory.api_keys(id) VALUES(%s) RETURNING id", "UPDATE memory.project_grants SET permission=%s WHERE true RETURNING actor_id", "DELETE FROM memory.api_keys WHERE id=%s RETURNING 1"):
+            self.assertEqual(len(sql_reads(text)), 1, text)  # the rows it returns are read from the table
+        outside, _ = reads_outside_the_resolver({**base, 'newmod.py': "def leak(c, cols):\n    return c.execute(f'SELECT {cols} FROM memory.actors a')\n"})
+        self.assertEqual(outside['newmod.py:leak'], ['is_admin:row'])  # a hole in a select list may be `a` or `*`
+        self.assertEqual(sql_reads('SELECT 1 FROM memory.projects WHERE x = %s'), set())
+        for text in ('SELECT U&"is\\005fadmin" FROM memory.actors', 'SELECT a.U&"is\\005fadmin" FROM memory.actors a', 'SELECT (a).U&"is\\005fadmin" FROM memory.actors a'):
+            self.assertIn(('is_admin', False), sql_reads(text), text)
 
     def test_the_column_is_read_in_any_case_in_bytes_and_when_a_format_or_an_f_string_spells_it(self):
         # fix6 gaps 3 and 6: `IS_ADMIN`, a `bytes` query, `'is_{}'.format('admin')` and `f'is_{"admin"}'`
@@ -1295,7 +1502,7 @@ class ResolverBoundaryTests(unittest.TestCase):
                 outside, _ = reads_outside_the_resolver({**base, 'auth.py': inject(base['auth.py'], 'Auth.login', body)})
                 self.assertIn('auth.py:Auth.login', outside, body)
         outside, _ = reads_outside_the_resolver({**base, 'newmod.py': "def leak(c):\n    return c.execute('SELECT FROM WHERE memory.api_keys ((')\n"})
-        self.assertEqual(outside['newmod.py:leak'], ['unparseable SQL'])
+        self.assertEqual(outside['newmod.py:leak'], ['api_keys', 'unparseable SQL'])
         # a hole in a table list after a `JOIN ... ON` comma is a hole whatever builds it; a hole that is not a table is not
         for body in ("return c.execute('SELECT 1 FROM a JOIN b ON a.x=b.y, ' + t)", "return c.execute(f'SELECT 1 FROM a JOIN b ON a.x=b.y, {t}')", "return c.execute('SELECT 1 FROM a JOIN b ON a.x=b.y, %s' % t)",
                      "return c.execute('SELECT 1 FROM a JOIN b ON a.x=b.y, {}'.format(t))", "return c.execute('DELETE FROM x USING ' + t)", "return c.execute(f'SELECT 1 FROM a JOIN b ON a.x=b.y, memory.{t}')"):
@@ -1317,7 +1524,8 @@ class ResolverBoundaryTests(unittest.TestCase):
     def test_the_scans_stay_linear_on_artificial_input(self):
         # fix7 gap 2: each of these took tens of seconds in fix6; a generous bound so that a slow machine does not fail it (they take well under a second)
         import time
-        for text in ('FROM a, ' * 4000, 'SELECT 1 FROM a ' * 4000, 'copied from the source and ' * 4000, 'INSERT INTO x SELECT y FROM b; ' * 2000, 'SELECT ' * 4000, 'UPDATE memory.actors SET a=1 RETURNING a; ' * 2000):
+        for text in ('FROM a, ' * 4000, 'SELECT 1 FROM a ' * 4000, 'copied from the source and ' * 4000, 'INSERT INTO x SELECT y FROM b; ' * 2000, 'SELECT ' * 4000, 'UPDATE memory.actors SET a=1 RETURNING a; ' * 2000,
+                     '/**/' * 30 + 'x', '/*' * 10000, '$a$' * 5000, "'" * 10000, "E'" * 5000, '/**/' * 5000 + ' memory.api_keys', '-- ' * 5000):
             started = time.monotonic()
             sql_dynamic(text)
             sql_reads(text)
@@ -1362,8 +1570,8 @@ class ResolverBoundaryTests(unittest.TestCase):
         with patch.dict(admin.RETENTION_TABLES, {'WEB_SESSIONS': ('true', '')}):
             admin.RETENTION_TABLES.pop('web_sessions')
             self.assertTrue(any("'WEB_SESSIONS'" in problem for problem in dynamic_table_violations()), 'the message names the key that changed')
-        self.assertTrue(sql_dynamic('SELECT 1 FROM a JOIN b ON a.x=b.x, memory."{}"'))
-        self.assertTrue(sql_dynamic('SELECT 1 FROM a JOIN b ON a.x=b.x, memory.{}'))
+        self.assertTrue(sql_dynamic('SELECT 1 FROM a JOIN b ON a.x=b.x, memory."\x00"'))
+        self.assertTrue(sql_dynamic('SELECT 1 FROM a JOIN b ON a.x=b.x, memory.\x00'))
         self.assertFalse(sql_dynamic('SELECT 1 FROM memory.projects WHERE id=%s'))
         key = ('store_auth.py', 'AuthMixin.list_keys')
         with patch.dict(READ_EXCEPTIONS, {key: ({'api_keys', 'project_grants'}, False, READ_EXCEPTIONS[key][2])}):
