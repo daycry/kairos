@@ -2848,23 +2848,6 @@ test-plan: test-plan.md
 - [ ] Anotar el número en `Notas`
 
 
-## Revisión de dos lentes — intento 7: Fase 1 (fix6, fuera del bucle) (T-01, T-02, T-03, T-04) — 2 Important: una regresión y un recorrido que no es lineal
-
-Lentes: A+B+C+D sobre `0e91e52..HEAD` (fix6: `0068149`, `6f81924`, `b78f616`), revisado entero como código nuevo. Gaps del intento 6: 1-8 corregidos, cada uno con su mutante. El nombre calificado resiste homónimos, herencia, reasignación, duplicados y clases homónimas en otro módulo (lentes B y C). Paquete real en verde. A y C sin Important.
-
-| # | Grado | Gap | Tarea | Corrección | Evidencia |
-|---|---|---|---|---|---|
-| 1 | Important | Regresión de fix6: `SELECT DISTINCT ON (username) * FROM memory.actors` ya no se detecta (el nuevo `_STAR` exige calificador tras `DISTINCT ON (…)`); `d0eb7ae`, `a543807`, `585e9be` y `0e91e52` lo daban como `is_admin:row` (lente B) | T-02 | corregido (fix7, 6bb0e51) | `test_auth_cache.py:551` |
-| 2 | Important | El recorrido «lineal» de la cláusula FROM es O(nº de FROM × longitud) y más lento que la regex que sustituye (`'FROM a, ' * 4000`: 31-43 s frente a 4,7-6,9 s; `'SELECT 1 FROM a ' * 4000`: 64 s frente a 0,02 s); la nota de fix6 («0,03 s») y el docstring («linear scan») no se sostienen, y se borró la viñeta del límite cuadrático. Sin efecto con el SQL real del paquete (lente D; A y B lo ven Minor) | T-02 | corregido (fix7, 6bb0e51) | `test_auth_cache.py:623-640, :873`; `tasks.md` T-02 nota fix6 |
-| 3 | Minor | Falsos positivos nuevos realistas para la fase 3: `_RETURNING_STAR` cruza sentencias y CTE (`WITH u AS (UPDATE memory.actors … RETURNING id) INSERT INTO memory.audit_events … RETURNING *` → `is_admin:row`); el arranque `\(` de `_STAR` no comprueba el alias (`count(p.*)` con `JOIN memory.actors a`); `_CLAUSE_END` no corta en `;` ni en `ON CONFLICT … SET` (lente B) | T-02 | corregido (fix7, 6bb0e51) | `test_auth_cache.py:551, :560, :620` |
-| 4 | Minor | Formas de fila completa de `actors` aún sin detectar ni declarar: `RETURNING id, *`, `RETURNING (a).*`, `RETURNING a`, `RETURNING to_json(a.*)` tras escribir `actors` (el destino de UPDATE/DELETE/MERGE no es fuente), `MERGE INTO memory.actors … RETURNING *`, `COPY memory.actors TO STDOUT`, `UPDATE … FROM memory.actors a … RETURNING a.*`, alias en la lista del SELECT tras algo con `FROM` (`extract(epoch FROM now()), a`), `DISTINCT ON (…) a`, `(a)`, `a::text`, `ARRAY(SELECT a …)` (lentes A, B y C; heredado) | T-02 | corregido (fix7, 6bb0e51) | `test_auth_cache.py:521, :551, :560, :563-587` |
-| 5 | Minor | El recorrido del FROM no salta comillas: `ON a.k = 'x)', {t}` y `memory."order", {t}` cortan el recorrido; `"order"` entre comillas pierde una detección que tenía la regex (lentes A y B) | T-02 | corregido (fix7, 6bb0e51) | `test_auth_cache.py:623-640` |
-| 6 | Minor | Controles de fix6 sin mutante: `_reads_is_admin` sobre el literal crudo (y no sobre el texto sin comentarios), la comprobación de duplicados en todas las listas, `_find_function` por nombre calificado (lente A) | T-02 | corregido (fix7, 6bb0e51) | `test_auth_cache.py:599, :782, :806` |
-| 7 | Minor | Viñeta de regex cuadráticas borrada aunque la de banderas del `%` sigue siéndolo; `_RETURNING_STAR` y `SELECT(.*?)FROM` también lo son con entradas artificiales (lentes A y D) | T-02 | corregido (fix7, 6bb0e51) | `test_auth_cache.py:560, :574, :670` |
-| 8 | Minor | El desglose RED de fix6 cuenta 6 formas que solo fallan porque `Auth.login` no existe en `0e91e52`; las de fondo son 3 (`bytes`, `'is_{}'.format`, `f'is_{"admin"}'`) más los 4 errores de los huecos tras `JOIN … ON` (lente A) | T-02 | corregido (fix7, 6bb0e51) | `tasks.md` T-02 nota fix6 |
-
-Siguiente: fix7 dentro de la decisión del usuario del intento 5, acotado a corregir la regresión y lo que el fix6 afirma y no cumple, y revisión del fix7.
-
 ## Historial archivado
 
 - 2026-11-20 · «Revisión de dos lentes — intento 1: Fase 1 (T-01, T-02, T-03, T-04) — 3 Important en la guarda del resolvedor» → [execution-history.md](execution-history.md) · SHA-256 `a37dcddb59e0706358e4e4c6b171b2272f20ca701253d5c5469f475d42b90d34`
@@ -2873,39 +2856,9 @@ Siguiente: fix7 dentro de la decisión del usuario del intento 5, acotado a corr
 - 2026-11-20 · «Revisión de dos lentes — intento 4: Fase 1 (fix3, fuera del bucle) (T-01, T-02, T-03, T-04) — 3 Important en silencios heredados» → [execution-history.md](execution-history.md) · SHA-256 `aba50bf35a1563a8f13cf927f1823daf42771103c8e98915128eeb98e609413c`
 - 2026-11-20 · «Revisión de dos lentes — intento 5: Fase 1 (fix4, fuera del bucle) (T-01, T-02, T-03, T-04) — 3 Important en los silencios de escritura» → [execution-history.md](execution-history.md) · SHA-256 `bc7b12d6dadcabf32b3ba7dc1167800982bb60767d8016097395f9dd0f89aef1`
 - 2026-11-20 · «Revisión de dos lentes — intento 6: Fase 1 (fix5, fuera del bucle) (T-01, T-02, T-03, T-04) — 1 Important residual del principio de fix5» → [execution-history.md](execution-history.md) · SHA-256 `07472db88488c1f633829a690480a8a48379b8c0cf864f879da2b67b9e548414`
-
-
-## Revisión de dos lentes — intento 8: Fase 1 (fix7, fuera del bucle) (T-01, T-02, T-03, T-04) — 3 Important: regresiones del escáner por regex
-
-Lentes: A+B+C+D sobre `b78f616..3a51fbd` (fix7) y `1c33aa2` (archivo del ledger, verificado por SHA-256 sin pérdida). Gaps del intento 7: 1, 2 (FROM), 5, 6 y 8 corregidos con mutante; 3 con reservas; 4 y 7 en parte. Cifras de tiempo del FROM reproducibles; el test de tiempo no es frágil (0,34 s frente a cota de 5 s). Paquete real en verde.
-
-| # | Grado | Gap | Tarea | Corrección | Evidencia |
-|---|---|---|---|---|---|
-| 1 | Important | Regresión: el dueño de un `RETURNING` se busca con `_WRITE_KEYWORD` sin saltar literales; `UPDATE memory.actors SET …, note='admin update' … RETURNING *` y `… 'insert into' … RETURNING *` dejan de detectarse (lentes A, B y C) | T-02 | corregido (fix8, b9314da); fix8: cambio de método aprobado por el usuario 2026-11-20 | `test_auth_cache.py:555, :650-658` |
-| 2 | Important | Regresión: la lista del SELECT se corta en el primer `FROM`/`GROUP` de su nivel; `a.id IS DISTINCT FROM %s, a.*` y `WITHIN GROUP (…), a.*` dejan de detectarse; también `f(a.*)` fuera de una lista (`LATERAL to_jsonb(a.*)`, `WHERE to_jsonb(a.*) @> %s`, `ORDER BY row(a.*)`) (lentes A, B y C) | T-02 | corregido (fix8, b9314da); fix8: cambio de método aprobado por el usuario 2026-11-20 | `test_auth_cache.py:556, :646-649` |
-| 3 | Important | La búsqueda del dueño de cada `RETURNING` es O(nº de RETURNING × longitud), regresión frente a fix6 (`'UPDATE memory.actors SET x=1 ' + 'RETURNING id ' * 2000`: 0,009 s → 23,5 s); el docstring vuelve a decir «lineal». Sin efecto con el SQL real (lente D; A y B lo ven Minor) | T-02 | corregido (fix8, b9314da); fix8: cambio de método aprobado por el usuario 2026-11-20 | `test_auth_cache.py:562, :650-658, :939-940` |
-| 4 | Minor | Comillas `$$…$$` y `E'\''` no reconocidas: regresiones de lectura y de hueco de tabla (lentes B y C) | T-02 | corregido (fix8, b9314da) | `test_auth_cache.py:566-571, :620-626` |
-| 5 | Minor | `MERGE … WHEN MATCHED THEN UPDATE … RETURNING *` sobre `actors` sin detectar (PG17) (lentes A, B y C) | T-02 | corregido (fix8, b9314da) | `test_auth_cache.py:555, :653-656` |
-| 6 | Minor | Falsos positivos nuevos realistas para las fases 3 y 4 (`RETURNING s.*` de `web_sessions` con `USING memory.actors a`; `RETURNING k.*` de `api_keys`; `INSERT … SELECT … FROM memory.actors a … RETURNING *`; `COPY memory.actors FROM STDIN`) (lentes A y B) | T-02 | corregido (fix8, b9314da) | `test_auth_cache.py:606, :637, :655` |
-| 7 | Minor | Controles de fix7 sin mutante (`_balanced`, corte en `;`, `ON CONFLICT`, `(?<!FOR )`); viñeta de la regex del `%` mide una entrada que no es la mala; citas de línea erróneas en la tabla del intento 7; `DISTINCT ON` con dos niveles de paréntesis; alias entre comillas o con lista de columnas (lentes A, B y C) | T-02 | corregido (fix8, b9314da) | `test_auth_cache.py:555-556, :579-580, :602, :615-628, :731, :939-940`; `tasks.md` tabla del intento 7 |
-
-Diagnóstico del orquestador: siete fixes sobre un escáner de SQL por expresiones regulares; cada uno cierra huecos y abre otros (comillas, alcance de sentencias, alias). El método no converge. Siguiente: decisión de diseño del usuario.
-
-
-## Revisión de dos lentes — intento 9: Fase 1 (fix8, parser de PostgreSQL) (T-01, T-02, T-03, T-04) — 3 Important en qué literales se analizan
-
-Lentes: A+B+C+D sobre `1c33aa2..HEAD` (fix8: `b9314da`, `6458fc3`, `8b1370a`), revisado entero como código nuevo; las lentes usaron solo `kairos-test:i4p1-fix8` sin red. Gaps del intento 8: 1-7 corregidos con mutante. `pglast==7.24` solo en la etapa `test` (comprobado: `api`, `operator` y `worker` no lo llevan; parser 17.7, igual que la base). El recorrido del AST cubre los nodos probados (27 formas, lentes B y C). Ningún falso positivo con el SQL de las fases 3 y 4 (lente B).
-
-| # | Grado | Gap | Tarea | Corrección | Evidencia |
-|---|---|---|---|---|---|
-| 1 | Important | Un literal que no empieza por palabra de sentencia no se analiza: se pierden lecturas y escrituras de fragmentos (`' JOIN memory.project_grants g …'`, `q += ' WHERE EXISTS (… memory.project_grants …)'`, `f'{cols} FROM memory.api_keys'`, `SET LOCAL …; SELECT …`) y de `EXPLAIN [ANALYZE DELETE]`, `PREPARE`, `CALL`, `DECLARE … CURSOR`, `CREATE … AS SELECT`; el cuerpo de `DO $$…$$` no se recorre. 19 literales del paquete con `FROM memory.*` quedan sin analizar. La nota T-02 («ninguna detección real perdida») y la nota DC-1 no se sostienen (lentes A, B y C) | T-02 | corregido (fix9, d46e147) | `test_auth_cache.py:534, :701-702`; `_Tree.visit` sin `DoStmt` |
-| 2 | Important | Cuando el parse falla, `_analysis` solo informa `unparseable SQL`: las seis exenciones nuevas tapan también las tablas vigiladas y los huecos de tabla (`unknown table`); `<module>` alcanza a cuerpos de clase. Solo las detiene `writes_outside_the_writers` por casualidad (lentes A, B, C y D) | T-02 | corregido (fix9, d46e147) | `test_auth_cache.py:483-489, :706-709, :781` |
-| 3 | Important | `_STATEMENT_START` tiene retroceso exponencial: `'/**/' * 24 + 'x'` tarda 13,7 s, 26 comentarios 38 s; se aplica a todos los literales (lente D) | T-02 | corregido (fix9, d46e147) | `test_auth_cache.py:534` |
-| 4 | Minor | Un `%s` crudo en posición de tabla se vuelve `$1`, el parse falla y el literal calla (`'DELETE FROM %s WHERE id=%%s' % t`, `'… JOIN %s k …' % t`, `"memory".%s`) (lentes A y B) | T-02 | corregido (fix9, d46e147); sin RED en fix9 (corrección en fix10, 024dcd5) | `test_auth_cache.py:552, :559, :709` |
-| 5 | Minor | `RecursionError` fuera del `try` con anidamiento profundo (~330 subconsultas, 800 `JOIN` o `+`) y SIGSEGV de libpg_query con ~50 000 términos: la guarda revienta en vez de dar `unparseable SQL`; coste cuadrático con 10 000+ aperturas `/*` o `$tag$` sin cerrar (lente D) | T-02 | corregido (fix9, d46e147) | `test_auth_cache.py:535, :586, :687-689, :704-712` |
-| 6 | Minor | Otros: `RETURNING` de columnas concretas de `api_keys`/`project_grants` no cuenta como lectura; alias de un `JOIN` entre paréntesis; hueco en posición de columna o alias; `TABLESAMPLE` sobre `actors`; SQL dentro de una cadena (`query_to_xml('…')`); prosa que empieza por palabra clave con hueco da `unparseable SQL`; `U&"is\0061dmin"`; la viñeta de coste cita cifras que la nota no tiene (lentes A, B y C; varios heredados) | T-02 | corregido (fix9, d46e147) | `test_auth_cache.py:540-543, :579-588, :625-627, :650-651, :663, :980` |
-
-Siguiente: fix9 dentro del método aprobado (parser real): analizar todo literal que nombre una tabla vigilada o lleve un hueco, y en el parse fallido informar de las tablas y huecos además de `unparseable SQL`.
+- 2026-11-23 · «Revisión de dos lentes — intento 7: Fase 1 (fix6, fuera del bucle) (T-01, T-02, T-03, T-04) — 2 Important: una regresión y un recorrido que no es lineal» → [execution-history.md](execution-history.md) · SHA-256 `69cb6654ce1cf8a4ee799671f02356160810566abc2db8e6fcbdfc53cc5f435c`
+- 2026-11-23 · «Revisión de dos lentes — intento 8: Fase 1 (fix7, fuera del bucle) (T-01, T-02, T-03, T-04) — 3 Important: regresiones del escáner por regex» → [execution-history.md](execution-history.md) · SHA-256 `d49813abdb4197adfbec78930d14d66716db7b2941c69f8128d8f561905a0612`
+- 2026-11-23 · «Revisión de dos lentes — intento 9: Fase 1 (fix8, parser de PostgreSQL) (T-01, T-02, T-03, T-04) — 3 Important en qué literales se analizan» → [execution-history.md](execution-history.md) · SHA-256 `8b920809ae26d99c92e860a8bf91dd273f875e2699fd228bb8552667a9f54013`
 
 
 ## Revisión de dos lentes — intento 10: Fase 1 (fix9) (T-01, T-02, T-03, T-04) — 2 Important en la puerta léxica y el respaldo
