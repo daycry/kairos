@@ -3,11 +3,16 @@
 Derivations are counted (`passwords._derive` is the only call to `hashlib.scrypt`), never timed. The suite runs at a lower cost (`tests/__init__.py`);
 the tests marked REAL run `passwords.DEFAULT_PARAMS`.
 """
+import ast
 import hashlib
 import json
 import os
+import re
+import subprocess
+import sys
 import unittest
 import uuid
+from pathlib import Path
 from unittest.mock import patch
 
 from memory_platform import passwords
@@ -94,6 +99,28 @@ class PasswordFunctionTests(unittest.TestCase):
         with Derivations() as spy:
             self.assertTrue(passwords.verify_password(PASSWORD, encoded))
         self.assertEqual(spy.calls, [OLD])
+
+
+class ProductionCostTests(unittest.TestCase):
+    """The suite lowers `passwords.TARGET` (`tests/__init__.py`), so nothing in it would notice a production module that pays less. These two read the module as production loads it
+    (fix1 of the review of phase 2, gap 4): in a process that never imports the tests package, and from its source."""
+    SERVER = Path(__file__).parents[2]
+
+    def test_a_process_without_the_tests_package_pays_the_measured_cost(self):
+        code = chr(10).join(["import json, sys", "from memory_platform import passwords",
+                          "assert 'memory_platform.tests' not in sys.modules, 'the lowered cost of the suite was loaded'",
+                          "print(json.dumps([list(passwords.TARGET), list(passwords.DEFAULT_PARAMS)]))"])
+        done = subprocess.run([sys.executable, '-c', code], cwd=self.SERVER, env={**os.environ, 'PYTHONPATH': str(self.SERVER)}, capture_output=True, text=True, timeout=120)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(json.loads(done.stdout), [[2 ** 17, 8, 1], [2 ** 17, 8, 1]])
+
+    def test_the_source_assigns_the_target_from_the_default_and_the_default_is_the_measured_cost(self):
+        tree = ast.parse((self.SERVER / 'memory_platform' / 'passwords.py').read_text(encoding='utf-8'))
+        assigned = {target.id: node.value for node in tree.body if isinstance(node, ast.Assign) for target in node.targets if isinstance(target, ast.Name)}
+        self.assertEqual(ast.unparse(assigned['TARGET']), 'DEFAULT_PARAMS')
+        self.assertEqual(eval(compile(ast.Expression(assigned['DEFAULT_PARAMS']), 'passwords.py', 'eval'), {'__builtins__': {}}), (2 ** 17, 8, 1))
+        others = [path.name for path in (self.SERVER / 'memory_platform').glob('*.py') if path.name != 'passwords.py' and re.search(r'\bTARGET\s*=[^=]', path.read_text(encoding='utf-8'))]
+        self.assertEqual(others, [], 'the production code never rebinds the cost: only the tests package does')
 
 
 class CheckLoginTests(unittest.TestCase):
@@ -205,9 +232,11 @@ class LoginTests(Fixture):
             result = real(password, encoded)
             self.set_hash(old_hash('the-new-password-456'), 'ana')  # another request changed the password after this one read the hash
             return result
-        with patch('memory_platform.auth.check_login', changed_meanwhile):
+        with patch('memory_platform.auth.check_login', changed_meanwhile), self.assertRaises(Unauthorized):  # fix1 (gap 3): no session is opened for a password that is no longer the stored one
             self.auth.login('ana', PASSWORD, '192.0.2.3')
-        self.assertTrue(passwords.verify_password('the-new-password-456', self.stored_hash()), 'UPDATE ... WHERE password_hash=<the one read> found nothing to replace')
+        self.assertTrue(passwords.verify_password('the-new-password-456', self.stored_hash()), 'the hash that was written meanwhile is not overwritten by the rehash')
+        with self.psycopg.connect(self.dsn) as c:
+            self.assertEqual(c.execute("SELECT count(*) FROM memory.web_sessions").fetchone()[0], 0)
 
     def test_a_failed_replacement_does_not_stop_the_login(self):
         self.set_hash(old_hash())
