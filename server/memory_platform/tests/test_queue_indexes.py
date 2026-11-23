@@ -79,7 +79,7 @@ class QueueIndexMigrationTests(QueueDatabase):
             indexes = self.indexes(c)
         self.assertEqual(additive_violations(before, after), [], 'version 12 only adds')
         self.assertEqual({k: v for k, v in after['columns'].items() if k[0] == 'jobs'}, {k: v for k, v in before['columns'].items() if k[0] == 'jobs'}, 'no column of jobs changed')
-        self.assertEqual(set(after['indexes']) - set(before['indexes']), {('jobs', 'memory_jobs_claim'), ('jobs', 'memory_jobs_running_lease')})
+        self.assertEqual({k for k in set(after['indexes']) - set(before['indexes']) if k[0] == 'jobs'}, {('jobs', 'memory_jobs_claim'), ('jobs', 'memory_jobs_running_lease')})  # the indexes of other tables are those of later versions (13)
         self.assertIn('memory_job_queue', indexes, 'the index of version 1 stays')
         claim = indexes['memory_jobs_claim']
         self.assertRegex(claim, r"\(priority, available_at, created_at, id\) WHERE")

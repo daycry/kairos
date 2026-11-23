@@ -8,6 +8,7 @@ from unittest.mock import patch
 import uuid
 
 from memory_platform.store import Store
+from memory_platform.tests.schema_history import SCHEMA_V12
 
 PACKAGE = Path(__file__).parents[1]
 DESTRUCTIVE = re.compile(r'\b(DROP|TRUNCATE|DELETE|RENAME)\b', re.IGNORECASE)
@@ -365,6 +366,122 @@ class VectorIndexGuardTests(unittest.TestCase):
             after = {row[0]: row[1:] for row in self.hnsw_identity()}
             self.assertEqual(set(after), {row[0] for row in first})
             self.assertEqual({k: v for k, v in after.items() if k != lost}, {row[0]: row[1:] for row in first if row[0] != lost}, 'the others were not rebuilt')
+
+
+class AccessSchemaTests(unittest.TestCase):
+    """Schema version 13 (CA-10, DC-6): the columns and indexes of the three milestones of the access-control initiative, added at once to a database that comes from release 0.4.1."""
+    API_KEYS = {'last_used_at': ('timestamp with time zone', 'YES', None), 'replaced_by': ('text', 'YES', None), 'limits': ('jsonb', 'YES', None),
+                'write_quota_day': ('date', 'YES', None), 'write_quota_used': ('integer', 'NO', '0')}
+    WEB_SESSIONS = {'created_at': ('timestamp with time zone', 'YES', 'clock_timestamp()'), 'client_ip': ('text', 'YES', None)}
+    INDEXES = {('login_attempts', 'login_attempt_ip_time'): '(client_ip, happened_at)', ('web_sessions', 'web_session_actor'): '(actor_id) WHERE (revoked_at IS NULL)'}
+
+    def setUp(self):
+        dsn = os.getenv('MEMORY_TEST_DSN')
+        if not dsn:
+            raise unittest.SkipTest('MEMORY_TEST_DSN must point to an isolated PostgreSQL test database')
+        import psycopg
+        from psycopg.conninfo import make_conninfo
+        self.psycopg, self.base_dsn = psycopg, dsn
+        self.name = 'acc_' + uuid.uuid4().hex[:12]
+        with psycopg.connect(dsn, autocommit=True) as admin:
+            admin.execute(f'CREATE DATABASE {self.name}')
+        self.dsn = make_conninfo(dsn, dbname=self.name)
+        self.addCleanup(self.drop_database)
+
+    def drop_database(self):
+        with self.psycopg.connect(self.base_dsn, autocommit=True) as admin:
+            admin.execute(f'DROP DATABASE IF EXISTS {self.name} WITH (FORCE)')
+
+    def columns(self, c, table):
+        return {name: (kind, nullable, default) for name, kind, nullable, default in c.execute(
+            "SELECT column_name,data_type,is_nullable,column_default FROM information_schema.columns WHERE table_schema='memory' AND table_name=%s", (table,)).fetchall()}
+
+    def tables(self, c):
+        return {row[0] for row in c.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='memory'").fetchall()}
+
+    def seed_release_041(self):
+        """A database as release 0.4.1 left it (SCHEMA_V12, frozen) with a user, a project, a grant, a key without expiry and a session."""
+        from memory_platform.agent_store import migrate_agent_schema
+        from memory_platform.auth import hash_password, token_hash
+        from memory_platform.corpus_answers import migrate_corpus_answers
+        from memory_platform.extended_store import migrate_extended_schema
+        from memory_platform.store_vectors import migrate_vector_indexes
+        with self.psycopg.connect(self.dsn) as c:
+            c.execute(SCHEMA_V12)
+            migrate_vector_indexes(c)
+            migrate_agent_schema(c)
+            migrate_extended_schema(c)
+            migrate_corpus_answers(c)
+            for table, names in (('api_keys', self.API_KEYS), ('web_sessions', self.WEB_SESSIONS)):
+                self.assertEqual(set(names) & set(self.columns(c, table)), set(), 'the fixture must be the previous release')
+            c.execute("INSERT INTO memory.projects(id,title) VALUES('p1','Project 1')")
+            c.execute("INSERT INTO memory.actors(id,username,password_hash) VALUES('u1','ana',%s)", (hash_password('synthetic-password-123'),))
+            c.execute("INSERT INTO memory.project_grants VALUES('u1','p1','read')")
+            c.execute("INSERT INTO memory.api_keys(id,actor_id,name,token_hash,prefix,project_ids,scopes) VALUES('k1','u1','old',%s,'mp_old',%s::jsonb,%s::jsonb)", (token_hash('mp_old-key'), '["p1"]', '["read"]'))
+            c.execute("INSERT INTO memory.web_sessions(id,actor_id,token_hash,csrf_hash,expires_at) VALUES('s1','u1',%s,%s,clock_timestamp()+interval '1 hour')", (token_hash('old-session'), token_hash('csrf')))
+
+    def test_upgrade_from_release_041_keeps_users_sessions_and_keys_valid(self):
+        from memory_platform.auth import Auth
+        self.seed_release_041()
+        store = Store(self.dsn)
+        with self.psycopg.connect(self.dsn) as c:
+            before = catalog_snapshot(c)
+            tables_before = self.tables(c)
+        store.migrate()
+        with self.psycopg.connect(self.dsn) as c:
+            after = catalog_snapshot(c)
+            self.assertEqual(additive_violations(before, after), [])
+            self.assertEqual(self.tables(c), tables_before, 'version 13 creates no table')
+            assert_contiguous_versions(self, c, 13)
+            self.assertEqual(c.execute('SELECT count(*) FROM memory.schema_versions WHERE version=13').fetchone()[0], 1)
+            key = c.execute("SELECT expires_at,last_used_at,replaced_by,limits,write_quota_day,write_quota_used FROM memory.api_keys WHERE id='k1'").fetchone()
+            self.assertEqual(key, (None, None, None, None, None, 0), 'an old key keeps "no expiry" and has no use, successor, limits or quota')
+            session = c.execute("SELECT client_ip,created_at IS NOT NULL FROM memory.web_sessions WHERE id='s1'").fetchone()
+            self.assertEqual(session, (None, True))
+        auth = Auth(store)
+        self.assertEqual(auth.authenticate_bearer('mp_old-key')['id'], 'u1')
+        self.assertEqual(auth.authenticate_session('old-session')['id'], 'u1')
+        self.assertEqual(auth.login('ana', 'synthetic-password-123', '192.0.2.9')['actor']['id'], 'u1')
+
+    def test_the_catalog_has_exactly_the_columns_and_indexes_of_dc6(self):
+        """By catalog, not by SQL text: type, nullability and default of each column, definition of each index."""
+        Store(self.dsn).migrate()
+        with self.psycopg.connect(self.dsn) as c:
+            for table, wanted in (('api_keys', self.API_KEYS), ('web_sessions', self.WEB_SESSIONS)):
+                have = self.columns(c, table)
+                for name, spec in wanted.items():
+                    self.assertEqual(have.get(name), spec, (table, name))
+            indexes = {(t, n): d for t, n, d in c.execute("SELECT tablename,indexname,indexdef FROM pg_indexes WHERE schemaname='memory' AND indexname IN ('login_attempt_ip_time','web_session_actor')").fetchall()}
+            self.assertEqual(set(indexes), set(self.INDEXES))
+            for key, tail in self.INDEXES.items():
+                self.assertTrue(indexes[key].endswith(tail), (key, indexes[key]))
+
+    def test_migrating_again_changes_nothing_and_the_section_takes_no_strong_lock(self):
+        store = Store(self.dsn)
+        store.migrate()
+        with self.psycopg.connect(self.dsn) as c:
+            first = catalog_snapshot(c)
+        store.migrate()
+        with self.psycopg.connect(self.dsn) as c:
+            self.assertEqual(catalog_snapshot(c), first)
+        self.assertIn('accessschema', section_tags())
+        held = section_table_locks(self.psycopg, self.dsn, 'accessschema')
+        self.assertEqual({t: m & STRONG for t, m in held.items() if m & STRONG}, {})
+        unguarded = section_table_locks(self.psycopg, self.dsn, 'accessschema', guarded=False)
+        self.assertIn('AccessExclusiveLock', unguarded.get('api_keys', set()), 'the measure must see the lock of the section without its guard')
+
+    def test_a_missing_piece_is_rebuilt_without_touching_the_others(self):
+        """The guard asks for every piece: a database with version 13 registered but one index and one column gone gets them back."""
+        store = Store(self.dsn)
+        store.migrate()
+        with self.psycopg.connect(self.dsn) as c:
+            c.execute('DROP INDEX memory.web_session_actor')
+            c.execute('ALTER TABLE memory.api_keys DROP COLUMN limits')
+        store.migrate()
+        with self.psycopg.connect(self.dsn) as c:
+            self.assertIsNotNone(c.execute("SELECT to_regclass('memory.web_session_actor')").fetchone()[0])
+            self.assertIn('limits', self.columns(c, 'api_keys'))
+            self.assertEqual(c.execute('SELECT count(*) FROM memory.schema_versions WHERE version=13').fetchone()[0], 1)
 
 
 class FailedJobsIndexTests(unittest.TestCase):

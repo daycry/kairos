@@ -257,3 +257,31 @@ BEGIN
     INSERT INTO memory.schema_versions(version) VALUES (12) ON CONFLICT (version) DO NOTHING;
 END
 $queueindexes$;
+
+-- access-columns (schema version 13)
+-- Everything the three milestones of the access-control initiative need from the database, added once and never reopened (there is no version 14 for it):
+-- `api_keys` gets the last use, the successor of a rotated key, per-key limits, and the daily write quota; `web_sessions` gets its creation time and the client address
+-- (the list of sessions); two indexes serve the per-IP login count and the closing of every session of a user. Additive only: no table, no row and no existing column is
+-- touched, an old key keeps `expires_at` NULL ("no expiry") and a previous release ignores the new columns. `created_at` has a volatile default, so the first run
+-- rewrites `web_sessions` (a short table) while it holds ACCESS EXCLUSIVE on it, and the indexes take SHARE on their tables, until the COMMIT of the whole migration;
+-- `lock_timeout` makes it fail whole, and repeatable, instead of waiting for ever. The block is skipped once version 13 is registered and every column and index exists,
+-- so a repeated `admin migrate` takes no strong lock. The window is the one of versions 11 and 12 (docs/operations.md): run `admin migrate` without traffic.
+SET LOCAL lock_timeout = '5s';
+DO $accessschema$
+BEGIN
+    IF EXISTS (SELECT 1 FROM memory.schema_versions WHERE version = 13)
+       AND to_regclass('memory.login_attempt_ip_time') IS NOT NULL
+       AND to_regclass('memory.web_session_actor') IS NOT NULL
+       AND (SELECT count(*) FROM information_schema.columns WHERE table_schema = 'memory'
+            AND ((table_name = 'api_keys' AND column_name IN ('last_used_at', 'replaced_by', 'limits', 'write_quota_day', 'write_quota_used'))
+              OR (table_name = 'web_sessions' AND column_name IN ('created_at', 'client_ip')))) = 7 THEN
+        RETURN;
+    END IF;
+    ALTER TABLE memory.api_keys ADD COLUMN IF NOT EXISTS last_used_at timestamptz, ADD COLUMN IF NOT EXISTS replaced_by text, ADD COLUMN IF NOT EXISTS limits jsonb,
+        ADD COLUMN IF NOT EXISTS write_quota_day date, ADD COLUMN IF NOT EXISTS write_quota_used integer NOT NULL DEFAULT 0;
+    ALTER TABLE memory.web_sessions ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT clock_timestamp(), ADD COLUMN IF NOT EXISTS client_ip text;
+    CREATE INDEX IF NOT EXISTS login_attempt_ip_time ON memory.login_attempts(client_ip, happened_at);
+    CREATE INDEX IF NOT EXISTS web_session_actor ON memory.web_sessions(actor_id) WHERE revoked_at IS NULL;
+    INSERT INTO memory.schema_versions(version) VALUES (13) ON CONFLICT (version) DO NOTHING;
+END
+$accessschema$;

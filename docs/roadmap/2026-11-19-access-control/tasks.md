@@ -222,32 +222,35 @@ test-plan: test-plan.md
 
 ## Fase 2 — Esquema 13, scrypt y contraseñas (C-01)
 
-**Estado**: borrador · **Hito**: A · **Estimado**: 36.0h (30h base, de ellas 15h de revisión adversarial) · **Real**: — · **Coste est.**: 1.800 € · **Tokens est.**: 924 k
+**Estado**: en-progreso · **Hito**: A · **Estimado**: 36.0h (30h base, de ellas 15h de revisión adversarial) · **Real**: — · **Coste est.**: 1.800 € · **Tokens est.**: 924 k
 
 ### T-06 — Esquema 13: columnas e índices de los tres hitos, de una vez (CA-10)
 
 - **Descripción**: Migración aditiva a la versión 13 con la lista cerrada de DC-6: en `api_keys`, `last_used_at`, `replaced_by`, `limits` (`jsonb`), `write_quota_day` y `write_quota_used`; en `web_sessions`, `created_at` y `client_ip`; índices `login_attempt_ip_time` y `web_session_actor`. Ningún hito posterior reabre la versión 13 ni crea la 14. Fuente: CA-10; DC-6; D-07; R-13.
 - **Changelog**: El esquema pasa a la versión 13 con columnas e índices nuevos; actualizar desde 0.4.1 conserva usuarios, sesiones y claves.
-- **Estado**: borrador
+- **Estado**: completado
+- **Cerrada**: 2026-11-23
 - **Tiempo humano**: est. 3h · real —
-- **Tiempo IA (ejec.)**: est. 0.31h · real —
+- **Tiempo IA (ejec.)**: est. 0.31h · real 0.17h (medido)
 - **Supervisión**: est. 0.08h · real —
 - **Previsión IA**: 85 k in / 7 k out tok · ⚠️ verificar €
 - **Dependencias**: T-05
 - **Tipo**: db
-- **Archivos**: `server/memory_platform/schema.sql`, `server/memory_platform/tests/test_migrations_additive.py`, `server/memory_platform/tests/schema_history.py`
+- **Archivos**: `server/memory_platform/schema.sql`, `server/memory_platform/tests/test_migrations_additive.py`, `server/memory_platform/tests/schema_history.py`, server/memory_platform/tests/test_queue_indexes.py (añadido con nota: ajuste del recuento de índices a los de `jobs`)
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_migrations_additive|MEMORY_TEST_RESULT"` → nombradas en `ok`; 0 fallos y 0 omitidos
 
 **Criterios de aceptación**
-- [ ] Solo `ADD COLUMN` y `CREATE INDEX`, ninguna tabla nueva; `test_migrations_additive.py` pasa
-- [ ] Tras actualizar desde 0.4.1 con usuarios, sesiones y claves sembrados, todos siguen valiendo y las claves conservan «sin caducidad»
-- [ ] Lo creado coincide con DC-6 (prueba por catálogo, no por texto SQL)
+- [x] Solo `ADD COLUMN` y `CREATE INDEX`, ninguna tabla nueva; `test_migrations_additive.py` pasa
+- [x] Tras actualizar desde 0.4.1 con usuarios, sesiones y claves sembrados, todos siguen valiendo y las claves conservan «sin caducidad»
+- [x] Lo creado coincide con DC-6 (prueba por catálogo, no por texto SQL)
 
 **Subtareas**
-- [ ] Escribir la migración
-- [ ] Caso de actualización desde 0.4.1
-- [ ] Prueba por catálogo
+- [x] Escribir la migración
+- [x] Caso de actualización desde 0.4.1
+- [x] Prueba por catálogo
+
+**Notas**: **Notas**: RED: `AccessSchemaTests` (4 pruebas) falló con `AssertionError: 12 not greater than or equal to 13` y `None != (timestamp with time zone, YES, None)` · 2026-11-23. Versión 13 en `schema.sql` (sección `accessschema`, guardada: una migración repetida no toma bloqueo fuerte); `schema_history.py` gana `SCHEMA_V12` (el 0.4.1 congelado). `created_at` de `web_sessions` tiene defecto volátil: la primera migración reescribe esa tabla corta (documentado en el comentario del SQL). `test_queue_indexes.py` (fuera de `Archivos`, añadido): su prueba de v11→v12 contaba los índices de todas las tablas y ahora solo los de `jobs`. Verde: 51 pruebas de migración sin fallos.
 
 ### T-07 — `passwords.py`: scrypt con el coste medido, hash ficticio, techo y rehash (CA-09)
 
