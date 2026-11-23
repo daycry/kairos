@@ -48,3 +48,18 @@ class AccessMixin:
             c.execute('UPDATE memory.web_sessions SET revoked_at=clock_timestamp() WHERE actor_id=%s AND id<>%s AND revoked_at IS NULL', (actor['id'], actor['session_id']))
             self._access_changed(c, actor, 'password.changed', resource_id=actor['id'])
         return {'changed': True}
+
+    def set_password(self, username, new):
+        """`admin set-password`: the recovery of an account by the operator (no actor, no current password). The user's hash is replaced and EVERY session of the user is closed, the
+        current one too: whoever knew the old password may be the one holding a session. Keys stay (they are credentials of their own). The audit event is `password.reset`, with
+        no actor (the operator is not an actor of the service) and the user as the resource. Returns what the command may print: the user and how many sessions it closed, never the password or its hash.
+        One derivation at the target cost, outside the transaction; `passwords.GATE` is the API's and is not used here."""
+        fresh = passwords.hash_password(new)
+        with self.transaction() as c:
+            row = c.execute('SELECT id FROM memory.actors WHERE username=%s', (username,)).fetchone()
+            if not row:
+                raise NotFound()
+            c.execute('UPDATE memory.actors SET password_hash=%s WHERE id=%s', (fresh, row['id']))
+            closed = c.execute('UPDATE memory.web_sessions SET revoked_at=clock_timestamp() WHERE actor_id=%s AND revoked_at IS NULL', (row['id'],)).rowcount
+            self._access_changed(c, {'id': None}, 'password.reset', resource_id=row['id'])
+        return {'username': username, 'sessions_revoked': closed}

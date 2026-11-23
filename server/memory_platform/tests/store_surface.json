@@ -328,6 +328,11 @@
       "kind": "function",
       "signature": "(self, actor, project_ids, vector, model, limit=20, categories=None, tags=None, *, deadline=None)"
     },
+    "set_password": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, username, new)"
+    },
     "set_policy": {
       "contextmanager": false,
       "kind": "function",

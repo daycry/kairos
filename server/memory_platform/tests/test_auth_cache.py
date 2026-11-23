@@ -461,7 +461,7 @@ class EveryTransactionTests(unittest.TestCase):
         ('auth.py', 'authenticate_bearer'): 'it IS the credential check (reads the key itself, every request, no cache)', ('auth.py', 'authenticate_session'): 'it IS the credential check',
         ('auth.py', 'login'): 'proves a password; opens the session', ('auth.py', 'logout'): 'revokes the session of the cookie it holds', ('auth.py', 'require_csrf'): 'reads the live session row itself',
         ('observability.py', '_read'): 'metrics read, no actor', ('store.py', 'transaction'): 'the provider of the transaction', ('auth_scope.py', 'savepoint'): 'a savepoint, not a transaction',
-        ('store_auth.py', 'migrate'): 'schema', ('store_auth.py', 'bootstrap_user'): 'creates the first actor', ('store_jobs.py', 'stored_item_vector'): 'worker, no actor',
+        ('store_auth.py', 'migrate'): 'schema', ('store_auth.py', 'bootstrap_user'): 'creates the first actor', ('store_access.py', 'set_password'): 'operator command (admin set-password): recovers an account, no request actor', ('store_jobs.py', 'stored_item_vector'): 'worker, no actor',
         ('store_jobs.py', 'job_outcome'): 'worker, keyed by fence', ('store_jobs.py', 'claim_job'): 'worker', ('store_jobs.py', 'renew_lease'): 'worker', ('store_jobs.py', 'complete_job'): 'worker, keyed by fence',
         ('store_jobs.py', 'fail_job'): 'worker, keyed by fence', ('store_pool.py', 'ready_probe'): 'health probe, no actor',
         ('probe.py', 'admin_actor'): 'operator command (admin probe-provision): the administrator the command acts as', ('probe.py', 'provision'): 'operator command: the advisory lock that serialises two provisionings',

@@ -340,27 +340,29 @@ test-plan: test-plan.md
 
 - **Descripción**: Subcomando de recuperación del administrador sobre el mismo escritor de T-09, sin SQL propio en `admin.py` (DC-10): cambia la contraseña y revoca todas las sesiones del usuario. Fuente: CA-02; DC-10.
 - **Changelog**: Nuevo `admin set-password`: el operador recupera una cuenta y cierra todas sus sesiones.
-- **Estado**: borrador
+- **Estado**: completado
+- **Cerrada**: 2026-11-23
 - **Tiempo humano**: est. 1.5h · real —
-- **Tiempo IA (ejec.)**: est. 0.15h · real —
+- **Tiempo IA (ejec.)**: est. 0.15h · real 0.05h (medido)
 - **Supervisión**: est. 0.04h · real —
 - **Previsión IA**: 43 k in / 4 k out tok · ⚠️ verificar €
 - **Dependencias**: T-09
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/admin.py`, `server/memory_platform/store_access.py`, `server/memory_platform/tests/test_admin.py`
+- **Archivos**: `server/memory_platform/admin.py`, `server/memory_platform/store_access.py`, `server/memory_platform/tests/test_admin.py`, `server/memory_platform/tests/test_auth_cache.py` (añadido con nota: `NOT_REQUEST_PATHS`), `server/memory_platform/tests/store_surface.json` (añadido con nota: método nuevo del store)
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_admin|MEMORY_TEST_RESULT"` → nombradas en `ok`; 0 fallos y 0 omitidos
 
 **Criterios de aceptación**
-- [ ] Cambia la contraseña, revoca todas las sesiones y queda auditado
-- [ ] La salida y los logs no contienen la contraseña ni su hash (prueba sobre stdout, stderr y eventos)
-- [ ] `admin.py` no ejecuta SQL propio para ello
+- [x] Cambia la contraseña, revoca todas las sesiones y queda auditado
+- [x] La salida y los logs no contienen la contraseña ni su hash (prueba sobre stdout, stderr y eventos)
+- [x] `admin.py` no ejecuta SQL propio para ello
 
 **Subtareas**
-- [ ] Prueba en rojo
-- [ ] Subcomando sobre el escritor del store
+- [x] Prueba en rojo
+- [x] Subcomando sobre el escritor del store
 
 **Notas**: Cada fix en `admin.py` suma un intento de revisión completo (R-08).
+**Notas**: RED: `SetPasswordTests` falló con `AssertionError: 2 != 0 : usage: ... invalid choice` (el subcomando no existía) · 2026-11-23. `Store.set_password(username, new)` en `store_access.py` (una derivación fuera de la transacción, sin `GATE`; cambia el hash, revoca TODAS las sesiones del usuario, claves intactas, evento `password.reset` sin actor y termina en `_access_changed`); `admin set-password` solo lee el fichero, llama al escritor e imprime `{status, username, sessions_revoked}`. La prueba recorre la rama del subcomando y exige cero `execute` y cero nombres de tabla. Sin entradas nuevas en `READ_EXCEPTIONS`; `set_password` entra en `NOT_REQUEST_PATHS` de `test_auth_cache.py` (comando del operador, sin actor). Archivos añadidos con nota: `test_auth_cache.py` y `store_surface.json`. Medición: ver T-08 (ventana común).
 
 ### T-11 — Cierre de fase: suites y subida del mínimo
 

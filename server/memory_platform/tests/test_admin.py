@@ -11,8 +11,11 @@ import unittest
 from unittest.mock import Mock, patch
 import uuid
 
+from memory_platform import passwords
 from memory_platform.admin import backfill_chunks, main, store_fingerprints, content_manifest
+from memory_platform.errors import MemoryError
 from memory_platform.store_jobs import stored_item_vector
+from memory_platform.tests import test_passwords as pw
 from memory_platform.tests.test_store import create_core, event
 
 
@@ -345,3 +348,81 @@ class BackfillChunksTests(unittest.TestCase):
             main(['backfill-chunks'])
         run.assert_not_called()
         self.assertEqual(json.loads(output.getvalue()), {'status': 'skipped', 'reason': 'embeddings_disabled', 'enqueued': 0})
+
+
+class SetPasswordTests(pw.Fixture):
+    """CA-02 (T-10): `admin set-password --username --password-file` on the writer of the store (DC-10): new password, every session of the user closed, audited, nothing printed."""
+    NEW = 'replacement-password-789'
+
+    def run_command(self, username='ana', password=None, extra=()):
+        settings = Mock(dsn=self.dsn, project_maps={})
+        with workspace() as root:
+            secret = root / 'password'
+            secret.write_text((self.NEW if password is None else password) + '\n', encoding='utf-8')
+            out, err = io.StringIO(), io.StringIO()
+            with patch('memory_platform.admin.Settings.from_env', return_value=settings), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                try:
+                    main(['set-password', '--username', username, '--password-file', str(secret), *extra])
+                    status = 0
+                except SystemExit as exit:
+                    status = exit.code
+        return status, out.getvalue(), err.getvalue()
+
+    def sessions(self):
+        from memory_platform.auth import Auth
+        auth = Auth(self.store, ['https://memory.example'])
+        return [auth.login('ana', pw.PASSWORD, '192.0.2.%d' % n) for n in (10, 11)]
+
+    def test_it_sets_the_password_closes_every_session_and_audits(self):
+        first, second = self.sessions()
+        status, out, err = self.run_command()
+        self.assertEqual(status, 0, err)
+        self.assertEqual(json.loads(out)['status'], 'password_set')
+        self.assertEqual(json.loads(out)['sessions_revoked'], 2)
+        for session in (first, second):
+            with self.assertRaises(MemoryError) as raised:
+                self.auth.authenticate_session(session['session_token'])
+            self.assertEqual(raised.exception.status_code, 401)
+        with self.assertRaises(MemoryError):
+            self.auth.login('ana', pw.PASSWORD, '192.0.2.12')
+        self.assertEqual(self.auth.login('ana', self.NEW, '192.0.2.12')['actor']['username'], 'ana')
+        with self.psycopg.connect(self.dsn) as c:
+            events = c.execute("SELECT action,resource_id FROM memory.audit_events WHERE action LIKE 'password.%' ORDER BY id").fetchall()
+            ana = c.execute("SELECT id FROM memory.actors WHERE username='ana'").fetchone()[0]
+        self.assertEqual(events, [('password.reset', ana)])
+
+    def test_neither_the_output_nor_the_logs_nor_the_events_hold_the_password_or_its_hash(self):
+        self.sessions()
+        with self.assertNoLogs(level='DEBUG'):
+            status, out, err = self.run_command()
+        self.assertEqual(status, 0, err)
+        with self.psycopg.connect(self.dsn) as c:
+            stored = c.execute("SELECT password_hash FROM memory.actors WHERE username='ana'").fetchone()[0]
+            events = json.dumps(c.execute('SELECT * FROM memory.audit_events').fetchall(), default=str)
+        salt, digest = json.loads(stored)['salt'], json.loads(stored)['hash']
+        for text in (out, err, events):
+            for secret in (self.NEW, stored, salt, digest):
+                self.assertNotIn(secret, text)
+
+    def test_a_short_password_or_an_unknown_user_changes_nothing(self):
+        before = self.stored_hash()
+        for username, password in (('ana', 'short'), ('nobody', self.NEW)):
+            status, out, err = self.run_command(username, password)
+            self.assertNotEqual(status, 0)
+        self.assertEqual(self.stored_hash(), before)
+        self.assertEqual(self.auth.login('ana', pw.PASSWORD, '192.0.2.20')['actor']['username'], 'ana')
+
+    def test_the_command_derives_once_at_the_target_cost_and_uses_no_gate(self):
+        with pw.Derivations() as spy, patch.object(passwords, 'GATE', None):  # the API's gate is not the operator's: a None gate would break any use of it
+            self.assertEqual(self.run_command()[0], 0)
+        self.assertEqual(spy.calls, [passwords.TARGET])
+
+    def test_admin_py_has_no_sql_of_its_own_for_it(self):
+        import ast
+        source = (Path(__file__).parents[1] / 'admin.py').read_text(encoding='utf-8')
+        branch = next(node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.If) and 'set-password' in ast.dump(node.test))
+        body = [node for statement in branch.body for node in ast.walk(statement)]  # the `elif` chain hangs the next commands from `orelse`: only this one's own statements
+        for node in body:
+            self.assertFalse(isinstance(node, ast.Call) and getattr(node.func, 'attr', '') == 'execute', 'the branch of set-password runs SQL itself')
+            self.assertFalse(isinstance(node, ast.Constant) and isinstance(node.value, str) and 'memory.' in node.value, 'the branch of set-password names a table')
+        self.assertTrue(any(isinstance(n, ast.Attribute) and n.attr == 'set_password' for n in body), 'it calls the writer of the store')

@@ -17,6 +17,7 @@ from . import probe as round_trip
 from .backup import BackupError, check_keep, create_backup, encrypted_name, encryption_plan, manifest_path, prune_backups, table_fingerprints, terminate_as_exit, verify_backup
 from .chunking import chunk_text, embedding_text
 from .config import (Settings, backup_destination, backup_interval_seconds, backup_keep, backup_recipients_file, backup_remote_keep, backup_require_encryption, retention_windows)
+from .errors import MemoryError
 from .offsite import CycleError, parse_destination, record_failure, run_cycle, run_loop
 from .store import Store
 from .store_vectors import CURRENT_RESOURCE
@@ -340,6 +341,9 @@ def main(argv=None):
     bootstrap.add_argument('--username', default='admin')
     bootstrap.add_argument('--password-file', default=os.environ.get('MEMORY_BOOTSTRAP_PASSWORD_FILE'))
     bootstrap.add_argument('--with-projects', action='store_true', help='Create allowlisted project shells; capture stays off')
+    set_password = commands.add_parser('set-password', help='Recover an account: set the password of --username from --password-file and close every session of the user (keys stay); nothing secret is printed')
+    set_password.add_argument('--username', required=True)
+    set_password.add_argument('--password-file', required=True)
     backfill = commands.add_parser('backfill-chunks', help='Queue embed jobs for current resources without fragments (idempotent, resumable)')
     backfill.add_argument('--batch', type=int, default=200, help='Jobs queued per transaction (1..5000)')
     backfill.add_argument('--max-jobs', type=int, default=None, help='Stop after queueing this many jobs; run again to continue')
@@ -497,6 +501,13 @@ def main(argv=None):
                 store.create_project(actor, {'id': project_id, 'title': project_id})
                 projects.append(project_id)
         print(json.dumps({'status': 'bootstrapped', 'username': args.username, 'projects': projects, 'capture': 'off'}))
+    elif args.command == 'set-password':
+        password = Path(args.password_file).read_text(encoding='utf-8').strip()
+        try:
+            result = store.set_password(args.username, password)
+        except MemoryError as error:
+            raise SystemExit(f'set_password_failed: {error.code}') from None  # the code only: neither the password nor a hash is in it
+        print(json.dumps({'status': 'password_set', **result}, sort_keys=True))
     elif args.command == 'inspect':
         print(json.dumps({'tables': inspect_store(store)}, sort_keys=True))
     elif args.command == 'content-manifest':
