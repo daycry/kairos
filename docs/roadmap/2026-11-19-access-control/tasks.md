@@ -2875,3 +2875,18 @@ Lentes: A+B+C+D sobre `8b1370a..HEAD` (fix9: `d46e147`, `4b7e625`, `c4f86c7`), s
 | 6 | Minor | El gap 4 del intento 9 se dio por corregido con una prueba sin RED; el `%s` crudo de una constante aplicada en otro sitio sigue callado (lente A) | T-02 | corregido (fix10, 024dcd5) | `test_auth_cache.py:530, :801` |
 
 Siguiente: fix10 dentro del método aprobado: sin puerta léxica (se parsea todo literal de hasta 32 768 caracteres, coste medido 0,15 s), huecos de plantilla como centinela, posición de tabla por AST; en el parse fallido solo cuenta la tabla vigilada nombrada.
+
+
+## Revisión de dos lentes — intento 11: Fase 1 (fix10) (T-01, T-02, T-03, T-04) — 1 Important: sentencias completas con tabla dinámica y huecos de cláusula
+
+Lentes: A+B+C+D sobre `c4f86c7..ce7fde1` (fix10) y `eb6f105` (archivo, SHA-256 verificado sin pérdida). Gaps del intento 10: 1-6 corregidos con mutante; las 28 pruebas de las clases de guarda pasan. D sin bloqueo (ninguna entrada cuelga ni revienta bajo el tope; la suite no crece de forma medible).
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | Regresión frente a fix9: el centinela es un identificador y, si otro hueco ocupa una cláusula (`WHERE {cond} {order}`, `SET {sets}`, `ORDER BY {col} {dir}`, `IN %s`, `{verb} …`), una sentencia completa con `memory.{t}` no parsea y `_fallback` ya no informa de huecos: calla (12 de 17 plantillas realistas; también la composición en dos pasos `frm = f'FROM memory.{table} …'` + `'SELECT k.scopes ' + frm`, y un literal de más de 32 768 caracteres con hueco de tabla). El límite declarado («un fragmento») se queda corto y el mutante de fix9 se rebajó de `{cond} {extra}` a `{cond}` (lentes A, B y C) | T-02 | pendiente: decisión del usuario | `test_auth_cache.py:798-811, :816-825, :1116, :1456, :1460`; `design.md:114` |
+| 2 | Minor | Falsos positivos: plantillas de las fases 3 y 4 con huecos de cláusula que nombran `actors`/`web_sessions` dan `unparseable SQL` (y `is_admin:row`); cuerpos PL/pgSQL y `RAISE` con nombres de tabla; prosa que parsea (`f'analyze {x}'`, `f'table {x}'`, `f'drop table {a}'`) da `unknown table` sin exención; `REFERENCES memory.api_keys` y `CREATE TABLE (LIKE …)` cuentan como lectura (lente B) | T-02 | pendiente | `test_auth_cache.py:532, :696-698, :730-734, :744-763, :802-811` |
+| 3 | Minor | DDL sin clasificar: `CREATE TRIGGER/RULE/POLICY ON`, `GRANT … ON`, `COMMENT ON`, `ALTER TABLE … SET SCHEMA`, `DROP SCHEMA memory CASCADE`; composición dentro del SQL (`format('%I.%I', …)`, `'memory.' \|\| 'api_keys'`) (lentes B y C; heredado) | T-02 | pendiente | `test_auth_cache.py:533, :741-743, :753-763` |
+| 4 | Minor | Coste: `'/*' * 10000` pasa de 0,002 a 0,84 s al parsearse (lexer cuadrático); el test de tiempo tiene cota absoluta y no detecta crecimiento cuadrático (lente D) | T-02 | pendiente | `test_auth_cache.py:820, :1574-1581` |
+| 5 | Minor | Nota RED de fix10 inexacta; sin mutantes de fix10 dentro de `Auth.login`; el mensaje del commit `eb6f105` dice «long notes» y no archivó ninguna (lente A) | T-02 | pendiente | `tasks.md` nota fix10; `test_auth_cache.py:1465-1498` |
+
+Siguiente: decisión del usuario. Propuesta del orquestador (fix11): en el parse fallido, `memory.` seguido de un hueco es siempre `unknown table` y `memory.<tabla vigilada>` es siempre esa tabla, sin exigir palabra de SQL (la prosa no escribe `memory.`); declarar como límite el nombre de tabla entero dinámico sin `memory.` en una sentencia que no parsea.

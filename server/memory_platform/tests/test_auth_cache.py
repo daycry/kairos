@@ -529,7 +529,10 @@ _MAX_PARSED = 32768  # characters; the parser of libpg_query crashes (SIGSEGV) o
 _MAX_DEPTH = 4  # a string of SQL inside a string of SQL inside ...: the text of the deeper ones is read as one that does not parse
 _RESTRICTED_WORD = re.compile(r'\b(?:%s)\b' % '|'.join(sorted(set(READ_TABLES) | set(WRITE_TABLES) | {'actors'})), re.I)
 _SQL_WORD = re.compile(r'\b(?:SELECT|FROM|JOIN|INTO|UPDATE|DELETE|INSERT|MERGE|TABLE|USING|COPY|TRUNCATE|WITH|VALUES|RETURNING|WHERE|EXISTS|ALTER|DROP|CREATE|LOCK|EXECUTE)\b', re.I)
-_WRITE_WORD = re.compile(r'\b(?:INSERT|UPDATE|DELETE|MERGE|TRUNCATE|COPY|INTO)\b', re.I)
+_WRITE_WORD = re.compile(r'\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|MERGE\s+INTO|TRUNCATE|COPY|ALTER|DROP|CREATE|GRANT|COMMENT)\b', re.I)  # not the bare INTO of PL/pgSQL (`SELECT x INTO v`)
+_MEMORY_HOLE = re.compile(r'\bmemory"?\s*\.\s*"?\w*' + _SENTINEL, re.I)  # `memory.` followed by a hole, quoted or not, or with a prefix (`memory.api_<hole>`)
+_MEMORY_TABLE = re.compile(r'\bmemory"?\s*\.\s*"?(%s)\b' % '|'.join(sorted(set(READ_TABLES) | set(WRITE_TABLES) | {'actors'})), re.I)
+_WHOLE_ROW_WORD = re.compile(r'(?:\w|"|\))\s*\.\s*\*|(?:\bSELECT|\bRETURNING|,)\s*(?:ALL\s+|DISTINCT\s+)?\*|\bTABLE\s+(?:memory\s*\.\s*)?actors\b|\bCOPY\s+(?:memory\s*\.\s*)?actors\s+TO\b', re.I)
 _PLACEHOLDER = re.compile(r'%%|%\(\w+\)[sbtdi]|%[sbtdi]')
 _BRACE = re.compile(r'\{[^{}]*\}')
 _PLAIN = re.compile(r"[^'\"\-/$%{]+")
@@ -546,7 +549,7 @@ def _reads_is_admin(sql):
 def _prepare(text):
     """The text the parser gets, in ONE linear pass: every hole is an identifier (a NUL, the `{}` of a template, a psycopg placeholder `%s`/`%(x)s`; `%%` is a `%`); quoted text, dollar quotes
     and comments are copied as they are. A quote, comment or dollar quote that never closes takes the rest of the text, so the cost is the length of the text."""
-    counter = itertools.count()
+    counter, closed = itertools.count(), True
 
     def hole():
         return '%s%d_' % (_SENTINEL, next(counter))
@@ -588,16 +591,15 @@ def _prepare(text):
             else:
                 out.append(re.sub(r'\{[^{}]*\}', lambda m: hole(), token))
             i = j
-        elif c == '-' and text.startswith('--', i):
+        elif c == '-' and text.startswith('--', i):  # a comment names nothing the statement does, and the lexer of the parser is quadratic in the number of block comments
             j = text.find('\n', i)
             j = n if j == -1 else j
-            out.append(text[i:j])
             i = j
         elif c == '/' and text.startswith('/*', i):
             j = text.find('*/', i + 2)
-            j = n if j == -1 else j + 2
-            out.append(text[i:j])
-            i = j
+            closed = closed and j != -1
+            out.append(' ')
+            i = n if j == -1 else j + 2
         elif c == '$':
             m = _DOLLAR.match(text, i)
             j = i + 1
@@ -618,7 +620,7 @@ def _prepare(text):
             m = _PLAIN.match(text, i)
             out.append(m.group(0) if m else c)
             i = m.end() if m else i + 1
-    return ''.join(out)
+    return ''.join(out), closed
 
 
 def _children(node):
@@ -746,21 +748,32 @@ class _Tree:
                 if isinstance(part, pg.String):
                     self.string(part.sval)
             return
-        elif kind in ('LockStmt', 'VacuumStmt'):  # LOCK TABLE, ANALYZE, VACUUM take no row: not a read (a hole in the name still counts)
-            for relation in [r for r in node.relations] if kind == 'LockStmt' else [r.relation for r in node.rels or () if r.relation is not None]:
-                self.hole(relation)
+        elif kind in ('LockStmt', 'VacuumStmt'):  # LOCK TABLE, ANALYZE, VACUUM take no row and name nothing that is read: neither a read nor an unknown table
             return
-        elif kind in ('AlterTableStmt', 'IndexStmt', 'RenameStmt') and getattr(node, 'relation', None) is not None:
-            self.write(node.relation)  # ALTER TABLE, CREATE INDEX, RENAME on a table of the guard is a write: only the four writers may do it
+        elif kind in ('AlterTableStmt', 'IndexStmt', 'RenameStmt', 'CreateTrigStmt', 'RuleStmt', 'AlterObjectSchemaStmt', 'CreateStmt') and getattr(node, 'relation', None) is not None:
+            self.write(node.relation)  # ALTER TABLE, CREATE INDEX/TRIGGER/RULE, RENAME, SET SCHEMA on a table of the guard is a write: only the four writers may do it
             skip = ('relation',)
-        elif kind == 'DropStmt':
-            for names in node.objects or ():
-                parts = [n.sval for n in (names if isinstance(names, (tuple, list)) else [names]) if isinstance(n, pg.String)]
-                if any(_SENTINEL in part for part in parts):
-                    self.dynamic = True
-                if parts and parts[-1].lower() in WRITE_TABLES:
-                    self.writes.add(parts[-1].lower())
+        elif kind == 'CreatePolicyStmt':
+            self.write(node.table)
+            skip = ('table',)
+        elif kind == 'GrantStmt':
+            for target in node.objects or ():
+                if isinstance(target, pg.RangeVar):
+                    self.write(target)
             return
+        elif kind in ('DropStmt', 'CommentStmt'):
+            for names in (node.objects if kind == 'DropStmt' else [node.object]) or ():
+                parts = [n.sval for n in (names if isinstance(names, (tuple, list)) else [names]) if isinstance(n, pg.String)]
+                if kind == 'DropStmt' and any(_SENTINEL in part for part in parts):
+                    self.dynamic = True
+                self.writes |= {part.lower() for part in parts if part.lower() in WRITE_TABLES}
+                if kind == 'DropStmt' and [part.lower() for part in parts] == ['memory']:
+                    self.writes |= set(WRITE_TABLES)  # DROP SCHEMA memory
+            return
+        elif kind == 'Constraint':
+            skip = ('pktable',)  # REFERENCES reads no row
+        elif kind == 'TableLikeClause':
+            return  # CREATE TABLE (LIKE t) copies a definition
         elif kind == 'A_Indirection' and isinstance(node.arg, pg.ColumnRef):
             if _indirection_row(node, frozenset().union(*chain) if chain else frozenset()):
                 self.row()
@@ -795,34 +808,49 @@ class _Analysis:
         self.reads, self.writes, self.dynamic = frozenset(reads), frozenset(writes), dynamic
 
 
-def _fallback(text):
-    """What a text that cannot be parsed (a syntax error, too big, too deep) is reported as, when it names a table of the guard and holds a word of SQL (a bare name like the keys of
-    RETURNING TABLES, or a message with holes, is not SQL): `unparseable SQL` and each table it names (a read; `actors` as a whole row; a write when a word of writing comes before it).
-    A hole in a table position of a text that does not parse is NOT seen: the composition that uses it is, if it parses whole."""
-    if not _SQL_WORD.search(text):
-        return _Analysis()
-    named = {word.lower() for word in _RESTRICTED_WORD.findall(text)}
-    reads = ({('unparseable SQL', False)} if named else set()) | {(table, False) for table in named if table in READ_TABLES} | ({('is_admin:row', False)} if 'actors' in named else set())
+def _without_raise(text):
+    """The text without its `RAISE ... ;` statements (PL/pgSQL messages name tables in prose); one pass: a RAISE with no `;` after it takes the rest."""
+    out, i = [], 0
+    for m in re.finditer(r'\bRAISE\b', text, re.I):
+        if m.start() < i:
+            continue
+        out.append(text[i:m.start()])
+        end = text.find(';', m.end())
+        i = len(text) if end == -1 else end + 1
+    out.append(text[i:])
+    return ' '.join(out)
+
+
+def _fallback(text, prepared=None):
+    """What a text that cannot be parsed (a syntax error, an unclosed comment, too big, too deep) is reported as. `memory.` followed by a hole (`memory."<hole>"`, `"memory".<hole>`,
+    `memory.api_<hole>`) is always `unknown table`; `memory.<table of the guard>` is always that table; a name without `memory.` counts only with a word of SQL (a bare name like the keys of the
+    retention windows is not SQL). A table named is `unparseable SQL` and a read, a write when a word of writing comes before it, and `actors` is a whole row only with a star, `a.*` or
+    `TABLE`/`COPY ... TO`. The text of a RAISE is not SQL. A hole alone as the name of a table, with no `memory.`, is NOT seen in a text that does not parse (a declared limit)."""
+    prepared = _prepare(text)[0] if prepared is None else prepared
+    text = _without_raise(text)
+    qualified = {match.group(1).lower() for match in _MEMORY_TABLE.finditer(text)}
+    named = qualified | ({word.lower() for word in _RESTRICTED_WORD.findall(text)} if _SQL_WORD.search(text) else set())
+    reads = ({('unparseable SQL', False)} if named else set()) | {(table, False) for table in named if table in READ_TABLES} | ({('is_admin:row', False)} if 'actors' in named and _WHOLE_ROW_WORD.search(text) else set())
     writes = set()
     for table in named & set(WRITE_TABLES):
         first = re.search(r'\b%s\b' % table, text, re.I)
         if _WRITE_WORD.search(text[:first.start()]):
             writes.add(table)
-    return _Analysis(reads, writes)
+    return _Analysis(reads, writes, bool(_MEMORY_HOLE.search(prepared)))
 
 
 @functools.lru_cache(maxsize=None)
 def _analysis(text, depth=0):
-    prepared = _prepare(text)
-    if len(prepared) > _MAX_PARSED:
-        return _fallback(text)
+    prepared, closed = _prepare(text)
+    if len(prepared) > _MAX_PARSED or not closed:
+        return _fallback(text, prepared)
     try:
         statements = parse_sql(prepared)
         tree = _Tree(depth)
         for statement in statements:
             tree.visit(statement.stmt)
     except Exception:  # a syntax error (pglast.parser.ParseError), RecursionError on a deep tree, anything else: report, never fail
-        return _fallback(text)
+        return _fallback(text, prepared)
     return _Analysis(tree.reads, tree.writes, tree.dynamic)
 
 
@@ -1106,14 +1134,19 @@ class ResolverBoundaryTests(unittest.TestCase):
     that what a RETURNING gives back from a restricted table (whole or by column) is read from it; `LOCK TABLE`, `ANALYZE` and `VACUUM` read nothing; `ALTER TABLE`, `CREATE INDEX`, `RENAME` and
     `DROP` on a table of WRITE_TABLES write it. Every string inside the tree (an argument of `query_to_xml` or `dblink_exec`, the body of DO, CREATE FUNCTION or CREATE PROCEDURE) is read again
     by the same function, up to four levels deep. `is_admin` is the one rule that is not the parser's: any literal that spells the word, or any identifier the parser decodes to it, is a read.
-    A text that does not parse (a syntax error, more than 32 768 characters, too deep for the walk) is reported only when it names a table of the guard (`\b`) and holds a word of SQL: `unparseable
-    SQL` plus each table it names (a read, `actors` as a whole row, a write when a word of writing comes before it). A text that does not parse and only has holes is silent: it is prose
-    (`f'cannot restore from {path}'`). Prose that does name a table of the guard with a word of SQL stays red, and the package has none.
+    A text that does not parse (a syntax error, an unclosed comment, more than 32 768 characters, too deep for the walk) is reported by what it names: `memory.` followed by a hole
+    (`memory."<hole>"`, `"memory".<hole>`, `MEMORY.<hole>`, `memory.api_<hole>`) is always `unknown table`; `memory.<table of the guard>` is always that table (`unparseable SQL`, a read, a write when
+    a word of writing comes before it, `actors` as a whole row only with a star, `a.*`, `TABLE` or `COPY ... TO`); a table named without `memory.` counts only with a word of SQL. A text that does
+    not parse and only has holes is prose and is silent. Prose that names a table of the guard with a word of SQL stays red, and the package has none. Comments are not given to the parser.
 
     The scan is a DETECTOR OF REGRESSIONS, not a proof of absence. Known limits, accepted:
     * SQL built in several steps (`sql += ...`, `' '.join(...)`) that never reaches one literal is judged piece by piece: a piece that spells `is_admin`, or parses and names a table, is caught
       by itself; a bare piece (`'memory.api_keys'`, `' WHERE x'`) is not;
-    * a fragment that does not parse and whose only datum is a hole in a table position (`' FROM memory.{t} WHERE (('`) is not seen; the composition that uses it is, if it parses whole;
+    * a table name that is ENTIRELY a hole, without `memory.` (`FROM {}`), inside a statement that does not parse is not seen (with `memory.` it always is); the composition that uses it is, if it
+      parses whole; `format('%I.%I', ...)` and `'memory.' || 'api_keys'` inside the SQL are not seen either;
+    * the body of a PL/pgSQL function or DO is not parsed as PL/pgSQL (`pglast.parse_plpgsql` needs a complete CREATE FUNCTION and every variable declared): it is read as a text that does not parse,
+      without its RAISE statements, and a bare INTO is not a write;
+    * prose that parses as SQL (`f'table {x}'`, `f'drop table {a}'`) is an unknown table; the package has none;
     * a hole whose value is DATA and names a table is `unknown table` where it stands in a table position, and the tables it may take are checked only per function (`DYNAMIC_SQL`), not per statement;
       a hole in a select list is taken for `a` or `*` when it stands alone and the level has `actors`; a hole in an alias or in any other column position is not;
     * inside a function of the closed list any `is_admin` passes, as in the functions of `probe.py` (the cost of having no silence by the shape of the SQL);
@@ -1122,7 +1155,8 @@ class ResolverBoundaryTests(unittest.TestCase):
     * `sql.Composed` / `sql.SQL(...).join(...)` with a write verb in a function that may reach any table (`inspect_store`, `table_digest`) is not told apart from a SELECT beyond its text;
     * the column `is_admin` is searched in the raw literal: a comment that names it is a false positive worth an exception, never a hole;
     * the parser is the one of PostgreSQL 17: syntax a later server accepts does not parse (and then the report above applies);
-    * cost, measured in fix9 and fix10 (notes of T-02): the artificial inputs of `test_the_scans_stay_linear_on_artificial_input` and the parse of every literal of the package.
+    * cost, measured in fix9 to fix11 (notes of T-02): the parser's lexer is quadratic in the number of block comments (`'/*' * 16000` took 1.8 s, `'/**/' * 16000` 1.75 s), so comments are cut out
+      before parsing and an unclosed one is not parsed; `test_the_cost_grows_linearly_with_the_input` compares n and 4n on runs of every kind of opener.
     PRINCIPLE (fix5): there is no silence by the shape of the SQL. Any `is_admin` in a literal outside the resolver is a read, also when it is written; a legitimate writer (`bootstrap_user`,
     `provision_locked`) is declared BY FUNCTION on the closed list. A new way of reading goes in `reads` below with its mutant, and a legitimate new reader or writer goes on the closed lists
     with its reason."""
@@ -1448,16 +1482,16 @@ class ResolverBoundaryTests(unittest.TestCase):
         reads = sql_reads('DO $$ BEGIN DELETE FROM memory.api_keys; END $$')
         self.assertEqual(reads, {('unparseable SQL', False), ('api_keys', False)})
         self.assertEqual(sql_writes('DO $$ BEGIN DELETE FROM memory.api_keys; END $$'), {'api_keys'})
-        self.assertEqual(sql_reads('SELECT FROM WHERE memory.actors ((')  , {('unparseable SQL', False), ('is_admin:row', False)})
-        for text in ('SELECT x FROM \x00 WHERE (( ', 'FROM a, \x00 WHERE ((', 'SELECT 1 FROM memory.api_\x00 WHERE (('):
-            self.assertFalse(sql_dynamic(text), text)  # fix10: a fragment that does not parse and only has a hole is not seen (declared); the composition that uses it is, if it parses whole
+        self.assertEqual(sql_reads('SELECT FROM WHERE memory.actors ((')  , {('unparseable SQL', False)})  # no star: not a whole row (fix11)
+        for text in ('SELECT x FROM \x00 WHERE (( ', 'FROM a, \x00 WHERE (('):
+            self.assertFalse(sql_dynamic(text), text)  # fix10/fix11: a name WITHOUT `memory.` that is only a hole, in a text that does not parse, is not seen (declared); with `memory.` it is always seen
         # the exempt functions waive ONLY `unparseable SQL`: a table of the guard or a hole of a table, injected in each of them (and at module level and in a class body), is red by its own kind
         for name, qualified in (('admin.py', 'backfill_query'), ('store_vectors.py', 'VectorsMixin._vector_candidates')):
-            for piece, kinds in (("c.execute('SELECT k.scopes FROM memory.api_keys k WHERE ' + a + ' ' + b)", {'api_keys'}), ("c.execute(f'SELECT 1 FROM memory.{t} WHERE {cond}')", {'unknown table'})):
+            for piece, kinds in (("c.execute('SELECT k.scopes FROM memory.api_keys k WHERE ' + a + ' ' + b)", {'api_keys'}), ("c.execute(f'SELECT 1 FROM memory.{t} WHERE {cond} {extra}')", {'unknown table'})):
                 outside, _ = reads_outside_the_resolver({**base, name: inject(base[name], qualified, piece)})
                 self.assertTrue(kinds <= set(outside['%s:%s' % (name, qualified)]), (qualified, piece))
         for name in ('admin.py', 'store_jobs.py'):
-            for piece, kinds in (("q = 'SELECT k.scopes FROM memory.api_keys k WHERE ' + a + ' ' + b", {'api_keys'}), ("q = f'SELECT 1 FROM memory.{t} WHERE {cond}'", {'unknown table'}),
+            for piece, kinds in (("q = 'SELECT k.scopes FROM memory.api_keys k WHERE ' + a + ' ' + b", {'api_keys'}), ("q = f'SELECT 1 FROM memory.{t} WHERE {cond} {extra}'", {'unknown table'}),
                                  ("class C:\n    q = 'SELECT k.scopes FROM memory.api_keys k WHERE ' + a + ' ' + b", {'api_keys'})):
                 outside, _ = reads_outside_the_resolver({**base, name: base[name] + '\n\n' + piece + '\n'})
                 self.assertTrue(kinds <= set(outside['%s:<module>' % name]), (name, piece))
@@ -1496,6 +1530,79 @@ class ResolverBoundaryTests(unittest.TestCase):
         self.assertEqual(sql_writes("ALTER TABLE memory.projects ADD COLUMN x int"), set())
         self.assertTrue(sql_dynamic("DROP TABLE memory.{t}"))
         self.assertEqual(sql_reads("SELECT 1 FROM memory.projects WHERE id=%s"), set())  # a parameter parses as a hole
+
+    def test_a_statement_that_does_not_parse_and_writes_memory_dot_a_hole_or_a_table_of_the_guard_is_red(self):
+        # fix11 gap 1: `memory.` followed by a hole is always `unknown table`; `memory.<table of the guard>` is always that table; in a new module and inside `Auth.login`
+        base = package_sources()
+        bodies = [
+            ("return c.execute(f'SELECT 1 FROM memory.{t} WHERE {cond} {order}')", 'unknown table'), ("return c.execute(f'SELECT 1 FROM memory.{t} ORDER BY {col} {direction}')", 'unknown table'),
+            ("return c.execute(f'UPDATE memory.{t} SET {sets} WHERE id = %s')", 'unknown table'), ("return c.execute(f'SELECT 1 FROM memory.{t} x {join} WHERE true')", 'unknown table'),
+            ("return c.execute(f'SELECT 1 FROM memory.{t} WHERE id IN %s')", 'unknown table'), ("return c.execute(f'{verb} id FROM memory.{t} WHERE true')", 'unknown table'),
+            ("return c.execute(f'SELECT 1 FROM memory.{t} WHERE {col} {op} %s')", 'unknown table'), ("return c.execute(f'SELECT 1 FROM MEMORY.{t} WHERE {cond} {extra}')", 'unknown table'),
+            ("return c.execute(f'SELECT 1 FROM \"memory\".{t} WHERE {cond} {extra}')", 'unknown table'), ("return c.execute(f'SELECT 1 FROM memory.\"{t}\" WHERE {cond} {extra}')", 'unknown table'),
+            ("return c.execute(f'SELECT 1 FROM memory.api_{t} WHERE {cond} {extra}')", 'unknown table'),
+            ("frm = f'FROM memory.{table} k WHERE k.id = %s'\n    return c.execute('SELECT k.scopes ' + frm)", 'unknown table'),
+            ("frm = 'FROM memory.%s k WHERE k.id = %%s' % TABLE\n    return c.execute('SELECT k.scopes ' + frm)", 'unknown table'),
+            ("on = 'memory.api_keys k ON k.id = x.id'\n    return c.execute('SELECT 1 FROM x JOIN ' + on)", 'api_keys'),
+            ("return c.execute(f'SELECT 1 FROM memory.project_grants g WHERE {cond} {order}')", 'project_grants'),
+            ("return c.execute(f'SELECT 1 FROM memory.{t} WHERE ' + '" + 'a OR ' * 8000 + "b')", 'unknown table'),
+        ]
+        for body, kind in bodies:
+            with self.subTest(body=body[:90]):
+                outside, _ = reads_outside_the_resolver({**base, 'newmod.py': 'def leak(c, t, table, cond, order, col, direction, sets, join, verb, op, extra):\n    ' + body + '\n'})
+                self.assertIn(kind, outside.get('newmod.py:leak', []), body[:90])
+                outside, _ = reads_outside_the_resolver({**base, 'auth.py': inject(base['auth.py'], 'Auth.login', body)})
+                self.assertIn(kind, outside.get('auth.py:Auth.login', []), body[:90])
+        # the mutants of fix10 inside Auth.login: a template in a constant, a string of SQL given to a function
+        for body, kind in (("q = 'SELECT * FROM memory.{}'", 'unknown table'), ("q = 'DELETE FROM MEMORY.%s'", 'unknown table'), ("q = 'TRUNCATE {t}'", 'unknown table'), ("q = 'COPY {t} TO STDOUT'", 'unknown table'),
+                           ("q = 'SELECT 1 FROM ONLY {t}'", 'unknown table'), ("return c.execute(\"SELECT query_to_xml('select * from memory.api_keys', true, true, '')\")", 'api_keys')):
+            outside, _ = reads_outside_the_resolver({**base, 'auth.py': inject(base['auth.py'], 'Auth.login', body)})
+            self.assertIn(kind, outside.get('auth.py:Auth.login', []), body)
+        self.assertEqual(sql_reads('UPDATE memory.api_keys SET {sets} WHERE x {y}'), {('unparseable SQL', False), ('api_keys', False)})
+
+    def test_the_report_of_a_text_that_does_not_parse_has_no_false_positive_in_templates_prose_and_plpgsql(self):
+        # fix11 gap 2
+        base = package_sources()
+        self.assertEqual(sql_reads('SELECT id FROM memory.actors a WHERE {cond} {order}'), {('unparseable SQL', False)})  # names `actors` without `*` or the row: not a whole row
+        self.assertEqual(sql_reads('UPDATE memory.actors SET {sets} WHERE id = %s RETURNING id, username'), {('unparseable SQL', False)})
+        self.assertEqual(sql_writes('UPDATE memory.actors SET {sets} WHERE id = %s RETURNING id, username'), {'actors'})
+        self.assertIn(('is_admin:row', False), sql_reads('SELECT * FROM memory.actors a WHERE {cond} {order}'))
+        self.assertIn(('is_admin:row', False), sql_reads('SELECT a.* FROM memory.actors a WHERE {cond} {order}'))
+        body = "DO $$ BEGIN RAISE NOTICE 'could not read from actors'; SELECT 1 INTO x FROM memory.projects; END $$"
+        self.assertEqual(sql_reads(body), set())
+        self.assertEqual(sql_writes("DO $$ DECLARE v text; BEGIN SELECT scopes INTO v FROM memory.api_keys; END $$"), set())  # INTO of PL/pgSQL is not a write
+        self.assertEqual(sql_reads("DO $$ DECLARE v text; BEGIN SELECT scopes INTO v FROM memory.api_keys; END $$"), {('unparseable SQL', False), ('api_keys', False)})
+        for text in ('ANALYZE {x}', 'LOCK TABLE {x}', 'VACUUM {x}', "COMMENT ON TABLE {x} IS 'y'"):
+            self.assertFalse(sql_dynamic(text), text)  # a hole as the target of a statement that reads nothing is not an unknown table
+        self.assertEqual(sql_reads('CREATE TABLE memory.x (a int REFERENCES memory.api_keys(id))'), set())
+        self.assertEqual(sql_reads('CREATE TABLE memory.y (LIKE memory.api_keys)'), set())
+        outside, _ = reads_outside_the_resolver({**base, 'newmod.py': "def leak(path):\n    return f'cannot restore from {path}', f'analyze {path}', f'could not update {path}'\n"})
+        self.assertEqual(outside, {})
+
+    def test_ddl_on_the_tables_of_the_guard_is_a_write(self):
+        # fix11 gap 3
+        base = package_sources()
+        for statement in ("CREATE TRIGGER t BEFORE INSERT ON memory.api_keys FOR EACH ROW EXECUTE FUNCTION f()", "CREATE RULE r AS ON INSERT TO memory.actors DO NOTHING",
+                          "CREATE POLICY p ON memory.api_keys USING (true)", "COMMENT ON TABLE memory.web_sessions IS 'x'", "COMMENT ON COLUMN memory.actors.id IS 'x'",
+                          "GRANT SELECT ON memory.project_grants TO bob", "ALTER TABLE memory.actors SET SCHEMA other", "DROP SCHEMA memory CASCADE"):
+            self.assertTrue(sql_writes(statement), statement)
+            self.assertTrue(writes_outside_the_writers({**base, 'newmod.py': 'def w(c):\n    c.execute(%r)\n' % statement}), statement)
+        self.assertEqual(sql_writes("COMMENT ON TABLE memory.projects IS 'x'"), set())
+        self.assertEqual(sql_writes("GRANT SELECT ON memory.projects TO bob"), set())
+
+    def test_the_cost_grows_linearly_with_the_input(self):
+        # fix11 gap 4: four times the input must not cost more than eight times as much (a quadratic growth costs sixteen)
+        import time
+
+        def cost(text):
+            started = time.monotonic()
+            sql_reads(text)
+            sql_dynamic(text)
+            return time.monotonic() - started
+        for make in (lambda n: '/*' * n, lambda n: '/**/' * n + ' FROM memory.api_keys', lambda n: '$a$' * n, lambda n: "'" * n, lambda n: "E'" * n, lambda n: '-- ' * n,
+                     lambda n: 'FROM a, ' * n, lambda n: 'SELECT 1 FROM a ' * n, lambda n: 'UPDATE memory.actors SET a=1 RETURNING a; ' * (n // 2)):
+            small, large = cost(make(3000)), cost(make(12000))
+            self.assertLess(large, max(8 * small, 0.5), make(5)[:30])
 
     def test_a_raw_placeholder_in_the_position_of_a_table_is_a_hole_and_a_value_is_not(self):
         # fix9 gap 4
@@ -1592,7 +1699,7 @@ class ResolverBoundaryTests(unittest.TestCase):
         outside, _ = reads_outside_the_resolver({**package_sources(), 'newmod.py': "def leak(c):\n    return c.execute('SELECT 1 FROM %.15s' % 'memory.api_keys_')\n"})
         self.assertEqual(outside['newmod.py:leak'], ['api_keys'])
         outside, _ = reads_outside_the_resolver({**package_sources(), 'newmod.py': "def leak(c):\n    return c.execute('SELECT %5d, %-3s FROM %s' % (1, 'x', 'memory.api_keys'))\n"})
-        self.assertEqual(outside['newmod.py:leak'], ['api_keys'])
+        self.assertEqual(outside['newmod.py:leak'], ['api_keys', 'unparseable SQL'])  # the bare piece 'memory.api_keys' is now a table of the guard by itself (fix11)
 
     def test_each_control_of_the_closed_lists_has_its_mutant(self):
         # fix2 gaps 3, 4 and 5: the exact predicate, the normalised scope, and the three kinds of stale or empty entry
