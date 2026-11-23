@@ -278,7 +278,7 @@ test-plan: test-plan.md
 - [x] Mover scrypt y subir `maxmem`
 - [x] Rehash en la transacción que abre la sesión
 
-**Notas**: **Notas**: RED: `test_passwords` falló con `ImportError: cannot import name 'passwords' from 'memory_platform'` y, con el módulo y sin cablear `Auth.login`, `Lists differ: [] != [(1024, 8, 1), (131072, 8, 1)]` · 2026-11-23. `passwords.py`: `_derive` es la única llamada a `hashlib.scrypt` (con `maxmem` explícito); `check_login` hace una derivación de coste objetivo siempre (hash antiguo: la suya más una objetivo). `TARGET` es atributo del módulo solo para que la suite corra a n=2^14 (`tests/__init__.py`, añadido a `Archivos`); `test_passwords` ejecuta el coste real (`REAL`). Rehash con savepoint, `WHERE password_hash=<leído>`. Verde: `test_passwords`, `test_auth`, `test_auth_cache` y `test_auth_race` sin fallos.
+**Notas**: **Notas**: RED: `test_passwords` falló con `ImportError: cannot import name 'passwords' from 'memory_platform'` y, con el módulo y sin cablear `Auth.login`, `Lists differ: [] != [(1024, 8, 1), (131072, 8, 1)]` · 2026-11-23. `passwords.py`: `_derive` es la única llamada a `hashlib.scrypt` (con `maxmem` explícito); `check_login` hace una derivación de coste objetivo siempre (hash antiguo: la suya más una objetivo). `TARGET` es atributo del módulo solo para que la suite corra a n=2^14 (`tests/__init__.py`, añadido a `Archivos`); `test_passwords` ejecuta el coste real (`REAL`). Rehash con savepoint, `WHERE password_hash=<leído>`. Verde: `test_passwords`, `test_auth`, `test_auth_cache` y `test_auth_race` sin fallos. Corrección al cerrar la fase (suite completa, B-01): el fallo del rehash se registra (`password_rehash_failed`, solo el tipo) en vez de tragarse; la prueba lo exige.
 
 ### T-08 — Tope de logins simultáneos: semáforo que una sola IP no puede llenar (CA-09)
 
@@ -368,7 +368,7 @@ test-plan: test-plan.md
 
 - **Descripción**: Protocolo de cierre de fase (cabecera) con las suites: servidor, contratos.
 - **Changelog**: Interno: cierre de fase.
-- **Estado**: borrador
+- **Estado**: en-progreso
 - **Tiempo humano**: est. 0.5h · real —
 - **Tiempo IA (ejec.)**: est. 0.05h · real —
 - **Supervisión**: est. 0.01h · real —

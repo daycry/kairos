@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from .errors import Forbidden, MemoryError, NotFound, Unauthorized
 from .auth_scope import invalidate_auth, savepoint
-from . import passwords
+from . import observability, passwords
 from .passwords import check_login, hash_password, verify_password  # noqa: F401  (re-exported: the callers and tests that import them from here)
 
 SCOPES = frozenset({'read', 'write', 'publish', 'validate', 'admin'})
@@ -71,8 +71,8 @@ class Auth:
                     try:
                         with savepoint(c):
                             c.execute('UPDATE memory.actors SET password_hash=%s WHERE id=%s AND password_hash=%s', (rehash, row['id'], row['password_hash']))
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        observability.log_failure('password_rehash_failed', exc, 'warning')  # the type only, never the message; the login goes on
                 saved = c.execute("INSERT INTO memory.web_sessions(id,actor_id,token_hash,csrf_hash,expires_at) VALUES(%s,%s,%s,%s,clock_timestamp()+(%s * interval '1 second')) RETURNING expires_at", (sid, row['id'], token_hash(session), token_hash(csrf), self.session_ttl)).fetchone()
                 invalidate_auth(c)
                 actor = self._actor(c, row, 'session', sid)

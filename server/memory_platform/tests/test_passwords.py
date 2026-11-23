@@ -214,7 +214,9 @@ class LoginTests(Fixture):
         with self.psycopg.connect(self.dsn) as c:
             c.execute("CREATE FUNCTION memory.refuse_rehash() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'refused'; END $$")
             c.execute('CREATE TRIGGER refuse_rehash BEFORE UPDATE OF password_hash ON memory.actors FOR EACH ROW EXECUTE FUNCTION memory.refuse_rehash()')
-        session = self.auth.login('ana', PASSWORD, '192.0.2.4')
+        with patch('memory_platform.auth.observability.log_failure') as logged:
+            session = self.auth.login('ana', PASSWORD, '192.0.2.4')
+        self.assertEqual([call.args[0] for call in logged.call_args_list], ['password_rehash_failed'], 'the failure leaves a trace (B-01)')
         self.assertEqual(session['actor']['username'], 'ana')
         self.assertEqual(json.loads(self.stored_hash())['n'], OLD[0], 'the old hash stays: the write failed')
         self.assertEqual(self.auth.authenticate_session(session['session_token'])['username'], 'ana', 'the session works')
