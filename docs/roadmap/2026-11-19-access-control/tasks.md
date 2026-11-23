@@ -256,26 +256,29 @@ test-plan: test-plan.md
 
 - **Descripción**: Sacar scrypt de `auth.py` a `server/memory_platform/passwords.py` con los parámetros que fijó T-01: `hash_password`, `verify_password` (rechaza parámetros guardados por encima del objetivo), hash ficticio con el coste objetivo y rehash transparente en el primer login correcto (`UPDATE … WHERE password_hash=<el leído>`; si falla, el login sigue). Fuente: CA-09; S-07; DC-5.
 - **Changelog**: Las contraseñas se guardan con un scrypt más costoso; las antiguas se actualizan solas en el primer inicio de sesión correcto.
-- **Estado**: borrador
+- **Estado**: completado
+- **Cerrada**: 2026-11-23
 - **Tiempo humano**: est. 2.5h · real —
-- **Tiempo IA (ejec.)**: est. 0.26h · real —
+- **Tiempo IA (ejec.)**: est. 0.26h · real 0.69h (medido)
 - **Supervisión**: est. 0.06h · real —
 - **Previsión IA**: 71 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-01, T-06
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/passwords.py`, `server/memory_platform/auth.py`, `server/memory_platform/store_auth.py`, `server/memory_platform/tests/test_passwords.py`, `server/memory_platform/tests/test_auth.py`
+- **Archivos**: `server/memory_platform/passwords.py`, `server/memory_platform/auth.py`, `server/memory_platform/store_auth.py`, `server/memory_platform/tests/test_passwords.py`, `server/memory_platform/tests/test_auth.py`, server/memory_platform/tests/__init__.py (añadido con nota: la suite corre a n=2^14)
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_passwords|test_auth|MEMORY_TEST_RESULT"` → nombradas en `ok`; 0 fallos y 0 omitidos
 
 **Criterios de aceptación**
-- [ ] Un hash nuevo usa los parámetros definitivos; uno antiguo verifica y queda sustituido tras el primer login correcto
-- [ ] Usuario inexistente o deshabilitado: una derivación de coste objetivo, igual que una contraseña incorrecta (contador de derivaciones, sin medir tiempos)
-- [ ] Parámetros guardados por encima del objetivo se rechazan sin derivar
+- [x] Un hash nuevo usa los parámetros definitivos; uno antiguo verifica y queda sustituido tras el primer login correcto
+- [x] Usuario inexistente o deshabilitado: una derivación de coste objetivo, igual que una contraseña incorrecta (contador de derivaciones, sin medir tiempos)
+- [x] Parámetros guardados por encima del objetivo se rechazan sin derivar
 
 **Subtareas**
-- [ ] Prueba en rojo
-- [ ] Mover scrypt y subir `maxmem`
-- [ ] Rehash en la transacción que abre la sesión
+- [x] Prueba en rojo
+- [x] Mover scrypt y subir `maxmem`
+- [x] Rehash en la transacción que abre la sesión
+
+**Notas**: **Notas**: RED: `test_passwords` falló con `ImportError: cannot import name 'passwords' from 'memory_platform'` y, con el módulo y sin cablear `Auth.login`, `Lists differ: [] != [(1024, 8, 1), (131072, 8, 1)]` · 2026-11-23. `passwords.py`: `_derive` es la única llamada a `hashlib.scrypt` (con `maxmem` explícito); `check_login` hace una derivación de coste objetivo siempre (hash antiguo: la suya más una objetivo). `TARGET` es atributo del módulo solo para que la suite corra a n=2^14 (`tests/__init__.py`, añadido a `Archivos`); `test_passwords` ejecuta el coste real (`REAL`). Rehash con savepoint, `WHERE password_hash=<leído>`. Verde: `test_passwords`, `test_auth`, `test_auth_cache` y `test_auth_race` sin fallos.
 
 ### T-08 — Tope de logins simultáneos: semáforo que una sola IP no puede llenar (CA-09)
 

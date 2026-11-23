@@ -1,37 +1,18 @@
 """Primary-database authentication and scoped authorization."""
 import hashlib
 import hmac
-import json
 import secrets
 from datetime import datetime, timezone
 
 from .errors import Forbidden, MemoryError, NotFound, Unauthorized
-from .auth_scope import invalidate_auth
+from .auth_scope import invalidate_auth, savepoint
+from .passwords import check_login, hash_password, verify_password  # noqa: F401  (re-exported: the callers and tests that import them from here)
 
 SCOPES = frozenset({'read', 'write', 'publish', 'validate', 'admin'})
 
 
 def token_hash(token):
     return hashlib.sha256(token.encode()).hexdigest()
-
-
-def hash_password(password):
-    if not isinstance(password, str) or len(password) < 12 or len(password) > 1024:
-        raise MemoryError('invalid_password', 'Password must contain 12 to 1024 characters', 422)
-    salt = secrets.token_bytes(16)
-    digest = hashlib.scrypt(password.encode(), salt=salt, n=16384, r=8, p=1)
-    return json.dumps({'v': 1, 'n': 16384, 'r': 8, 'p': 1, 'salt': salt.hex(), 'hash': digest.hex()})
-
-
-def verify_password(password, encoded):
-    try:
-        data = json.loads(encoded)
-        if data['v'] != 1:
-            return False
-        digest = hashlib.scrypt(password.encode(), salt=bytes.fromhex(data['salt']), n=data['n'], r=data['r'], p=data['p'])
-        return hmac.compare_digest(digest.hex(), data['hash'])
-    except (ValueError, KeyError, TypeError):
-        return False
 
 
 class Auth:
@@ -71,12 +52,20 @@ class Auth:
                 raise MemoryError('rate_limited', 'Too many login attempts', 429)
             c.execute('INSERT INTO memory.login_attempts(username,client_ip) VALUES(%s,%s)', (username, client_ip))
             row = c.execute('SELECT * FROM memory.actors WHERE username=%s AND NOT disabled', (username,)).fetchone()
-        # Equal-cost dummy verification for unknown usernames.
-        encoded = row['password_hash'] if row else '{"v":1,"n":16384,"r":8,"p":1,"salt":"00000000000000000000000000000000","hash":"00"}'
-        if not verify_password(password, encoded) or not row:
+        # One derivation at the target cost for every attempt: unknown or disabled user (the dummy hash), wrong password and right password alike (passwords.py).
+        right, rehash = check_login(password, row['password_hash'] if row else None)
+        if not right or not row:
             raise Unauthorized()
         session, csrf, sid = secrets.token_urlsafe(48), secrets.token_urlsafe(32), secrets.token_hex(16)
         with self.store.transaction() as c:
+            if rehash:
+                # The hash of an earlier release becomes one at the target cost. `WHERE password_hash=<the one read>`: a password changed meanwhile is not overwritten, and a failed write
+                # (a savepoint, so the transaction goes on) does not stop the login.
+                try:
+                    with savepoint(c):
+                        c.execute('UPDATE memory.actors SET password_hash=%s WHERE id=%s AND password_hash=%s', (rehash, row['id'], row['password_hash']))
+                except Exception:
+                    pass
             saved = c.execute("INSERT INTO memory.web_sessions(id,actor_id,token_hash,csrf_hash,expires_at) VALUES(%s,%s,%s,%s,clock_timestamp()+(%s * interval '1 second')) RETURNING expires_at", (sid, row['id'], token_hash(session), token_hash(csrf), self.session_ttl)).fetchone()
             invalidate_auth(c)
             actor = self._actor(c, row, 'session', sid)

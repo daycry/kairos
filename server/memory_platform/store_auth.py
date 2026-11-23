@@ -3,7 +3,8 @@ import secrets
 from pathlib import Path
 
 from .config import migration_maintenance_work_mem
-from .auth import SCOPES, hash_password, token_hash
+from .auth import SCOPES, token_hash
+from .passwords import hash_password
 from .errors import Conflict, Forbidden, MemoryError, NotFound, Unauthorized
 from .auth_scope import _cached, _identity, invalidate_auth
 from .store_common import as_dict, canonical, new_id, clean
