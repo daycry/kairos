@@ -2890,3 +2890,16 @@ Lentes: A+B+C+D sobre `c4f86c7..ce7fde1` (fix10) y `eb6f105` (archivo, SHA-256 v
 | 5 | Minor | Nota RED de fix10 inexacta; sin mutantes de fix10 dentro de `Auth.login`; el mensaje del commit `eb6f105` dice «long notes» y no archivó ninguna (lente A) | T-02 | corregido (fix11, 5a4e0c5) | `tasks.md` nota fix10; `test_auth_cache.py:1465-1498` |
 
 Siguiente: decisión del usuario. Propuesta del orquestador (fix11): en el parse fallido, `memory.` seguido de un hueco es siempre `unknown table` y `memory.<tabla vigilada>` es siempre esa tabla, sin exigir palabra de SQL (la prosa no escribe `memory.`); declarar como límite el nombre de tabla entero dinámico sin `memory.` en una sentencia que no parsea.
+
+
+## Revisión de dos lentes — intento 12: Fase 1 (fix11) (T-01, T-02, T-03, T-04) — 1 Important: la retirada de RAISE
+
+Lentes: A+B+C+D sobre `eb6f105..HEAD` (fix11: `5a4e0c5`, `686a3d6`, `9e2243b`), solo con `kairos-test:i4p1-fix10`/`-fix11` sin red. Gaps del intento 11: 1-5 corregidos con mutante; las plantillas con `memory.{t}` y huecos de cláusula quedan cerradas, también dentro de `Auth.login`. Paquete en verde y sin falsos positivos de prosa. D sin bloqueo: cifras reproducidas, la suite baja unos 2,5 s.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | Regresión del fix11: `_without_raise` se aplica a todo texto que no parsea y borra desde cualquier palabra `raise` (comentario, alias, literal, columna) hasta el siguiente `;` o el final; tras ella dejan de verse `memory.<tabla vigilada>` y las tablas con palabra de SQL (`f'SELECT k.scopes AS raise FROM memory.api_keys k WHERE {cond} {order}'`, `-- raise …`, `/* raise */`, `'raise' AS action`, `RAISE NOTICE '%', (SELECT … FROM memory.api_keys)`). ce7fde1 los daba en rojo (lentes A, B y C) | T-02 | pendiente | `test_auth_cache.py:811-821, :830-833` |
+| 2 | Minor | La retirada de comentarios no sigue al lexer: `--` termina también en `\r`; los comentarios de bloque se anidan; `a$x$` se toma por apertura de cita con dólar (lentes A, B, C y D) | T-02 | pendiente | `test_auth_cache.py:539, :594-610` |
+| 3 | Minor | `memory /*x*/ .api_keys` sin palabra de SQL calla porque `_MEMORY_TABLE` mira el texto crudo (heredado); DDL de esquema completo (`GRANT … ON ALL TABLES IN SCHEMA memory`, `ALTER SCHEMA memory …`, `DROP OWNED`) e `INHERITS (memory.actors)` sin clasificar (lentes B y C) | T-02 | pendiente | `test_auth_cache.py:534, :753-772, :831` |
+| 4 | Minor | Controles sin mutante (`closed` del comentario sin cerrar, `CreateStmt`); series de `+`/`-` cuadráticas en el lexer sin cubrir y el test de tiempo actúa como cota absoluta de 0,5 s; una cifra del docstring no se reproduce (lentes A y D) | T-02 | pendiente | `test_auth_cache.py:600, :753, :845, :1158, :1602-1605` |
+| 5 | Minor | Documentación de límites inexacta tras el fix11 (`:522-526`, `:550-551`, `:1138-1144`, `design.md:116` «siempre»); nota RED de fix11: 20 fallos, no 19 (lente A) | T-02 | pendiente | `test_auth_cache.py:522-551, :1138-1144`; `design.md:116`; `tasks.md` nota fix11 |

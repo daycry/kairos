@@ -522,8 +522,9 @@ DYNAMIC_SQL = {
 # EVERY literal, once its constants are filled in and up to 32 768 characters, is parsed: there is no lexical gate (parsing the 33 252 literals of the package costs 0.15-0.2 s). Every hole (a
 # non-constant expression, the `{}` `{name}` `{0}` of a template, a `%s` `%(x)s` `%d` placeholder) is replaced by an identifier no one writes (`kairos_hole_N_`) before parsing; a table position is
 # decided by the tree (a RangeVar whose name or schema is or contains the identifier). The tree says which tables the text reads and writes, whether it takes a whole row of `actors` and which
-# `FOR SHARE` locks it holds. A text that does not parse (or is too big or too deep) is reported only when it names a table of the guard (`\b`) with a word of SQL: `unparseable SQL` plus each
-# table it names. A text that does not parse and only has holes is prose and is silent. When in doubt, red.
+# `FOR SHARE` locks it holds. A text that does not parse (or is too big, too deep or has a block comment that never closes) is reported by what it names, outside comments: `memory.` followed by
+# a hole is `unknown table`; `memory.<table of the guard>`, or a table of the guard with a word of SQL, is `unparseable SQL` plus that table. A text that does not parse and only has holes is prose
+# and is silent. The message of a RAISE is read like any text. When in doubt, red.
 _SENTINEL = 'kairos_hole_'
 _MAX_PARSED = 32768  # characters; the parser of libpg_query crashes (SIGSEGV) on about 50 000 terms and the largest literal of the package is 1 896 characters
 _MAX_DEPTH = 4  # a string of SQL inside a string of SQL inside ...: the text of the deeper ones is read as one that does not parse
@@ -548,7 +549,8 @@ def _reads_is_admin(sql):
 
 def _prepare(text):
     """The text the parser gets, in ONE linear pass: every hole is an identifier (a NUL, the `{}` of a template, a psycopg placeholder `%s`/`%(x)s`; `%%` is a `%`); quoted text, dollar quotes
-    and comments are copied as they are. A quote, comment or dollar quote that never closes takes the rest of the text, so the cost is the length of the text."""
+    are copied as they are; comments are cut out (a line comment ends at a line feed or a carriage return, a block comment becomes a space and one that never closes marks the text as not closed).
+    A quote or dollar quote that never closes takes the rest of the text, so the cost is the length of the text."""
     counter, closed = itertools.count(), True
 
     def hole():
@@ -592,9 +594,8 @@ def _prepare(text):
                 out.append(re.sub(r'\{[^{}]*\}', lambda m: hole(), token))
             i = j
         elif c == '-' and text.startswith('--', i):  # a comment names nothing the statement does, and the lexer of the parser is quadratic in the number of block comments
-            j = text.find('\n', i)
-            j = n if j == -1 else j
-            i = j
+            ends = [k for k in (text.find('\n', i), text.find('\r', i)) if k != -1]  # as in the lexer of PostgreSQL, a line comment ends at a line feed or a carriage return
+            i = min(ends) if ends else n
         elif c == '/' and text.startswith('/*', i):
             j = text.find('*/', i + 2)
             closed = closed and j != -1
@@ -808,26 +809,15 @@ class _Analysis:
         self.reads, self.writes, self.dynamic = frozenset(reads), frozenset(writes), dynamic
 
 
-def _without_raise(text):
-    """The text without its `RAISE ... ;` statements (PL/pgSQL messages name tables in prose); one pass: a RAISE with no `;` after it takes the rest."""
-    out, i = [], 0
-    for m in re.finditer(r'\bRAISE\b', text, re.I):
-        if m.start() < i:
-            continue
-        out.append(text[i:m.start()])
-        end = text.find(';', m.end())
-        i = len(text) if end == -1 else end + 1
-    out.append(text[i:])
-    return ' '.join(out)
-
-
 def _fallback(text, prepared=None):
     """What a text that cannot be parsed (a syntax error, an unclosed comment, too big, too deep) is reported as. `memory.` followed by a hole (`memory."<hole>"`, `"memory".<hole>`,
     `memory.api_<hole>`) is always `unknown table`; `memory.<table of the guard>` is always that table; a name without `memory.` counts only with a word of SQL (a bare name like the keys of the
     retention windows is not SQL). A table named is `unparseable SQL` and a read, a write when a word of writing comes before it, and `actors` is a whole row only with a star, `a.*` or
-    `TABLE`/`COPY ... TO`. The text of a RAISE is not SQL. A hole alone as the name of a table, with no `memory.`, is NOT seen in a text that does not parse (a declared limit)."""
-    prepared = _prepare(text)[0] if prepared is None else prepared
-    text = _without_raise(text)
+    `TABLE`/`COPY ... TO`. Comments are not read (unless the block comment never closes: then the whole text is). The message of a RAISE is read like any text (a message that names a table of the
+    guard is red: declared). A hole alone as the name of a table, with no `memory.`, is NOT seen in a text that does not parse (a declared limit)."""
+    stripped, closed = _prepare(text)
+    prepared = stripped if prepared is None else prepared
+    text = stripped if closed else text
     qualified = {match.group(1).lower() for match in _MEMORY_TABLE.finditer(text)}
     named = qualified | ({word.lower() for word in _RESTRICTED_WORD.findall(text)} if _SQL_WORD.search(text) else set())
     reads = ({('unparseable SQL', False)} if named else set()) | {(table, False) for table in named if table in READ_TABLES} | ({('is_admin:row', False)} if 'actors' in named and _WHOLE_ROW_WORD.search(text) else set())
@@ -1135,17 +1125,20 @@ class ResolverBoundaryTests(unittest.TestCase):
     `DROP` on a table of WRITE_TABLES write it. Every string inside the tree (an argument of `query_to_xml` or `dblink_exec`, the body of DO, CREATE FUNCTION or CREATE PROCEDURE) is read again
     by the same function, up to four levels deep. `is_admin` is the one rule that is not the parser's: any literal that spells the word, or any identifier the parser decodes to it, is a read.
     A text that does not parse (a syntax error, an unclosed comment, more than 32 768 characters, too deep for the walk) is reported by what it names: `memory.` followed by a hole
-    (`memory."<hole>"`, `"memory".<hole>`, `MEMORY.<hole>`, `memory.api_<hole>`) is always `unknown table`; `memory.<table of the guard>` is always that table (`unparseable SQL`, a read, a write when
+    (`memory."<hole>"`, `"memory".<hole>`, `MEMORY.<hole>`, `memory.api_<hole>`) is `unknown table`; `memory.<table of the guard>` is that table (`unparseable SQL`, a read, a write when
     a word of writing comes before it, `actors` as a whole row only with a star, `a.*`, `TABLE` or `COPY ... TO`); a table named without `memory.` counts only with a word of SQL. A text that does
-    not parse and only has holes is prose and is silent. Prose that names a table of the guard with a word of SQL stays red, and the package has none. Comments are not given to the parser.
+    not parse and only has holes is prose and is silent. Both rules look at the text without its comments, except when a block comment never closes (then the whole text). Prose, a RAISE message or a
+    PL/pgSQL string that names a table of the guard (with `memory.` or with a word of SQL) is red, and the package has none.
 
     The scan is a DETECTOR OF REGRESSIONS, not a proof of absence. Known limits, accepted:
     * SQL built in several steps (`sql += ...`, `' '.join(...)`) that never reaches one literal is judged piece by piece: a piece that spells `is_admin`, or parses and names a table, is caught
       by itself; a bare piece (`'memory.api_keys'`, `' WHERE x'`) is not;
     * a table name that is ENTIRELY a hole, without `memory.` (`FROM {}`), inside a statement that does not parse is not seen (with `memory.` it always is); the composition that uses it is, if it
       parses whole; `format('%I.%I', ...)` and `'memory.' || 'api_keys'` inside the SQL are not seen either;
+    * block comments that nest (`/* /* */ */`) are cut at the first `*/`; `a$x$` is taken for the opening of a dollar quote; DDL on a whole schema (`GRANT ... ON ALL TABLES IN SCHEMA memory`,
+      `ALTER SCHEMA memory ...`, `DROP OWNED`) and `INHERITS (memory.actors)` are not classified;
     * the body of a PL/pgSQL function or DO is not parsed as PL/pgSQL (`pglast.parse_plpgsql` needs a complete CREATE FUNCTION and every variable declared): it is read as a text that does not parse,
-      without its RAISE statements, and a bare INTO is not a write;
+      and a bare INTO is not a write; a RAISE message that names a table of the guard is a false positive (red), the package has none;
     * prose that parses as SQL (`f'table {x}'`, `f'drop table {a}'`) is an unknown table; the package has none;
     * a hole whose value is DATA and names a table is `unknown table` where it stands in a table position, and the tables it may take are checked only per function (`DYNAMIC_SQL`), not per statement;
       a hole in a select list is taken for `a` or `*` when it stands alone and the level has `actors`; a hole in an alias or in any other column position is not;
@@ -1155,8 +1148,9 @@ class ResolverBoundaryTests(unittest.TestCase):
     * `sql.Composed` / `sql.SQL(...).join(...)` with a write verb in a function that may reach any table (`inspect_store`, `table_digest`) is not told apart from a SELECT beyond its text;
     * the column `is_admin` is searched in the raw literal: a comment that names it is a false positive worth an exception, never a hole;
     * the parser is the one of PostgreSQL 17: syntax a later server accepts does not parse (and then the report above applies);
-    * cost, measured in fix9 to fix11 (notes of T-02): the parser's lexer is quadratic in the number of block comments (`'/*' * 16000` took 1.8 s, `'/**/' * 16000` 1.75 s), so comments are cut out
-      before parsing and an unclosed one is not parsed; `test_the_cost_grows_linearly_with_the_input` compares n and 4n on runs of every kind of opener.
+    * cost, measured in fix9 to fix12 (notes of T-02): the parser's lexer is quadratic in the number of block comments (`'/*' * 16000` took 1.7-1.8 s, `'/**/' * 16000 + 'x'` 1.75 s), so comments
+      are cut out before parsing and an unclosed one is not parsed; series of `+` or `-` are quadratic in the lexer too and are bounded only by the cap of 32 768 characters;
+      `test_the_cost_grows_linearly_with_the_input` compares n and 4n, and in practice acts as an absolute bound of 0.5 s on inputs that cost less than 0.06 s.
     PRINCIPLE (fix5): there is no silence by the shape of the SQL. Any `is_admin` in a literal outside the resolver is a read, also when it is written; a legitimate writer (`bootstrap_user`,
     `provision_locked`) is declared BY FUNCTION on the closed list. A new way of reading goes in `reads` below with its mutant, and a legitimate new reader or writer goes on the closed lists
     with its reason."""
@@ -1569,7 +1563,7 @@ class ResolverBoundaryTests(unittest.TestCase):
         self.assertIn(('is_admin:row', False), sql_reads('SELECT * FROM memory.actors a WHERE {cond} {order}'))
         self.assertIn(('is_admin:row', False), sql_reads('SELECT a.* FROM memory.actors a WHERE {cond} {order}'))
         body = "DO $$ BEGIN RAISE NOTICE 'could not read from actors'; SELECT 1 INTO x FROM memory.projects; END $$"
-        self.assertEqual(sql_reads(body), set())
+        self.assertEqual(sql_reads(body), {('unparseable SQL', False)})  # fix12: the message of a RAISE that names a table of the guard is red (declared); it was silent in fix11
         self.assertEqual(sql_writes("DO $$ DECLARE v text; BEGIN SELECT scopes INTO v FROM memory.api_keys; END $$"), set())  # INTO of PL/pgSQL is not a write
         self.assertEqual(sql_reads("DO $$ DECLARE v text; BEGIN SELECT scopes INTO v FROM memory.api_keys; END $$"), {('unparseable SQL', False), ('api_keys', False)})
         for text in ('ANALYZE {x}', 'LOCK TABLE {x}', 'VACUUM {x}', "COMMENT ON TABLE {x} IS 'y'"):
@@ -1578,6 +1572,30 @@ class ResolverBoundaryTests(unittest.TestCase):
         self.assertEqual(sql_reads('CREATE TABLE memory.y (LIKE memory.api_keys)'), set())
         outside, _ = reads_outside_the_resolver({**base, 'newmod.py': "def leak(path):\n    return f'cannot restore from {path}', f'analyze {path}', f'could not update {path}'\n"})
         self.assertEqual(outside, {})
+
+    def test_the_word_raise_hides_nothing_and_the_comments_follow_the_lexer(self):
+        # fix12 gaps 1-4: raise as an alias, in a comment, in a literal; a comment that ends at a carriage return; a comment inside `memory . name`; the controls of `closed` and `CreateStmt`
+        base = package_sources()
+        bodies = [
+            ("return c.execute(f'SELECT k.scopes AS raise FROM memory.api_keys k WHERE {cond} {order}')", 'api_keys'),
+            ("return c.execute(f'-- raise the limit\\nUPDATE memory.api_keys SET {sets} WHERE id = %s')", 'api_keys'),
+            ("return c.execute(f'SELECT 1 /* raise if none */ FROM memory.api_keys k WHERE {cond} {order}')", 'api_keys'),
+            ("return c.execute(f\"SELECT 'raise' AS action, g.permission FROM memory.project_grants g WHERE {cond} {order}\")", 'project_grants'),
+            ("return c.execute(\"DO $$ BEGIN RAISE NOTICE '%', (SELECT count(*) FROM memory.api_keys); END $$\")", 'api_keys'),
+            ("return c.execute(f'-- note\\rUPDATE memory.api_keys SET {sets} WHERE id = %s')", 'api_keys'),
+            ("return c.execute('memory /*x*/ .api_keys k ON k.id = x.id ' + cond + ' ' + order)", 'api_keys'),
+            ("return c.execute('SELECT 1 /* x FROM memory.api_keys')", 'api_keys'),
+        ]
+        for body, kind in bodies:
+            with self.subTest(body=body[:80]):
+                outside, _ = reads_outside_the_resolver({**base, 'newmod.py': 'def leak(c, cond, order, sets):\n    ' + body + '\n'})
+                self.assertIn(kind, outside.get('newmod.py:leak', []), body)
+                outside, _ = reads_outside_the_resolver({**base, 'auth.py': inject(base['auth.py'], 'Auth.login', body)})
+                self.assertIn(kind, outside.get('auth.py:Auth.login', []), body)
+        self.assertEqual(sql_writes('-- raise the limit\nUPDATE memory.api_keys SET {sets} WHERE id = %s'), {'api_keys'})
+        self.assertEqual(sql_writes('-- note\rUPDATE memory.api_keys SET {sets} WHERE id = %s'), {'api_keys'})
+        self.assertEqual(sql_writes('CREATE TABLE memory.api_keys (id int)'), {'api_keys'})
+        self.assertIn(('api_keys', False), sql_reads('SELECT 1 /* x FROM memory.api_keys'))
 
     def test_ddl_on_the_tables_of_the_guard_is_a_write(self):
         # fix11 gap 3

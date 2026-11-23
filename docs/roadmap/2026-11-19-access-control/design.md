@@ -115,6 +115,8 @@ Lista cerrada de excepciones del test:
 
 > **Nota 2026-11-23 (fase 1, fix11; completa la de fix10).** En un texto que no parsea, `memory.` seguido de un hueco es siempre una tabla desconocida y `memory.<tabla vigilada>` es siempre esa tabla, sin exigir palabra de SQL; sin `memory.` cuenta solo con palabra de SQL. Límites declarados: un nombre de tabla entero dinámico sin `memory.` (`FROM {}`) dentro de una sentencia que no parsea no se ve; `format('%I.%I', ...)` y `'memory.' || 'x'` dentro del SQL tampoco; los cuerpos PL/pgSQL se leen como texto que no parsea. Los comentarios no se dan al parser.
 
+> **Nota 2026-11-23 (fase 1, fix12; precisa la de fix11).** En un texto que no parsea, `memory.<hueco>` es tabla desconocida y `memory.<tabla vigilada>` es esa tabla, mirando el texto sin comentarios (salvo un comentario de bloque sin cerrar: entonces todo el texto); sin `memory.` cuenta con palabra de SQL. El texto de un `RAISE` se lee como cualquier otro: un mensaje que nombre una tabla vigilada es falso positivo (rojo), y el paquete no tiene ninguno. Límites declarados: comentarios de bloque anidados, `a$x$` como cita con dólar, DDL de esquema completo (`GRANT ... ON ALL TABLES IN SCHEMA`, `ALTER SCHEMA`, `DROP OWNED`), `INHERITS (memory.actors)`, series de `+`/`-` cuadráticas en el lexer (acotadas por el tope de 32 768 caracteres).
+
 El test amplía el recorrido que ya existe en `test_auth_cache.py:461`. Añade `actors.is_admin` (en SQL y en accesos `['is_admin']` o `.get('is_admin')`) y exige una justificación escrita por excepción. Es la primera tarea del hito A.
 
 Las ampliaciones futuras entran así (base de la nota de CA-38 c en `docs/architecture.md`):
