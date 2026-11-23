@@ -486,3 +486,100 @@ class SetPasswordTests(pw.Fixture):
             self.assertFalse(isinstance(node, ast.Call) and getattr(node.func, 'attr', '') == 'execute', 'the branch of set-password runs SQL itself')
             self.assertFalse(isinstance(node, ast.Constant) and isinstance(node.value, str) and 'memory.' in node.value, 'the branch of set-password names a table')
         self.assertTrue(any(isinstance(n, ast.Attribute) and n.attr == 'set_password' for n in body), 'it calls the writer of the store')
+
+
+class RevokeKeysRaceTests(pw.Fixture):
+    """Fix2 of the review of phase 2 (attempt 2, gap 1): `create_key` and `set-password --revoke-keys` for the same user at once.
+
+    `create_key` takes `FOR SHARE` on the row of the owner of the key, then checks the credential again: if `set_password` (which holds the row, uncommitted, with the sessions and the keys already
+    revoked) wins, the creation waits and then fails with 401; if the creation wins, the `UPDATE api_keys` of `set_password` waits for it and revokes the new key too. Both orders are made with a
+    writer whose transaction is open (a hook after its last statement) and the wait seen in `pg_stat_activity`: no `sleep`, no clock."""
+    BODY = {'name': 'race', 'project_ids': ['p1'], 'scopes': ['read']}
+
+    def setUp(self):
+        super().setUp()
+        self.store.create_user(self.admin, {'username': 'owner', 'password': pw.PASSWORD, 'project_ids': ['p1'], 'scopes': ['read', 'admin']})
+        self.observer = self.psycopg.connect(self.dsn, autocommit=True)
+        self.addCleanup(self.observer.close)
+
+    def creator(self, kind):
+        """The credential that makes the key: a session of `owner`, or a key of `owner`."""
+        self.set_hash(passwords.hash_password(pw.PASSWORD), 'owner')  # what a previous round of set-password replaced
+        session = self.auth.login('owner', pw.PASSWORD, '192.0.2.40')['actor']
+        if kind == 'session':
+            return session
+        token = self.store.create_key(session, {'name': 'first', 'project_ids': ['p1'], 'scopes': ['read', 'admin']})['token']
+        return self.auth.authenticate_bearer(token)
+
+    def someone_waits_for_a_lock(self):
+        return self.observer.execute("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND pid<>pg_backend_pid()").fetchone()[0] > 0
+
+    def live_keys(self):
+        return self.observer.execute("SELECT count(*) FROM memory.api_keys WHERE actor_id=(SELECT id FROM memory.actors WHERE username='owner') AND revoked_at IS NULL").fetchone()[0]
+
+    def run_pair(self, first, hold_in, second):
+        """`first` runs on a thread and stops, with its transaction open, inside `hold_in` (a method name of the store); `second` starts then and the wait for a lock is seen; `first` is released.
+        Returns (waited, outcome of first, outcome of second)."""
+        import threading
+        entered, release = threading.Event(), threading.Event()
+        out = {}
+        real = getattr(self.store, hold_in)
+
+        def hold(c, actor, action, *args, **kwargs):
+            result = real(c, actor, action, *args, **kwargs)
+            if action in ('key.created', 'password.reset'):
+                entered.set()
+                release.wait(60)
+            return result
+
+        def run(name, call):
+            try:
+                out[name] = call()
+            except BaseException as exc:  # reported by the assertions
+                out[name] = exc
+        with patch.object(self.store, hold_in, hold):
+            one = threading.Thread(target=run, args=('first', first))
+            one.start()
+            try:
+                self.assertTrue(entered.wait(60), 'the first transaction never reached its last statement')
+                two = threading.Thread(target=run, args=('second', second))
+                two.start()
+                import time
+                deadline = time.monotonic() + 60
+                while two.is_alive() and not self.someone_waits_for_a_lock() and time.monotonic() < deadline:
+                    pass  # no sleep: each pass is a round trip to the database
+                waited = self.someone_waits_for_a_lock()
+            finally:
+                release.set()
+            one.join(60)
+            two.join(60)
+        self.assertFalse(one.is_alive() or two.is_alive())
+        return waited, out.get('first'), out.get('second')
+
+    def test_set_password_that_commits_first_makes_the_creation_wait_and_then_fail(self):
+        for kind in ('session', 'key'):
+            with self.subTest(credential=kind):
+                actor = self.creator(kind)
+                before = self.live_keys()
+                waited, revoked, created = self.run_pair(lambda: self.store.set_password('owner', 'replacement-password-789', revoke_keys=True), '_audit',
+                                                         lambda: self.store.create_key(actor, self.BODY))
+                self.assertTrue(waited, 'the creation did not wait for the transaction of set-password (no lock on the row of the owner)')
+                self.assertIsInstance(created, MemoryError, created)
+                self.assertEqual(created.status_code, 401)
+                self.assertEqual(self.live_keys(), 0, 'no key of the user is alive: the one of the race was not created')
+                self.assertEqual(revoked['keys_revoked'], before)
+
+    def test_a_creation_that_commits_first_is_revoked_by_set_password(self):
+        for kind in ('session', 'key'):
+            with self.subTest(credential=kind):
+                actor = self.creator(kind)
+                before = self.live_keys()
+                waited, created, revoked = self.run_pair(lambda: self.store.create_key(actor, self.BODY), '_audit',
+                                                         lambda: self.store.set_password('owner', 'replacement-password-789', revoke_keys=True))
+                self.assertTrue(waited, 'set-password did not wait for the creation in progress')
+                self.assertIsInstance(created, dict, created)
+                self.assertEqual(revoked['keys_revoked'], before + 1, 'the new key is counted by the revocation')
+                self.assertEqual(self.live_keys(), 0)
+                with self.assertRaises(MemoryError) as raised:
+                    self.auth.authenticate_bearer(created['token'])
+                self.assertEqual(raised.exception.status_code, 401)

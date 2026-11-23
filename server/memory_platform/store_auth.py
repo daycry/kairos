@@ -239,6 +239,12 @@ class AuthMixin:
         data = as_dict(key)
         token, kid = 'mp_'+secrets.token_urlsafe(48), new_id()
         with self.transaction() as c:
+            # The row of the owner is locked BEFORE the credential is checked (fix2 of the review of phase 2, gap 1): the INSERT of the key only takes `FOR KEY SHARE` on it, which does not
+            # conflict with the `UPDATE` of `admin set-password --revoke-keys`, so a key made in parallel would escape its `UPDATE api_keys`. `FOR SHARE` waits for that transaction and, once it
+            # commits, the check below (a new statement, with the cache emptied) sees the session or the key revoked: 401. If this creation wins, `set-password` waits for it and revokes the new key.
+            if actor and actor.get('id'):
+                c.execute('SELECT 1 FROM memory.actors WHERE id=%s FOR SHARE', (actor['id'],))
+                invalidate_auth(c)
             self._delegate(c, actor, data['project_ids'], data['scopes'])
             c.execute('INSERT INTO memory.api_keys(id,actor_id,name,token_hash,prefix,project_ids,scopes) VALUES(%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb)', (kid, actor['id'], data['name'], token_hash(token), token[:10], canonical(data['project_ids']), canonical(data['scopes'])))
             invalidate_auth(c)
