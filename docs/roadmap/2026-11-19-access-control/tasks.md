@@ -56,7 +56,7 @@ test-plan: test-plan.md
 | Fase | Completadas | Total | Progreso | H. humanas (real/est) | H. IA ejec. (real/est) | Supervisión (real/est) | Tokens (real/est) |
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Medición de scrypt y guarda del resolvedor (CA-09, CA-38 a) | 5 | 5 | 100% | 0 / 19.8h | 4.77 / 6.3h | 0 / 1.6h | 0 / 1570 k |
-| Fase 2 — Esquema 13, scrypt y contraseñas (C-01) | 6 | 7 | 86% | 0 / 36.0h | 1.66 / 3.7h | 0 / 0.9h | 0 / 924 k |
+| Fase 2 — Esquema 13, scrypt y contraseñas (C-01) | 6 | 7 | 86% | 0 / 36.0h | 2.60 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 3 — Usuarios, permisos y sesiones (C-01) | 0 | 6 | 0% | 0 / 36.0h | 0 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01) | 0 | 7 | 0% | 0 / 48.0h | 0 / 4.9h | 0 / 1.2h | 0 / 1232 k |
 | Fase 5 — Login que no se bloquea entre clientes (C-02) | 0 | 5 | 0% | 0 / 43.2h | 0 / 4.4h | 0 / 1.1h | 0 / 1109 k |
@@ -73,7 +73,7 @@ test-plan: test-plan.md
 | Fase 16 — Identidad: guía probada y extensibilidad (C-05) | 0 | 5 | 0% | 0 / 23.4h | 0 / 2.4h | 0 / 0.6h | 0 / 601 k |
 | Fase 17 — Revisión del hito C y revisión de seguridad (C-07) | 0 | 5 | 0% | 0 / 27.0h | 0 / 5.3h | 0 / 1.3h | 0 / 1320 k |
 | Fase 18 — Cierre del hito C y de la iniciativa: ensayo, versión 0.4.2 y PR | 0 | 4 | 0% | 0 / 11.4h | 0 / 1.2h | 0 / 0.3h | 0 / 293 k |
-| **TOTAL** | **11** | **106** | **10%** | **0 / 616.2h** | **6.43 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
+| **TOTAL** | **11** | **106** | **10%** | **0 / 616.2h** | **7.37 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -222,7 +222,7 @@ test-plan: test-plan.md
 
 ## Fase 2 — Esquema 13, scrypt y contraseñas (C-01)
 
-**Estado**: en-progreso · **Hito**: A · **Estimado**: 36.0h (30h base, de ellas 15h de revisión adversarial) · **Real**: 1.66h IA (medido; T-12 sin hacer) · **Coste est.**: 1.800 € · **Tokens est.**: 924 k
+**Estado**: en-progreso · **Hito**: A · **Estimado**: 36.0h (30h base, de ellas 15h de revisión adversarial) · **Real**: 2.60h IA (medido; incluye 0.94h de fix1 de la revisión; T-12 sin hacer) · **Coste est.**: 1.800 € · **Tokens est.**: 924 k
 
 ### T-06 — Esquema 13: columnas e índices de los tres hitos, de una vez (CA-10)
 
@@ -231,7 +231,7 @@ test-plan: test-plan.md
 - **Estado**: completado
 - **Cerrada**: 2026-11-23
 - **Tiempo humano**: est. 3h · real —
-- **Tiempo IA (ejec.)**: est. 0.31h · real 0.17h (medido)
+- **Tiempo IA (ejec.)**: est. 0.31h · real 0.26h (medido, incluye 0.09h de fix1)
 - **Supervisión**: est. 0.08h · real —
 - **Previsión IA**: 85 k in / 7 k out tok · ⚠️ verificar €
 - **Dependencias**: T-05
@@ -252,6 +252,8 @@ test-plan: test-plan.md
 
 **Notas**: RED: `AccessSchemaTests` (4 pruebas) falló con `AssertionError: 12 not greater than or equal to 13` y `None != (timestamp with time zone, YES, None)` · 2026-11-23. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `3f2cd66a81df`.
 
+**Notas fix1** (revisión de la Fase 2, intento 1; medición única de fix1: 0.94h IA, medido, repartida por peso del cambio: T-06 0.09, T-07 0.10, T-08 0.19, T-09 0.42, T-10 0.14) · hueco 5 (commit 32bbec1): `test_the_upgrade_adds_exactly_what_dc6_lists_to_every_table_of_the_schema` (`test_migrations_additive.py:460`) compara el catálogo completo de `memory` antes y después de actualizar desde 0.4.1 con IGUALDAD: tablas, columnas (tipo, nulabilidad y valor por defecto), índices con su definición, restricciones con su definición, funciones, disparadores, extensiones y versiones; solo aparecen las siete columnas, los dos índices y la versión 13. RED (mutante en `schema.sql`, revertido con `git checkout`): una columna `audit_events.extra_column` y un índice `extra_index` en la 13 → `AssertionError: {('lo[468 chars]), ('memory_items', 'parent_hash'): … != {…}` (falla `columns`) · 2026-11-23. Decisión: `test_queue_indexes.py:82` sigue acotado a `jobs`: es la prueba de la versión 12 y lo que la 13 añade en otras tablas lo cierra la igualdad anterior. Verificación declarada, ejecutada en la suite completa con `kairos-test:i4p2-fix1` (exit 0): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1673}`: `test_migrations_additive` y `test_queue_indexes` en `ok`, 0 fallos y 0 omitidos.
+
 ### T-07 — `passwords.py`: scrypt con el coste medido, hash ficticio, techo y rehash (CA-09)
 
 - **Descripción**: Sacar scrypt de `auth.py` a `server/memory_platform/passwords.py` con los parámetros que fijó T-01: `hash_password`, `verify_password` (rechaza parámetros guardados por encima del objetivo), hash ficticio con el coste objetivo y rehash transparente en el primer login correcto (`UPDATE … WHERE password_hash=<el leído>`; si falla, el login sigue). Fuente: CA-09; S-07; DC-5.
@@ -259,7 +261,7 @@ test-plan: test-plan.md
 - **Estado**: completado
 - **Cerrada**: 2026-11-23
 - **Tiempo humano**: est. 2.5h · real —
-- **Tiempo IA (ejec.)**: est. 0.26h · real 0.69h (medido)
+- **Tiempo IA (ejec.)**: est. 0.26h · real 0.79h (medido, incluye 0.10h de fix1)
 - **Supervisión**: est. 0.06h · real —
 - **Previsión IA**: 71 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-01, T-06
@@ -280,6 +282,8 @@ test-plan: test-plan.md
 
 **Notas**: RED: `test_passwords` falló con `ImportError: cannot import name 'passwords' from 'memory_platform'` y, con el módulo y sin cablear `Auth.login`, `Lists differ: [] != [(1024, 8, 1), (131072, 8, 1)]` · 2026-11-23. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `0e2a218faee9`.
 
+**Notas fix1** (revisión de la Fase 2, intento 1; medición única de fix1: 0.94h IA, medido, repartida por peso del cambio: T-06 0.09, T-07 0.10, T-08 0.19, T-09 0.42, T-10 0.14) · hueco 4 (commit de98682): `ProductionCostTests` (`test_passwords.py:104`): un subproceso que no importa el paquete de pruebas ve `TARGET == DEFAULT_PARAMS == (2**17, 8, 1)` y el AST de `passwords.py` asigna `TARGET = DEFAULT_PARAMS`, sin ningún otro módulo que reasigne `TARGET`. RED (mutante `TARGET = (2 ** 14, 8, 1)` en `passwords.py`, revertido): `AssertionError: Lists differ: [[16384, 8, 1], [131072, 8, 1]] != [[131072, 8, 1], [131072, 8, 1]]` y `AssertionError: '(2 ** 14, 8, 1)' != 'DEFAULT_PARAMS'` · 2026-11-23. Con fix1 `test_a_password_changed_while_the_login_derived_is_not_overwritten` espera ahora 401 y ninguna sesión (hueco 3). Verificación declarada en la suite completa con `kairos-test:i4p2-fix1` (exit 0): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1673}`: `test_passwords` y `test_auth` en `ok`, 0 fallos y 0 omitidos.
+
 ### T-08 — Tope de logins simultáneos: semáforo que una sola IP no puede llenar (CA-09)
 
 - **Descripción**: Semáforo en memoria con `MEMORY_LOGIN_CONCURRENCY` huecos (valor de T-01) para toda derivación scrypt de la API: login, cambio de contraseña y alta de usuario. Una IP ocupa como mucho un hueco, en uso o en espera; espera acotada (tantas peticiones como huecos, 2 s); lleno responde 503 `login_busy` con `Retry-After` y no cuenta como fallo. `MemoryError` gana `retry_after` y `error()` añade la cabecera. Fuente: CA-09; DC-2; DC-5; R-02; invariante 3.
@@ -287,7 +291,7 @@ test-plan: test-plan.md
 - **Estado**: completado
 - **Cerrada**: 2026-11-23
 - **Tiempo humano**: est. 2.5h · real —
-- **Tiempo IA (ejec.)**: est. 0.26h · real 0.59h (medido)
+- **Tiempo IA (ejec.)**: est. 0.26h · real 0.78h (medido, incluye 0.19h de fix1)
 - **Supervisión**: est. 0.06h · real —
 - **Previsión IA**: 71 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-07
@@ -308,6 +312,8 @@ test-plan: test-plan.md
 
 **Notas**: RED: `GateTests` (8 pruebas) falló con `AttributeError: module 'memory_platform.passwords' has no attribute 'LoginGate'` · 2026-11-23. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `24f3010882f3`.
 
+**Notas fix1** (revisión de la Fase 2, intento 1; medición única de fix1: 0.94h IA, medido, repartida por peso del cambio: T-06 0.09, T-07 0.10, T-08 0.19, T-09 0.42, T-10 0.14) · hueco 2 y mitad del hueco 8 (commits 43d3c20 y 827f643): `create_user` autoriza y rechaza el nombre repetido en una transacción de solo lectura, ANTES de derivar y de tomar el hueco; deriva fuera de toda transacción (`slot=`, la ruta da `passwords.GATE.hold(ip)`); inserta en otra que vuelve a autorizar y a comprobar el nombre, y un `UniqueViolation` es 409 (`store_auth.py:199-225`, `app.py:393`). `CreateUserOrderTests` (`test_access_password.py:277`, 5 pruebas): 403 y 409 con `spy.calls == []` y con la compuerta llena (no 503), sin transacción abierta durante la derivación, clave revocada durante la derivación = 401 sin usuario, nombre tomado durante la derivación = 409. RED: `Tuples differ: (503, 'login_busy', []) != (403, 'forbidden', [])` y `(503, 'login_busy', []) != (409, 'conflict', [])` · 2026-11-23. Mutantes (revertidos): derivar antes de autorizar → 3 rojas; sin segunda autorización → `test_a_key_revoked_while_the_password_was_derived_creates_nothing` roja. Verificación declarada en la suite completa con `kairos-test:i4p2-fix1` (exit 0): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1673}`: `test_passwords` (`GateTests`, `BusyLoginTests`) y `test_access_password` en `ok`, 0 fallos y 0 omitidos.
+
 ### T-09 — `store_access.py`: una puerta para los cambios de acceso y cambio de contraseña (CA-01)
 
 - **Descripción**: Crear el mixin `server/memory_platform/store_access.py`, que `Store` hereda, con `_access_changed` (audita y vacía la caché de permisos) como final obligado de todo escritor nuevo. Primer escritor: `POST /v1/auth/password` (solo sesión y CSRF), que cambia la contraseña, revoca las demás sesiones del usuario y conserva la actual y las claves. Fuente: CA-01; S-03; design.md §O2; invariante 2; R-01.
@@ -315,7 +321,7 @@ test-plan: test-plan.md
 - **Estado**: completado
 - **Cerrada**: 2026-11-23
 - **Tiempo humano**: est. 5h · real —
-- **Tiempo IA (ejec.)**: est. 0.51h · real 0.05h (medido)
+- **Tiempo IA (ejec.)**: est. 0.51h · real 0.47h (medido, incluye 0.42h de fix1)
 - **Supervisión**: est. 0.13h · real —
 - **Previsión IA**: 142 k in / 12 k out tok · ⚠️ verificar €
 - **Dependencias**: T-08
@@ -336,6 +342,8 @@ test-plan: test-plan.md
 
 **Notas**: RED: `test_access_password` falló con `AssertionError: 404 != 200` (la ruta no existía) y `AttributeError: ... no attribute '_access_changed'` · 2026-11-23. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `b5cb25d822eb`.
 
+**Notas fix1** (revisión de la Fase 2, intento 1; medición única de fix1: 0.94h IA, medido, repartida por peso del cambio: T-06 0.09, T-07 0.10, T-08 0.19, T-09 0.42, T-10 0.14) · huecos 1, 3, 6 y 8 (commits 43d3c20 y 827f643). Hueco 1: `POST /v1/auth/password` admite como mucho 5 cambios correctos por usuario en 15 minutos (429 `too_many_attempts`, contados en `audit_events` `password.changed`, sin tabla nueva: la 13 no se reabre), decidido antes del hueco y recontado en la última transacción bajo `FOR NO KEY UPDATE` de la fila (`store_access.py:21-29, :53, :69-70`). RED: `Tuples differ: (503, 'login_busy', []) != (429, 'too_many_attempts', [])` y `200 != 429` · 2026-11-23. Hueco 3: `Auth.login` abre la sesión bajo `FOR SHARE` (`FOR NO KEY UPDATE` si sustituye un hash antiguo) sobre la fila del actor y exige el mismo hash y usuario habilitado, si no 401 sin sesión (`auth.py:77-82`); `LoginRaceTests` (`test_access_password.py:353`) con gancho en `passwords._derive` (`set_password` y `change_password`, con y sin rehash), usuario deshabilitado y transacción del escritor sin confirmar vista esperando en `pg_stat_activity`, sin `sleep`. RED: `AssertionError: Unauthorized not raised` (7 subpruebas) y `False is not true : the login did not wait for the transaction of the writer` (3). Hueco 6: la verificación del cambio usa `verify_password` (coste de SU hash), así que con hash antiguo hace `[OLD, TARGET]` y no `[OLD, TARGET, TARGET]` (RED `Lists differ: [(1024, 8, 1), (16384, 8, 1), (16384, 8, 1)] != [(1024, 8, 1), (16384, 8, 1)]`); la diferencia de tiempo con un usuario inexistente queda como límite transitorio declarado en `design.md` DC-5 (desaparece cuando cada cuenta entra una vez; `spec.md` no cambia). Hueco 8: 429 antes del hueco (`(503, 'login_busy', []) != (429, 'rate_limited', [])`), fallo de la contraseña actual con los mismos bloqueos consultivos de `Auth.login` (`auth.py:16-20`, `Lists differ: [] != [('login-ip:testclient',), ('login-user:ana',)]`) y recuento bajo el bloqueo (`(403, 'invalid_current_password') != (429, 'rate_limited')`). Mutantes (todos revertidos, cada uno en rojo con su prueba): sin cuenta antes del hueco, sin recuento final, sin bloqueo de la fila (`test_the_last_transaction_waits_for_a_change_that_has_not_committed_and_then_recounts`), sin bloqueos consultivos, sin recuento del fallo, hash no comparado en el login, usuario no comprobado, sin `FOR SHARE`, hueco alrededor de toda la llamada de la ruta, `check_login` en lugar de `verify_password`. Verificación declarada en la suite completa con `kairos-test:i4p2-fix1` (exit 0): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1673}`: `test_access_password`, `test_auth_cache` (la guarda) y `test_store_surface` en `ok`, 0 fallos y 0 omitidos. Guarda de T-02: sin cambios (el `UPDATE api_keys` de `set_password` y el `SELECT *` del login ya estaban cubiertos; el `SELECT *` con `FOR SHARE` va en línea dentro de `Auth.login`, que ya figura en `READ_EXCEPTIONS`).
+
 ### T-10 — `admin set-password --username --password-file` (CA-02)
 
 - **Descripción**: Subcomando de recuperación del administrador sobre el mismo escritor de T-09, sin SQL propio en `admin.py` (DC-10): cambia la contraseña y revoca todas las sesiones del usuario. Fuente: CA-02; DC-10.
@@ -343,7 +351,7 @@ test-plan: test-plan.md
 - **Estado**: completado
 - **Cerrada**: 2026-11-23
 - **Tiempo humano**: est. 1.5h · real —
-- **Tiempo IA (ejec.)**: est. 0.15h · real 0.05h (medido)
+- **Tiempo IA (ejec.)**: est. 0.15h · real 0.19h (medido, incluye 0.14h de fix1)
 - **Supervisión**: est. 0.04h · real —
 - **Previsión IA**: 43 k in / 4 k out tok · ⚠️ verificar €
 - **Dependencias**: T-09
@@ -362,6 +370,8 @@ test-plan: test-plan.md
 - [x] Subcomando sobre el escritor del store
 
 **Notas**: Cada fix en `admin.py` suma un intento de revisión completo (R-08). RED: `SetPasswordTests` falló con `AssertionError: 2 != 0 : usage: ... invalid choice` (el subcomando no existía) · 2026-11-23. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `46cffafad447`.
+
+**Notas fix1** (revisión de la Fase 2, intento 1; medición única de fix1: 0.94h IA, medido, repartida por peso del cambio: T-06 0.09, T-07 0.10, T-08 0.19, T-09 0.42, T-10 0.14) · huecos 7 y 8 (commit 685975f): `admin set-password --revoke-keys` (por defecto conserva las claves) revoca todas las claves del usuario en la misma transacción por `store_access.py` (`set_password(..., revoke_keys=False)`, `store_access.py:77-92`, `admin.py:354-357, :518`); el escritor termina en `_access_changed` (`password.reset`, más `keys.revoked` si revocó) y la salida dice `keys_revoked`. `password_from_file` (`admin.py:336`) quita un único salto de línea final (LF o CRLF) y nada más, en lugar de `.strip()`; documentado en la ayuda y en `docs/operations.md` («Claves y acceso»). RED (contra la producción de 01e5e12 con las pruebas nuevas): `KeyError: 'keys_revoked'`, `KeyError: 'revoke_keys'`, `AssertionError: 2 != 0 : usage: …` y `AssertionError: False is not true` (3 subpruebas del fichero) · 2026-11-23. Mutantes (revertidos): `--revoke-keys` sin efecto → `test_the_keys_of_the_user_stay_unless_revoke_keys_is_given_and_then_only_that_users` roja; `.strip()` de vuelta → 3 subpruebas rojas. Sin secretos en la salida ni en los registros (`test_revoke_keys_prints_and_logs_no_secret`). Verificación declarada en la suite completa con `kairos-test:i4p2-fix1` (exit 0): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1673}`: `test_admin` (`SetPasswordTests`) en `ok`, 0 fallos y 0 omitidos.
 
 ### T-11 — Cierre de fase: suites y subida del mínimo
 
@@ -2903,12 +2913,12 @@ Lentes: A+B+C+D sobre `c926f7a..d5986db` (selección `review-lens-select.py`: C 
 
 | # | Grado | Gap | Tarea | Corrección | Evidencia |
 |---|---|---|---|---|---|
-| 1 | Important | Un cambio de contraseña correcto no pasa por el límite de intentos ni queda en `login_attempts`: un usuario con sesión alterna `POST /v1/auth/password` sin tope, dos derivaciones por petición, y ocupa el hueco del semáforo; tras nginx (todos con la IP del proxy hasta T-27) los logins de los demás reciben 503 `login_busy` (demo: 15 cambios 200, `login_attempts` 1→1, login de otro usuario 503 en 0,06 s) (lente C) | T-08, T-09 | abierto | `store_access.py:23-50`; `app.py:232-235` |
-| 2 | Important | `create_user` deriva scrypt antes de autorizar (`hash_password` antes de `_delegate`) y dentro del semáforo: cualquier credencial, incluida una clave de solo lectura, fuerza derivaciones de 128 MB que acaban en 403 (o en 409 por duplicado) y deja sin login al portal (demo: 403 tras 2,47 s con una derivación; 5 logins del admin: 4×503) (lentes C y D, B) | T-07, T-08 | abierto | `store_auth.py:198-200`; `app.py:391` |
-| 3 | Important | Carrera entre verificar y crear la sesión: un login en curso durante `admin set-password` o `POST /v1/auth/password` inserta su sesión sin comprobar que `password_hash` sigue siendo el verificado; la sesión con la contraseña vieja sobrevive al cierre de sesiones durante todo el TTL (demo con las dos vías) (lentes B y C) | T-09, T-10 | abierto | `auth.py:55-76`; `store_access.py:48, :63` |
-| 4 | Important | Ningún test fija que producción use el coste medido: `tests/__init__.py` baja `passwords.TARGET` a 2^14 y nada comprueba `TARGET = DEFAULT_PARAMS`; el mutante `TARGET = (2**14, 8, 1)` deja la suite en verde (lente A) | T-07 | abierto | `passwords.py:28`; `tests/__init__.py:7`; `test_passwords.py:46-57` |
-| 5 | Important | «Lo creado coincide con DC-6» se prueba como «contiene», y `test_queue_indexes` se acotó a `jobs`: el mutante que añade una columna y un índice fuera de DC-6 en la versión 13 pasa 27 pruebas (lente A) | T-06 | abierto | `test_migrations_additive.py:446-457`; `test_queue_indexes.py:82` |
-| 6 | Minor | Enumeración por tiempo: un usuario con hash anterior cuesta dos derivaciones y uno inexistente una (spec.md:192 «mismo coste»; design.md:165 lo admite); `change_password` vuelve a derivar el hash ya rehecho (lentes C y D) | T-07, T-09 | abierto | `passwords.py:103-121`; `auth.py:63`; `store_access.py:37-42` |
-| 7 | Minor | `admin set-password` conserva las claves de API del usuario: tras recuperar una cuenta comprometida, la clave que el atacante creó sigue valiendo (decisión declarada en el docstring y el test; pendiente del usuario) (lente C) | T-10 | abierto | `store_access.py:52-65` |
-| 8 | Minor | `POST /v1/auth/password` toma el hueco antes de comprobar el 429 (DC-5 fija 429 y luego hueco); el fallo de la contraseña actual se registra sin el advisory lock de `Auth.login`; `admin set-password` hace `.strip()` de la contraseña del fichero (lentes A y B) | T-08, T-09, T-10 | abierto | `app.py:235`; `store_access.py:34-40`; `admin.py:505` |
-| 9 | Minor | T-06 a T-10 se cerraron con verificaciones dirigidas y no con su `Verificación` declarada; la suite de T-11 encontró el fallo B-01 de T-07 ya completado (lente A) | T-06..T-10 | abierto | `tasks.md` T-06..T-10; `execution-history.md` |
+| 1 | Important | Un cambio de contraseña correcto no pasa por el límite de intentos ni queda en `login_attempts`: un usuario con sesión alterna `POST /v1/auth/password` sin tope, dos derivaciones por petición, y ocupa el hueco del semáforo; tras nginx (todos con la IP del proxy hasta T-27) los logins de los demás reciben 503 `login_busy` (demo: 15 cambios 200, `login_attempts` 1→1, login de otro usuario 503 en 0,06 s) (lente C) | T-08, T-09 | corregido (fix1, 43d3c20) | `store_access.py:21-29, :53, :69-70`; `app.py:236`; `test_access_password.py:145, :161, :172, :191` |
+| 2 | Important | `create_user` deriva scrypt antes de autorizar (`hash_password` antes de `_delegate`) y dentro del semáforo: cualquier credencial, incluida una clave de solo lectura, fuerza derivaciones de 128 MB que acaban en 403 (o en 409 por duplicado) y deja sin login al portal (demo: 403 tras 2,47 s con una derivación; 5 logins del admin: 4×503) (lentes C y D, B) | T-07, T-08 | corregido (fix1, 43d3c20) | `store_auth.py:199-225`; `app.py:393`; `test_access_password.py:277, :302` |
+| 3 | Important | Carrera entre verificar y crear la sesión: un login en curso durante `admin set-password` o `POST /v1/auth/password` inserta su sesión sin comprobar que `password_hash` sigue siendo el verificado; la sesión con la contraseña vieja sobrevive al cierre de sesiones durante todo el TTL (demo con las dos vías) (lentes B y C) | T-09, T-10 | corregido (fix1, 43d3c20) | `auth.py:77-82`; `test_access_password.py:353, :372, :435` |
+| 4 | Important | Ningún test fija que producción use el coste medido: `tests/__init__.py` baja `passwords.TARGET` a 2^14 y nada comprueba `TARGET = DEFAULT_PARAMS`; el mutante `TARGET = (2**14, 8, 1)` deja la suite en verde (lente A) | T-07 | corregido (fix1, de98682) | `test_passwords.py:104-126` |
+| 5 | Important | «Lo creado coincide con DC-6» se prueba como «contiene», y `test_queue_indexes` se acotó a `jobs`: el mutante que añade una columna y un índice fuera de DC-6 en la versión 13 pasa 27 pruebas (lente A) | T-06 | corregido (fix1, 32bbec1); `test_queue_indexes.py:82` sigue acotado a `jobs` (decisión anotada en T-06) | `test_migrations_additive.py:460` |
+| 6 | Minor | Enumeración por tiempo: un usuario con hash anterior cuesta dos derivaciones y uno inexistente una (spec.md:192 «mismo coste»; design.md:165 lo admite); `change_password` vuelve a derivar el hash ya rehecho (lentes C y D) | T-07, T-09 | corregido (fix1, 43d3c20) para la doble derivación; diferencia de tiempo con hash antiguo: aceptado: límite declarado | `store_access.py:56`; `test_access_password.py:267`; `design.md` DC-5 («Límite transitorio declarado») |
+| 7 | Minor | `admin set-password` conserva las claves de API del usuario: tras recuperar una cuenta comprometida, la clave que el atacante creó sigue valiendo (decisión declarada en el docstring y el test; pendiente del usuario) (lente C) | T-10 | corregido (fix1, 685975f) | `store_access.py:77-92`; `admin.py:354-357, :518`; `test_admin.py:413` |
+| 8 | Minor | `POST /v1/auth/password` toma el hueco antes de comprobar el 429 (DC-5 fija 429 y luego hueco); el fallo de la contraseña actual se registra sin el advisory lock de `Auth.login`; `admin set-password` hace `.strip()` de la contraseña del fichero (lentes A y B) | T-08, T-09, T-10 | corregido (fix1, 43d3c20 y 685975f) | `store_access.py:53, :57-65`; `auth.py:16-20`; `test_access_password.py:227, :237, :251`; `admin.py:336-344`; `test_admin.py:456` |
+| 9 | Minor | T-06 a T-10 se cerraron con verificaciones dirigidas y no con su `Verificación` declarada; la suite de T-11 encontró el fallo B-01 de T-07 ya completado (lente A) | T-06..T-10 | corregido (fix1, 04a329b) | `tasks.md` notas de T-06 a T-10; suite completa `kairos-test:i4p2-fix1` con 1673 pruebas en verde |
