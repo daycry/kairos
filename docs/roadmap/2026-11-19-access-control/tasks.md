@@ -55,7 +55,7 @@ test-plan: test-plan.md
 
 | Fase | Completadas | Total | Progreso | H. humanas (real/est) | H. IA ejec. (real/est) | Supervisión (real/est) | Tokens (real/est) |
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
-| Fase 1 — Medición de scrypt y guarda del resolvedor (CA-09, CA-38 a) | 3 | 5 | 60% | 0 / 19.8h | 4.77 / 6.3h | 0 / 1.6h | 0 / 1570 k |
+| Fase 1 — Medición de scrypt y guarda del resolvedor (CA-09, CA-38 a) | 5 | 5 | 100% | 0 / 19.8h | 4.77 / 6.3h | 0 / 1.6h | 0 / 1570 k |
 | Fase 2 — Esquema 13, scrypt y contraseñas (C-01) | 0 | 7 | 0% | 0 / 36.0h | 0 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 3 — Usuarios, permisos y sesiones (C-01) | 0 | 6 | 0% | 0 / 36.0h | 0 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01) | 0 | 7 | 0% | 0 / 48.0h | 0 / 4.9h | 0 / 1.2h | 0 / 1232 k |
@@ -73,7 +73,7 @@ test-plan: test-plan.md
 | Fase 16 — Identidad: guía probada y extensibilidad (C-05) | 0 | 5 | 0% | 0 / 23.4h | 0 / 2.4h | 0 / 0.6h | 0 / 601 k |
 | Fase 17 — Revisión del hito C y revisión de seguridad (C-07) | 0 | 5 | 0% | 0 / 27.0h | 0 / 5.3h | 0 / 1.3h | 0 / 1320 k |
 | Fase 18 — Cierre del hito C y de la iniciativa: ensayo, versión 0.4.2 y PR | 0 | 4 | 0% | 0 / 11.4h | 0 / 1.2h | 0 / 0.3h | 0 / 293 k |
-| **TOTAL** | **3** | **106** | **3%** | **0 / 616.2h** | **4.77 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
+| **TOTAL** | **5** | **106** | **5%** | **0 / 616.2h** | **4.77 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -81,7 +81,7 @@ test-plan: test-plan.md
 
 ## Fase 1 — Medición de scrypt y guarda del resolvedor (CA-09, CA-38 a)
 
-**Estado**: en-progreso · **Hito**: A · **Estimado**: 19.8h (16.5h base, de ellas 4h de revisión adversarial) · **Real**: — · **Coste est.**: 990 € · **Tokens est.**: 1570 k
+**Estado**: completado · **Hito**: A · **Estimado**: 19.8h (16.5h base, de ellas 4h de revisión adversarial) · **Real**: 4.77h IA (medido; revisión del orquestador sin medir) · **Coste est.**: 990 € · **Tokens est.**: 1570 k
 
 ### T-01 — Medición previa de scrypt en `memory-api`, `memory-bootstrap` y `memory-admin` (CA-09)
 
@@ -170,7 +170,8 @@ test-plan: test-plan.md
 
 - **Descripción**: Protocolo de cierre de fase (cabecera) con las suites: servidor.
 - **Changelog**: Interno: la CI exige ahora al menos 1601 pruebas del servidor.
-- **Estado**: en-progreso
+- **Estado**: completado
+- **Cerrada**: 2026-11-23
 - **Tiempo humano**: est. 0.5h · real —
 - **Tiempo IA (ejec.)**: est. 0.05h · real 0.05h (medido)
 - **Supervisión**: est. 0.01h · real —
@@ -187,15 +188,16 @@ test-plan: test-plan.md
 - [x] Suites con 0 fallos y 0 omitidos; el mínimo iguala el recuento observado en los cuatro sitios y el equivalente local queda anotado
 
 **Subtareas**
-- [ ] Suites, mínimo y archivo de las notas de la fase
+- [x] Suites, mínimo y archivo de las notas de la fase
 
-**Notas**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain -t kairos-test:i4p1 .` (exit 0, 771 s): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1578}`. Mínimo 1570 → 1578 en los cuatro sitios (`ci.yml` con su historia, `MIN_FLOOR`, `docs/operations.md`, `README.md:252`). CI externa no ejecutada: cierra la ejecución local. RED: SuiteGateStepTests.test_current_step_structure_and_effective_minimum y test_the_current_script_passes_the_good_log_and_fails_every_bad_one fallaron con AssertionError: KAIROS_MIN_TESTS 1570 is below the baseline 1578 (MIN_FLOOR ya en 1578, `ci.yml` aún en 1570) · 2026-11-20; verde tras subir `ci.yml`: `python -m unittest scripts.tests.test_ci_workflow` → Ran 48 tests, OK. Archivo de las notas de la fase (`ledger-archive.py --apply`) pendiente hasta T-05: la fase sigue `en-progreso`. usage-meter close access-control/T-04: 0.05 h IA (medido), 30 in / 6709 out tok. fix1 (gap 8): la subtarea «Suites, mínimo y archivo de las notas de la fase» vuelve a `[ ]` (el suite y el mínimo están hechos; falta `ledger-archive.py --apply`, que ejecuta el orquestador al cerrar la fase) y T-04 queda `en-progreso` hasta entonces, porque `ledger-lint` no admite `completado` con un criterio sin marcar. fix1 (suite): `docker build -f server/memory_platform/Dockerfile --target test --progress=plain -t kairos-test:i4p1-fix1 .` (exit 0): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1581}` (+3: probe por función, SQL compuesto y `/metrics` con el store real). Mínimo 1578 -> 1581 en los cuatro sitios; `python -m unittest scripts.tests.test_ci_workflow scripts.tests.test_measure_scrypt` -> Ran 51 tests, OK. fix2 (gap 7): `docker build -f server/memory_platform/Dockerfile --target test --progress=plain -t kairos-test:i4p1-fix2 .` (exit 0): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1583}` (+2: login solo fila completa y mutantes de las listas cerradas). Mínimo 1581 -> 1583 en los cuatro sitios, con la historia de `MIN_FLOOR` (1581 y 1583) y la de `ci.yml`; `python -m unittest scripts.tests.test_ci_workflow scripts.tests.test_measure_scrypt` -> Ran 51 tests, OK. El Changelog dice 1583 y `Cerrada` se quita mientras T-04 siga `en-progreso` (falta el archivo de las notas de la fase). fix3: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain -t kairos-test:i4p1-fix3 .` (exit 0): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1585}` (+2: literal `is_admin` y relleno del `%`). Mínimo 1583 -> 1585 en los cuatro sitios, con su historia; `python -m unittest scripts.tests.test_ci_workflow` -> OK. fix4: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain -t kairos-test:i4p1-fix4 .` (exit 0): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1586}`. fix5: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain -t kairos-test:i4p1-fix5 .` (exit 0): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1586}`; el mínimo se mantiene en 1586. Corrección de la nota fix4: el mínimo subió 1585 -> 1586 en los cuatro sitios, con su historia, y `python -m unittest scripts.tests.test_ci_workflow` -> Ran 48 tests, OK. fix6: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain -t kairos-test:i4p1-fix6 .` (exit 0): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1589}`; el mínimo pasa a 1589 (con su historia) en los cuatro sitios. fix7: `docker build ... -t kairos-test:i4p1-fix7 .` (exit 0): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1590}`; mínimo 1590. fix8: `docker build ... -t kairos-test:i4p1-fix8 .` (exit 0): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1591}`; mínimo 1591. Producción sin `pglast`: comprobado: construidos los objetivos api y operator (worker deriva de api), find_spec('pglast') da None en ambos y no hay requirements-test.txt en /app; la imagen de pruebas trae pglast 7.24 (imágenes temporales retiradas). fix9: `docker build ... -t kairos-test:i4p1-fix9 .` (exit 0): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1595}`; mínimo 1595. fix10: `docker build ... -t kairos-test:i4p1-fix10 .` (exit 0): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1596}`; mínimo 1596. fix11: `docker build ... -t kairos-test:i4p1-fix11 .` (exit 0): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1600}`; mínimo 1600.
+**Notas**: fix12: `kairos-test:i4p1-fix12` (exit 0): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1601}`; mínimo 1601 en los cuatro sitios. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `ae9f623810a4`.
 
 ### T-05 — Revisión adversarial de la fase (dos lentes)
 
 - **Descripción**: Protocolo de revisión adversarial (cabecera), a 0,5 × la implementación. Superficie: el recorrido no debe poder esquivarse con alias de tabla, SQL compuesto o accesos indirectos a `is_admin`, y el refactor no cambia ninguna respuesta.
 - **Changelog**: Interno: revisión adversarial de la fase.
-- **Estado**: borrador
+- **Estado**: completado
+- **Cerrada**: 2026-11-23
 - **Tiempo humano**: est. 4h · real —
 - **Tiempo IA (ejec.)**: est. 0.41h · real —
 - **Supervisión**: est. 0.10h · real —
@@ -209,10 +211,12 @@ test-plan: test-plan.md
   - `python3 "$SHAREDKIT/scope-check.py" docs/roadmap/2026-11-19-access-control` → exit 0
 
 **Criterios de aceptación**
-- [ ] Sin Critical ni Important abiertos; cada control nuevo con su mutante comprobado y cada fix con su revisión completa
+- [x] Sin Critical ni Important abiertos; cada control nuevo con su mutante comprobado y cada fix con su revisión completa
 
 **Subtareas**
-- [ ] Lentes A y B; corregir y repetir hasta cero abiertos
+- [x] Lentes A y B; corregir y repetir hasta cero abiertos
+
+**Notas**: doce intentos con lentes A, B, C y D (tabla en `review.md`; detalle de los intentos 1-11 en `execution-history.md`, el 12 en este ledger). Sin Critical ni Important abiertos tras el fix12. Desviación declarada del criterio «cada fix con su revisión completa»: el fix12 se verificó con una comprobación dirigida del orquestador en `kairos-test:i4p1-fix12` (los cinco casos `raise` en rojo, `memory.{t}` en rojo, prosa en verde, paquete `({}, [])`, `ResolverBoundaryTests` 27 OK) por decisión del usuario «Fix12 mínimo y cerrar» (2026-11-23). Límites de la guarda declarados en el docstring y en DC-1.
 
 ---
 
@@ -2859,37 +2863,8 @@ test-plan: test-plan.md
 - 2026-11-23 · «Revisión de dos lentes — intento 7: Fase 1 (fix6, fuera del bucle) (T-01, T-02, T-03, T-04) — 2 Important: una regresión y un recorrido que no es lineal» → [execution-history.md](execution-history.md) · SHA-256 `69cb6654ce1cf8a4ee799671f02356160810566abc2db8e6fcbdfc53cc5f435c`
 - 2026-11-23 · «Revisión de dos lentes — intento 8: Fase 1 (fix7, fuera del bucle) (T-01, T-02, T-03, T-04) — 3 Important: regresiones del escáner por regex» → [execution-history.md](execution-history.md) · SHA-256 `d49813abdb4197adfbec78930d14d66716db7b2941c69f8128d8f561905a0612`
 - 2026-11-23 · «Revisión de dos lentes — intento 9: Fase 1 (fix8, parser de PostgreSQL) (T-01, T-02, T-03, T-04) — 3 Important en qué literales se analizan» → [execution-history.md](execution-history.md) · SHA-256 `8b920809ae26d99c92e860a8bf91dd273f875e2699fd228bb8552667a9f54013`
-
-
-## Revisión de dos lentes — intento 10: Fase 1 (fix9) (T-01, T-02, T-03, T-04) — 2 Important en la puerta léxica y el respaldo
-
-Lentes: A+B+C+D sobre `8b1370a..HEAD` (fix9: `d46e147`, `4b7e625`, `c4f86c7`), solo con `kairos-test:i4p1-fix8`/`-fix9` sin red. Gaps del intento 9: 1, 2, 3, 5 y 6 corregidos con mutante; el 4 sin RED (ya pasaba con fix8). D sin hallazgos: cifras reproducidas, sin colgarse ni SIGSEGV bajo el tope de 32 768 caracteres. `provision_locked` con `project_grants` justificado (lentes A y C). Medido por el orquestador: parsear los 33 252 literales del paquete con pglast cuesta 0,14-0,21 s.
-
-| # | Grado | Gap | Tarea | Corrección | Evidencia |
-|---|---|---|---|---|---|
-| 1 | Important | Regresión: la puerta léxica (tabla con `\b`, NUL o `memory.%`) deja sin analizar las plantillas en constante con `{}`/`%s` en posición de tabla (`Q = 'SELECT … FROM memory.{}'` + `Q.format(t)`, `'DELETE FROM MEMORY.%s'`, `"memory".%s`, `TRUNCATE {t}`), patrón real en `admin.py:92-119`; y los nombres de tabla con escape `U&"api\005fkeys"`, que el parser decodifica. Las aserciones de fix8 con `{}` se reescribieron a `\x00` sin anotarlo, y la nota «todas falsos positivos» no se sostiene (lentes A, B y C) | T-02 | corregido (fix10, 024dcd5) | `test_auth_cache.py:529-530, :801, :1408-1410, :1573-1574` |
-| 2 | Important | Falso positivo sin exención posible: el respaldo marca `unknown table` en prosa con hueco tras `from/into/using/update/table/join` (`f'cannot restore from {path}'`, `f'could not update {name}'`), también dentro del resolvedor (lente B) | T-02 | corregido (fix10, 024dcd5) | `test_auth_cache.py:531, :796` |
-| 3 | Minor | El respaldo no ve el hueco de tabla tras `ONLY`, `LATERAL`, `COPY` o un comentario (lentes A, B y C) | T-02 | corregido (fix10, 024dcd5) | `test_auth_cache.py:531` |
-| 4 | Minor | No se recorre el cuerpo de `CREATE FUNCTION/PROCEDURE … AS $$…$$`; el SQL en cadena solo se reanaliza si empieza por palabra de sentencia (lentes A y B) | T-02 | corregido (fix10, 024dcd5) | `test_auth_cache.py:740-747` |
-| 5 | Minor | `LOCK TABLE`, `ALTER TABLE`, `CREATE INDEX`, `ANALYZE` sobre tablas vigiladas cuentan como lectura; prosa que nombra una tabla vigilada da `unparseable SQL` (lente B) | T-02 | corregido (fix10, 024dcd5); la prosa que nombra una tabla vigilada con una palabra de SQL queda roja: límite declarado | `test_auth_cache.py:729-733, :786-789` |
-| 6 | Minor | El gap 4 del intento 9 se dio por corregido con una prueba sin RED; el `%s` crudo de una constante aplicada en otro sitio sigue callado (lente A) | T-02 | corregido (fix10, 024dcd5) | `test_auth_cache.py:530, :801` |
-
-Siguiente: fix10 dentro del método aprobado: sin puerta léxica (se parsea todo literal de hasta 32 768 caracteres, coste medido 0,15 s), huecos de plantilla como centinela, posición de tabla por AST; en el parse fallido solo cuenta la tabla vigilada nombrada.
-
-
-## Revisión de dos lentes — intento 11: Fase 1 (fix10) (T-01, T-02, T-03, T-04) — 1 Important: sentencias completas con tabla dinámica y huecos de cláusula
-
-Lentes: A+B+C+D sobre `c4f86c7..ce7fde1` (fix10) y `eb6f105` (archivo, SHA-256 verificado sin pérdida). Gaps del intento 10: 1-6 corregidos con mutante; las 28 pruebas de las clases de guarda pasan. D sin bloqueo (ninguna entrada cuelga ni revienta bajo el tope; la suite no crece de forma medible).
-
-| # | Grado | Gap | Tarea | Corrección | Evidencia |
-|---|---|---|---|---|---|
-| 1 | Important | Regresión frente a fix9: el centinela es un identificador y, si otro hueco ocupa una cláusula (`WHERE {cond} {order}`, `SET {sets}`, `ORDER BY {col} {dir}`, `IN %s`, `{verb} …`), una sentencia completa con `memory.{t}` no parsea y `_fallback` ya no informa de huecos: calla (12 de 17 plantillas realistas; también la composición en dos pasos `frm = f'FROM memory.{table} …'` + `'SELECT k.scopes ' + frm`, y un literal de más de 32 768 caracteres con hueco de tabla). El límite declarado («un fragmento») se queda corto y el mutante de fix9 se rebajó de `{cond} {extra}` a `{cond}` (lentes A, B y C) | T-02 | corregido (fix11, 5a4e0c5); fix11 aprobado por el usuario 2026-11-23 | `test_auth_cache.py:798-811, :816-825, :1116, :1456, :1460`; `design.md:114` |
-| 2 | Minor | Falsos positivos: plantillas de las fases 3 y 4 con huecos de cláusula que nombran `actors`/`web_sessions` dan `unparseable SQL` (y `is_admin:row`); cuerpos PL/pgSQL y `RAISE` con nombres de tabla; prosa que parsea (`f'analyze {x}'`, `f'table {x}'`, `f'drop table {a}'`) da `unknown table` sin exención; `REFERENCES memory.api_keys` y `CREATE TABLE (LIKE …)` cuentan como lectura (lente B) | T-02 | corregido (fix11, 5a4e0c5) | `test_auth_cache.py:532, :696-698, :730-734, :744-763, :802-811` |
-| 3 | Minor | DDL sin clasificar: `CREATE TRIGGER/RULE/POLICY ON`, `GRANT … ON`, `COMMENT ON`, `ALTER TABLE … SET SCHEMA`, `DROP SCHEMA memory CASCADE`; composición dentro del SQL (`format('%I.%I', …)`, `'memory.' \|\| 'api_keys'`) (lentes B y C; heredado) | T-02 | corregido (fix11, 5a4e0c5) | `test_auth_cache.py:533, :741-743, :753-763` |
-| 4 | Minor | Coste: `'/*' * 10000` pasa de 0,002 a 0,84 s al parsearse (lexer cuadrático); el test de tiempo tiene cota absoluta y no detecta crecimiento cuadrático (lente D) | T-02 | corregido (fix11, 5a4e0c5) | `test_auth_cache.py:820, :1574-1581` |
-| 5 | Minor | Nota RED de fix10 inexacta; sin mutantes de fix10 dentro de `Auth.login`; el mensaje del commit `eb6f105` dice «long notes» y no archivó ninguna (lente A) | T-02 | corregido (fix11, 5a4e0c5) | `tasks.md` nota fix10; `test_auth_cache.py:1465-1498` |
-
-Siguiente: decisión del usuario. Propuesta del orquestador (fix11): en el parse fallido, `memory.` seguido de un hueco es siempre `unknown table` y `memory.<tabla vigilada>` es siempre esa tabla, sin exigir palabra de SQL (la prosa no escribe `memory.`); declarar como límite el nombre de tabla entero dinámico sin `memory.` en una sentencia que no parsea.
+- 2026-11-23 · «Revisión de dos lentes — intento 10: Fase 1 (fix9) (T-01, T-02, T-03, T-04) — 2 Important en la puerta léxica y el respaldo» → [execution-history.md](execution-history.md) · SHA-256 `8179056aa28d19a1df996033c7df50b60b07a89e1f00e0f3a1f60412f2208575`
+- 2026-11-23 · «Revisión de dos lentes — intento 11: Fase 1 (fix10) (T-01, T-02, T-03, T-04) — 1 Important: sentencias completas con tabla dinámica y huecos de cláusula» → [execution-history.md](execution-history.md) · SHA-256 `573aef42c452b7e89333ce006829a1a040db517dc0a9cb6c3a4eaf47818cfcc0`
 
 
 ## Revisión de dos lentes — intento 12: Fase 1 (fix11) (T-01, T-02, T-03, T-04) — 1 Important: la retirada de RAISE
@@ -2903,3 +2878,5 @@ Lentes: A+B+C+D sobre `eb6f105..HEAD` (fix11: `5a4e0c5`, `686a3d6`, `9e2243b`), 
 | 3 | Minor | `memory /*x*/ .api_keys` sin palabra de SQL calla porque `_MEMORY_TABLE` mira el texto crudo (heredado); DDL de esquema completo (`GRANT … ON ALL TABLES IN SCHEMA memory`, `ALTER SCHEMA memory …`, `DROP OWNED`) e `INHERITS (memory.actors)` sin clasificar (lentes B y C) | T-02 | corregido (fix12, 1b7a6f3) para `memory /*x*/ .api_keys`; DDL de esquema completo e `INHERITS`: aceptado: límite declarado | `test_auth_cache.py:534, :753-772, :831` |
 | 4 | Minor | Controles sin mutante (`closed` del comentario sin cerrar, `CreateStmt`); series de `+`/`-` cuadráticas en el lexer sin cubrir y el test de tiempo actúa como cota absoluta de 0,5 s; una cifra del docstring no se reproduce (lentes A y D) | T-02 | corregido (fix12, 1b7a6f3); series de `+`/`-` y cota del test de tiempo: aceptado: límite declarado | `test_auth_cache.py:600, :753, :845, :1158, :1602-1605` |
 | 5 | Minor | Documentación de límites inexacta tras el fix11 (`:522-526`, `:550-551`, `:1138-1144`, `design.md:116` «siempre»); nota RED de fix11: 20 fallos, no 19 (lente A) | T-02 | corregido (fix12, 1b7a6f3) | `test_auth_cache.py:522-551, :1138-1144`; `design.md:116`; `tasks.md` nota fix11 |
+
+Comprobación dirigida del fix12 (orquestador, 2026-11-23, `kairos-test:i4p1-fix12` sin red, por decisión del usuario «Fix12 mínimo y cerrar»): `AS raise`, `-- raise`, `/* raise */`, `'raise' AS action` y `RAISE NOTICE … (SELECT … memory.api_keys)` dan lectura de `api_keys`/`project_grants` + `unparseable SQL`; `memory.\x00 WHERE \x00 \x00` da `unknown table`; la prosa `cannot restore from \x00` calla; paquete `({}, [])` y escritores `[]`; `ResolverBoundaryTests` 27 pruebas OK. Sin Critical ni Important abiertos: la fase cierra.
