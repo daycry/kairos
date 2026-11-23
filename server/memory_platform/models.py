@@ -91,6 +91,10 @@ class UserInput(Model):
     project_ids: Annotated[list[Annotated[str, Field(pattern='^[a-z0-9][a-z0-9_-]{0,63}$')]], Field(max_length=100)]
     scopes: Annotated[list[Literal['read', 'write', 'admin', 'publish', 'validate']], Field(max_length=5)]
 
+class PasswordChange(Model):
+    current_password: Annotated[str, Field(max_length=1024)]
+    new_password: Annotated[str, Field(max_length=1024)]
+
 class Fact(Model):
     subject: Annotated[str, Field(min_length=1, max_length=300)]
     predicate: Annotated[str, Field(min_length=1, max_length=200)]

@@ -283,6 +283,7 @@ COMPOSED_WRITE = re.compile(WRITE_VERB + r'(?:memory\.)?(?![A-Za-z_])', re.I)  #
 RESOLVERS = {'_require', '_active', '_global_admin', '_delegate', 'require_permission', '_authorized', '_generation', '_protect_validated', '_corpus'}
 SELF_REFRESHING = {'_authorized', '_generation', '_protect_validated'}  # each one empties the cache after its own waits and before its checks (this walk proves it of each)
 EMPTIES = 'invalidate_auth'
+CHANGED = '_access_changed'  # `store_access.py`: audits a change of access and calls `invalidate_auth`; a writer that ends in it has emptied the cache
 
 
 def text_of(node, consts, seen=frozenset()):
@@ -333,7 +334,7 @@ def timeline(name, node, consts, helpers):
     for call in (n for n in ast.walk(node) if isinstance(n, ast.Call)):
         start, end, function = (call.lineno, call.col_offset), (call.end_lineno, call.end_col_offset), called(call)
         refreshing = function in SELF_REFRESHING or (name == 'extended_store.py' and function == '_require' and ast.unparse(call.func) == 'self._require')
-        if function == EMPTIES or refreshing:
+        if function in (EMPTIES, CHANGED) or refreshing:
             events.append((start, 'empty'))
         elif function in RESOLVERS:
             events.append((start, 'check'))
@@ -369,10 +370,35 @@ class WritersEmptyTheCacheTests(unittest.TestCase):
             writes = [(c.end_lineno, c.end_col_offset) for c in ast.walk(node) if isinstance(c, ast.Call) and PERMISSION_WRITE.search(argument_text(c, consts))]
             if writes:
                 writers.add((name, node.name))
-                empties = [(c.lineno, c.col_offset) for c in ast.walk(node) if isinstance(c, ast.Call) and called(c) == EMPTIES]
+                empties = [(c.lineno, c.col_offset) for c in ast.walk(node) if isinstance(c, ast.Call) and called(c) in (EMPTIES, CHANGED)]
                 self.assertTrue(empties and max(empties) > max(writes), '%s:%s writes a permission table and does not empty the cache after the last write' % (name, node.name))
         self.assertTrue({('store_auth.py', 'revoke_key'), ('store_auth.py', 'create_key'), ('store_auth.py', 'create_user'), ('store_auth.py', 'create_project'),
-                         ('store_auth.py', 'bootstrap_user'), ('auth.py', 'logout'), ('auth.py', 'login'), ('auth.py', 'refresh_csrf')} <= writers, sorted(writers))
+                         ('store_auth.py', 'bootstrap_user'), ('auth.py', 'logout'), ('auth.py', 'login'), ('auth.py', 'refresh_csrf'), ('store_access.py', 'change_password')} <= writers, sorted(writers))
+
+    def test_every_writer_of_store_access_ends_in_the_door_and_the_door_audits_and_empties(self):
+        # design.md O2: `_access_changed` is the end of EVERY writer of `store_access.py` (not only "somewhere after the write"): after its call nothing is written, and the door itself
+        # records the audit event and empties the cache (a mutant that drops either leaves a writer that audits nothing or keeps a revoked permission alive in its transaction)
+        sources = {name: node for name, node, _ in functions() if name == 'store_access.py'}
+        self.assertTrue(sources)
+        door, writers = None, []
+        for name, node, consts in functions():
+            if name != 'store_access.py':
+                continue
+            if node.name == CHANGED:
+                door = node
+                continue
+            writes = [(c.end_lineno, c.end_col_offset) for c in ast.walk(node) if isinstance(c, ast.Call) and PERMISSION_WRITE.search(argument_text(c, consts))]
+            if not writes:
+                continue
+            writers.append(node.name)
+            ends = [(c.lineno, c.col_offset) for c in ast.walk(node) if isinstance(c, ast.Call) and called(c) == CHANGED]
+            self.assertTrue(ends and min(ends) > max(writes), '%s writes a permission table and does not end in `%s`' % (node.name, CHANGED))
+        self.assertIn('change_password', writers, 'the walk sees the writer of T-09: a scan that finds none would pass for the wrong reason')
+        self.assertIsNotNone(door, '`_access_changed` is gone from store_access.py')
+        inside = {called(c) for c in ast.walk(door) if isinstance(c, ast.Call)}
+        self.assertTrue({'_audit', EMPTIES} <= inside, '`_access_changed` must audit and empty the cache, it calls %s' % sorted(inside))
+        audit, empty = (min((c.lineno, c.col_offset) for c in ast.walk(door) if isinstance(c, ast.Call) and called(c) == name) for name in ('_audit', EMPTIES))
+        self.assertLess(audit, empty, 'audit first, then empty the cache')
 
     def test_a_write_to_a_table_that_is_not_spelled_out_fails_unless_it_is_reviewed(self):
         # `sql.SQL('UPDATE memory.{}')`, an f-string or a concatenation can write the permission tables without the literal name: any write whose target is not a plain table fails
@@ -1169,7 +1195,7 @@ class ResolverBoundaryTests(unittest.TestCase):
         sources = package_sources()
         self.assertEqual(writes_outside_the_writers(sources), [], 'only %s may write actors, project_grants, api_keys or web_sessions' % sorted(PERMISSION_WRITERS))
         # the writers do write: a scan that finds nothing would pass for the wrong reason
-        self.assertEqual({file for file, source in sources.items() if scan(source).writes} & PERMISSION_WRITERS, {'store_auth.py', 'auth.py', 'probe.py'})
+        self.assertEqual({file for file, source in sources.items() if scan(source).writes} & PERMISSION_WRITERS, {'store_auth.py', 'store_access.py', 'auth.py', 'probe.py'})
 
     def test_the_read_scan_sees_each_way_of_reading_outside_the_resolver(self):
         # mutants: a source that adds ONE read to the package must be reported; each variant is a way of dodging a plain text search
@@ -1815,7 +1841,7 @@ def store_calls(store, actor, pid, other, key_id):
     document = {'document_id': str(uuid.uuid4()), 'version': 1, 'title': 'T', 'content': 'C', 'source': {'uri': 'fixture://d', 'sha256': hashlib.sha256(b'C').hexdigest()},
                 'validation': {'status': 'validated', 'evidence': ['e'], 'validated_by': 't'}}
     return {
-        'capture_policy': lambda: store.capture_policy(actor, pid), 'create_key': lambda: store.create_key(actor, {'name': 'n', 'project_ids': [pid], 'scopes': ['read']}),
+        'capture_policy': lambda: store.capture_policy(actor, pid), 'change_password': lambda: store.change_password(actor, 'synthetic-password-123', 'another-password-456'), 'create_key': lambda: store.create_key(actor, {'name': 'n', 'project_ids': [pid], 'scopes': ['read']}),
         'create_project': lambda: store.create_project(actor, {'id': project_name(), 'title': 't'}),
         'create_user': lambda: store.create_user(actor, {'username': 'u-' + uuid.uuid4().hex[:10], 'password': 'synthetic-password-123', 'project_ids': [pid], 'scopes': ['read']}),
         'delete_document': lambda: store.delete_document(actor, pid, 'nope', 1), 'document_manifest': lambda: store.document_manifest(actor, pid),

@@ -6,6 +6,7 @@ from contextlib import contextmanager
 
 from .errors import StoreUnavailable, is_store_unavailable
 from .auth_scope import auth_scope
+from .store_access import AccessMixin
 from .store_auth import AuthMixin
 from .store_common import as_dict, canonical, clean, digest, lexical_query, new_id
 from .store_documents import DocumentsMixin
@@ -17,7 +18,7 @@ from .store_vectors import VectorsMixin
 __all__ = ['Store', 'as_dict', 'canonical', 'clean', 'digest', 'lexical_query', 'new_id']
 
 
-class Store(AuthMixin, IngestMixin, DocumentsMixin, GraphMixin, JobsMixin, VectorsMixin):
+class Store(AuthMixin, AccessMixin, IngestMixin, DocumentsMixin, GraphMixin, JobsMixin, VectorsMixin):
     def __init__(self, dsn, project_maps=None, embedding_enabled=False):
         self.dsn = dsn
         self.project_maps = project_maps or {}

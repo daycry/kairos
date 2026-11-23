@@ -312,9 +312,10 @@ test-plan: test-plan.md
 
 - **Descripción**: Crear el mixin `server/memory_platform/store_access.py`, que `Store` hereda, con `_access_changed` (audita y vacía la caché de permisos) como final obligado de todo escritor nuevo. Primer escritor: `POST /v1/auth/password` (solo sesión y CSRF), que cambia la contraseña, revoca las demás sesiones del usuario y conserva la actual y las claves. Fuente: CA-01; S-03; design.md §O2; invariante 2; R-01.
 - **Changelog**: Nuevo `POST /v1/auth/password`: cambia la contraseña y cierra las demás sesiones del usuario.
-- **Estado**: borrador
+- **Estado**: completado
+- **Cerrada**: 2026-11-23
 - **Tiempo humano**: est. 5h · real —
-- **Tiempo IA (ejec.)**: est. 0.51h · real —
+- **Tiempo IA (ejec.)**: est. 0.51h · real 0.05h (medido)
 - **Supervisión**: est. 0.13h · real —
 - **Previsión IA**: 142 k in / 12 k out tok · ⚠️ verificar €
 - **Dependencias**: T-08
@@ -324,14 +325,16 @@ test-plan: test-plan.md
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_access_password|test_auth_cache|test_store_surface|MEMORY_TEST_RESULT"` → nombradas en `ok`; 0 fallos y 0 omitidos
 
 **Criterios de aceptación**
-- [ ] Con la actual correcta: la antigua ya no inicia sesión, la nueva sí, la otra sesión recibe 401 en su petición siguiente y hay evento `password.changed`
-- [ ] Con la actual incorrecta no cambia nada y cuenta como fallo de login de esa IP; nueva de menos de 12 caracteres → 422 `invalid_password`
-- [ ] El escritor termina en `_access_changed` y lo ve el recorrido de `test_auth_cache.py:359`; con una clave, la ruta responde 403
+- [x] Con la actual correcta: la antigua ya no inicia sesión, la nueva sí, la otra sesión recibe 401 en su petición siguiente y hay evento `password.changed`
+- [x] Con la actual incorrecta no cambia nada y cuenta como fallo de login de esa IP; nueva de menos de 12 caracteres → 422 `invalid_password`
+- [x] El escritor termina en `_access_changed` y lo ve el recorrido de `test_auth_cache.py:359`; con una clave, la ruta responde 403
 
 **Subtareas**
-- [ ] Prueba en rojo (oráculo de A-01)
-- [ ] Mixin y `_access_changed`
-- [ ] Ruta, modelo y OpenAPI
+- [x] Prueba en rojo (oráculo de A-01)
+- [x] Mixin y `_access_changed`
+- [x] Ruta, modelo y OpenAPI
+
+**Notas**: **Notas**: RED: `test_access_password` falló con `AssertionError: 404 != 200` (la ruta no existía) y `AttributeError: ... no attribute '_access_changed'` · 2026-11-23. `AccessMixin` (`store_access.py`) con `_access_changed` (audita y vacía la caché) y `change_password` (sesión y CSRF; una clave recibe 403 tras comprobar que no está revocada; actual incorrecta: 403 `invalid_current_password`, un fallo de la IP y 429 si ya está bloqueada; nueva corta: 422 antes de derivar; `WHERE password_hash=<verificado>`, 409 si cambió). La ruta toma un hueco de `GATE` para las dos derivaciones. Sin entradas nuevas en `READ_EXCEPTIONS` (no nombra `is_admin` ni lee permisos). `test_auth_cache.py`: el recorrido de escritores acepta `_access_changed` como vaciado, exige que TODO escritor de `store_access.py` termine en él y que él audite antes de vaciar; `store_calls` gana `change_password`. Contrato OpenAPI regenerado (solo añade la ruta y `PasswordChange`; el MCP no cambia). Medición: ver T-08 (ventana común).
 
 ### T-10 — `admin set-password --username --password-file` (CA-02)
 

@@ -13,6 +13,11 @@
       "kind": "function",
       "signature": "(self, dsn, project_maps=None, embedding_enabled=False)"
     },
+    "_access_changed": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, c, actor, action, project_id=None, resource_id=None)"
+    },
     "_active": {
       "contextmanager": false,
       "kind": "function",
@@ -117,6 +122,11 @@
       "contextmanager": false,
       "kind": "function",
       "signature": "(self, actor, project_id)"
+    },
+    "change_password": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, current, new, client_ip='')"
     },
     "claim_job": {
       "contextmanager": false,

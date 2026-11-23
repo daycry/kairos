@@ -228,6 +228,13 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
         response.delete_cookie(COOKIE, path='/')
         return response
 
+    @app.post('/v1/auth/password', operation_id='memory_change_password')
+    def change_password(payload: m.PasswordChange, request: Request, actor=Depends(identity)):
+        # Session and CSRF only (`identity` checks the CSRF of a session; the store refuses a key). Two derivations inside ONE slot of the gate of this process, like the login.
+        ip = request.client.host if request.client else ''
+        with passwords.GATE.hold(ip):
+            return store.change_password(actor, payload.current_password, payload.new_password, ip)
+
     @app.get('/v1/projects', operation_id='memory_projects')
     def projects(actor=Depends(identity)):
         return {'projects': store.list_projects(actor)}
