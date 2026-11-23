@@ -335,8 +335,12 @@ def prune_tables(store, windows, *, batch=1000, dry_run=False, tables=None, now=
 
 def password_from_file(path):
     """The password in a file: exactly the text of the file minus ONE final line break (a LF or a CR LF, what an editor or `echo` adds). Nothing else is removed: a password may start or end with spaces,
-    and a second line break is part of it. Read as bytes so that the platform does not translate the line endings."""
-    text = path.read_bytes().decode('utf-8')
+    and a second line break is part of it. Read as bytes so that the platform does not translate the line endings. `bootstrap` and `set-password` read their secret with this one function.
+    A file that is not UTF-8 is a typed error with no content: the message of the decoding error names the offending byte and its position, which are part of the secret."""
+    try:
+        text = path.read_bytes().decode('utf-8')
+    except UnicodeDecodeError:
+        raise SystemExit('password_file_invalid: the file is not UTF-8 text') from None
     for ending in ('\r\n', '\n'):
         if text.endswith(ending):
             return text[:-len(ending)]
@@ -504,7 +508,7 @@ def main(argv=None):
     elif args.command == 'bootstrap':
         if not args.password_file:
             parser.error('--password-file or MEMORY_BOOTSTRAP_PASSWORD_FILE is required')
-        password = Path(args.password_file).read_text(encoding='utf-8').strip()
+        password = password_from_file(Path(args.password_file))
         actor = store.bootstrap_user(args.username, password)
         projects = []
         if args.with_projects:

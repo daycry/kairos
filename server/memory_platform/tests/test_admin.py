@@ -56,6 +56,54 @@ class OperatorSafetyTests(unittest.TestCase):
             self.assertNotIn('fixture-password-123', output.getvalue())
             store.bootstrap_user.assert_called_once_with('fixture', 'fixture-password-123')
 
+    def run_with_secret_file(self, command, raw, store):
+        """Runs `bootstrap` or `set-password` with a secret file of exactly `raw` bytes; returns (exit, stdout, stderr)."""
+        out, err, status = io.StringIO(), io.StringIO(), 0
+        with workspace() as root:
+            secret = root / 'password'
+            secret.write_bytes(raw)
+            args = ['--username', 'fixture', '--password-file', str(secret)]
+            with patch('memory_platform.admin.Settings.from_env', return_value=self.settings), patch('memory_platform.admin.Store', return_value=store), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                try:
+                    main([command, *args])
+                except SystemExit as exit:
+                    status = exit.code
+        return status, out.getvalue(), err.getvalue()
+
+    def test_bootstrap_and_set_password_read_the_secret_file_the_same_way(self):
+        """Fix2, gap 5: the same file is the same password for both commands: ONE final line break (LF or CR LF) is removed and nothing else (no `.strip()`)."""
+        for raw, expected in ((b'  padded password 1  \r\n', '  padded password 1  '), (b'plain-password-123\n', 'plain-password-123'), (b'no-final-break-1234', 'no-final-break-1234'),
+                              (b'two-breaks-12345\n\n', 'two-breaks-12345\n'), (b'tab-at-the-end-123\t\n', 'tab-at-the-end-123\t'), (b'\n lead-and-trail \n', '\n lead-and-trail ')):
+            with self.subTest(raw=raw):
+                seen = {}
+                for command, writer in (('bootstrap', 'bootstrap_user'), ('set-password', 'set_password')):
+                    store = Mock()
+                    getattr(store, writer).return_value = {'id': 'actor', 'username': 'fixture', 'sessions_revoked': 0, 'keys_revoked': 0}
+                    status, out, err = self.run_with_secret_file(command, raw, store)
+                    self.assertEqual(status, 0, err)
+                    seen[command] = getattr(store, writer).call_args.args[1]
+                self.assertEqual(seen, {'bootstrap': expected, 'set-password': expected})
+
+    def test_a_secret_file_that_is_not_utf8_fails_without_a_byte_of_it_on_stderr(self):
+        """Fix2, gap 5: the decoding error of Python names the offending byte and its position (`can't decode byte 0xff in position 7`): a typed error without content instead."""
+        for command in ('bootstrap', 'set-password'):
+            with self.subTest(command=command):
+                store = Mock()
+                status, out, err = self.run_with_secret_file(command, b'secret-\xff\xfe-password-123\n', store)
+                self.assertEqual(str(status), 'password_file_invalid: the file is not UTF-8 text')
+                for text in (out, err, str(status)):
+                    for leaked in ('secret', 'password-123', '0xff', '0xfe', 'position', 'codec'):
+                        self.assertNotIn(leaked, text)
+                store.bootstrap_user.assert_not_called()
+                store.set_password.assert_not_called()
+
+    def test_admin_py_reads_the_password_file_in_one_place_for_both_commands(self):
+        import ast
+        source = (Path(__file__).parents[1] / 'admin.py').read_text(encoding='utf-8')
+        self.assertNotIn('password_file).read_text', source, 'the password file is read by password_from_file only')
+        calls = [n for n in ast.walk(ast.parse(source)) if isinstance(n, ast.Call) and getattr(n.func, 'id', '') == 'password_from_file']
+        self.assertEqual(len(calls), 2, 'bootstrap and set-password')
+
     def test_backup_rejects_existing_destination_before_subprocess(self):
         with workspace() as root:
             target = root/'existing.dump'; target.write_bytes(b'original')
