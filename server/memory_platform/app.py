@@ -230,10 +230,10 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
 
     @app.post('/v1/auth/password', operation_id='memory_change_password')
     def change_password(payload: m.PasswordChange, request: Request, actor=Depends(identity)):
-        # Session and CSRF only (`identity` checks the CSRF of a session; the store refuses a key). Two derivations inside ONE slot of the gate of this process, like the login.
+        # Session and CSRF only (`identity` checks the CSRF of a session; the store refuses a key). The store decides the 429 (failures of the IP or the user, too many changes) BEFORE the slot
+        # (DC-5) and takes it, ONE slot of the gate of this process like the login, only around the two derivations.
         ip = request.client.host if request.client else ''
-        with passwords.GATE.hold(ip):
-            return store.change_password(actor, payload.current_password, payload.new_password, ip)
+        return store.change_password(actor, payload.current_password, payload.new_password, ip, slot=lambda: passwords.GATE.hold(ip))
 
     @app.get('/v1/projects', operation_id='memory_projects')
     def projects(actor=Depends(identity)):
@@ -388,8 +388,9 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
 
     @app.post('/v1/users', operation_id='memory_create_user')
     def user(payload: m.UserInput, request: Request, actor=Depends(identity)):
-        with passwords.GATE.hold(request.client.host if request.client else ''):  # the password of the new user is derived here: the same gate as the login
-            return store.create_user(actor, payload)
+        ip = request.client.host if request.client else ''
+        # The password of the new user is derived under the same gate as the login, but the store authorizes (403) and refuses a duplicate (409) before it takes the slot.
+        return store.create_user(actor, payload, slot=lambda: passwords.GATE.hold(ip))
 
     @app.post('/v1/events', status_code=202, operation_id='memory_ingest_event')
     def ingest(payload: m.Event, actor=Depends(identity)):

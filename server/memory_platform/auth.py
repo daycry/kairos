@@ -13,6 +13,13 @@ SCOPES = frozenset({'read', 'write', 'publish', 'validate', 'admin'})
 RECENT_ATTEMPTS = "SELECT count(*) AS n FROM memory.login_attempts WHERE happened_at>clock_timestamp()-interval '15 minutes' AND (username=%s OR client_ip=%s)"
 
 
+def lock_attempts(c, username, client_ip):
+    """The advisory locks that serialise the recount and the record of the failures of a user and of an IP: the login and the change of password take them the same way, in a fixed order
+    (so two requests never wait for each other in a circle) and for the length of the transaction."""
+    for lock in sorted(('login-user:'+username, 'login-ip:'+client_ip)):
+        c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', (lock,))
+
+
 def token_hash(token):
     return hashlib.sha256(token.encode()).hexdigest()
 
@@ -53,8 +60,7 @@ class Auth:
         with passwords.GATE.hold(client_ip):
             # A separate committed transaction records failures even when authentication raises.
             with self.store.transaction() as c:
-                for lock in sorted(('login-user:'+username, 'login-ip:'+client_ip)):
-                    c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', (lock,))
+                lock_attempts(c, username, client_ip)
                 if c.execute(RECENT_ATTEMPTS, (username, client_ip)).fetchone()['n'] >= 10:
                     raise MemoryError('rate_limited', 'Too many login attempts', 429)
                 c.execute('INSERT INTO memory.login_attempts(username,client_ip) VALUES(%s,%s)', (username, client_ip))
@@ -65,6 +71,15 @@ class Auth:
                 raise Unauthorized()
             session, csrf, sid = secrets.token_urlsafe(48), secrets.token_urlsafe(32), secrets.token_hex(16)
             with self.store.transaction() as c:
+                # Between the verification above and this insert another transaction may have changed the password (`admin set-password`, `POST /v1/auth/password`) or disabled the user.
+                # The row is read again under a lock that waits for it, and the session is opened only if the hash is still the verified one and the user is enabled (no session otherwise: a
+                # session born of the old password would outlive the closing of the sessions that change made).
+                # `FOR SHARE` waits for a transaction that changed the row and has not committed; a login that is going to replace an old hash takes `FOR NO KEY UPDATE` instead, because it writes the
+                # row next and two of them must not wait for each other (a share lock that is then upgraded).
+                current = c.execute('SELECT * FROM memory.actors WHERE id=%s FOR NO KEY UPDATE' if rehash else 'SELECT * FROM memory.actors WHERE id=%s FOR SHARE', (row['id'],)).fetchone()
+                if not current or current['disabled'] or current['password_hash'] != row['password_hash']:
+                    raise Unauthorized()
+                row = current
                 if rehash:
                     # The hash of an earlier release becomes one at the target cost. `WHERE password_hash=<the one read>`: a password changed meanwhile is not overwritten, and a failed write
                     # (a savepoint, so the transaction goes on) does not stop the login.

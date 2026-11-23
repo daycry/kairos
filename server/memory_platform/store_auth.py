@@ -1,10 +1,13 @@
 """Store mixin: migration, actors, projects, policy, users and keys."""
 import secrets
+from contextlib import nullcontext
 from pathlib import Path
+
+from psycopg import errors as pg_errors
 
 from .config import migration_maintenance_work_mem
 from .auth import SCOPES, token_hash
-from .passwords import hash_password
+from .passwords import check_length, hash_password
 from .errors import Conflict, Forbidden, MemoryError, NotFound, Unauthorized
 from .auth_scope import _cached, _identity, invalidate_auth
 from .store_common import as_dict, canonical, new_id, clean
@@ -193,20 +196,34 @@ class AuthMixin:
             for scope in scopes:
                 self._require(c, actor, project, scope)
 
-    def create_user(self, actor, user):
+    def create_user(self, actor, user, slot=None):
+        """Order of DC-5 / fix1 of the review of phase 2 (gap 2): 1) authorize and refuse a duplicate, in a transaction that derives nothing; 2) the slot of the gate (`slot`, a callable that
+        returns a context manager: the route gives `passwords.GATE.hold(ip)`) and the derivation of the password, OUTSIDE any transaction; 3) the insert, in a transaction that authorizes and checks the
+        duplicate AGAIN, because the permissions of the credential (or the username) may have changed while the password was derived. A credential that may not create users, or a taken name,
+        costs no derivation and no slot of the gate."""
         data = as_dict(user)
-        password = hash_password(data['password'])
-        with self.transaction() as c:
+
+        def may_create(c):  # 403/401 for a credential that may not delegate this, 409 for a username that exists; no derivation
             self._delegate(c, actor, data['project_ids'], data['scopes'])
             if c.execute('SELECT 1 FROM memory.actors WHERE username=%s', (data['username'],)).fetchone():
                 raise Conflict('Username already exists')
-            aid = new_id()
-            c.execute('INSERT INTO memory.actors(id,username,password_hash) VALUES(%s,%s,%s)', (aid, data['username'], password))
-            for project in data['project_ids']:
-                for scope in data['scopes']:
-                    c.execute('INSERT INTO memory.project_grants VALUES(%s,%s,%s) ON CONFLICT DO NOTHING', (aid, project, scope))
-            invalidate_auth(c)
-            self._audit(c, actor, 'user.created', resource_id=aid)
+        with self.transaction() as c:
+            may_create(c)
+        check_length(data['password'])
+        with (slot or nullcontext)():
+            password = hash_password(data['password'])
+        try:
+            with self.transaction() as c:
+                may_create(c)
+                aid = new_id()
+                c.execute('INSERT INTO memory.actors(id,username,password_hash) VALUES(%s,%s,%s)', (aid, data['username'], password))
+                for project in data['project_ids']:
+                    for scope in data['scopes']:
+                        c.execute('INSERT INTO memory.project_grants VALUES(%s,%s,%s) ON CONFLICT DO NOTHING', (aid, project, scope))
+                invalidate_auth(c)
+                self._audit(c, actor, 'user.created', resource_id=aid)
+        except pg_errors.UniqueViolation:  # two creations of the same name at once: the one that lost is a 409 as well
+            raise Conflict('Username already exists') from None
         return {'id': aid, 'username': data['username'], 'project_ids': data['project_ids'], 'scopes': data['scopes']}
 
     def list_users(self, actor):

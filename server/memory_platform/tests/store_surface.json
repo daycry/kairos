@@ -126,7 +126,7 @@
     "change_password": {
       "contextmanager": false,
       "kind": "function",
-      "signature": "(self, actor, current, new, client_ip='')"
+      "signature": "(self, actor, current, new, client_ip='', slot=None)"
     },
     "claim_job": {
       "contextmanager": false,
@@ -151,7 +151,7 @@
     "create_user": {
       "contextmanager": false,
       "kind": "function",
-      "signature": "(self, actor, user)"
+      "signature": "(self, actor, user, slot=None)"
     },
     "delete_document": {
       "contextmanager": false,
@@ -331,7 +331,7 @@
     "set_password": {
       "contextmanager": false,
       "kind": "function",
-      "signature": "(self, username, new)"
+      "signature": "(self, username, new, revoke_keys=False)"
     },
     "set_policy": {
       "contextmanager": false,
