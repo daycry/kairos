@@ -56,7 +56,7 @@ test-plan: test-plan.md
 | Fase | Completadas | Total | Progreso | H. humanas (real/est) | H. IA ejec. (real/est) | Supervisión (real/est) | Tokens (real/est) |
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Medición de scrypt y guarda del resolvedor (CA-09, CA-38 a) | 5 | 5 | 100% | 0 / 19.8h | 4.77 / 6.3h | 0 / 1.6h | 0 / 1570 k |
-| Fase 2 — Esquema 13, scrypt y contraseñas (C-01) | 0 | 7 | 0% | 0 / 36.0h | 0 / 3.7h | 0 / 0.9h | 0 / 924 k |
+| Fase 2 — Esquema 13, scrypt y contraseñas (C-01) | 6 | 7 | 86% | 0 / 36.0h | 1.66 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 3 — Usuarios, permisos y sesiones (C-01) | 0 | 6 | 0% | 0 / 36.0h | 0 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01) | 0 | 7 | 0% | 0 / 48.0h | 0 / 4.9h | 0 / 1.2h | 0 / 1232 k |
 | Fase 5 — Login que no se bloquea entre clientes (C-02) | 0 | 5 | 0% | 0 / 43.2h | 0 / 4.4h | 0 / 1.1h | 0 / 1109 k |
@@ -73,7 +73,7 @@ test-plan: test-plan.md
 | Fase 16 — Identidad: guía probada y extensibilidad (C-05) | 0 | 5 | 0% | 0 / 23.4h | 0 / 2.4h | 0 / 0.6h | 0 / 601 k |
 | Fase 17 — Revisión del hito C y revisión de seguridad (C-07) | 0 | 5 | 0% | 0 / 27.0h | 0 / 5.3h | 0 / 1.3h | 0 / 1320 k |
 | Fase 18 — Cierre del hito C y de la iniciativa: ensayo, versión 0.4.2 y PR | 0 | 4 | 0% | 0 / 11.4h | 0 / 1.2h | 0 / 0.3h | 0 / 293 k |
-| **TOTAL** | **5** | **106** | **5%** | **0 / 616.2h** | **4.77 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
+| **TOTAL** | **11** | **106** | **10%** | **0 / 616.2h** | **6.43 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -222,7 +222,7 @@ test-plan: test-plan.md
 
 ## Fase 2 — Esquema 13, scrypt y contraseñas (C-01)
 
-**Estado**: en-progreso · **Hito**: A · **Estimado**: 36.0h (30h base, de ellas 15h de revisión adversarial) · **Real**: — · **Coste est.**: 1.800 € · **Tokens est.**: 924 k
+**Estado**: en-progreso · **Hito**: A · **Estimado**: 36.0h (30h base, de ellas 15h de revisión adversarial) · **Real**: 1.66h IA (medido; T-12 sin hacer) · **Coste est.**: 1.800 € · **Tokens est.**: 924 k
 
 ### T-06 — Esquema 13: columnas e índices de los tres hitos, de una vez (CA-10)
 
@@ -236,7 +236,7 @@ test-plan: test-plan.md
 - **Previsión IA**: 85 k in / 7 k out tok · ⚠️ verificar €
 - **Dependencias**: T-05
 - **Tipo**: db
-- **Archivos**: `server/memory_platform/schema.sql`, `server/memory_platform/tests/test_migrations_additive.py`, `server/memory_platform/tests/schema_history.py`, server/memory_platform/tests/test_queue_indexes.py (añadido con nota: ajuste del recuento de índices a los de `jobs`)
+- **Archivos**: `server/memory_platform/schema.sql`, `server/memory_platform/tests/test_migrations_additive.py`, `server/memory_platform/tests/schema_history.py`, `server/memory_platform/tests/test_queue_indexes.py` (añadido con nota: ajuste del recuento de índices a los de `jobs`)
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_migrations_additive|MEMORY_TEST_RESULT"` → nombradas en `ok`; 0 fallos y 0 omitidos
 
@@ -250,7 +250,7 @@ test-plan: test-plan.md
 - [x] Caso de actualización desde 0.4.1
 - [x] Prueba por catálogo
 
-**Notas**: **Notas**: RED: `AccessSchemaTests` (4 pruebas) falló con `AssertionError: 12 not greater than or equal to 13` y `None != (timestamp with time zone, YES, None)` · 2026-11-23. Versión 13 en `schema.sql` (sección `accessschema`, guardada: una migración repetida no toma bloqueo fuerte); `schema_history.py` gana `SCHEMA_V12` (el 0.4.1 congelado). `created_at` de `web_sessions` tiene defecto volátil: la primera migración reescribe esa tabla corta (documentado en el comentario del SQL). `test_queue_indexes.py` (fuera de `Archivos`, añadido): su prueba de v11→v12 contaba los índices de todas las tablas y ahora solo los de `jobs`. Verde: 51 pruebas de migración sin fallos.
+**Notas**: RED: `AccessSchemaTests` (4 pruebas) falló con `AssertionError: 12 not greater than or equal to 13` y `None != (timestamp with time zone, YES, None)` · 2026-11-23. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `3f2cd66a81df`.
 
 ### T-07 — `passwords.py`: scrypt con el coste medido, hash ficticio, techo y rehash (CA-09)
 
@@ -264,7 +264,7 @@ test-plan: test-plan.md
 - **Previsión IA**: 71 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-01, T-06
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/passwords.py`, `server/memory_platform/auth.py`, `server/memory_platform/store_auth.py`, `server/memory_platform/tests/test_passwords.py`, `server/memory_platform/tests/test_auth.py`, server/memory_platform/tests/__init__.py (añadido con nota: la suite corre a n=2^14)
+- **Archivos**: `server/memory_platform/passwords.py`, `server/memory_platform/auth.py`, `server/memory_platform/store_auth.py`, `server/memory_platform/tests/test_passwords.py`, `server/memory_platform/tests/test_auth.py`, `server/memory_platform/tests/__init__.py` (añadido con nota: la suite corre a n=2^14)
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_passwords|test_auth|MEMORY_TEST_RESULT"` → nombradas en `ok`; 0 fallos y 0 omitidos
 
@@ -278,7 +278,7 @@ test-plan: test-plan.md
 - [x] Mover scrypt y subir `maxmem`
 - [x] Rehash en la transacción que abre la sesión
 
-**Notas**: **Notas**: RED: `test_passwords` falló con `ImportError: cannot import name 'passwords' from 'memory_platform'` y, con el módulo y sin cablear `Auth.login`, `Lists differ: [] != [(1024, 8, 1), (131072, 8, 1)]` · 2026-11-23. `passwords.py`: `_derive` es la única llamada a `hashlib.scrypt` (con `maxmem` explícito); `check_login` hace una derivación de coste objetivo siempre (hash antiguo: la suya más una objetivo). `TARGET` es atributo del módulo solo para que la suite corra a n=2^14 (`tests/__init__.py`, añadido a `Archivos`); `test_passwords` ejecuta el coste real (`REAL`). Rehash con savepoint, `WHERE password_hash=<leído>`. Verde: `test_passwords`, `test_auth`, `test_auth_cache` y `test_auth_race` sin fallos. Corrección al cerrar la fase (suite completa, B-01): el fallo del rehash se registra (`password_rehash_failed`, solo el tipo) en vez de tragarse; la prueba lo exige.
+**Notas**: RED: `test_passwords` falló con `ImportError: cannot import name 'passwords' from 'memory_platform'` y, con el módulo y sin cablear `Auth.login`, `Lists differ: [] != [(1024, 8, 1), (131072, 8, 1)]` · 2026-11-23. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `0e2a218faee9`.
 
 ### T-08 — Tope de logins simultáneos: semáforo que una sola IP no puede llenar (CA-09)
 
@@ -306,7 +306,7 @@ test-plan: test-plan.md
 - [x] Semáforo y espera acotada
 - [x] 503 con `Retry-After`
 
-**Notas**: **Notas**: RED: `GateTests` (8 pruebas) falló con `AttributeError: module 'memory_platform.passwords' has no attribute 'LoginGate'` · 2026-11-23. `passwords.LoginGate` (hilos; reloj y espera inyectables) y `GATE` del proceso, con los huecos de `Settings.login_concurrency` (`MEMORY_LOGIN_CONCURRENCY`, 1 a 32, defecto 2; `create_app` lo fija). Una IP, un hueco (en uso o en espera); caben tantas esperas como huecos y 2 s; lleno: 503 `login_busy` con `Retry-After: 2` (`MemoryError.retry_after`; `error()` pone la cabecera). `Auth.login` comprueba el 429 antes del hueco y registra el intento dentro de él: `login_busy` no cuenta como fallo. `POST /v1/users` usa el mismo hueco. Compose sin `MEMORY_BOOTSTRAP_MEM_LIMIT` nuevo (T-01: 256 MB bastan). Añadidos con nota: `docs/configuration.md` (fila de la variable) y la medición de T-08 a T-10 en una sola ventana (`usage-meter` de T-08 cubre las tres). Verde: 28 pruebas de `test_passwords` y la guarda sin entradas nuevas.
+**Notas**: RED: `GateTests` (8 pruebas) falló con `AttributeError: module 'memory_platform.passwords' has no attribute 'LoginGate'` · 2026-11-23. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `24f3010882f3`.
 
 ### T-09 — `store_access.py`: una puerta para los cambios de acceso y cambio de contraseña (CA-01)
 
@@ -334,7 +334,7 @@ test-plan: test-plan.md
 - [x] Mixin y `_access_changed`
 - [x] Ruta, modelo y OpenAPI
 
-**Notas**: **Notas**: RED: `test_access_password` falló con `AssertionError: 404 != 200` (la ruta no existía) y `AttributeError: ... no attribute '_access_changed'` · 2026-11-23. `AccessMixin` (`store_access.py`) con `_access_changed` (audita y vacía la caché) y `change_password` (sesión y CSRF; una clave recibe 403 tras comprobar que no está revocada; actual incorrecta: 403 `invalid_current_password`, un fallo de la IP y 429 si ya está bloqueada; nueva corta: 422 antes de derivar; `WHERE password_hash=<verificado>`, 409 si cambió). La ruta toma un hueco de `GATE` para las dos derivaciones. Sin entradas nuevas en `READ_EXCEPTIONS` (no nombra `is_admin` ni lee permisos). `test_auth_cache.py`: el recorrido de escritores acepta `_access_changed` como vaciado, exige que TODO escritor de `store_access.py` termine en él y que él audite antes de vaciar; `store_calls` gana `change_password`. Contrato OpenAPI regenerado (solo añade la ruta y `PasswordChange`; el MCP no cambia). Medición: ver T-08 (ventana común).
+**Notas**: RED: `test_access_password` falló con `AssertionError: 404 != 200` (la ruta no existía) y `AttributeError: ... no attribute '_access_changed'` · 2026-11-23. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `b5cb25d822eb`.
 
 ### T-10 — `admin set-password --username --password-file` (CA-02)
 
@@ -361,16 +361,16 @@ test-plan: test-plan.md
 - [x] Prueba en rojo
 - [x] Subcomando sobre el escritor del store
 
-**Notas**: Cada fix en `admin.py` suma un intento de revisión completo (R-08).
-**Notas**: RED: `SetPasswordTests` falló con `AssertionError: 2 != 0 : usage: ... invalid choice` (el subcomando no existía) · 2026-11-23. `Store.set_password(username, new)` en `store_access.py` (una derivación fuera de la transacción, sin `GATE`; cambia el hash, revoca TODAS las sesiones del usuario, claves intactas, evento `password.reset` sin actor y termina en `_access_changed`); `admin set-password` solo lee el fichero, llama al escritor e imprime `{status, username, sessions_revoked}`. La prueba recorre la rama del subcomando y exige cero `execute` y cero nombres de tabla. Sin entradas nuevas en `READ_EXCEPTIONS`; `set_password` entra en `NOT_REQUEST_PATHS` de `test_auth_cache.py` (comando del operador, sin actor). Archivos añadidos con nota: `test_auth_cache.py` y `store_surface.json`. Medición: ver T-08 (ventana común).
+**Notas**: Cada fix en `admin.py` suma un intento de revisión completo (R-08). RED: `SetPasswordTests` falló con `AssertionError: 2 != 0 : usage: ... invalid choice` (el subcomando no existía) · 2026-11-23. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `46cffafad447`.
 
 ### T-11 — Cierre de fase: suites y subida del mínimo
 
 - **Descripción**: Protocolo de cierre de fase (cabecera) con las suites: servidor, contratos.
-- **Changelog**: Interno: cierre de fase.
-- **Estado**: en-progreso
+- **Changelog**: El esquema pasa a la versión 13; las contraseñas usan un scrypt más costoso con tope de verificaciones simultáneas; nuevos `POST /v1/auth/password` y `admin set-password`.
+- **Estado**: completado
+- **Cerrada**: 2026-11-23
 - **Tiempo humano**: est. 0.5h · real —
-- **Tiempo IA (ejec.)**: est. 0.05h · real —
+- **Tiempo IA (ejec.)**: est. 0.05h · real 0.11h (medido)
 - **Supervisión**: est. 0.01h · real —
 - **Previsión IA**: 14 k in / 1 k out tok · ⚠️ verificar €
 - **Dependencias**: T-10
@@ -383,10 +383,12 @@ test-plan: test-plan.md
   - `PYTHONPATH=server python -m unittest memory_platform.tests.test_contract_additive` → `OK`
 
 **Criterios de aceptación**
-- [ ] Suites con 0 fallos y 0 omitidos; el mínimo iguala el recuento observado en los cuatro sitios y el equivalente local queda anotado
+- [x] Suites con 0 fallos y 0 omitidos; el mínimo iguala el recuento observado en los cuatro sitios y el equivalente local queda anotado
 
 **Subtareas**
-- [ ] Suites, mínimo y archivo de las notas de la fase
+- [x] Suites, mínimo y archivo de las notas de la fase
+
+**Notas**: TDD n/a: cierre de fase, sin código. `kairos-test:i4p2` (exit 0): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1649}`; mínimo 1601 → 1649 en los cuatro sitios; `scripts/tests/test_ci_workflow.py` OK (48). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `8d17c3d44694`.
 
 ### T-12 — Revisión adversarial de la fase (dos lentes)
 
