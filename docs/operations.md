@@ -393,6 +393,8 @@ Para fallos de modelo, revisa disponibilidad del servidor, sesión de nube si co
 
 Las claves se muestran una vez al crearlas. Para rotación, crea una nueva con los mismos permisos mínimos necesarios, actualiza el fichero privado del cliente, comprueba una consulta y revoca la anterior. No revoques primero si eso deja al integrador sin un medio de recuperar la operación.
 
+**Recuperar una cuenta (`admin set-password`).** `memory-admin set-password --username <usuario> --password-file <fichero>` fija la contraseña del usuario y cierra todas sus sesiones, también la que estuviera usando. Las claves de API del usuario se conservan, porque son credenciales propias; si la cuenta pudo estar en manos de otra persona, que habría podido crear claves, añade `--revoke-keys`: revoca todas las claves del usuario en la misma transacción y la salida indica cuántas (`keys_revoked`). Del fichero solo se quita **un** salto de línea final (LF o CRLF), el que añade un editor o `echo`; los espacios al principio o al final forman parte de la contraseña. La salida y los registros nunca contienen la contraseña ni su hash; la auditoría deja `password.reset` y, si se revocaron claves, `keys.revoked`. El cambio que hace el propio usuario (`POST /v1/auth/password`) admite como mucho cinco cambios correctos en 15 minutos (429 `too_many_attempts`) además del límite de intentos fallidos.
+
 El bootstrap crea el acceso inicial; no es un comando documentado de restablecimiento universal. No lo presentes como cambio de contraseña garantizado para un usuario existente. Las contraseñas y DSN se manejan por archivos privados, nunca pegadas en documentación o incidencias.
 
 ## Monitorización y rendimiento
