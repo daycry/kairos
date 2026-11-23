@@ -443,6 +443,46 @@ class AccessSchemaTests(unittest.TestCase):
         self.assertEqual(auth.authenticate_session('old-session')['id'], 'u1')
         self.assertEqual(auth.login('ana', 'synthetic-password-123', '192.0.2.9')['actor']['id'], 'u1')
 
+    INDEX_DEFINITIONS = {('login_attempts', 'login_attempt_ip_time'): 'CREATE INDEX login_attempt_ip_time ON memory.login_attempts USING btree (client_ip, happened_at)',
+                         ('web_sessions', 'web_session_actor'): 'CREATE INDEX web_session_actor ON memory.web_sessions USING btree (actor_id) WHERE (revoked_at IS NULL)'}
+
+    @staticmethod
+    def full_catalog(c):
+        """EVERY table of `memory`: the tables, each column with type, nullability and default, each index with its definition, each constraint with its definition, and what `catalog_snapshot` reads."""
+        catalog = catalog_snapshot(c)
+        catalog['tables'] = {t for (t,) in c.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='memory'").fetchall()}
+        catalog['columns'] = {(t, n): (d, nullable, default) for t, n, d, nullable, default in c.execute(
+            "SELECT table_name,column_name,data_type,is_nullable,column_default FROM information_schema.columns WHERE table_schema='memory'").fetchall()}
+        catalog['constraints'] = {(t, n): (k, d) for t, n, k, d in c.execute(
+            "SELECT conrelid::regclass::text,conname,contype::text,pg_get_constraintdef(oid) FROM pg_constraint WHERE connamespace='memory'::regnamespace").fetchall()}
+        return catalog
+
+    def test_the_upgrade_adds_exactly_what_dc6_lists_to_every_table_of_the_schema(self):
+        """EQUALITY, not "contains" (fix1 of the review of phase 2, gap 5): the catalog after version 13 is the one before plus the seven columns, the two indexes and the version of DC-6.
+        No other table, column, index, constraint, function, trigger or extension appears, changes or disappears, in ANY table of `memory`."""
+        import copy
+        self.seed_release_041()
+        with self.psycopg.connect(self.dsn) as c:
+            before = self.full_catalog(c)
+        Store(self.dsn).migrate()
+        with self.psycopg.connect(self.dsn) as c:
+            after = self.full_catalog(c)
+        expected = copy.deepcopy(before)
+        for table, wanted in (('api_keys', self.API_KEYS), ('web_sessions', self.WEB_SESSIONS)):
+            for name, spec in wanted.items():
+                self.assertNotIn((table, name), before['columns'], 'the fixture must be the previous release')
+                expected['columns'][(table, name)] = spec
+        for key, definition in self.INDEX_DEFINITIONS.items():
+            self.assertNotIn(key, before['indexes'])
+            expected['indexes'][key] = definition
+        expected['versions'] = before['versions'] | {13}
+        for kind in expected:
+            self.assertEqual(after[kind], expected[kind], kind)  # one assertion per kind so the failure names what is extra or missing
+        self.assertEqual(len(after['columns']) - len(before['columns']), 7)
+        self.assertEqual(len(after['indexes']) - len(before['indexes']), 2)
+        self.assertEqual(after['constraints'], before['constraints'], 'no constraint is added or changed')
+        self.assertEqual(after['tables'], before['tables'], 'no table is added')
+
     def test_the_catalog_has_exactly_the_columns_and_indexes_of_dc6(self):
         """By catalog, not by SQL text: type, nullability and default of each column, definition of each index."""
         Store(self.dsn).migrate()
