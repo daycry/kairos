@@ -333,6 +333,16 @@ def prune_tables(store, windows, *, batch=1000, dry_run=False, tables=None, now=
     return {'status': 'dry_run' if dry_run else 'pruned', 'dry_run': dry_run, 'batch': batch, 'now': now.isoformat(), 'tables': report}
 
 
+def password_from_file(path):
+    """The password in a file: exactly the text of the file minus ONE final line break (a LF or a CR LF, what an editor or `echo` adds). Nothing else is removed: a password may start or end with spaces,
+    and a second line break is part of it. Read as bytes so that the platform does not translate the line endings."""
+    text = path.read_bytes().decode('utf-8')
+    for ending in ('\r\n', '\n'):
+        if text.endswith(ending):
+            return text[:-len(ending)]
+    return text
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Manage only the isolated memory platform database')
     commands = parser.add_subparsers(dest='command', required=True)
@@ -341,9 +351,10 @@ def main(argv=None):
     bootstrap.add_argument('--username', default='admin')
     bootstrap.add_argument('--password-file', default=os.environ.get('MEMORY_BOOTSTRAP_PASSWORD_FILE'))
     bootstrap.add_argument('--with-projects', action='store_true', help='Create allowlisted project shells; capture stays off')
-    set_password = commands.add_parser('set-password', help='Recover an account: set the password of --username from --password-file and close every session of the user (keys stay); nothing secret is printed')
+    set_password = commands.add_parser('set-password', help='Recover an account: set the password of --username from --password-file (one final newline is removed, nothing else) and close every session of the user; the API keys stay unless --revoke-keys; nothing secret is printed')
     set_password.add_argument('--username', required=True)
     set_password.add_argument('--password-file', required=True)
+    set_password.add_argument('--revoke-keys', action='store_true', help='also revoke every API key of the user, in the same transaction (the account may have been used by someone else, who may have made keys)')
     backfill = commands.add_parser('backfill-chunks', help='Queue embed jobs for current resources without fragments (idempotent, resumable)')
     backfill.add_argument('--batch', type=int, default=200, help='Jobs queued per transaction (1..5000)')
     backfill.add_argument('--max-jobs', type=int, default=None, help='Stop after queueing this many jobs; run again to continue')
@@ -502,9 +513,9 @@ def main(argv=None):
                 projects.append(project_id)
         print(json.dumps({'status': 'bootstrapped', 'username': args.username, 'projects': projects, 'capture': 'off'}))
     elif args.command == 'set-password':
-        password = Path(args.password_file).read_text(encoding='utf-8').strip()
+        password = password_from_file(Path(args.password_file))
         try:
-            result = store.set_password(args.username, password)
+            result = store.set_password(args.username, password, revoke_keys=args.revoke_keys)
         except MemoryError as error:
             raise SystemExit(f'set_password_failed: {error.code}') from None  # the code only: neither the password nor a hash is in it
         print(json.dumps({'status': 'password_set', **result}, sort_keys=True))

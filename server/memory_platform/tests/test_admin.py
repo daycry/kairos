@@ -13,6 +13,7 @@ import uuid
 
 from memory_platform import passwords
 from memory_platform.admin import backfill_chunks, main, store_fingerprints, content_manifest
+from memory_platform.auth import token_hash
 from memory_platform.errors import MemoryError
 from memory_platform.store_jobs import stored_item_vector
 from memory_platform.tests import test_passwords as pw
@@ -354,11 +355,11 @@ class SetPasswordTests(pw.Fixture):
     """CA-02 (T-10): `admin set-password --username --password-file` on the writer of the store (DC-10): new password, every session of the user closed, audited, nothing printed."""
     NEW = 'replacement-password-789'
 
-    def run_command(self, username='ana', password=None, extra=()):
+    def run_command(self, username='ana', password=None, extra=(), ending='\n'):
         settings = Mock(dsn=self.dsn, project_maps={})
         with workspace() as root:
             secret = root / 'password'
-            secret.write_text((self.NEW if password is None else password) + '\n', encoding='utf-8')
+            secret.write_bytes(((self.NEW if password is None else password) + ending).encode('utf-8'))
             out, err = io.StringIO(), io.StringIO()
             with patch('memory_platform.admin.Settings.from_env', return_value=settings), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
                 try:
@@ -403,6 +404,65 @@ class SetPasswordTests(pw.Fixture):
         for text in (out, err, events):
             for secret in (self.NEW, stored, salt, digest):
                 self.assertNotIn(secret, text)
+
+    def key_of(self, username, name):
+        """A key of `username` (an administrator of p1 made for the test); returns the token."""
+        actor = self.auth.login(username, pw.PASSWORD, '192.0.2.30')['actor']
+        return self.store.create_key(actor, {'name': name, 'project_ids': ['p1'], 'scopes': ['read']})['token']
+
+    def test_the_keys_of_the_user_stay_unless_revoke_keys_is_given_and_then_only_that_users(self):
+        """Gap 7: by default the keys stay (they are credentials of their own); `--revoke-keys` revokes them in the same transaction and the output says how many."""
+        self.store.create_user(self.admin, {'username': 'owner', 'password': pw.PASSWORD, 'project_ids': ['p1'], 'scopes': ['read', 'admin']})
+        mine, also_mine = self.key_of('owner', 'one'), self.key_of('owner', 'two')
+        other = self.store.create_key(self.admin, {'name': 'root key', 'project_ids': ['p1'], 'scopes': ['read']})['token']
+        status, out, err = self.run_command('owner')
+        self.assertEqual(status, 0, err)
+        self.assertEqual(json.loads(out)['keys_revoked'], 0)
+        for token in (mine, also_mine):
+            self.assertEqual(self.auth.authenticate_bearer(token)['username'], 'owner', 'by default the key keeps working')
+        status, out, err = self.run_command('owner', extra=['--revoke-keys'])
+        self.assertEqual(status, 0, err)
+        self.assertEqual((json.loads(out)['status'], json.loads(out)['keys_revoked']), ('password_set', 2))
+        for token in (mine, also_mine):
+            with self.assertRaises(MemoryError) as raised:
+                self.auth.authenticate_bearer(token)
+            self.assertEqual(raised.exception.status_code, 401)
+        self.assertEqual(self.auth.authenticate_bearer(other)['username'], 'root-user', 'the keys of another user are not touched')
+        status, out, err = self.run_command('owner', extra=['--revoke-keys'])  # a second time: nothing left to revoke
+        self.assertEqual(json.loads(out)['keys_revoked'], 0)
+        with self.psycopg.connect(self.dsn) as c:
+            events = c.execute("SELECT action FROM memory.audit_events WHERE action IN ('password.reset','keys.revoked') ORDER BY id").fetchall()
+        self.assertEqual(events, [('password.reset',), ('keys.revoked',), ('password.reset',), ('password.reset',)], 'the revocation is audited once, with its own event, only when it revoked something')
+
+    def test_revoke_keys_prints_and_logs_no_secret(self):
+        self.store.create_user(self.admin, {'username': 'owner', 'password': pw.PASSWORD, 'project_ids': ['p1'], 'scopes': ['read', 'admin']})
+        token = self.key_of('owner', 'one')
+        with self.assertNoLogs(level='DEBUG'):
+            status, out, err = self.run_command('owner', extra=['--revoke-keys'])
+        self.assertEqual(status, 0, err)
+        with self.psycopg.connect(self.dsn) as c:
+            events = json.dumps(c.execute('SELECT * FROM memory.audit_events').fetchall(), default=str)
+        for text in (out, err, events):
+            for secret in (self.NEW, token, token[:10], token_hash(token)):
+                self.assertNotIn(secret, text)
+
+    def test_the_cli_documents_revoke_keys_and_the_writer_has_it_off_by_default(self):
+        import inspect
+        self.assertFalse(inspect.signature(self.store.set_password).parameters['revoke_keys'].default)
+        with contextlib.redirect_stdout(io.StringIO()) as out, self.assertRaises(SystemExit):
+            main(['set-password', '--help'])
+        self.assertIn('--revoke-keys', out.getvalue())
+
+    def test_the_password_file_loses_one_final_line_break_and_nothing_else(self):
+        """Gap 8: no `.strip()`. A password may start or end with a space; only the line break that an editor or `echo` adds is removed (LF or CR LF), once."""
+        for text, ending, expected in (('  padded password 1  ', '\r\n', '  padded password 1  '), ('no-final-line-break-12', '', 'no-final-line-break-12'),
+                                       ('two-line-breaks-123', '\n\n', 'two-line-breaks-123\n'), ('tab-at-the-end-1234\t', '\n', 'tab-at-the-end-1234\t')):
+            with self.subTest(text=text, ending=ending):
+                status, out, err = self.run_command(password=text, ending=ending)
+                self.assertEqual(status, 0, err)
+                self.assertTrue(passwords.verify_password(expected, self.stored_hash()))
+                if text != expected or text.strip() != text:
+                    self.assertFalse(passwords.verify_password(text.strip(), self.stored_hash()), 'what the old command stored')
 
     def test_a_short_password_or_an_unknown_user_changes_nothing(self):
         before = self.stored_hash()
