@@ -19,12 +19,19 @@ from .errors import Conflict, Forbidden, MemoryError, NotFound
 # the one of the login). A person changes a password once; five leave room for a typing mistake that was accepted, a password manager and a second device, and bound what a stolen session
 # can make the service derive (two derivations of 128 MB per change) to a handful per quarter of an hour.
 PASSWORD_CHANGES_PER_WINDOW = 5
-RECENT_CHANGES = "SELECT count(*) AS n FROM memory.audit_events WHERE actor_id=%s AND action='password.changed' AND happened_at>clock_timestamp()-interval '15 minutes'"
+# The count does not read `audit_events` whole (fix2 of the review of phase 2, gap 2: 1 M old rows cost 190 ms per request). There is no index on `happened_at` and the schema is closed (version 13), so it
+# is bounded by the primary key: `id` is an identity that the same INSERT assigns together with `happened_at`, so both grow together. LAST_OLD_EVENT is a backward walk of the key that stops at the first row
+# older than the window (a few buffers however large the table is) and RECENT_CHANGES counts only the `id` above it, still filtering by `happened_at`. Limit declared in design.md DC-5: the order by `id` is the
+# order of the clock only to the microsecond, so a row whose `id` and `happened_at` disagree at the very edge of the window (two sessions inserting in the same microsecond, or a clock stepped back by minutes)
+# may be counted or missed by that margin.
+LAST_OLD_EVENT = "SELECT id FROM memory.audit_events WHERE happened_at<=clock_timestamp()-interval '15 minutes' ORDER BY id DESC LIMIT 1"
+RECENT_CHANGES = "SELECT count(*) AS n FROM memory.audit_events WHERE id>%s AND actor_id=%s AND action='password.changed' AND happened_at>clock_timestamp()-interval '15 minutes'"
 
 
 def password_changes_left(c, actor):
-    """429 `too_many_attempts` when the user already made `PASSWORD_CHANGES_PER_WINDOW` correct changes in the last 15 minutes (counted in the audit events of `password.changed`)."""
-    if c.execute(RECENT_CHANGES, (actor['id'],)).fetchone()['n'] >= PASSWORD_CHANGES_PER_WINDOW:
+    """429 `too_many_attempts` when the user already made `PASSWORD_CHANGES_PER_WINDOW` correct changes in the last 15 minutes (counted in the audit events of `password.changed`, bounded by the key: see above)."""
+    old = c.execute(LAST_OLD_EVENT).fetchone()
+    if c.execute(RECENT_CHANGES, (old['id'] if old else 0, actor['id'])).fetchone()['n'] >= PASSWORD_CHANGES_PER_WINDOW:
         raise MemoryError('too_many_attempts', 'Too many password changes; try again later', 429)
 
 

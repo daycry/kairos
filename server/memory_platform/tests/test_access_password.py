@@ -3,6 +3,7 @@
 The oracle of A-01: with two sessions open, changing the password from one closes the other on its next request, keeps the first, keeps the keys, and leaves an audit event.
 """
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -12,6 +13,7 @@ from memory_platform.app import create_app
 from memory_platform.auth import Auth
 from memory_platform.config import Settings
 from memory_platform.errors import MemoryError, Unauthorized
+from memory_platform.store_access import password_changes_left
 from memory_platform.tests import test_passwords as pw
 
 ORIGIN = 'http://127.0.0.1:5173'
@@ -446,6 +448,91 @@ class LoginRaceTests(pw.Fixture):
                 self.assertEqual(self.sessions(), 0)
                 if label != 'disabled':
                     self.assertEqual(self.stored_hash(), other, 'the hash of the writer was not overwritten')
+
+
+class RecentChangesCostTests(pw.Fixture):
+    """Fix2 of the review of phase 2 (attempt 2, gap 2): the count of the correct changes of the last 15 minutes must not read `audit_events` whole. It is bounded by the primary key
+    (`id` is an identity assigned in the same row as `happened_at`, so both grow together) with no new index: the last `id` older than the window is found by a backward walk of the
+    key that stops at the first old row, and only the `id` above it is counted. The tests run the statements the function really issues, with `EXPLAIN (ANALYZE, BUFFERS)`."""
+    OLD_ROWS = 200_000
+
+    def fill(self):
+        with self.psycopg.connect(self.dsn) as c:
+            c.execute("INSERT INTO memory.audit_events(actor_id,action,happened_at) SELECT 'u'||(g%%500), CASE WHEN g%%9=0 THEN 'password.changed' ELSE 'key.created' END, "
+                      "clock_timestamp()-interval '3 days'+g*interval '0.2 seconds' FROM generate_series(1,%s) g", (self.OLD_ROWS,))
+            c.execute('ANALYZE memory.audit_events')
+
+    def add(self, actor, action, minutes_ago=0):
+        with self.psycopg.connect(self.dsn) as c:
+            c.execute("INSERT INTO memory.audit_events(actor_id,action,happened_at) VALUES(%s,%s,clock_timestamp()-%s*interval '1 minute')", (actor, action, minutes_ago))
+
+    def changes(self, actor_id):
+        """(still free?, the statements the function sent). A 429 is `not free`."""
+        class Spy:
+            def __init__(self, c):
+                self.c, self.seen = c, []
+
+            def execute(self, sql, params=()):
+                self.seen.append((sql, params))
+                return self.c.execute(sql, params)
+        with self.store.transaction() as c:
+            spy = Spy(c)
+            try:
+                password_changes_left(spy, {'id': actor_id})
+                return True, spy.seen
+            except MemoryError as exc:
+                self.assertEqual((exc.status_code, exc.code), (429, 'too_many_attempts'))
+                return False, spy.seen
+
+    def test_the_limit_counts_the_window_of_the_user_and_the_action_only(self):
+        from memory_platform.store_access import PASSWORD_CHANGES_PER_WINDOW
+        for minutes in (40, 16):
+            self.add('u-a', 'password.changed', minutes)   # outside the window: never counted
+        for n in range(PASSWORD_CHANGES_PER_WINDOW):
+            self.add('u-b', 'password.changed', 0)         # another user
+            self.add('u-a', 'key.created', 0)              # another action
+        for n in range(PASSWORD_CHANGES_PER_WINDOW - 1):
+            self.add('u-a', 'password.changed', 14 - n)    # four inside
+        self.assertTrue(self.changes('u-a')[0], 'four inside the window, the rest outside, another user or another action: still free')
+        self.assertFalse(self.changes('u-b')[0], 'five of its own')
+        self.assertTrue(self.changes('u-nobody')[0], 'a table with no event of the user')
+        self.add('u-a', 'password.changed', 0)
+        self.assertFalse(self.changes('u-a')[0], 'the fifth inside the window')
+
+    def test_an_empty_table_and_one_with_nothing_old_are_free(self):
+        self.assertTrue(self.changes('u-a')[0])
+        self.add('u-a', 'password.changed', 1)
+        self.assertTrue(self.changes('u-a')[0], 'every row is inside the window: there is no old id to bound by')
+
+    def test_the_statements_do_not_grow_with_the_table(self):
+        self.fill()
+        self.add('u7', 'password.changed', 14)
+        self.add('u7', 'password.changed', 0)
+        free, seen = self.changes('u7')
+        self.assertTrue(free)
+        self.assertGreaterEqual(len(seen), 1)
+        total = 0
+
+        def nodes(node):
+            yield node
+            for child in node.get('Plans', ()):
+                yield from nodes(child)
+        with self.psycopg.connect(self.dsn) as c:
+            for sql, params in seen:
+                plan = c.execute('EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ' + sql, params).fetchone()[0][0]['Plan']
+                for node in nodes(plan):
+                    self.assertNotIn(node['Node Type'], ('Seq Scan', 'Parallel Seq Scan'), 'the table is walked whole: ' + sql)
+                total += plan['Shared Hit Blocks'] + plan['Shared Read Blocks']
+        self.assertLess(total, 100, 'read %d buffers: walking %d rows takes about %d, a bounded count takes a handful (8 measured)' % (total, self.OLD_ROWS, self.OLD_ROWS // 125))
+
+    def test_both_counts_of_change_password_are_this_function(self):
+        import ast
+        from memory_platform import store_access
+        tree = ast.parse(Path(store_access.__file__).read_text(encoding='utf-8'))
+        method = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == 'change_password')
+        calls = [n for n in ast.walk(method) if isinstance(n, ast.Call) and getattr(n.func, 'id', '') == 'password_changes_left']
+        self.assertEqual(len(calls), 2, 'the one before the slot and the one of the last transaction')
+        self.assertFalse([n for n in ast.walk(method) if isinstance(n, ast.Name) and n.id == 'RECENT_CHANGES'], 'no count of its own')
 
 
 class AccessChangedTests(pw.Fixture):
