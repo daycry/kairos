@@ -13,6 +13,7 @@ from . import models as m
 from . import observability
 from . import schemas
 from .auth import Auth
+from . import passwords
 from .config import Settings
 from .errors import MemoryError, StoreBusy, Unauthorized, Forbidden, public_store_failure
 from .store import Store
@@ -86,6 +87,7 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
         store.extraction_enabled = getattr(settings, 'extract_enabled', False)
         attach_pool(store, settings, 'api')
     auth = auth or Auth(store, settings.allowed_origins, settings.session_ttl)
+    passwords.configure_gate(settings.login_concurrency)  # the semaphore of every password derivation of this process
     if retrieval is None:
         from .retrieval import Retrieval
         retrieval = Retrieval(store, settings)
@@ -130,13 +132,16 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
         finally:
             observability.REQUEST_ID.reset(token)
 
-    def error(request, code, message, status):
+    def error(request, code, message, status, retry_after=None):
         request_id = getattr(request.state, 'request_id', str(uuid.uuid4()))
-        return JSONResponse({'error': {'code': code, 'message': message}, 'request_id': request_id}, status_code=status, headers={'X-Request-ID': request_id})
+        headers = {'X-Request-ID': request_id}
+        if retry_after:
+            headers['Retry-After'] = str(int(retry_after))
+        return JSONResponse({'error': {'code': code, 'message': message}, 'request_id': request_id}, status_code=status, headers=headers)
 
     @app.exception_handler(MemoryError)
     async def domain_error(request, exc):
-        return error(request, exc.code, exc.message, exc.status_code)
+        return error(request, exc.code, exc.message, exc.status_code, getattr(exc, 'retry_after', None))
 
     async def store_failure(request, exc):
         # A plazo of the database, not an outage: the pool had no connection within MEMORY_POOL_TIMEOUT (`store_busy`) or PostgreSQL cancelled the statement at its
@@ -375,8 +380,9 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
         return {'items': store.list_users(actor)}
 
     @app.post('/v1/users', operation_id='memory_create_user')
-    def user(payload: m.UserInput, actor=Depends(identity)):
-        return store.create_user(actor, payload)
+    def user(payload: m.UserInput, request: Request, actor=Depends(identity)):
+        with passwords.GATE.hold(request.client.host if request.client else ''):  # the password of the new user is derived here: the same gate as the login
+            return store.create_user(actor, payload)
 
     @app.post('/v1/events', status_code=202, operation_id='memory_ingest_event')
     def ingest(payload: m.Event, actor=Depends(identity)):

@@ -284,26 +284,29 @@ test-plan: test-plan.md
 
 - **Descripción**: Semáforo en memoria con `MEMORY_LOGIN_CONCURRENCY` huecos (valor de T-01) para toda derivación scrypt de la API: login, cambio de contraseña y alta de usuario. Una IP ocupa como mucho un hueco, en uso o en espera; espera acotada (tantas peticiones como huecos, 2 s); lleno responde 503 `login_busy` con `Retry-After` y no cuenta como fallo. `MemoryError` gana `retry_after` y `error()` añade la cabecera. Fuente: CA-09; DC-2; DC-5; R-02; invariante 3.
 - **Changelog**: El inicio de sesión acota las verificaciones simultáneas; saturado responde 503 `login_busy` con `Retry-After`.
-- **Estado**: borrador
+- **Estado**: completado
+- **Cerrada**: 2026-11-23
 - **Tiempo humano**: est. 2.5h · real —
-- **Tiempo IA (ejec.)**: est. 0.26h · real —
+- **Tiempo IA (ejec.)**: est. 0.26h · real 0.59h (medido)
 - **Supervisión**: est. 0.06h · real —
 - **Previsión IA**: 71 k in / 6 k out tok · ⚠️ verificar €
 - **Dependencias**: T-07
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/passwords.py`, `server/memory_platform/auth.py`, `server/memory_platform/app.py`, `server/memory_platform/config.py`, `server/memory_platform/errors.py`, `server/memory_platform/tests/test_passwords.py`, `docker-compose.yml`
+- **Archivos**: `server/memory_platform/passwords.py`, `server/memory_platform/auth.py`, `server/memory_platform/app.py`, `server/memory_platform/config.py`, `server/memory_platform/errors.py`, `server/memory_platform/tests/test_passwords.py`, `docker-compose.yml`, `docs/configuration.md` (añadido con nota: fila de `MEMORY_LOGIN_CONCURRENCY`)
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_passwords|MEMORY_TEST_RESULT"` → nombradas en `ok`; 0 fallos y 0 omitidos
 
 **Criterios de aceptación**
-- [ ] Con N logins simultáneos (N = huecos + 5) nunca hay más derivaciones a la vez que huecos (barrera y reloj inyectados, sin `sleep`) y el resto recibe 503 `login_busy`
-- [ ] Una misma IP no ocupa dos huecos; `login_busy` no suma al contador de fallos de la IP
-- [ ] El Compose define `MEMORY_LOGIN_CONCURRENCY` y, si T-01 lo pidió, el nuevo `MEMORY_BOOTSTRAP_MEM_LIMIT`
+- [x] Con N logins simultáneos (N = huecos + 5) nunca hay más derivaciones a la vez que huecos (barrera y reloj inyectados, sin `sleep`) y el resto recibe 503 `login_busy`
+- [x] Una misma IP no ocupa dos huecos; `login_busy` no suma al contador de fallos de la IP
+- [x] El Compose define `MEMORY_LOGIN_CONCURRENCY` y, si T-01 lo pidió, el nuevo `MEMORY_BOOTSTRAP_MEM_LIMIT`
 
 **Subtareas**
-- [ ] Prueba en rojo
-- [ ] Semáforo y espera acotada
-- [ ] 503 con `Retry-After`
+- [x] Prueba en rojo
+- [x] Semáforo y espera acotada
+- [x] 503 con `Retry-After`
+
+**Notas**: **Notas**: RED: `GateTests` (8 pruebas) falló con `AttributeError: module 'memory_platform.passwords' has no attribute 'LoginGate'` · 2026-11-23. `passwords.LoginGate` (hilos; reloj y espera inyectables) y `GATE` del proceso, con los huecos de `Settings.login_concurrency` (`MEMORY_LOGIN_CONCURRENCY`, 1 a 32, defecto 2; `create_app` lo fija). Una IP, un hueco (en uso o en espera); caben tantas esperas como huecos y 2 s; lleno: 503 `login_busy` con `Retry-After: 2` (`MemoryError.retry_after`; `error()` pone la cabecera). `Auth.login` comprueba el 429 antes del hueco y registra el intento dentro de él: `login_busy` no cuenta como fallo. `POST /v1/users` usa el mismo hueco. Compose sin `MEMORY_BOOTSTRAP_MEM_LIMIT` nuevo (T-01: 256 MB bastan). Añadidos con nota: `docs/configuration.md` (fila de la variable) y la medición de T-08 a T-10 en una sola ventana (`usage-meter` de T-08 cubre las tres). Verde: 28 pruebas de `test_passwords` y la guarda sin entradas nuevas.
 
 ### T-09 — `store_access.py`: una puerta para los cambios de acceso y cambio de contraseña (CA-01)
 

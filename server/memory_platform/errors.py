@@ -2,12 +2,13 @@
 
 
 class MemoryError(Exception):
-    def __init__(self, code, message, status_code=400):
+    def __init__(self, code, message, status_code=400, retry_after=None):
         super().__init__(message)
         self.code = code
         self.message = message
         self.status_code = status_code
         self.status = status_code
+        self.retry_after = retry_after  # whole seconds for the `Retry-After` header of the answer (503 `login_busy`), or None
 
 
 class Unauthorized(MemoryError):

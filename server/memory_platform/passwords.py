@@ -14,7 +14,11 @@ import hashlib
 import hmac
 import json
 import secrets
+import threading
+import time
+from contextlib import contextmanager
 
+from .config import DEFAULT_LOGIN_CONCURRENCY
 from .errors import MemoryError
 
 MIN_LENGTH, MAX_LENGTH = 12, 1024
@@ -59,14 +63,14 @@ def above_target(params):
     return any(have > want for have, want in zip(params, TARGET))
 
 
-def _check_length(password):
+def check_length(password):
     if not isinstance(password, str) or len(password) < MIN_LENGTH or len(password) > MAX_LENGTH:
         raise MemoryError('invalid_password', 'Password must contain 12 to 1024 characters', 422)
 
 
 def hash_password(password):
     """A new hash at the target cost (one derivation). The length rule of the service is checked here, before deriving."""
-    _check_length(password)
+    check_length(password)
     salt = secrets.token_bytes(SALT_BYTES)
     return _encode(salt, TARGET, _derive(password, salt, TARGET))
 
@@ -114,3 +118,66 @@ def check_login(password, encoded):
     fresh = secrets.token_bytes(SALT_BYTES)  # an old hash: the cheap check above plus one derivation at the target cost, the one that becomes the new hash
     digest = _derive(password, fresh, TARGET)
     return right, _encode(fresh, TARGET, digest) if right else None
+
+
+class LoginGate:
+    """The semaphore of every derivation of the API (login, change of password, creation of a user): `slots` derivations at a time (about 128 MB each), CA-09 / DC-5.
+
+    Order of the checks of an attempt (the 429 of an IP blocked by failures comes BEFORE this, in `Auth.login`, and never gets here):
+    1. an IP holds at most one slot, in use or waiting: a second attempt of the same IP is refused at once, so one address cannot fill the gate;
+    2. at most `slots` attempts wait, and for `wait` seconds at most; one more, or the end of the wait, is refused;
+    3. refused = 503 `login_busy` with `Retry-After`, which is not a failed login (nothing is written).
+    Thread based (the routes of the API are synchronous and run in a thread pool). `clock` and `wait_on(condition, timeout)` are injectable so a test needs no real time."""
+
+    def __init__(self, slots, wait=2.0, clock=time.monotonic, wait_on=None, retry_after=2):
+        self.slots, self.wait, self.retry_after = slots, wait, retry_after
+        self._clock = clock
+        self._wait_on = wait_on or (lambda cond, timeout: cond.wait(timeout))
+        self._cond = threading.Condition()
+        self._using, self._waiting, self._ips = 0, 0, set()
+
+    def _busy(self):
+        return MemoryError('login_busy', 'Too many password checks at once; retry shortly', 503, retry_after=self.retry_after)
+
+    def _enter(self, ip):
+        with self._cond:
+            if ip in self._ips or self._waiting >= self.slots:
+                raise self._busy()
+            self._ips.add(ip)
+            deadline = self._clock() + self.wait
+            self._waiting += 1
+            try:
+                while self._using >= self.slots:
+                    left = deadline - self._clock()
+                    if left <= 0:
+                        raise self._busy()
+                    self._wait_on(self._cond, left)
+                self._using += 1
+            except BaseException:
+                self._ips.discard(ip)
+                raise
+            finally:
+                self._waiting -= 1
+
+    def _leave(self, ip):
+        with self._cond:
+            self._using -= 1
+            self._ips.discard(ip)
+            self._cond.notify()
+
+    @contextmanager
+    def hold(self, ip):
+        """The slot of `ip` for the length of the `with`: `MemoryError` 503 `login_busy` when there is none."""
+        self._enter(ip)
+        try:
+            yield
+        finally:
+            self._leave(ip)
+
+
+GATE = LoginGate(DEFAULT_LOGIN_CONCURRENCY)  # the one of the process: memory is per process, so is the gate. `create_app` sets its slots from the settings.
+
+
+def configure_gate(slots):
+    global GATE
+    GATE = LoginGate(slots)

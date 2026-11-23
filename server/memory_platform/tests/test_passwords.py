@@ -233,5 +233,192 @@ class BootstrapTests(Fixture):
         self.assertEqual(spy.calls, [passwords.TARGET])
         self.assertTrue(passwords.verify_password('first-password-123', self.stored_hash('first-admin')))
 
+class Clock:
+    """A clock that only moves when the test says so (the gate is never timed in these tests)."""
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self):
+        return self.now
+
+
+def no_wait(cond, timeout):
+    """`wait_on` of a gate whose waiters never get to wait: the time passes at once."""
+
+
+class GateTests(unittest.TestCase):
+    """CA-09 / DC-5: at most `slots` derivations at once, one slot per IP (in use or waiting), a bounded wait, and 503 `login_busy` with `Retry-After` when it is full."""
+    def test_with_slots_plus_five_attempts_never_more_derivations_than_slots_and_the_rest_get_login_busy(self):
+        import queue
+        import threading
+        slots, count = 2, 2 + 5
+        waiting, announce = [], threading.Condition()
+
+        def wait_on(cond, timeout):  # a waiter announces itself and then waits to be notified (the clock never moves, so it is never timed out)
+            with announce:
+                waiting.append(1)
+                announce.notify_all()
+            cond.wait()
+        gate = passwords.LoginGate(slots, wait=2.0, clock=Clock(), wait_on=wait_on)
+        outcomes, release, lock, state = queue.Queue(), threading.Event(), threading.Lock(), {'now': 0, 'peak': 0}
+
+        def attempt(ip):
+            try:
+                with gate.hold(ip):
+                    with lock:
+                        state['now'] += 1
+                        state['peak'] = max(state['peak'], state['now'])
+                    release.wait(10)
+                    with lock:
+                        state['now'] -= 1
+                outcomes.put('ok')
+            except MemoryError as exc:
+                outcomes.put(exc.code)
+        threads = [threading.Thread(target=attempt, args=('192.0.2.%d' % n,)) for n in range(count)]
+        for thread in threads:
+            thread.start()
+        # `slots` attempts hold a slot, `slots` more wait for one, and the other `count - 2 * slots` are refused at once: nothing has been released yet
+        refused = [outcomes.get(timeout=10) for _ in range(count - 2 * slots)]
+        self.assertEqual(refused, ['login_busy'] * (count - 2 * slots))
+        with announce:
+            self.assertTrue(announce.wait_for(lambda: len(waiting) == slots, timeout=10))
+        release.set()
+        for thread in threads:
+            thread.join(10)
+        served = [outcomes.get(timeout=10) for _ in range(2 * slots)]
+        self.assertEqual(served, ['ok'] * (2 * slots), 'the ones that waited get their turn once a slot is free')
+        self.assertEqual(state['peak'], slots, 'never more derivations at once than slots, and the slots were used')
+
+    def test_one_ip_never_holds_two_slots_in_use_or_waiting(self):
+        gate = passwords.LoginGate(3, wait=2.0, clock=Clock(), wait_on=no_wait)
+        with gate.hold('198.51.100.7'):
+            with self.assertRaises(MemoryError) as raised:
+                with gate.hold('198.51.100.7'):
+                    self.fail('a second slot for the same IP')
+            self.assertEqual(raised.exception.code, 'login_busy')
+            with gate.hold('198.51.100.8'):  # another IP is not affected
+                pass
+        with gate.hold('198.51.100.7'):  # released: the IP can take one again
+            pass
+
+    def test_an_ip_that_waits_for_a_slot_is_refused_a_second_one(self):
+        clock, seen = Clock(), []
+
+        def wait_on(cond, timeout):
+            try:
+                with gate.hold('203.0.113.1'):  # the IP of the waiting attempt asks again while it waits
+                    seen.append('served')
+            except MemoryError as exc:
+                seen.append(exc.code)
+            clock.now += 10  # and the wait of the first one expires
+        gate = passwords.LoginGate(1, wait=2.0, clock=clock, wait_on=wait_on)
+        with gate.hold('203.0.113.9'):
+            with self.assertRaises(MemoryError) as raised:
+                with gate.hold('203.0.113.1'):
+                    self.fail('no slot was free')
+        self.assertEqual((seen, raised.exception.code), (['login_busy'], 'login_busy'))
+
+    def test_the_wait_is_bounded_in_time_and_the_ip_is_not_left_registered(self):
+        clock, seen = Clock(), []
+
+        def wait_on(cond, timeout):
+            seen.append(timeout)
+            clock.now += timeout  # the whole remaining wait passes
+        gate = passwords.LoginGate(1, wait=2.0, clock=clock, wait_on=wait_on)
+        with gate.hold('192.0.2.1'):
+            with self.assertRaises(MemoryError):
+                with gate.hold('192.0.2.2'):
+                    self.fail('no slot was free')
+            self.assertEqual(seen, [2.0])
+        with gate.hold('192.0.2.2'):  # the refused IP was forgotten
+            pass
+
+    def test_a_slot_is_given_back_when_the_work_inside_fails(self):
+        gate = passwords.LoginGate(1, wait=0.0, clock=Clock(), wait_on=no_wait)
+        with self.assertRaises(RuntimeError):
+            with gate.hold('192.0.2.1'):
+                raise RuntimeError('boom')
+        with gate.hold('192.0.2.1'):
+            pass
+
+    def test_login_busy_is_a_503_with_retry_after_and_a_fixed_message(self):
+        gate = passwords.LoginGate(1, wait=0.0, clock=Clock(), wait_on=no_wait)
+        with gate.hold('192.0.2.1'):
+            with self.assertRaises(MemoryError) as raised:
+                with gate.hold('192.0.2.2'):
+                    pass
+        error = raised.exception
+        self.assertEqual((error.code, error.status_code, error.retry_after), ('login_busy', 503, 2))
+        self.assertNotIn('192.0.2', error.message)
+
+    def test_the_slots_come_from_settings_and_default_to_two(self):
+        from memory_platform.config import DEFAULT_LOGIN_CONCURRENCY, Settings, login_concurrency
+        self.assertEqual((DEFAULT_LOGIN_CONCURRENCY, Settings('unused').login_concurrency, login_concurrency({})), (2, 2, 2))
+        self.assertEqual(login_concurrency({'MEMORY_LOGIN_CONCURRENCY': '3'}), 3)
+        for bad in ('0', '-1', 'two', '', '2.5', '33', ' '):
+            with self.assertRaises(ValueError, msg=repr(bad)):
+                login_concurrency({'MEMORY_LOGIN_CONCURRENCY': bad})
+        with self.assertRaises(ValueError):
+            Settings('unused', login_concurrency=0)
+
+    def test_the_app_builds_the_gate_with_the_slots_of_settings(self):
+        from memory_platform.app import create_app
+        from memory_platform.config import Settings
+        from unittest.mock import Mock
+        with patch.object(passwords, 'GATE', passwords.GATE):  # restored afterwards: create_app rebinds it
+            create_app(Settings('unused', login_concurrency=3), Mock(), Mock(), Mock())
+            self.assertEqual(passwords.GATE.slots, 3)
+            create_app(Settings('unused'), Mock(), Mock(), Mock())
+            self.assertEqual(passwords.GATE.slots, 2)
+
+
+class BusyLoginTests(Fixture):
+    """Through `Auth.login` and the HTTP routes: a full gate answers 503 and writes nothing in `login_attempts`."""
+    def busy_gate(self):
+        gate = passwords.LoginGate(1, wait=0.0, clock=Clock(), wait_on=no_wait)
+        taken = gate.hold('198.51.100.99')
+        taken.__enter__()
+        self.addCleanup(taken.__exit__, None, None, None)
+        return gate
+
+    def attempts(self):
+        with self.psycopg.connect(self.dsn) as c:
+            return c.execute('SELECT count(*) FROM memory.login_attempts').fetchone()[0]
+
+    def test_a_busy_login_is_a_503_that_does_not_count_as_a_failure_and_derives_nothing(self):
+        with patch.object(passwords, 'GATE', self.busy_gate()), Derivations() as spy:
+            with self.assertRaises(MemoryError) as raised:
+                self.auth.login('ana', 'another-password-123', '192.0.2.50')
+        self.assertEqual((raised.exception.code, raised.exception.status_code), ('login_busy', 503))
+        self.assertEqual((self.attempts(), spy.calls), (0, []))
+
+    def test_an_ip_blocked_by_failures_gets_429_without_touching_the_gate(self):
+        with self.psycopg.connect(self.dsn) as c:
+            for _ in range(10):
+                c.execute("INSERT INTO memory.login_attempts(username,client_ip) VALUES('ana','192.0.2.60')")
+        with patch.object(passwords, 'GATE', self.busy_gate()), Derivations() as spy:
+            with self.assertRaises(MemoryError) as raised:
+                self.auth.login('ana', PASSWORD, '192.0.2.60')
+        self.assertEqual((raised.exception.code, raised.exception.status_code, spy.calls), ('rate_limited', 429, []))
+
+    def test_the_http_login_and_user_creation_answer_503_with_the_header(self):
+        from fastapi.testclient import TestClient
+        from memory_platform.app import create_app
+        from memory_platform.config import Settings
+        origin = 'http://127.0.0.1:5173'
+        key = self.store.create_key(self.admin, {'name': 'admin', 'project_ids': ['p1'], 'scopes': ['read', 'admin']})
+        body = {'username': 'new-user', 'password': 'another-password-123', 'project_ids': ['p1'], 'scopes': ['read']}
+        with patch.object(passwords, 'GATE', passwords.GATE):  # create_app rebinds the gate: the busy one is put after it
+            app = create_app(Settings(self.dsn, allowed_origins=(origin,), mount_mcp=False), store=self.store, auth=self.auth)
+        with patch.object(passwords, 'GATE', self.busy_gate()), TestClient(app) as client:
+            login = client.post('/v1/auth/login', json={'username': 'ana', 'password': PASSWORD}, headers={'Origin': origin})
+            self.assertEqual((login.status_code, login.json()['error']['code'], login.headers['Retry-After']), (503, 'login_busy', '2'))
+            created = client.post('/v1/users', json=body, headers={'Authorization': 'Bearer ' + key['token']})
+            self.assertEqual((created.status_code, created.json()['error']['code'], created.headers['Retry-After']), (503, 'login_busy', '2'))
+        self.assertEqual(self.attempts(), 0)
+        with self.psycopg.connect(self.dsn) as c:
+            self.assertEqual(c.execute("SELECT count(*) FROM memory.actors WHERE username='new-user'").fetchone()[0], 0)
+
+
 if __name__ == '__main__':
     unittest.main()

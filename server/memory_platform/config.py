@@ -152,6 +152,22 @@ def worker_write_retry_seconds(environ=None, lease_seconds=240):
 
 
 DEFAULT_POOL_MIN, DEFAULT_POOL_MAX, DEFAULT_POOL_TIMEOUT = 1, 10, 5.0
+DEFAULT_LOGIN_CONCURRENCY, LOGIN_CONCURRENCY_LIMIT = 2, 32  # scrypt derivations of the API at once (~128 MB each); 2 fits a 1 GB `memory-api`, see improvement-plan.md, «Valores medidos»
+
+
+def check_login_concurrency(slots):
+    if isinstance(slots, bool) or not isinstance(slots, int) or not 1 <= slots <= LOGIN_CONCURRENCY_LIMIT:
+        raise ValueError(f'MEMORY_LOGIN_CONCURRENCY must be a whole number between 1 and {LOGIN_CONCURRENCY_LIMIT}')
+    return slots
+
+
+def login_concurrency(environ=None) -> int:
+    """The slots of the gate of password derivations (MEMORY_LOGIN_CONCURRENCY): a whole number, 1 to 32, default 2."""
+    environ = os.environ if environ is None else environ
+    raw = environ.get('MEMORY_LOGIN_CONCURRENCY', str(DEFAULT_LOGIN_CONCURRENCY))
+    if not raw.isascii() or not raw.isdigit():
+        raise ValueError(f'MEMORY_LOGIN_CONCURRENCY must be a whole number between 1 and {LOGIN_CONCURRENCY_LIMIT}')
+    return check_login_concurrency(int(raw))
 POOL_MAX_LIMIT = 100
 
 
@@ -552,6 +568,7 @@ class Settings:
     tcp_user_timeout_ms: int = DEFAULT_TCP['user_timeout_ms']  # MEMORY_TCP_USER_TIMEOUT_MS: how long sent data may stay unacknowledged before the connection is dropped
     metrics_mode: str = 'internal'
     mount_mcp: bool = True  # MEMORY_MOUNT_MCP: the internal MCP at `/mcp`, deprecated since 0.4.0 and removed in 0.5.0 (P-07)
+    login_concurrency: int = DEFAULT_LOGIN_CONCURRENCY  # MEMORY_LOGIN_CONCURRENCY: password derivations of the API at once (passwords.LoginGate)
 
     def __post_init__(self):
         if self.metrics_mode not in METRICS_MODES:
@@ -562,6 +579,7 @@ class Settings:
         check_timeouts(self.connect_timeout, self.statement_timeout_ms)
         check_timeout_pair(self.connect_timeout, self.pool_timeout)
         check_tcp(self.keepalives_idle, self.keepalives_interval, self.keepalives_count, self.tcp_user_timeout_ms)
+        check_login_concurrency(self.login_concurrency)
 
     @classmethod
     def from_env(cls):
@@ -619,5 +637,5 @@ class Settings:
             abstain_default=abstain_default, abstain_thresholds=abstain_thresholds,
             pool_min=pool_min, pool_max=pool_max, pool_timeout=pool_timeout, connect_timeout=connect_timeout, statement_timeout_ms=statement_timeout,
             keepalives_idle=keepalives_idle, keepalives_interval=keepalives_interval, keepalives_count=keepalives_count, tcp_user_timeout_ms=tcp_user_timeout_ms,
-            metrics_mode=metrics_mode, mount_mcp=mount_mcp,
+            metrics_mode=metrics_mode, mount_mcp=mount_mcp, login_concurrency=login_concurrency(),
         )

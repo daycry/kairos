@@ -6,9 +6,11 @@ from datetime import datetime, timezone
 
 from .errors import Forbidden, MemoryError, NotFound, Unauthorized
 from .auth_scope import invalidate_auth, savepoint
+from . import passwords
 from .passwords import check_login, hash_password, verify_password  # noqa: F401  (re-exported: the callers and tests that import them from here)
 
 SCOPES = frozenset({'read', 'write', 'publish', 'validate', 'admin'})
+RECENT_ATTEMPTS = "SELECT count(*) AS n FROM memory.login_attempts WHERE happened_at>clock_timestamp()-interval '15 minutes' AND (username=%s OR client_ip=%s)"
 
 
 def token_hash(token):
@@ -43,33 +45,38 @@ class Auth:
             return self._actor(c, row, 'session', row['credential_id'])
 
     def login(self, username, password, client_ip=''):
-        # A separate committed transaction records failures even when authentication raises.
+        # 1) An IP (or a name) blocked by failures is answered 429 before anything else: no slot of the gate, no derivation, nothing written.
         with self.store.transaction() as c:
-            for lock in sorted(('login-user:'+username, 'login-ip:'+client_ip)):
-                c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', (lock,))
-            count = c.execute("SELECT count(*) AS n FROM memory.login_attempts WHERE happened_at>clock_timestamp()-interval '15 minutes' AND (username=%s OR client_ip=%s)", (username, client_ip)).fetchone()['n']
-            if count >= 10:
+            if c.execute(RECENT_ATTEMPTS, (username, client_ip)).fetchone()['n'] >= 10:
                 raise MemoryError('rate_limited', 'Too many login attempts', 429)
-            c.execute('INSERT INTO memory.login_attempts(username,client_ip) VALUES(%s,%s)', (username, client_ip))
-            row = c.execute('SELECT * FROM memory.actors WHERE username=%s AND NOT disabled', (username,)).fetchone()
-        # One derivation at the target cost for every attempt: unknown or disabled user (the dummy hash), wrong password and right password alike (passwords.py).
-        right, rehash = check_login(password, row['password_hash'] if row else None)
-        if not right or not row:
-            raise Unauthorized()
-        session, csrf, sid = secrets.token_urlsafe(48), secrets.token_urlsafe(32), secrets.token_hex(16)
-        with self.store.transaction() as c:
-            if rehash:
-                # The hash of an earlier release becomes one at the target cost. `WHERE password_hash=<the one read>`: a password changed meanwhile is not overwritten, and a failed write
-                # (a savepoint, so the transaction goes on) does not stop the login.
-                try:
-                    with savepoint(c):
-                        c.execute('UPDATE memory.actors SET password_hash=%s WHERE id=%s AND password_hash=%s', (rehash, row['id'], row['password_hash']))
-                except Exception:
-                    pass
-            saved = c.execute("INSERT INTO memory.web_sessions(id,actor_id,token_hash,csrf_hash,expires_at) VALUES(%s,%s,%s,%s,clock_timestamp()+(%s * interval '1 second')) RETURNING expires_at", (sid, row['id'], token_hash(session), token_hash(csrf), self.session_ttl)).fetchone()
-            invalidate_auth(c)
-            actor = self._actor(c, row, 'session', sid)
-        return {'actor': actor, 'session_token': session, 'csrf_token': csrf, 'expires_at': saved['expires_at'].isoformat()}
+        # 2) One slot per IP and a bounded wait (passwords.LoginGate): full = 503 `login_busy`, which is not a failed attempt, so it is decided before the attempt is recorded.
+        with passwords.GATE.hold(client_ip):
+            # A separate committed transaction records failures even when authentication raises.
+            with self.store.transaction() as c:
+                for lock in sorted(('login-user:'+username, 'login-ip:'+client_ip)):
+                    c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', (lock,))
+                if c.execute(RECENT_ATTEMPTS, (username, client_ip)).fetchone()['n'] >= 10:
+                    raise MemoryError('rate_limited', 'Too many login attempts', 429)
+                c.execute('INSERT INTO memory.login_attempts(username,client_ip) VALUES(%s,%s)', (username, client_ip))
+                row = c.execute('SELECT * FROM memory.actors WHERE username=%s AND NOT disabled', (username,)).fetchone()
+            # One derivation at the target cost for every attempt: unknown or disabled user (the dummy hash), wrong password and right password alike (passwords.py).
+            right, rehash = check_login(password, row['password_hash'] if row else None)
+            if not right or not row:
+                raise Unauthorized()
+            session, csrf, sid = secrets.token_urlsafe(48), secrets.token_urlsafe(32), secrets.token_hex(16)
+            with self.store.transaction() as c:
+                if rehash:
+                    # The hash of an earlier release becomes one at the target cost. `WHERE password_hash=<the one read>`: a password changed meanwhile is not overwritten, and a failed write
+                    # (a savepoint, so the transaction goes on) does not stop the login.
+                    try:
+                        with savepoint(c):
+                            c.execute('UPDATE memory.actors SET password_hash=%s WHERE id=%s AND password_hash=%s', (rehash, row['id'], row['password_hash']))
+                    except Exception:
+                        pass
+                saved = c.execute("INSERT INTO memory.web_sessions(id,actor_id,token_hash,csrf_hash,expires_at) VALUES(%s,%s,%s,%s,clock_timestamp()+(%s * interval '1 second')) RETURNING expires_at", (sid, row['id'], token_hash(session), token_hash(csrf), self.session_ttl)).fetchone()
+                invalidate_auth(c)
+                actor = self._actor(c, row, 'session', sid)
+            return {'actor': actor, 'session_token': session, 'csrf_token': csrf, 'expires_at': saved['expires_at'].isoformat()}
 
     def logout(self, token):
         with self.store.transaction() as c:

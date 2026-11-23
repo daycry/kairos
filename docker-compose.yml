@@ -29,6 +29,7 @@ x-memory-environment: &memory-environment
   MEMORY_FUSION_WEIGHTS: ${MEMORY_FUSION_WEIGHTS:-}
   MEMORY_ABSTAIN_THRESHOLDS: ${MEMORY_ABSTAIN_THRESHOLDS:-}  # abstention (parameter `abstain`): cosine threshold per embeddings model, `model=threshold,...`; empty = none yet (uncalibrated)
   MEMORY_ABSTAIN_DEFAULT: ${MEMORY_ABSTAIN_DEFAULT:-off}  # `on` abstains when the request does not say; `off` keeps the answer identical to before
+  MEMORY_LOGIN_CONCURRENCY: ${MEMORY_LOGIN_CONCURRENCY:-2}  # password derivations of memory-api at once (login, change of password, new user): ~128 MB each, 2 fits memory-api at 1 GB (docs/configuration.md); more waiters get 503 `login_busy`
 
 # json-file rotation of every service (T-55): 3 files of 10 MB each, so no container fills the disk with its log.
 x-logging: &logging
