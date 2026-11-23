@@ -111,6 +111,8 @@ Lista cerrada de excepciones del test:
 
 > **Nota 2026-11-20 (fase 1, fix9; corrige la de fix8).** La guarda analiza todo literal SQL que nombre una tabla vigilada o lleve un hueco, empiece como empiece (fragmentos, `EXPLAIN`, `DO $$...$$`), y cuando no parsea informa también de las tablas que nombra y de los huecos de tabla; las seis exenciones de `unparseable SQL` de fix8 sobran y se retiran. Queda un límite declarado: lo que ni nombra una tabla vigilada ni lleva un hueco no se analiza.
 
+> **Nota 2026-11-23 (fase 1, fix10; sustituye a las de fix8 y fix9 en lo que dicen del análisis).** La guarda parsea todo literal SQL relleno de hasta 32 768 caracteres, sin puerta léxica, con los huecos de plantilla (`{}`, `%s`) como identificadores; la posición de tabla la decide el árbol. Si el texto no parsea solo cuenta cuando nombra una tabla vigilada con una palabra de SQL; un fragmento que no parsea y solo tiene un hueco de tabla no se ve (límite declarado). Todo texto dentro del árbol (argumentos, cuerpos de `DO`, `CREATE FUNCTION`) se vuelve a analizar.
+
 El test amplía el recorrido que ya existe en `test_auth_cache.py:461`. Añade `actors.is_admin` (en SQL y en accesos `['is_admin']` o `.get('is_admin')`) y exige una justificación escrita por excepción. Es la primera tarea del hito A.
 
 Las ampliaciones futuras entran así (base de la nota de CA-38 c en `docs/architecture.md`):

@@ -2906,3 +2906,19 @@ Lentes: A+B+C+D sobre `1c33aa2..HEAD` (fix8: `b9314da`, `6458fc3`, `8b1370a`), r
 | 6 | Minor | Otros: `RETURNING` de columnas concretas de `api_keys`/`project_grants` no cuenta como lectura; alias de un `JOIN` entre paréntesis; hueco en posición de columna o alias; `TABLESAMPLE` sobre `actors`; SQL dentro de una cadena (`query_to_xml('…')`); prosa que empieza por palabra clave con hueco da `unparseable SQL`; `U&"is\0061dmin"`; la viñeta de coste cita cifras que la nota no tiene (lentes A, B y C; varios heredados) | T-02 | corregido (fix9, d46e147) | `test_auth_cache.py:540-543, :579-588, :625-627, :650-651, :663, :980` |
 
 Siguiente: fix9 dentro del método aprobado (parser real): analizar todo literal que nombre una tabla vigilada o lleve un hueco, y en el parse fallido informar de las tablas y huecos además de `unparseable SQL`.
+
+
+## Revisión de dos lentes — intento 10: Fase 1 (fix9) (T-01, T-02, T-03, T-04) — 2 Important en la puerta léxica y el respaldo
+
+Lentes: A+B+C+D sobre `8b1370a..HEAD` (fix9: `d46e147`, `4b7e625`, `c4f86c7`), solo con `kairos-test:i4p1-fix8`/`-fix9` sin red. Gaps del intento 9: 1, 2, 3, 5 y 6 corregidos con mutante; el 4 sin RED (ya pasaba con fix8). D sin hallazgos: cifras reproducidas, sin colgarse ni SIGSEGV bajo el tope de 32 768 caracteres. `provision_locked` con `project_grants` justificado (lentes A y C). Medido por el orquestador: parsear los 33 252 literales del paquete con pglast cuesta 0,14-0,21 s.
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | Regresión: la puerta léxica (tabla con `\b`, NUL o `memory.%`) deja sin analizar las plantillas en constante con `{}`/`%s` en posición de tabla (`Q = 'SELECT … FROM memory.{}'` + `Q.format(t)`, `'DELETE FROM MEMORY.%s'`, `"memory".%s`, `TRUNCATE {t}`), patrón real en `admin.py:92-119`; y los nombres de tabla con escape `U&"api\005fkeys"`, que el parser decodifica. Las aserciones de fix8 con `{}` se reescribieron a `\x00` sin anotarlo, y la nota «todas falsos positivos» no se sostiene (lentes A, B y C) | T-02 | pendiente | `test_auth_cache.py:529-530, :801, :1408-1410, :1573-1574` |
+| 2 | Important | Falso positivo sin exención posible: el respaldo marca `unknown table` en prosa con hueco tras `from/into/using/update/table/join` (`f'cannot restore from {path}'`, `f'could not update {name}'`), también dentro del resolvedor (lente B) | T-02 | pendiente | `test_auth_cache.py:531, :796` |
+| 3 | Minor | El respaldo no ve el hueco de tabla tras `ONLY`, `LATERAL`, `COPY` o un comentario (lentes A, B y C) | T-02 | pendiente | `test_auth_cache.py:531` |
+| 4 | Minor | No se recorre el cuerpo de `CREATE FUNCTION/PROCEDURE … AS $$…$$`; el SQL en cadena solo se reanaliza si empieza por palabra de sentencia (lentes A y B) | T-02 | pendiente | `test_auth_cache.py:740-747` |
+| 5 | Minor | `LOCK TABLE`, `ALTER TABLE`, `CREATE INDEX`, `ANALYZE` sobre tablas vigiladas cuentan como lectura; prosa que nombra una tabla vigilada da `unparseable SQL` (lente B) | T-02 | pendiente | `test_auth_cache.py:729-733, :786-789` |
+| 6 | Minor | El gap 4 del intento 9 se dio por corregido con una prueba sin RED; el `%s` crudo de una constante aplicada en otro sitio sigue callado (lente A) | T-02 | pendiente | `test_auth_cache.py:530, :801` |
+
+Siguiente: fix10 dentro del método aprobado: sin puerta léxica (se parsea todo literal de hasta 32 768 caracteres, coste medido 0,15 s), huecos de plantilla como centinela, posición de tabla por AST; en el parse fallido solo cuenta la tabla vigilada nombrada.
