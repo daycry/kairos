@@ -70,28 +70,39 @@ class Auth:
             if not right or not row:
                 raise Unauthorized()
             session, csrf, sid = secrets.token_urlsafe(48), secrets.token_urlsafe(32), secrets.token_hex(16)
-            with self.store.transaction() as c:
-                # Between the verification above and this insert another transaction may have changed the password (`admin set-password`, `POST /v1/auth/password`) or disabled the user.
-                # The row is read again under a lock that waits for it, and the session is opened only if the hash is still the verified one and the user is enabled (no session otherwise: a
-                # session born of the old password would outlive the closing of the sessions that change made).
-                # `FOR SHARE` waits for a transaction that changed the row and has not committed; a login that is going to replace an old hash takes `FOR NO KEY UPDATE` instead, because it writes the
-                # row next and two of them must not wait for each other (a share lock that is then upgraded).
-                current = c.execute('SELECT * FROM memory.actors WHERE id=%s FOR NO KEY UPDATE' if rehash else 'SELECT * FROM memory.actors WHERE id=%s FOR SHARE', (row['id'],)).fetchone()
-                if not current or current['disabled'] or current['password_hash'] != row['password_hash']:
+            for retried in (False, True):
+                with self.store.transaction() as c:
+                    # Between the verification above and this insert another transaction may have changed the password (`admin set-password`, `POST /v1/auth/password`, another login that replaced an
+                    # old hash) or disabled the user. The row is read again under a lock that waits for it, and the session is opened only if the hash is still the verified one and the user is enabled
+                    # (no session otherwise: a session born of the old password would outlive the closing of the sessions that change made).
+                    # `FOR SHARE` waits for a transaction that changed the row and has not committed; a login that is going to replace an old hash takes `FOR NO KEY UPDATE` instead, because it writes the
+                    # row next and two of them must not wait for each other (a share lock that is then upgraded).
+                    current = c.execute('SELECT * FROM memory.actors WHERE id=%s FOR NO KEY UPDATE' if rehash else 'SELECT * FROM memory.actors WHERE id=%s FOR SHARE', (row['id'],)).fetchone()
+                    if not current or current['disabled']:
+                        raise Unauthorized()
+                    if current['password_hash'] == row['password_hash']:
+                        row = current
+                        if rehash:
+                            # The hash of an earlier release becomes one at the target cost. `WHERE password_hash=<the one read>`: a password changed meanwhile is not overwritten, and a failed write
+                            # (a savepoint, so the transaction goes on) does not stop the login.
+                            try:
+                                with savepoint(c):
+                                    c.execute('UPDATE memory.actors SET password_hash=%s WHERE id=%s AND password_hash=%s', (rehash, row['id'], row['password_hash']))
+                            except Exception as exc:
+                                observability.log_failure('password_rehash_failed', exc, 'warning')  # the type only, never the message; the login goes on
+                        saved = c.execute("INSERT INTO memory.web_sessions(id,actor_id,token_hash,csrf_hash,expires_at) VALUES(%s,%s,%s,%s,clock_timestamp()+(%s * interval '1 second')) RETURNING expires_at", (sid, row['id'], token_hash(session), token_hash(csrf), self.session_ttl)).fetchone()
+                        invalidate_auth(c)
+                        actor = self._actor(c, row, 'session', sid)
+                        return {'actor': actor, 'session_token': session, 'csrf_token': csrf, 'expires_at': saved['expires_at'].isoformat()}
+                # The hash is not the verified one. Most often a second login of the same user replaced an old hash a moment ago, and the password is still right: the transaction above is closed,
+                # the password is verified ONCE against the hash that is there now (one more derivation, inside the same slot of the gate) and the session is tried one more time. If the hash changes
+                # again, or the password does not verify (`set-password`, a change of password), 401 and no session: the old password never opens a session with a new hash.
+                if retried:
                     raise Unauthorized()
                 row = current
-                if rehash:
-                    # The hash of an earlier release becomes one at the target cost. `WHERE password_hash=<the one read>`: a password changed meanwhile is not overwritten, and a failed write
-                    # (a savepoint, so the transaction goes on) does not stop the login.
-                    try:
-                        with savepoint(c):
-                            c.execute('UPDATE memory.actors SET password_hash=%s WHERE id=%s AND password_hash=%s', (rehash, row['id'], row['password_hash']))
-                    except Exception as exc:
-                        observability.log_failure('password_rehash_failed', exc, 'warning')  # the type only, never the message; the login goes on
-                saved = c.execute("INSERT INTO memory.web_sessions(id,actor_id,token_hash,csrf_hash,expires_at) VALUES(%s,%s,%s,%s,clock_timestamp()+(%s * interval '1 second')) RETURNING expires_at", (sid, row['id'], token_hash(session), token_hash(csrf), self.session_ttl)).fetchone()
-                invalidate_auth(c)
-                actor = self._actor(c, row, 'session', sid)
-            return {'actor': actor, 'session_token': session, 'csrf_token': csrf, 'expires_at': saved['expires_at'].isoformat()}
+                right, rehash = check_login(password, row['password_hash'])
+                if not right:
+                    raise Unauthorized()
 
     def logout(self, token):
         with self.store.transaction() as c:

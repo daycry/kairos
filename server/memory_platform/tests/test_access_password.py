@@ -2,6 +2,7 @@
 
 The oracle of A-01: with two sessions open, changing the password from one closes the other on its next request, keeps the first, keeps the keys, and leaves an audit event.
 """
+import json
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -448,6 +449,107 @@ class LoginRaceTests(pw.Fixture):
                 self.assertEqual(self.sessions(), 0)
                 if label != 'disabled':
                     self.assertEqual(self.stored_hash(), other, 'the hash of the writer was not overwritten')
+
+
+class LoginRetryTests(pw.Fixture):
+    """Fix2 of the review of phase 2 (attempt 2, gap 3): two correct logins of one user with an old hash at once. The first replaces the hash; the second, which verified against the old one,
+    sees the new hash under the lock. It must not answer 401 to a correct password: it closes that transaction, verifies ONCE against the new hash (inside the same slot of the gate) and tries
+    once more; if the hash changed again or the password does not verify, 401. The branch that takes `FOR NO KEY UPDATE` (a login that is going to write the hash) has its own test: with a
+    `FOR SHARE` for everybody the two logins end up waiting for each other."""
+    def setUp(self):
+        super().setUp()
+        self.observer = self.psycopg.connect(self.dsn, autocommit=True)
+        self.addCleanup(self.observer.close)
+
+    def attempts(self):
+        return self.observer.execute("SELECT count(*) FROM memory.login_attempts").fetchone()[0]
+
+    def sessions(self):
+        return self.observer.execute("SELECT count(*) FROM memory.web_sessions WHERE actor_id=(SELECT id FROM memory.actors WHERE username='ana')").fetchone()[0]
+
+    def someone_waits_for_a_lock(self):
+        return self.observer.execute("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND pid<>pg_backend_pid()").fetchone()[0] > 0
+
+    def test_two_simultaneous_logins_with_an_old_hash_both_succeed_and_nothing_waits_in_a_circle(self):
+        import threading
+        import time
+        from memory_platform import auth as auth_module, observability
+        self.set_hash(pw.old_hash())
+        verified, seen_first = threading.Barrier(2), set()
+        reached = []
+        real_check, real_savepoint = auth_module.check_login, auth_module.savepoint
+
+        def check(password, stored):
+            result = real_check(password, stored)
+            me = threading.get_ident()
+            if me not in seen_first:  # only the first verification of each login waits for the other: both have verified before either takes the lock
+                seen_first.add(me)
+                verified.wait(60)
+            return result
+
+        def savepoint(c):
+            # The login is about to write the new hash. A login that holds `FOR NO KEY UPDATE` makes the other wait for the lock, and then goes on; two that hold `FOR SHARE` both arrive here
+            # and each waits for the other's share lock to write: PostgreSQL ends that circle with a deadlock error after a second.
+            reached.append(1)
+            deadline = time.monotonic() + 60
+            while len(reached) < 2 and not self.someone_waits_for_a_lock() and time.monotonic() < deadline:
+                pass  # no sleep: each pass is a round trip to the database
+            return real_savepoint(c)
+        outcome = {}
+
+        def login(n):
+            try:
+                outcome[n] = self.auth.login('ana', pw.PASSWORD, '192.0.2.%d' % (90 + n))
+            except BaseException as exc:  # reported below
+                outcome[n] = exc
+        with patch.object(auth_module, 'check_login', check), patch.object(auth_module, 'savepoint', savepoint), patch.object(observability, 'log_failure') as failed:
+            threads = [threading.Thread(target=login, args=(n,)) for n in (1, 2)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(120)
+        self.assertFalse(any(thread.is_alive() for thread in threads))
+        self.assertEqual({n: type(v).__name__ for n, v in outcome.items()}, {1: 'dict', 2: 'dict'}, outcome)
+        self.assertEqual(self.sessions(), 2)
+        self.assertEqual(json.loads(self.stored_hash())['n'], passwords.TARGET[0], 'the hash was replaced by one of the two')
+        self.assertEqual([call.args[0] for call in failed.call_args_list if call.args], [], 'the write of the new hash did not fail (no deadlock)')
+        self.assertEqual(self.attempts(), 2, 'one attempt per login, as always: the retry of the second is not another one')
+
+    def test_the_retry_verifies_once_against_the_new_hash_and_only_once(self):
+        """The hash changes again while the retry verifies: 401, no session, and exactly two verifications (the first and the single retry)."""
+        from memory_platform import auth as auth_module
+        self.set_hash(passwords.hash_password(pw.PASSWORD))
+        calls = []
+        real_check = auth_module.check_login
+
+        def check(password, stored):
+            result = real_check(password, stored)
+            calls.append(stored)
+            self.set_hash(passwords.hash_password(pw.PASSWORD))  # the same password, a new salt: after the first and after the second verification
+            return result
+        with patch.object(auth_module, 'check_login', check), self.assertRaises(Unauthorized):
+            self.auth.login('ana', pw.PASSWORD, '192.0.2.95')
+        self.assertEqual(len(calls), 2, 'the verification and one retry')
+        self.assertEqual(self.sessions(), 0)
+
+    def test_a_hash_that_changed_to_another_password_is_401_after_one_more_verification(self):
+        """The race of `set-password` of the first review stays closed: the old password does not open a session with the new hash."""
+        from memory_platform import auth as auth_module
+        self.set_hash(passwords.hash_password(pw.PASSWORD))
+        real_check, calls = auth_module.check_login, []
+
+        def check(password, stored):
+            calls.append(1)
+            result = real_check(password, stored)
+            if len(calls) == 1:
+                self.store.set_password('ana', NEW)
+            return result
+        with patch.object(auth_module, 'check_login', check), self.assertRaises(Unauthorized) as raised:
+            self.auth.login('ana', pw.PASSWORD, '192.0.2.96')
+        self.assertEqual(raised.exception.status_code, 401)
+        self.assertEqual((len(calls), self.sessions()), (2, 0))
+        self.assertTrue(passwords.verify_password(NEW, self.stored_hash()))
+        self.assertEqual(self.auth.login('ana', NEW, '192.0.2.97')['actor']['username'], 'ana')
 
 
 class RecentChangesCostTests(pw.Fixture):
