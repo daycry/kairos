@@ -169,6 +169,61 @@ class PasswordRouteTests(pw.Fixture):
         self.assertEqual(self.change(client, headers).status_code, 200, 'the fifth in the window is the last allowed')
         self.assertEqual(self.change(client, headers, current=NEW, new='sixth-password-789').status_code, 429)
 
+    def test_the_last_transaction_recounts_the_changes_so_two_requests_at_once_cannot_pass_the_limit(self):
+        """Both requests pass the first count (four changes); the other one commits its change (the fifth) while this one derives: the count under the lock of the row refuses this one."""
+        client, headers = self.session()
+        ana = self.count("SELECT id FROM memory.actors WHERE username='ana'")
+        with self.psycopg.connect(self.dsn) as c:
+            for _ in range(4):
+                c.execute("INSERT INTO memory.audit_events(actor_id,action) VALUES(%s,'password.changed')", (ana,))
+        real = passwords.verify_password
+
+        def another_change_lands(password, encoded):
+            result = real(password, encoded)
+            with self.psycopg.connect(self.dsn) as c:
+                c.execute("INSERT INTO memory.audit_events(actor_id,action) VALUES(%s,'password.changed')", (ana,))
+            return result
+        with patch('memory_platform.store_access.passwords.verify_password', another_change_lands):
+            refused = self.change(client, headers)
+        self.assertEqual((refused.status_code, refused.json()['error']['code']), (429, 'too_many_attempts'))
+        self.assertTrue(passwords.verify_password(pw.PASSWORD, self.stored_hash()), 'nothing changed')
+
+    def test_the_last_transaction_waits_for_a_change_that_has_not_committed_and_then_recounts(self):
+        """The lock of the row: another request holds it with its fifth change not yet committed; this one waits for it (it is seen waiting) and, once it commits, the recount refuses it."""
+        import threading
+        import time
+        client, headers = self.session()
+        ana = self.count("SELECT id FROM memory.actors WHERE username='ana'")
+        with self.psycopg.connect(self.dsn) as c:
+            for _ in range(4):
+                c.execute("INSERT INTO memory.audit_events(actor_id,action) VALUES(%s,'password.changed')", (ana,))
+        real, seen = passwords.verify_password, {}
+
+        def other_request_holds_the_row(password, encoded):
+            result = real(password, encoded)
+            other = self.psycopg.connect(self.dsn)
+            observer = self.psycopg.connect(self.dsn, autocommit=True)
+            other.execute('SELECT 1 FROM memory.actors WHERE id=%s FOR NO KEY UPDATE', (ana,))
+            other.execute("INSERT INTO memory.audit_events(actor_id,action) VALUES(%s,'password.changed')", (ana,))  # the fifth, uncommitted
+
+            def commit_when_someone_waits():
+                deadline, waited = time.monotonic() + 15, False
+                while not waited and time.monotonic() < deadline:  # no sleep: each pass is a round trip
+                    waited = observer.execute("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND pid<>pg_backend_pid()").fetchone()[0] > 0
+                seen['waited'] = waited
+                other.commit()
+                other.close()
+                observer.close()
+            seen['thread'] = threading.Thread(target=commit_when_someone_waits)
+            seen['thread'].start()
+            return result
+        with patch('memory_platform.store_access.passwords.verify_password', other_request_holds_the_row):
+            refused = self.change(client, headers)
+        seen['thread'].join(30)
+        self.assertTrue(seen.get('waited'), 'the request did not wait for the transaction that holds the row of the user')
+        self.assertEqual((refused.status_code, refused.json()['error']['code']), (429, 'too_many_attempts'))
+        self.assertTrue(passwords.verify_password(pw.PASSWORD, self.stored_hash()), 'nothing changed')
+
     def test_the_429_of_the_failures_is_decided_before_the_slot(self):
         """Gap 8 (DC-5): order = 429, then slot, then scrypt."""
         client, headers = self.session()
