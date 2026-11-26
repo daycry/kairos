@@ -57,7 +57,7 @@ test-plan: test-plan.md
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Medición de scrypt y guarda del resolvedor (CA-09, CA-38 a) | 5 | 5 | 100% | 0 / 19.8h | 4.77 / 6.3h | 0 / 1.6h | 0 / 1570 k |
 | Fase 2 — Esquema 13, scrypt y contraseñas (C-01) | 7 | 7 | 100% | 0 / 36.0h | 3.88 / 3.7h | 0 / 0.9h | 0 / 924 k |
-| Fase 3 — Usuarios, permisos y sesiones (C-01) | 3 | 6 | 50% | 0 / 36.0h | 4.84 / 3.7h | 0 / 0.9h | 0 / 924 k |
+| Fase 3 — Usuarios, permisos y sesiones (C-01) | 4 | 6 | 67% | 0 / 36.0h | 5.01 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01) | 0 | 7 | 0% | 0 / 48.0h | 0 / 4.9h | 0 / 1.2h | 0 / 1232 k |
 | Fase 5 — Login que no se bloquea entre clientes (C-02) | 0 | 5 | 0% | 0 / 43.2h | 0 / 4.4h | 0 / 1.1h | 0 / 1109 k |
 | Fase 6 — Cierre del hito A: acceso que se puede retirar | 0 | 4 | 0% | 0 / 9.6h | 0 / 3.5h | 0 / 0.9h | 0 / 873 k |
@@ -73,7 +73,7 @@ test-plan: test-plan.md
 | Fase 16 — Identidad: guía probada y extensibilidad (C-05) | 0 | 5 | 0% | 0 / 23.4h | 0 / 2.4h | 0 / 0.6h | 0 / 601 k |
 | Fase 17 — Revisión del hito C y revisión de seguridad (C-07) | 0 | 5 | 0% | 0 / 27.0h | 0 / 5.3h | 0 / 1.3h | 0 / 1320 k |
 | Fase 18 — Cierre del hito C y de la iniciativa: ensayo, versión 0.4.2 y PR | 0 | 4 | 0% | 0 / 11.4h | 0 / 1.2h | 0 / 0.3h | 0 / 293 k |
-| **TOTAL** | **15** | **106** | **14%** | **0 / 616.2h** | **13.49 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
+| **TOTAL** | **16** | **106** | **15%** | **0 / 616.2h** | **13.66 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -541,14 +541,15 @@ Commit 172da5f. El login guarda `client_ip` (la IP del par, como hoy; la IP real
 
 - **Descripción**: Regenerar `memory-platform.openapi.json` con las rutas y modelos de T-09, T-13, T-14 y T-15, comprobar que el diff es aditivo y registrar cada ruta nueva en la tabla de rutas de `test_auth_cache.py:529` (401 con una credencial retirada). Fuente: CA-37; invariante 1; R-01.
 - **Changelog**: El OpenAPI de `/v1` documenta las rutas nuevas de contraseña, usuarios, permisos y sesiones.
-- **Estado**: borrador
+- **Estado**: completado
+- **Cerrada**: 2026-11-26
 - **Tiempo humano**: est. 2h · real —
-- **Tiempo IA (ejec.)**: est. 0.21h · real —
+- **Tiempo IA (ejec.)**: est. 0.21h · real 0.17h (medido)
 - **Supervisión**: est. 0.05h · real —
 - **Previsión IA**: 57 k in / 5 k out tok · ⚠️ verificar €
 - **Dependencias**: T-15
 - **Tipo**: backend
-- **Archivos**: `docs/contracts/memory-platform.openapi.json`, `scripts/export-contracts.py`, `server/memory_platform/tests/test_contract_additive.py`, `server/memory_platform/tests/test_auth_cache.py`
+- **Archivos**: `docs/contracts/memory-platform.openapi.json`, `scripts/export-contracts.py`, `server/memory_platform/tests/test_contract_additive.py`, `server/memory_platform/tests/test_auth_cache.py`, `server/memory_platform/app.py` (añadido con nota: `operationId` duplicado de `GET /v1/auth/sessions` corregido y una línea en blanco de más), `server/memory_platform/tests/test_access_users.py` y `server/memory_platform/tests/test_access_sessions.py` (añadidos con nota: solo líneas en blanco de más que dejaron las ediciones de la fase, commit 65a1919)
 - **Cubre (tests)**: —
 - **Verificación**:
   - `PYTHONPATH=server python -m unittest memory_platform.tests.test_contract_additive` → `OK`
@@ -556,13 +557,18 @@ Commit 172da5f. El login guarda `client_ip` (la IP del par, como hoy; la IP real
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_auth_cache|MEMORY_TEST_RESULT"` → nombradas en `ok`; 0 fallos y 0 omitidos
 
 **Criterios de aceptación**
-- [ ] `test_contract_additive.py` pasa para ambos contratos; `kairos-mcp.json` sin cambios
-- [ ] Cada ruta nueva responde 401 con una credencial revocada, caducada o de un usuario deshabilitado (tabla de rutas)
-- [ ] Toda acción con sesión que cambia estado exige origen permitido y token CSRF
+- [x] `test_contract_additive.py` pasa para ambos contratos; `kairos-mcp.json` sin cambios
+- [x] Cada ruta nueva responde 401 con una credencial revocada, caducada o de un usuario deshabilitado (tabla de rutas)
+- [x] Toda acción con sesión que cambia estado exige origen permitido y token CSRF
 
 **Subtareas**
-- [ ] Exportar contratos
-- [ ] Ampliar la tabla de rutas
+- [x] Exportar contratos
+- [x] Ampliar la tabla de rutas
+
+RED: `test_auth_cache.AccessRoutesTableTests + test_contract_additive.test_t16_… (contra el código de cc44e76)` falló con AttributeError: 'Store' object has no attribute 'operator_set_disabled' y rutas ausentes del OpenAPI · 2026-11-26.
+
+Commits f6c635a y 65a1919. `AccessRoutesTableTests` (`test_auth_cache.py`): `ACCESS_ROUTES` con las seis rutas nuevas; una prueba exige que toda ruta de `/v1/auth` y `/v1/users` que no sea de las cinco anteriores esté en la tabla; cada ruta responde 401 a una clave revocada, caducada o de usuario deshabilitado y a una sesión cerrada, caducada o de usuario deshabilitado (36 casos; antes de matarla, la credencial viva no recibe 401), y cada ruta que cambia estado con sesión responde 403 sin origen, sin token, con token erróneo o con origen ajeno, sin tocar nada. `test_t16_…` (`test_contract_additive.py`): rutas y modelos publicados, `UserUpdate` sin `required`, `WebSession` sin campos de secreto, ninguna herramienta MCP apunta a ellas y `operationId` únicos. Hallazgo: `GET /v1/auth/sessions` repetía el `operationId` `memory_sessions` de `GET /v1/sessions` (lo vio `openapi-lint`); pasa a `memory_own_sessions` (ruta nueva de esta fase, sin cliente). Mutantes (4 pruebas; copia intacta en verde): clave caducada aceptada → 6 rojas; sesión de usuario deshabilitado aceptada → 6; clave de usuario deshabilitado aceptada → 6; `PATCH` sin CSRF → rojo; ruta fuera de la tabla → rojo; cuerpo de `PATCH` obligatorio → rojo; `WebSession` con `token_hash` → rojo; `operationId` repetido → rojo. Verificación: `PYTHONPATH=server python -m unittest memory_platform.tests.test_contract_additive` (Python 3.13 local, venv de pruebas) → `Ran 18 tests … OK`; `python scripts/export-contracts.py && git diff --ignore-cr-at-eol --exit-code -- docs/contracts/kairos-mcp.json mcp/contract/kairos-mcp.json` → exit 0 (en el contenedor, Python 3.11 cambia la sangría de las descripciones: por eso el contrato MCP se exporta en local); `openapi-lint --diff` contra `cc44e76`: 0 rompedores, 5 rutas nuevas (más `/v1/auth/password` de la Fase 2); sus dos avisos nuevos «sin respuesta 4xx/5xx» (rutas sin cuerpo) siguen el patrón de las 7 rutas anteriores. La suite completa con `test_auth_cache` la cierra T-17.
+
 
 ### T-17 — Cierre de fase: suites y subida del mínimo
 
