@@ -97,6 +97,26 @@ class OperatorSafetyTests(unittest.TestCase):
                 store.bootstrap_user.assert_not_called()
                 store.set_password.assert_not_called()
 
+    def test_a_secret_file_with_a_utf8_byte_order_mark_fails_without_a_byte_of_it(self):
+        """Fix3, gap 2 (review of phase 2, attempt 3): PowerShell 5.1 (`Set-Content`/`Out-File -Encoding UTF8`) writes EF BB BF first; decoded as UTF-8 it is U+FEFF, which would
+        silently become the first character of the password. A typed error that tells how to save the file instead: guessing that the mark is not part of the secret is not this function's call."""
+        for command in ('bootstrap', 'set-password'):
+            with self.subTest(command=command):
+                store = Mock()
+                status, out, err = self.run_with_secret_file(command, b'\xef\xbb\xbfsecret-bom-password-123\n', store)
+                self.assertEqual(str(status), 'password_file_invalid: the file starts with a byte order mark; save it as UTF-8 without BOM')
+                for text in (out, err, str(status)):
+                    for leaked in ('secret-bom', 'password-123', '﻿'):
+                        self.assertNotIn(leaked, text)
+                store.bootstrap_user.assert_not_called()
+                store.set_password.assert_not_called()
+        # A U+FEFF that is not the first character is not a byte order mark: it stays in the password, like any other character.
+        store = Mock()
+        store.set_password.return_value = {'id': 'actor', 'username': 'fixture', 'sessions_revoked': 0, 'keys_revoked': 0}
+        status, out, err = self.run_with_secret_file('set-password', 'inner﻿mark-12345\n'.encode('utf-8'), store)
+        self.assertEqual(status, 0, err)
+        self.assertEqual(store.set_password.call_args.args[1], 'inner﻿mark-12345')
+
     def test_admin_py_reads_the_password_file_in_one_place_for_both_commands(self):
         import ast
         source = (Path(__file__).parents[1] / 'admin.py').read_text(encoding='utf-8')

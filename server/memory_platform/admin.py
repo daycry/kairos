@@ -336,9 +336,15 @@ def prune_tables(store, windows, *, batch=1000, dry_run=False, tables=None, now=
 def password_from_file(path):
     """The password in a file: exactly the text of the file minus ONE final line break (a LF or a CR LF, what an editor or `echo` adds). Nothing else is removed: a password may start or end with spaces,
     and a second line break is part of it. Read as bytes so that the platform does not translate the line endings. `bootstrap` and `set-password` read their secret with this one function.
-    A file that is not UTF-8 is a typed error with no content: the message of the decoding error names the offending byte and its position, which are part of the secret."""
+    A file that is not UTF-8 is a typed error with no content: the message of the decoding error names the offending byte and its position, which are part of the secret.
+    A file that starts with a UTF-8 byte order mark (EF BB BF, what `Set-Content`/`Out-File -Encoding UTF8` of PowerShell 5.1 writes) is a typed error too: decoded, the mark is U+FEFF,
+    which would silently become the first character of the password; the error says how to save the file instead of guessing whether the mark belongs to the secret.
+    The host scripts that log in with `secrets/bootstrap_password` (deploy-memory.py, accept-native-clients.py, rehearse-reliable-operations.py) repeat this rule: keep them in step."""
+    raw = path.read_bytes()
+    if raw.startswith(b'\xef\xbb\xbf'):
+        raise SystemExit('password_file_invalid: the file starts with a byte order mark; save it as UTF-8 without BOM')
     try:
-        text = path.read_bytes().decode('utf-8')
+        text = raw.decode('utf-8')
     except UnicodeDecodeError:
         raise SystemExit('password_file_invalid: the file is not UTF-8 text') from None
     for ending in ('\r\n', '\n'):
