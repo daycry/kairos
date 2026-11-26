@@ -556,6 +556,72 @@ class SetPasswordTests(pw.Fixture):
         self.assertTrue(any(isinstance(n, ast.Attribute) and n.attr == 'set_password' for n in body), 'it calls the writer of the store')
 
 
+class DisableUserCommandTests(pw.Fixture):
+    """CA-03 (T-13): `admin disable-user` and `admin enable-user` on the writer of the store (DC-10): the same effect and audit as `PATCH /v1/users/{id}`, no SQL of their own."""
+
+    def run_command(self, command, username='ana'):
+        settings = Mock(dsn=self.dsn, project_maps={})
+        out, err = io.StringIO(), io.StringIO()
+        with patch('memory_platform.admin.Settings.from_env', return_value=settings), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            try:
+                main([command, '--username', username])
+                status = 0
+            except SystemExit as exit:
+                status = exit.code
+        return status, out.getvalue(), err.getvalue()
+
+    def events(self):
+        with self.psycopg.connect(self.dsn) as c:
+            return c.execute("SELECT action,actor_id,resource_id FROM memory.audit_events WHERE action LIKE 'user.%abled' ORDER BY id").fetchall()
+
+    def test_disable_closes_the_sessions_and_the_keys_and_enable_brings_back_only_the_keys(self):
+        from memory_platform.auth import Auth
+        auth = Auth(self.store, ['https://memory.example'])
+        self.store.create_user(self.admin, {'username': 'kim', 'password': pw.PASSWORD, 'project_ids': ['p1'], 'scopes': ['read', 'admin']})
+        session = auth.login('kim', pw.PASSWORD, '192.0.2.30')
+        token = self.store.create_key(session['actor'], {'name': 'k', 'project_ids': ['p1'], 'scopes': ['read']})['token']
+        status, out, err = self.run_command('disable-user', 'kim')
+        self.assertEqual(status, 0, err)
+        result = json.loads(out)
+        self.assertEqual((result['status'], result['username'], result['disabled'], result['sessions_revoked']), ('user_disabled', 'kim', True, 1))
+        for check in (lambda: auth.authenticate_session(session['session_token']), lambda: auth.authenticate_bearer(token), lambda: auth.login('kim', pw.PASSWORD, '192.0.2.31')):
+            with self.assertRaises(MemoryError) as refused:
+                check()
+            self.assertEqual(refused.exception.status_code, 401)
+        status, out, err = self.run_command('enable-user', 'kim')
+        self.assertEqual(status, 0, err)
+        self.assertEqual((json.loads(out)['status'], json.loads(out)['disabled']), ('user_enabled', False))
+        self.assertEqual(auth.authenticate_bearer(token)['username'], 'kim', 'the key comes back')
+        with self.assertRaises(MemoryError):
+            auth.authenticate_session(session['session_token'])
+        kim = auth.login('kim', pw.PASSWORD, '192.0.2.32')['actor']['id']
+        self.assertEqual(self.events(), [('user.disabled', None, kim), ('user.enabled', None, kim)], 'the same events as the route, with no actor (the operator is not an actor of the service)')
+
+    def test_the_last_active_administrator_and_an_unknown_user_exit_non_zero_and_change_nothing(self):
+        status, out, err = self.run_command('disable-user', 'root-user')
+        self.assertNotEqual(status, 0)
+        self.assertEqual(status, 'disable_user_failed: conflict')
+        self.assertEqual(out, '')
+        status, _, _ = self.run_command('enable-user', 'nobody')
+        self.assertEqual(status, 'enable_user_failed: not_found')
+        self.assertEqual(self.events(), [])
+
+    def test_the_operator_may_disable_any_user_also_an_administrator_that_is_not_the_last(self):
+        with self.psycopg.connect(self.dsn) as c:
+            c.execute("UPDATE memory.actors SET is_admin=true WHERE username='ana'")
+        self.assertEqual(self.run_command('disable-user', 'root-user')[0], 0, 'the operator is no actor: «never oneself» does not apply to it')
+
+    def test_admin_py_has_no_sql_of_its_own_for_them(self):
+        import ast
+        source = (Path(__file__).parents[1] / 'admin.py').read_text(encoding='utf-8')
+        branch = next(node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.If) and 'disable-user' in ast.dump(node.test))
+        body = [node for statement in branch.body for node in ast.walk(statement)]
+        for node in body:
+            self.assertFalse(isinstance(node, ast.Call) and getattr(node.func, 'attr', '') == 'execute', 'the branch runs SQL itself')
+            self.assertFalse(isinstance(node, ast.Constant) and isinstance(node.value, str) and 'memory.' in node.value, 'the branch names a table')
+        self.assertTrue(any(isinstance(n, ast.Attribute) and n.attr == 'operator_set_disabled' for n in body), 'it calls the writer of the store')
+
+
 class RevokeKeysRaceTests(pw.Fixture):
     """Fix2 of the review of phase 2 (attempt 2, gap 1): `create_key` and `set-password --revoke-keys` for the same user at once.
 

@@ -28,6 +28,11 @@ LAST_OLD_EVENT = "SELECT id FROM memory.audit_events WHERE happened_at<=clock_ti
 RECENT_CHANGES = "SELECT count(*) AS n FROM memory.audit_events WHERE id>%s AND actor_id=%s AND action='password.changed' AND happened_at>clock_timestamp()-interval '15 minutes'"
 
 
+# The advisory lock that serialises every disabling and enabling (T-13): «the last active administrator» is a count over several rows, and two disablings of two different administrators at once
+# would each see the other one still active. Under it the count is exact: each statement of READ COMMITTED sees what the previous holder committed.
+ADMINS_LOCK = 'access-admins'
+
+
 def password_changes_left(c, actor):
     """429 `too_many_attempts` when the user already made `PASSWORD_CHANGES_PER_WINDOW` correct changes in the last 15 minutes (counted in the audit events of `password.changed`, bounded by the key: see above)."""
     old = c.execute(LAST_OLD_EVENT).fetchone()
@@ -100,3 +105,40 @@ class AccessMixin:
                 self._audit(c, {'id': None}, 'keys.revoked', resource_id=row['id'])
             self._access_changed(c, {'id': None}, 'password.reset', resource_id=row['id'])
         return {'username': username, 'sessions_revoked': closed, 'keys_revoked': keys}
+
+    def set_user_disabled(self, actor, user_id, disabled):
+        """`PATCH /v1/users/{id}` (CA-03): the global administrator disables or enables a user. Disabling closes every session of the user and leaves the keys without value while it lasts
+        (`actors.disabled` is checked by every credential); enabling brings back the keys that were not revoked, not the sessions. Never oneself, never the last active administrator (409)."""
+        with self.transaction() as c:
+            self._global_admin(c, actor)  # 401/403 before anything is locked
+            return self._set_disabled(c, actor, user_id, disabled)
+
+    def operator_set_disabled(self, username, disabled):
+        """`admin disable-user`/`enable-user` (DC-10): the same writer, with no request actor (the operator is not an actor of the service, so «never oneself» does not apply; «never the last
+        active administrator» does)."""
+        with self.transaction() as c:
+            row = c.execute('SELECT id FROM memory.actors WHERE username=%s', (username,)).fetchone()
+            if not row:
+                raise NotFound()
+            return self._set_disabled(c, None, row['id'], disabled)
+
+    def _set_disabled(self, c, actor, user_id, disabled):
+        """The writer of `disabled`. Order: the advisory lock of every disabling (the count of active administrators is exact under it: nothing else writes `disabled` or `is_admin` at run
+        time), then the cache emptied and the credential of the caller checked AGAIN (it may have been disabled while this waited), then the checks and the writes. The `UPDATE` of the row of
+        the user comes BEFORE the closing of its sessions: a login of the user in progress holds `FOR SHARE` on that row, so the `UPDATE` waits for it and the closing that follows (a new
+        statement) sees the session it opened; a login that comes after sees `disabled` under its own lock and opens none."""
+        c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', (ADMINS_LOCK,))
+        invalidate_auth(c)
+        if actor:
+            self._global_admin(c, actor)
+        target = c.execute('SELECT id,username,is_admin,disabled FROM memory.actors WHERE id=%s', (user_id,)).fetchone()
+        if not target:
+            raise NotFound()
+        if disabled and actor and user_id == actor['id']:
+            raise Conflict('An administrator cannot disable itself')
+        if disabled and target['is_admin'] and not target['disabled'] and c.execute('SELECT count(*) AS n FROM memory.actors WHERE is_admin AND NOT disabled').fetchone()['n'] <= 1:
+            raise Conflict('The last active administrator cannot be disabled')
+        c.execute('UPDATE memory.actors SET disabled=%s WHERE id=%s', (disabled, user_id))
+        closed = c.execute('UPDATE memory.web_sessions SET revoked_at=clock_timestamp() WHERE actor_id=%s AND revoked_at IS NULL', (user_id,)).rowcount if disabled else 0
+        self._access_changed(c, actor or {'id': None}, 'user.disabled' if disabled else 'user.enabled', resource_id=user_id)
+        return {'id': user_id, 'username': target['username'], 'disabled': disabled, 'sessions_revoked': closed}

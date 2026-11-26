@@ -95,6 +95,16 @@ class PasswordChange(Model):
     current_password: Annotated[str, Field(max_length=1024)]
     new_password: Annotated[str, Field(max_length=1024)]
 
+class UserUpdate(Model):
+    """`PATCH /v1/users/{id}`: what changes of the user. Every field is optional so that the body may grow; one with nothing to change is 422 `invalid_user_update`."""
+    disabled: Annotated[bool, Field(strict=True)] | None = None
+
+class UserState(Model):
+    id: str
+    username: str
+    disabled: bool
+    sessions_revoked: Annotated[int, Field(ge=0)]
+
 class Fact(Model):
     subject: Annotated[str, Field(min_length=1, max_length=300)]
     predicate: Annotated[str, Field(min_length=1, max_length=200)]

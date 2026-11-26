@@ -392,6 +392,13 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
         # The password of the new user is derived under the same gate as the login, but the store authorizes (403) and refuses a duplicate (409) before it takes the slot.
         return store.create_user(actor, payload, slot=lambda: passwords.GATE.hold(ip))
 
+    @app.patch('/v1/users/{user_id}', operation_id='memory_update_user', response_model=m.UserState)
+    def update_user(user_id: str, payload: m.UserUpdate, actor=Depends(identity)):
+        # Global administrator with a session and CSRF (`identity` checks the CSRF of a session; the store refuses a key and anyone else with 403). Disabling closes the sessions of the user.
+        if payload.disabled is None:
+            raise MemoryError('invalid_user_update', 'Nothing to change', 422)
+        return store.set_user_disabled(actor, user_id, payload.disabled)
+
     @app.post('/v1/events', status_code=202, operation_id='memory_ingest_event')
     def ingest(payload: m.Event, actor=Depends(identity)):
         return store.ingest_event(actor, payload)

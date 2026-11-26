@@ -365,6 +365,9 @@ def main(argv=None):
     set_password.add_argument('--username', required=True)
     set_password.add_argument('--password-file', required=True)
     set_password.add_argument('--revoke-keys', action='store_true', help='also revoke every API key of the user, in the same transaction (the account may have been used by someone else, who may have made keys)')
+    for name, verb in (('disable-user', 'Disable --username: every session of the user is closed and its API keys stop working while it is disabled; never the last active administrator'),
+                       ('enable-user', 'Enable --username again: the API keys that were not revoked work again, the sessions closed by disable-user do not')):
+        commands.add_parser(name, help=verb).add_argument('--username', required=True)
     backfill = commands.add_parser('backfill-chunks', help='Queue embed jobs for current resources without fragments (idempotent, resumable)')
     backfill.add_argument('--batch', type=int, default=200, help='Jobs queued per transaction (1..5000)')
     backfill.add_argument('--max-jobs', type=int, default=None, help='Stop after queueing this many jobs; run again to continue')
@@ -529,6 +532,12 @@ def main(argv=None):
         except MemoryError as error:
             raise SystemExit(f'set_password_failed: {error.code}') from None  # the code only: neither the password nor a hash is in it
         print(json.dumps({'status': 'password_set', **result}, sort_keys=True))
+    elif args.command in ('disable-user', 'enable-user'):
+        try:
+            result = store.operator_set_disabled(args.username, args.command == 'disable-user')
+        except MemoryError as error:
+            raise SystemExit(f"{args.command.replace('-', '_')}_failed: {error.code}") from None
+        print(json.dumps({'status': 'user_disabled' if result['disabled'] else 'user_enabled', **result}, sort_keys=True))
     elif args.command == 'inspect':
         print(json.dumps({'tables': inspect_store(store)}, sort_keys=True))
     elif args.command == 'content-manifest':

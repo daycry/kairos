@@ -393,7 +393,7 @@ class WritersEmptyTheCacheTests(unittest.TestCase):
             writers.append(node.name)
             ends = [(c.lineno, c.col_offset) for c in ast.walk(node) if isinstance(c, ast.Call) and called(c) == CHANGED]
             self.assertTrue(ends and min(ends) > max(writes), '%s writes a permission table and does not end in `%s`' % (node.name, CHANGED))
-        self.assertIn('change_password', writers, 'the walk sees the writer of T-09: a scan that finds none would pass for the wrong reason')
+        self.assertTrue({'change_password', 'set_password', '_set_disabled'} <= set(writers), 'the walk sees the writers of T-09, T-10 and T-13: a scan that finds none would pass for the wrong reason')
         self.assertIsNotNone(door, '`_access_changed` is gone from store_access.py')
         inside = {called(c) for c in ast.walk(door) if isinstance(c, ast.Call)}
         self.assertTrue({'_audit', EMPTIES} <= inside, '`_access_changed` must audit and empty the cache, it calls %s' % sorted(inside))
@@ -461,7 +461,8 @@ class EveryTransactionTests(unittest.TestCase):
         ('auth.py', 'authenticate_bearer'): 'it IS the credential check (reads the key itself, every request, no cache)', ('auth.py', 'authenticate_session'): 'it IS the credential check',
         ('auth.py', 'login'): 'proves a password; opens the session', ('auth.py', 'logout'): 'revokes the session of the cookie it holds', ('auth.py', 'require_csrf'): 'reads the live session row itself',
         ('observability.py', '_read'): 'metrics read, no actor', ('store.py', 'transaction'): 'the provider of the transaction', ('auth_scope.py', 'savepoint'): 'a savepoint, not a transaction',
-        ('store_auth.py', 'migrate'): 'schema', ('store_auth.py', 'bootstrap_user'): 'creates the first actor', ('store_access.py', 'set_password'): 'operator command (admin set-password): recovers an account, no request actor', ('store_jobs.py', 'stored_item_vector'): 'worker, no actor',
+        ('store_auth.py', 'migrate'): 'schema', ('store_auth.py', 'bootstrap_user'): 'creates the first actor', ('store_access.py', 'set_password'): 'operator command (admin set-password): recovers an account, no request actor',
+        ('store_access.py', 'operator_set_disabled'): 'operator command (admin disable-user/enable-user): no request actor; the writer it shares with the route (`_set_disabled`) checks the actor when there is one', ('store_jobs.py', 'stored_item_vector'): 'worker, no actor',
         ('store_jobs.py', 'job_outcome'): 'worker, keyed by fence', ('store_jobs.py', 'claim_job'): 'worker', ('store_jobs.py', 'renew_lease'): 'worker', ('store_jobs.py', 'complete_job'): 'worker, keyed by fence',
         ('store_jobs.py', 'fail_job'): 'worker, keyed by fence', ('store_pool.py', 'ready_probe'): 'health probe, no actor',
         ('probe.py', 'admin_actor'): 'operator command (admin probe-provision): the administrator the command acts as', ('probe.py', 'provision'): 'operator command: the advisory lock that serialises two provisionings',
@@ -505,6 +506,7 @@ READ_EXCEPTIONS = {
     # `is_admin:row` is a read of the WHOLE row (`SELECT *`, `a.*` on `actors`), not of the column by name: login may do the first and not the second
     ('auth.py', 'Auth.login'): ({'is_admin:row'}, False, 'proves a password: `SELECT *` of the actor row, handed whole to `_actor` -> `_describe` of the resolver, which is the only code that looks at `is_admin` in it'),
     ('store_auth.py', 'AuthMixin.bootstrap_user'): ({'is_admin'}, False, 'first start only: writes `is_admin=true` of the first actor and returns the row it stored; it decides no access (the advisory lock and the `Conflict` when an actor exists limit it to the first run)'),
+    ('store_access.py', 'AccessMixin._set_disabled'): ({'is_admin'}, False, 'reads `is_admin` of the TARGET user and counts the active administrators, to keep at least one (409); the caller is decided by `_global_admin` before and again after the locks, not by this read'),
     ('probe.py', 'probe_state'): ({'project_grants', 'is_admin'}, False, _PROBE + 'it reads whether the probe project already has grants of another actor and whether the service actor is an administrator, to refuse to adopt them'),
     ('probe.py', 'admin_actor'): ({'is_admin'}, False, _PROBE + 'it finds the administrator the command acts as (named by the operator, or the first one), no request is being decided'),
     ('probe.py', 'provision_locked'): ({'is_admin', 'api_keys', 'project_grants'}, False, _PROBE + 'it refuses a service actor that became administrator, WRITES its own `is_admin=false` when it creates it (`probe.py` INSERT of the service actor), inserts the grants of that actor and reads `RETURNING 1` to know which were new, and looks up its own key by hash to rotate it, under an advisory lock'),
@@ -1268,6 +1270,17 @@ class ResolverBoundaryTests(unittest.TestCase):
         outside, _ = reads_outside_the_resolver({**base, 'corpus_answers.py': inject(base['corpus_answers.py'], 'CorpusAnswers._authorized', "c.execute('SELECT * FROM memory.api_keys WHERE id=%s')")})
         self.assertIn('corpus_answers.py:CorpusAnswers._authorized', outside)
 
+    def test_the_access_writers_read_is_admin_only_where_the_closed_list_says(self):
+        # T-13: `_set_disabled` reads `is_admin` of the target and counts the active administrators; without its entry it is outside the resolver, and the entry does not cover a sibling
+        base = package_sources()
+        key = ('store_access.py', 'AccessMixin._set_disabled')
+        with patch.dict(READ_EXCEPTIONS):
+            del READ_EXCEPTIONS[key]
+            outside, _ = reads_outside_the_resolver(base)
+        self.assertEqual(sorted(outside), ['store_access.py:AccessMixin._set_disabled'])
+        outside, _ = reads_outside_the_resolver({**base, 'store_access.py': inject(base['store_access.py'], 'AccessMixin.set_user_disabled', "self.c.execute('SELECT 1 FROM memory.project_grants')")})
+        self.assertEqual(sorted(outside), ['store_access.py:AccessMixin.set_user_disabled'])
+
     def test_probe_is_listed_by_function_not_by_wildcard(self):
         # fix1 gap 1: DC-1 closes the probe exception to three functions; a new function of probe.py that reads the grants is outside the resolver
         base = package_sources()
@@ -1858,6 +1871,7 @@ def store_calls(store, actor, pid, other, key_id):
         'search_items': lambda: store.search_items(actor, [pid], 'x'), 'search_native_facts': lambda: store.search_native_facts(actor, [pid], 'x'),
         'search_vectors': lambda: store.search_vectors(actor, [pid], [0.1, 0.2], 'm'),
         'set_policy': lambda: store.set_policy(actor, pid, {'capture_mode': 'summary', 'temporal_projection': True}), 'stats': lambda: store.stats(actor, pid),
+        'set_user_disabled': lambda: store.set_user_disabled(actor, 'nobody', True),
         'timeline': lambda: store.timeline(actor, {'project_ids': [pid]}),
     }
 

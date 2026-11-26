@@ -88,6 +88,11 @@
       "kind": "function",
       "signature": "(self, c, actor, project_id, permission)"
     },
+    "_set_disabled": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, c, actor, user_id, disabled)"
+    },
     "_unit": {
       "contextmanager": false,
       "kind": "function",
@@ -278,6 +283,11 @@
       "kind": "function",
       "signature": "(self, actor, project_id, limit=20, cursor=None)"
     },
+    "operator_set_disabled": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, username, disabled)"
+    },
     "publish_document": {
       "contextmanager": false,
       "kind": "function",
@@ -337,6 +347,11 @@
       "contextmanager": false,
       "kind": "function",
       "signature": "(self, actor, project_id, policy)"
+    },
+    "set_user_disabled": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, user_id, disabled)"
     },
     "stats": {
       "contextmanager": false,
