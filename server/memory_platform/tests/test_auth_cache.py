@@ -1963,5 +1963,85 @@ class RouteTableTests(Fixture):
                 self.assertEqual(second.status_code, 401, second.text[:200])
 
 
+# T-16 (CA-37, R-01): the routes of the changes of access (T-09, T-13, T-14, T-15). Every route under /v1/auth and /v1/users that is not one of the five that were there before is here.
+ACCESS_ROUTES = (('POST', '/v1/auth/password'), ('PATCH', '/v1/users/{user_id}'), ('PUT', '/v1/users/{user_id}/grants'), ('GET', '/v1/auth/sessions'),
+                 ('POST', '/v1/auth/sessions/revoke-others'), ('POST', '/v1/users/{user_id}/sessions/revoke'))
+EARLIER_ACCOUNT_ROUTES = {('POST', '/v1/auth/login'), ('GET', '/v1/auth/me'), ('POST', '/v1/auth/logout'), ('GET', '/v1/users'), ('POST', '/v1/users')}
+ORIGIN = 'http://127.0.0.1:5173'
+
+
+class AccessRoutesTableTests(Fixture):
+    """Each access route answers 401 to a key that is revoked, expired or of a disabled user and to a session that is closed, expired or of a disabled user; and every one that changes
+    state with a session demands an allowed origin and the CSRF token, before anything changes."""
+
+    def setUp(self):
+        super().setUp()
+        self.auth = Auth(self.store, [ORIGIN])
+        self.client = TestClient(create_app(Settings(self.store.dsn, allowed_origins=(ORIGIN,), mount_mcp=False), store=self.store, auth=self.auth))
+        self.client.__enter__()
+        self.addCleanup(self.client.__exit__, None, None, None)
+        self.target = self.user([self.pid])['id']
+
+    def call(self, method, path, **kwargs):
+        body = {'/v1/auth/password': {'current_password': 'synthetic-password-123', 'new_password': 'another-password-456'}, '/v1/users/{user_id}': {'disabled': True},
+                '/v1/users/{user_id}/grants': {'grants': []}}.get(path)
+        return self.client.request(method, path.replace('{user_id}', self.target), **({'json': body} if body is not None else {}), **kwargs)
+
+    def dead(self, kind):
+        """A fresh credential of a fresh user (administrator of the project), alive, and the function that kills it the way `kind` says."""
+        name = 'd-' + uuid.uuid4().hex[:12]
+        self.store.create_user(self.admin, {'username': name, 'password': 'synthetic-password-123', 'project_ids': [self.pid], 'scopes': ['read', 'admin']})
+        login = self.auth.login(name, 'synthetic-password-123', 'fixture-' + uuid.uuid4().hex)
+        key = self.store.create_key(login['actor'], {'name': 'dead', 'project_ids': [self.pid], 'scopes': ['read', 'admin']})
+
+        def sql(statement, *args):
+            with psycopg.connect(self.store.dsn, autocommit=True) as c:
+                c.execute(statement, args)
+        kill = {'revoked': lambda: self.store.revoke_key(self.admin, key['id']) if credential == 'key' else self.auth.logout(login['session_token']),
+                'expired': lambda: sql("UPDATE memory.api_keys SET expires_at=clock_timestamp()-interval '1 second' WHERE id=%s", key['id']) if credential == 'key'
+                else sql("UPDATE memory.web_sessions SET expires_at=clock_timestamp()-interval '1 second' WHERE id=%s", login['actor']['session_id']),
+                # the column itself, not the writer: `_set_disabled` also closes the sessions (T-13), and here the check of the credential must answer on its own
+                'disabled': lambda: sql('UPDATE memory.actors SET disabled=true WHERE username=%s', name)}
+
+        credential, cause = kind
+        sent = {'headers': {'Authorization': 'Bearer ' + key['token']}} if credential == 'key' else {'cookies': {'memory_session': login['session_token']}}
+        return sent, kill[cause]
+
+    def test_the_table_is_every_new_route_of_account_and_users(self):
+        found = {(method, route.path) for route in self.client.app.routes for method in getattr(route, 'methods', set()) - {'HEAD', 'OPTIONS'}
+                 if route.path.startswith(('/v1/auth', '/v1/users'))}
+        self.assertEqual(found - EARLIER_ACCOUNT_ROUTES, set(ACCESS_ROUTES), 'a new route of account or users needs its row here')
+
+    def test_every_access_route_answers_401_to_a_dead_credential(self):
+        for method, path in ACCESS_ROUTES:
+            for kind in itertools.product(('key', 'session'), ('revoked', 'expired', 'disabled')):
+                with self.subTest(route='%s %s' % (method, path), credential=kind):
+                    sent, kill = self.dead(kind)
+                    alive = self.call(method, path, **sent)  # no CSRF header: a state change with a session stops at 403, nothing changes
+                    self.assertNotEqual(alive.status_code, 401, alive.text[:200])
+                    kill()
+                    dead = self.call(method, path, **sent)
+                    self.assertEqual(dead.status_code, 401, dead.text[:200])
+        with psycopg.connect(self.store.dsn) as c:  # no live call changed the target
+            self.assertFalse(c.execute('SELECT disabled FROM memory.actors WHERE id=%s', (self.target,)).fetchone()[0])
+
+
+    def test_every_access_route_that_changes_state_demands_the_origin_and_the_csrf_token(self):
+        login = self.auth.login(self.pid, 'fixture-password-123', 'fixture-' + uuid.uuid4().hex)  # `create_core` names the global administrator like the project
+        cookies, token = {'memory_session': login['session_token']}, login['csrf_token']
+        for method, path in ACCESS_ROUTES:
+            if method == 'GET':
+                continue
+            for headers in ({}, {'Origin': ORIGIN}, {'X-CSRF-Token': token}, {'Origin': ORIGIN, 'X-CSRF-Token': 'wrong'}, {'Origin': 'https://elsewhere.example', 'X-CSRF-Token': token}):
+                with self.subTest(route='%s %s' % (method, path), headers=sorted(headers)):
+                    refused = self.call(method, path, cookies=cookies, headers=headers)
+                    self.assertEqual((refused.status_code, refused.json()['error']['code']), (403, 'forbidden'), refused.text[:200])
+        with psycopg.connect(self.store.dsn) as c:
+            self.assertFalse(c.execute('SELECT disabled FROM memory.actors WHERE id=%s', (self.target,)).fetchone()[0])
+            self.assertEqual(c.execute('SELECT count(*) FROM memory.project_grants WHERE actor_id=%s', (self.target,)).fetchone()[0], 1, 'the grants of the target are untouched')
+            self.assertEqual(c.execute('SELECT count(*) FROM memory.web_sessions WHERE id=%s AND revoked_at IS NULL', (login['actor']['session_id'],)).fetchone()[0], 1)
+        self.assertEqual(self.call('PATCH', '/v1/users/{user_id}', cookies=cookies, headers={'Origin': ORIGIN, 'X-CSRF-Token': token}).status_code, 200, 'with both, the same request passes')
+
+
 if __name__ == '__main__':
     unittest.main()

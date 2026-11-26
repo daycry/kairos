@@ -250,7 +250,32 @@ class ContractAdditiveTests(unittest.TestCase):
                 self.assertEqual(paths[path][method].get('requestBody'), operation.get('requestBody'), (path, method))
         self.assertGreater(len(paths), len(base_paths))  # C-02 added the new ones
 
+    def test_t16_the_access_routes_are_in_the_openapi_and_their_bodies_only_have_optional_or_closed_fields(self):
+        # T-16 (CA-37): the routes of T-09, T-13, T-14 and T-15 are published, with their request and response models, and no tool of kairos-mcp points at them
+        paths = self.exported['memory-platform.openapi.json']['paths']
+        schemas = self.exported['memory-platform.openapi.json']['components']['schemas']
+        routes = {('/v1/auth/password', 'post'): 'PasswordChange', ('/v1/users/{user_id}', 'patch'): 'UserUpdate', ('/v1/users/{user_id}/grants', 'put'): 'GrantsInput',
+                  ('/v1/auth/sessions', 'get'): None, ('/v1/auth/sessions/revoke-others', 'post'): None, ('/v1/users/{user_id}/sessions/revoke', 'post'): None}
+        for (path, method), body in routes.items():
+            with self.subTest(route=(method, path)):
+                self.assertIn(method, paths.get(path, {}))
+                operation = paths[path][method]
+                self.assertEqual(operation['responses']['200']['content']['application/json']['schema'].get('$ref', '').startswith('#/components/schemas/'), path != '/v1/auth/password')
+                if body:
+                    self.assertEqual(operation['requestBody']['content']['application/json']['schema']['$ref'], '#/components/schemas/' + body)
+                else:
+                    self.assertNotIn('requestBody', operation)
+        operation_ids = [operation['operationId'] for item in paths.values() for operation in item.values()]
+        self.assertEqual(sorted({i for i in operation_ids if operation_ids.count(i) > 1}), [], 'an operationId names one operation (a generated client would merge two)')
+        self.assertNotIn('required', schemas['UserUpdate'], 'every field of a PATCH is optional, so the body may grow')
+
+        self.assertEqual(schemas['WebSession']['required'], ['id', 'expires_at', 'current'])
+        self.assertFalse({'token', 'token_hash', 'csrf_hash', 'csrf_token'} & set(schemas['WebSession']['properties']))
+        declared = {(tool['x-kairos-endpoint'].get('path'), tool['x-kairos-endpoint'].get('method', '').lower()) for tool in self.exported['kairos-mcp.json']['tools'] if tool['x-kairos-endpoint'] != 'local'}
+        self.assertFalse(declared & set(routes), 'the MCP contract does not change: no tool reaches the access routes')
+
     def test_the_exact_check_rejects_a_restricting_key_anywhere_in_a_tool(self):
+
         before = next(tool for tool in self.base['kairos-mcp.json']['tools'] if tool['name'] == 'search')
         exported = next(tool for tool in self.exported['kairos-mcp.json']['tools'] if tool['name'] == 'search')
         self.assertEqual(tool_differences(before, without_endpoint(without_abstain(without_budget(exported)))), [])

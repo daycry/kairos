@@ -2161,7 +2161,7 @@
     },
     "/v1/auth/sessions": {
       "get": {
-        "operationId": "memory_sessions",
+        "operationId": "memory_own_sessions",
         "responses": {
           "200": {
             "content": {
