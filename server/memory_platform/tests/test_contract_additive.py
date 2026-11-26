@@ -268,7 +268,6 @@ class ContractAdditiveTests(unittest.TestCase):
         operation_ids = [operation['operationId'] for item in paths.values() for operation in item.values()]
         self.assertEqual(sorted({i for i in operation_ids if operation_ids.count(i) > 1}), [], 'an operationId names one operation (a generated client would merge two)')
         self.assertNotIn('required', schemas['UserUpdate'], 'every field of a PATCH is optional, so the body may grow')
-
         self.assertEqual(schemas['WebSession']['required'], ['id', 'expires_at', 'current'])
         self.assertFalse({'token', 'token_hash', 'csrf_hash', 'csrf_token'} & set(schemas['WebSession']['properties']))
         declared = {(tool['x-kairos-endpoint'].get('path'), tool['x-kairos-endpoint'].get('method', '').lower()) for tool in self.exported['kairos-mcp.json']['tools'] if tool['x-kairos-endpoint'] != 'local'}

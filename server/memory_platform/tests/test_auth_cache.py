@@ -2002,7 +2002,6 @@ class AccessRoutesTableTests(Fixture):
                 else sql("UPDATE memory.web_sessions SET expires_at=clock_timestamp()-interval '1 second' WHERE id=%s", login['actor']['session_id']),
                 # the column itself, not the writer: `_set_disabled` also closes the sessions (T-13), and here the check of the credential must answer on its own
                 'disabled': lambda: sql('UPDATE memory.actors SET disabled=true WHERE username=%s', name)}
-
         credential, cause = kind
         sent = {'headers': {'Authorization': 'Bearer ' + key['token']}} if credential == 'key' else {'cookies': {'memory_session': login['session_token']}}
         return sent, kill[cause]

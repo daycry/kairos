@@ -160,7 +160,6 @@ class SessionsRaceTests(UsersFixture):
         self.assertEqual(self.count('SELECT count(*) FROM memory.web_sessions WHERE actor_id=%s AND revoked_at IS NULL', self.bea), 1, 'the session of bea stays')
 
     def test_the_store_refuses_a_key_with_403_after_checking_it(self):
-
         token = self.store.create_key(self.admin, {'name': 'k', 'project_ids': ['p1'], 'scopes': ['read', 'admin']})['token']
         actor = self.auth.authenticate_bearer(token)
         for call in (lambda: self.store.list_own_sessions(actor), lambda: self.store.revoke_other_sessions(actor), lambda: self.store.revoke_user_sessions(actor, self.bea)):

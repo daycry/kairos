@@ -236,7 +236,6 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
         return store.change_password(actor, payload.current_password, payload.new_password, ip, slot=lambda: passwords.GATE.hold(ip))
 
     @app.get('/v1/auth/sessions', operation_id='memory_own_sessions', response_model=m.WebSessions)
-
     def sessions(actor=Depends(identity)):
         # The sessions of the user signed in (a key gets 403): creation, expiry, client address and which one is this; no token and no hash.
         return {'items': store.list_own_sessions(actor)}

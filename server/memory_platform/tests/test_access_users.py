@@ -16,7 +16,6 @@ from memory_platform.app import create_app
 from memory_platform.auth import Auth
 from memory_platform.config import Settings
 from memory_platform.errors import Conflict, Forbidden, MemoryError, Unauthorized
-
 from memory_platform.tests import test_passwords as pw
 
 ORIGIN = 'http://127.0.0.1:5173'
@@ -158,7 +157,6 @@ class DisableRouteTests(UsersFixture):
         self.assertEqual((refused.status_code, refused.json()['error']['code']), (409, 'conflict'))
         self.assertEqual(refused.json()['error']['message'], 'An administrator cannot disable itself')
         self.assertFalse(self.disabled('root-user'))
-
         self.assertEqual(root.get('/v1/auth/me').status_code, 200)
         self.assertEqual(self.events('user.disabled', self.admin['id']), 0)
 
