@@ -585,7 +585,7 @@ test-plan: test-plan.md
 
 - **Descripción**: Protocolo de revisión adversarial (cabecera), a 1,0 × la implementación. Superficie: autorización de cada ruta nueva (403 con clave y con sesión no administradora, CSRF), carreras de «último administrador» y caché de permisos tras cada escritor.
 - **Changelog**: Interno: revisión adversarial de la fase.
-- **Estado**: borrador
+- **Estado**: en-progreso
 - **Tiempo humano**: est. 15h · real —
 - **Tiempo IA (ejec.)**: est. 1.54h · real —
 - **Supervisión**: est. 0.39h · real —
@@ -2954,3 +2954,21 @@ Lentes: A+B+C+D (Opus 5.5) sobre `22de18e..682d5f5` (fix2: `328a446`..`682d5f5`)
 | 6 | Minor | El campo Changelog de T-10 no recogía el cambio visible de `bootstrap` (sin recorte de espacios; `password_file_invalid`) (lente A) | T-10 | corregido (orquestador, en este commit) | `tasks.md` T-10 Changelog |
 
 Línea de DC-5 sobre el reintento único del login (gap 3 del intento 2): escrita por el orquestador en `design.md` con la decisión del usuario («Hazlo tú», 2026-11-26). Gaps 1 y 2: fix3 fuera del bucle con comprobación dirigida, decisión del usuario («Fix3 pequeño y cerrar», 2026-11-26).
+
+## Revisión de dos lentes — intento 1: Fase 3 (T-13, T-14, T-15, T-16, T-17) — 3 Important: alta en carrera con la revocación, cambio de contraseña desde una sesión cerrada, fines de línea
+
+Lentes: A+B+C+D (Opus 5.5) sobre `cc44e76..53c7cad`, solo con `kairos-test:i4p3` sin red. A: T-13 a T-17 cumplen sus criterios con test; `openapi-lint --diff` 0 rompedores (5 rutas nuevas); `kairos-mcp.json` sin cambios; guarda T-02 con dos entradas mínimas y probadas; RED de T-15 reproducido. B y C: deshabilitar frente a login, `create_key` y `set_password` cerrado; último administrador serializado; sin interbloqueos; CSRF y 403 en las rutas nuevas; sin fugas en la lista de sesiones; `client_ip` no manipulable (IP del proxy hasta T-27). D: las consultas de sesiones usan `web_session_actor`; sin N+1. La DECISIÓN ABIERTA de T-14 (JSON en `resource_id`) no choca con spec ni diseño y no tiene lectores en producción (lente A).
+
+| # | Grado | Gap | Tarea | Corrección | Evidencia |
+|---|---|---|---|---|---|
+| 1 | Important | `create_user` vuelve a autorizar en su segunda transacción sin bloquear la fila del que delega: no espera a `_set_disabled` ni a `replace_grants`, y un alta que pasó la comprobación se confirma tras deshabilitar al delegante o retirarle los permisos (demo: `shadow` entra y es admin de p1; auditoría `user.created` tras `user.disabled`/`grants.replaced`) (lente C) | T-13, T-14 | abierto | `store_auth.py:216-224`; `store_access.py:131-141, :157-173` |
+| 2 | Important | `change_password` comprueba la credencial antes del `FOR NO KEY UPDATE` y no la repite bajo el bloqueo: una sesión cerrada por `_set_disabled`, `revoke_user_sessions` o `revoke-others` termina el cambio (`{'changed': True}`) y deja una contraseña elegida por una sesión muerta (lente B) | T-13, T-15 (código de T-09) | abierto | `store_access.py:79-86` |
+| 3 | Important | El commit del orquestador `6a0706f` convirtió CRLF en LF en `docs/roadmap/README.md` y `docs/roadmap/2026-11-09-retrieval-quality/spec.md` (restricción «fin de línea conservado», `.gitattributes`); T-17 lo absorbió «con nota» (lente A) | T-17 | corregido (orquestador, 68a152b: CRLF restaurado, solo difieren las 4 líneas cambiadas) | `git diff 6a0706f~1 68a152b --stat` |
+| 4 | Minor | `_set_disabled` no bloquea la fila del llamante ni vuelve a comprobar su credencial tras esperar la fila del objetivo: un administrador cuya sesión se cierra en ese intervalo deshabilita igualmente (lente B) | T-13 | abierto | `store_access.py:131-141` |
+| 5 | Minor | Al deshabilitar se revocan también las sesiones caducadas (sin filtro `expires_at`): coste con sesiones acumuladas sin poda (2 010 filas: 245 ms; 102 010: 5,6 s, bloqueando logins del usuario) y `sessions_revoked` distinto del de `users/{id}/sessions/revoke` (lente D) | T-13 | abierto | `store_access.py:143` |
+| 6 | Minor | Sin prueba: el administrador sobre sí mismo cierra también la sesión actual, y el filtro de caducadas de `list_own_sessions` (los dos mutantes sobreviven) (lente A) | T-15 | abierto | `store_access.py:188, :206-216` |
+| 7 | Minor | `design.md` DC-1 no recoge las excepciones nuevas de la guarda (`_set_disabled`, `replace_grants`, `operator_set_disabled`) (lente A) | T-13, T-14 | abierto | `design.md:97-110`; `test_auth_cache.py:465, :509-510` |
+| 8 | Minor | Ledger: el RED de T-16 se tomó contra `cc44e76` y no aísla su cambio (el rojo propio era el `operationId` duplicado); el RED de T-13 solo queda en `execution-history.md` (lente A) | T-13, T-16 | abierto | `tasks.md` T-13, T-16 |
+| 9 | Minor | `GET /v1/auth/sessions` y `POST /v1/auth/sessions/revoke-others` sin respuestas 4xx en el OpenAPI (`openapi-lint` los da como errores, 7 → 9) aunque responden 401/403 (lente A) | T-16 | abierto | `memory-platform.openapi.json:2162, :2180` |
+| 10 | Minor | CA-42 y T-73 nombran «listar sesiones ajenas» del administrador global, que ninguna ruta ni tarea crea (decisión de alcance) (lente A) | T-15, T-73 | abierto | `spec.md:284`; `tasks.md` T-73 |
+| 11 | Minor | Orden de errores: un no administrador recibe 422 antes que 403 (PATCH sin cambios; proyecto repetido en `replace_grants`) (lentes A y B) | T-13, T-14 | abierto | `app.py` PATCH; `store_access.py:153-159` |
