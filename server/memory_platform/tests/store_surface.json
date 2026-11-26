@@ -258,6 +258,11 @@
       "kind": "function",
       "signature": "(self, actor, project_id, limit=20, cursor=None)"
     },
+    "list_own_sessions": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor)"
+    },
     "list_projects": {
       "contextmanager": false,
       "kind": "function",
@@ -322,6 +327,16 @@
       "contextmanager": false,
       "kind": "function",
       "signature": "(self, actor, key_id)"
+    },
+    "revoke_other_sessions": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor)"
+    },
+    "revoke_user_sessions": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, user_id)"
     },
     "search_documents": {
       "contextmanager": false,

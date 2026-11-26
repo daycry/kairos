@@ -1452,6 +1452,21 @@
         "title": "SearchResult",
         "type": "object"
       },
+      "SessionsRevoked": {
+        "additionalProperties": false,
+        "properties": {
+          "revoked": {
+            "minimum": 0.0,
+            "title": "Revoked",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revoked"
+        ],
+        "title": "SessionsRevoked",
+        "type": "object"
+      },
       "Source": {
         "additionalProperties": false,
         "properties": {
@@ -1628,6 +1643,26 @@
         "title": "UserInput",
         "type": "object"
       },
+      "UserSessionsRevoked": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "revoked": {
+            "minimum": 0.0,
+            "title": "Revoked",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "revoked"
+        ],
+        "title": "UserSessionsRevoked",
+        "type": "object"
+      },
       "UserState": {
         "additionalProperties": false,
         "properties": {
@@ -1715,6 +1750,72 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "WebSession": {
+        "additionalProperties": false,
+        "description": "One session of the user, as `GET /v1/auth/sessions` shows it: never its token, its CSRF token or their hashes. `created_at` and `client_ip` are null for a session opened before version 13 kept them.",
+        "properties": {
+          "client_ip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Ip"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "current": {
+            "title": "Current",
+            "type": "boolean"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "expires_at",
+          "current"
+        ],
+        "title": "WebSession",
+        "type": "object"
+      },
+      "WebSessions": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WebSession"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "WebSessions",
         "type": "object"
       },
       "WorkStateChange": {
@@ -2056,6 +2157,42 @@
           }
         },
         "summary": "Change Password"
+      }
+    },
+    "/v1/auth/sessions": {
+      "get": {
+        "operationId": "memory_sessions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebSessions"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Sessions"
+      }
+    },
+    "/v1/auth/sessions/revoke-others": {
+      "post": {
+        "operationId": "memory_revoke_other_sessions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionsRevoked"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Revoke Other Sessions"
       }
     },
     "/v1/context": {
@@ -4749,6 +4886,45 @@
           }
         },
         "summary": "Replace Grants"
+      }
+    },
+    "/v1/users/{user_id}/sessions/revoke": {
+      "post": {
+        "operationId": "memory_revoke_user_sessions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserSessionsRevoked"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke User Sessions"
       }
     }
   }

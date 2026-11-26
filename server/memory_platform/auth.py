@@ -90,7 +90,7 @@ class Auth:
                                     c.execute('UPDATE memory.actors SET password_hash=%s WHERE id=%s AND password_hash=%s', (rehash, row['id'], row['password_hash']))
                             except Exception as exc:
                                 observability.log_failure('password_rehash_failed', exc, 'warning')  # the type only, never the message; the login goes on
-                        saved = c.execute("INSERT INTO memory.web_sessions(id,actor_id,token_hash,csrf_hash,expires_at) VALUES(%s,%s,%s,%s,clock_timestamp()+(%s * interval '1 second')) RETURNING expires_at", (sid, row['id'], token_hash(session), token_hash(csrf), self.session_ttl)).fetchone()
+                        saved = c.execute("INSERT INTO memory.web_sessions(id,actor_id,token_hash,csrf_hash,expires_at,client_ip) VALUES(%s,%s,%s,%s,clock_timestamp()+(%s * interval '1 second'),%s) RETURNING expires_at", (sid, row['id'], token_hash(session), token_hash(csrf), self.session_ttl, client_ip)).fetchone()
                         invalidate_auth(c)
                         actor = self._actor(c, row, 'session', sid)
                         return {'actor': actor, 'session_token': session, 'csrf_token': csrf, 'expires_at': saved['expires_at'].isoformat()}

@@ -114,6 +114,24 @@ class UserGrants(Model):
     username: str
     grants: list[ProjectGrant]
 
+class WebSession(Model):
+    """One session of the user, as `GET /v1/auth/sessions` shows it: never its token, its CSRF token or their hashes. `created_at` and `client_ip` are null for a session opened before version 13 kept them."""
+    id: str
+    created_at: AwareDatetime | None = None
+    expires_at: AwareDatetime
+    client_ip: str | None = None
+    current: bool
+
+class WebSessions(Model):
+    items: list[WebSession]
+
+class SessionsRevoked(Model):
+    revoked: Annotated[int, Field(ge=0)]
+
+class UserSessionsRevoked(Model):
+    id: str
+    revoked: Annotated[int, Field(ge=0)]
+
 class UserState(Model):
     id: str
     username: str

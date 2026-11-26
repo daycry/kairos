@@ -177,3 +177,42 @@ class AccessMixin:
                     c.execute('INSERT INTO memory.project_grants(actor_id,project_id,permission) VALUES(%s,%s,%s)', (user_id, project, permission))
             self._access_changed(c, actor, 'grants.replaced', resource_id=canonical({'user': user_id, 'before': before, 'after': wanted}))
         return {'id': user_id, 'username': target['username'], 'grants': [{'project_id': p, 'permissions': wanted[p]} for p in sorted(wanted)]}
+
+    def list_own_sessions(self, actor):
+        """`GET /v1/auth/sessions` (CA-05): the sessions of the user that are still alive, with their creation, expiry, client address and which one is the current; never a token or a hash.
+        Only a session may ask (a key is a credential of a machine, not of the person signed in: 403)."""
+        with self.transaction() as c:
+            self._active(c, actor)
+            if actor.get('credential_type') != 'session':
+                raise Forbidden('Only a signed-in session may list the sessions')
+            rows = c.execute('SELECT id,created_at,expires_at,client_ip FROM memory.web_sessions WHERE actor_id=%s AND revoked_at IS NULL AND expires_at>clock_timestamp() ORDER BY created_at,id', (actor['id'],)).fetchall()
+        return [{'id': r['id'], 'created_at': r['created_at'].isoformat() if r['created_at'] else None, 'expires_at': r['expires_at'].isoformat(), 'client_ip': r['client_ip'],
+                 'current': r['id'] == actor['session_id']} for r in rows]
+
+    def revoke_other_sessions(self, actor):
+        """`POST /v1/auth/sessions/revoke-others` (CA-05): close every other session of the user and keep this one. The row of the user is locked first (a login in progress holds `FOR SHARE`
+        on it: the session it opens is closed here too) and the credential is checked again after the wait."""
+        with self.transaction() as c:
+            self._active(c, actor)
+            if actor.get('credential_type') != 'session':
+                raise Forbidden('Only a signed-in session may close the other sessions')
+            c.execute('SELECT 1 FROM memory.actors WHERE id=%s FOR NO KEY UPDATE', (actor['id'],))
+            invalidate_auth(c)
+            self._active(c, actor)
+            closed = c.execute('UPDATE memory.web_sessions SET revoked_at=clock_timestamp() WHERE actor_id=%s AND id<>%s AND revoked_at IS NULL AND expires_at>clock_timestamp()', (actor['id'], actor['session_id'])).rowcount
+            self._access_changed(c, actor, 'sessions.revoked', resource_id=actor['id'])
+        return {'revoked': closed}
+
+    def revoke_user_sessions(self, actor, user_id):
+        """`POST /v1/users/{id}/sessions/revoke` (CA-05): the global administrator closes every session of a user (the caller's own too when it names itself). Rows of the target and of the caller
+        under `FOR NO KEY UPDATE` in the order of their ids, then the credential checked again."""
+        with self.transaction() as c:
+            self._global_admin(c, actor)
+            rows = c.execute('SELECT id FROM memory.actors WHERE id=ANY(%s) ORDER BY id FOR NO KEY UPDATE', ([user_id, actor['id']],)).fetchall()
+            invalidate_auth(c)
+            self._global_admin(c, actor)
+            if user_id not in {r['id'] for r in rows}:
+                raise NotFound()
+            closed = c.execute('UPDATE memory.web_sessions SET revoked_at=clock_timestamp() WHERE actor_id=%s AND revoked_at IS NULL AND expires_at>clock_timestamp()', (user_id,)).rowcount
+            self._access_changed(c, actor, 'sessions.revoked', resource_id=user_id)
+        return {'id': user_id, 'revoked': closed}

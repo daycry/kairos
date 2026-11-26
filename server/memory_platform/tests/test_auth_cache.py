@@ -393,7 +393,7 @@ class WritersEmptyTheCacheTests(unittest.TestCase):
             writers.append(node.name)
             ends = [(c.lineno, c.col_offset) for c in ast.walk(node) if isinstance(c, ast.Call) and called(c) == CHANGED]
             self.assertTrue(ends and min(ends) > max(writes), '%s writes a permission table and does not end in `%s`' % (node.name, CHANGED))
-        self.assertTrue({'change_password', 'set_password', '_set_disabled', 'replace_grants'} <= set(writers), 'the walk sees the writers of T-09, T-10, T-13 and T-14: a scan that finds none would pass for the wrong reason')
+        self.assertTrue({'change_password', 'set_password', '_set_disabled', 'replace_grants', 'revoke_other_sessions', 'revoke_user_sessions'} <= set(writers), 'the walk sees the writers of T-09, T-10, T-13, T-14 and T-15: a scan that finds none would pass for the wrong reason')
         self.assertIsNotNone(door, '`_access_changed` is gone from store_access.py')
         inside = {called(c) for c in ast.walk(door) if isinstance(c, ast.Call)}
         self.assertTrue({'_audit', EMPTIES} <= inside, '`_access_changed` must audit and empty the cache, it calls %s' % sorted(inside))
@@ -1874,6 +1874,7 @@ def store_calls(store, actor, pid, other, key_id):
         'search_vectors': lambda: store.search_vectors(actor, [pid], [0.1, 0.2], 'm'),
         'set_policy': lambda: store.set_policy(actor, pid, {'capture_mode': 'summary', 'temporal_projection': True}), 'stats': lambda: store.stats(actor, pid),
         'set_user_disabled': lambda: store.set_user_disabled(actor, 'nobody', True), 'replace_grants': lambda: store.replace_grants(actor, 'nobody', []),
+        'list_own_sessions': lambda: store.list_own_sessions(actor), 'revoke_other_sessions': lambda: store.revoke_other_sessions(actor), 'revoke_user_sessions': lambda: store.revoke_user_sessions(actor, 'nobody'),
         'timeline': lambda: store.timeline(actor, {'project_ids': [pid]}),
     }
 
