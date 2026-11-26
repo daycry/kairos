@@ -1875,6 +1875,7 @@ def store_calls(store, actor, pid, other, key_id):
         'set_policy': lambda: store.set_policy(actor, pid, {'capture_mode': 'summary', 'temporal_projection': True}), 'stats': lambda: store.stats(actor, pid),
         'set_user_disabled': lambda: store.set_user_disabled(actor, 'nobody', True), 'replace_grants': lambda: store.replace_grants(actor, 'nobody', []),
         'list_own_sessions': lambda: store.list_own_sessions(actor), 'revoke_other_sessions': lambda: store.revoke_other_sessions(actor), 'revoke_user_sessions': lambda: store.revoke_user_sessions(actor, 'nobody'),
+        'list_user_sessions': lambda: store.list_user_sessions(actor, 'nobody'),
         'timeline': lambda: store.timeline(actor, {'project_ids': [pid]}),
     }
 
@@ -1963,9 +1964,10 @@ class RouteTableTests(Fixture):
                 self.assertEqual(second.status_code, 401, second.text[:200])
 
 
-# T-16 (CA-37, R-01): the routes of the changes of access (T-09, T-13, T-14, T-15). Every route under /v1/auth and /v1/users that is not one of the five that were there before is here.
+# T-16 (CA-37, R-01): the routes of the changes of access (T-09, T-13, T-14, T-15). Every route under /v1/auth and /v1/users that is not one of the five that were there before is here
+# (`GET /v1/users/{user_id}/sessions`: fix1 of the review of phase 3, gap 10, CA-42).
 ACCESS_ROUTES = (('POST', '/v1/auth/password'), ('PATCH', '/v1/users/{user_id}'), ('PUT', '/v1/users/{user_id}/grants'), ('GET', '/v1/auth/sessions'),
-                 ('POST', '/v1/auth/sessions/revoke-others'), ('POST', '/v1/users/{user_id}/sessions/revoke'))
+                 ('POST', '/v1/auth/sessions/revoke-others'), ('POST', '/v1/users/{user_id}/sessions/revoke'), ('GET', '/v1/users/{user_id}/sessions'))
 EARLIER_ACCOUNT_ROUTES = {('POST', '/v1/auth/login'), ('GET', '/v1/auth/me'), ('POST', '/v1/auth/logout'), ('GET', '/v1/users'), ('POST', '/v1/users')}
 ORIGIN = 'http://127.0.0.1:5173'
 

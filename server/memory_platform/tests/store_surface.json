@@ -273,6 +273,11 @@
       "kind": "function",
       "signature": "(self, actor, project_id, limit=20, cursor=None)"
     },
+    "list_user_sessions": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, user_id)"
+    },
     "list_users": {
       "contextmanager": false,
       "kind": "function",

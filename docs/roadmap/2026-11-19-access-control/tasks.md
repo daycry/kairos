@@ -513,7 +513,7 @@ fix1 de la revisión de la fase 3 (gap 11 y decisión del usuario sobre `grants.
 - **Estado**: completado
 - **Cerrada**: 2026-11-26
 - **Tiempo humano**: est. 4h · real —
-- **Tiempo IA (ejec.)**: est. 0.41h · real 0.31h (medido)
+- **Tiempo IA (ejec.)**: est. 0.41h · real 0.48h (medido; fix1 de la fase 3: 0.17h)
 - **Supervisión**: est. 0.10h · real —
 - **Previsión IA**: 113 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: T-14
@@ -533,6 +533,10 @@ fix1 de la revisión de la fase 3 (gap 11 y decisión del usuario sobre `grants.
 - [x] Rutas y modelos
 
 **Notas**: RED: `test_access_sessions (9 pruebas, contra el código de 407dac0)` falló con AssertionError: 404 != 200 : {"detail":"Not Found"} (rutas inexistentes), AttributeError: 'Store' object has no attribute 'list_own_sessions' y 0 != 1 (el login no guardaba client_ip) · 2026-11-26. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `16218c9a150b`.
+
+RED: `fix1 fase 3: test_access_sessions (3 de cambio de contraseña desde una sesión cerrada, 2 de GET /v1/users/{id}/sessions, la de la clave con 403), test_store_surface y AccessRoutesTableTests.test_the_table_is_every_new_route_of_account_and_users` falló con AssertionError: {'changed': True} is not an instance of Unauthorized (x3); 404 != 200 y 404 != 403 (la ruta no existía); AttributeError: 'Store' object has no attribute 'list_user_sessions'; Lists differ (superficie); Items in the second set but not the first (tabla de rutas) · 2026-11-26.
+
+fix1 de la revisión de la fase 3 (gaps 2, 6 y 10; T-18 intento 1). Gap 2 (código de T-09): la última transacción de `change_password` bloquea la fila del usuario con `FOR NO KEY UPDATE`, vacía la caché y vuelve a comprobar la sesión (`_active`: no revocada, no caducada, usuario no deshabilitado). Si una deshabilitación, `users/{id}/sessions/revoke` o `revoke-others` la cerró mientras derivaba, responde 401, sin cambio de hash ni evento. Gap 6: pruebas del administrador que se nombra a sí mismo (cierra también la sesión actual) y de la lista propia sin las caducadas. Gap 10 (CA-42, decisión del usuario): `GET /v1/users/{id}/sessions` (`list_user_sessions`, operación `memory_user_sessions`) es solo para el administrador global con sesión: una clave y un no administrador reciben 403 (`_global_admin`, también para su propio id) y un usuario inexistente 404. Lista las sesiones vivas con los mismos campos que `GET /v1/auth/sessions`; `current` es verdadero solo para la sesión del llamante si se nombra a sí mismo. No expone tokens ni hashes. Las dos listas comparten `live_sessions`. La ruta entra en `ACCESS_ROUTES` (401 con las 6 credenciales muertas), en `store_calls` y en `store_surface.json`. Lee `web_sessions`, que no decide un acceso, así que la guarda T-02 no necesita entrada nueva. OpenAPI regenerado en el contenedor (dependencias fijadas; solo crece la ruta nueva; `kairos-mcp.json` no se reescribe: el exportador con Python 3.11 cambia la sangría de cinco docstrings y la copia del repositorio sale de 3.13). Mutantes (copia en `kairos-test:i4p3`; copia intacta en verde): `change_password` que comprueba antes del bloqueo → 3 rojas; cerrar las de uno mismo dejando la actual → rojo; lista con caducadas → 2 rojas; `list_user_sessions` con `_active` en vez de `_global_admin` → 2 rojas; leer las sesiones del llamante → rojo; sin 404 → rojo. Verificación dirigida: `test_access_password`, `test_access_sessions`, `test_access_users`, `test_admin`, `test_auth`, `test_auth_cache`, `test_auth_race`, `test_contract_additive`, `test_store_surface` → `SEL_RESULT tests=218 failures=0 errors=0 skipped=0`. usage-meter `access-control/T-15`: 0.17 h IA (medido).
 
 ### T-16 — Contrato y tabla de rutas de las acciones de acceso
 
@@ -563,6 +567,8 @@ fix1 de la revisión de la fase 3 (gap 11 y decisión del usuario sobre `grants.
 - [x] Ampliar la tabla de rutas
 
 **Notas**: RED: `test_auth_cache.AccessRoutesTableTests + test_contract_additive.test_t16_… (contra el código de cc44e76)` falló con AttributeError: 'Store' object has no attribute 'operator_set_disabled' y rutas ausentes del OpenAPI · 2026-11-26. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `ec14fd2dcb56`.
+
+Nota de RED (fix1 de la revisión de la fase 3, gap 8): ese RED se tomó contra `cc44e76` y no aísla el cambio propio de T-16. Su rojo propio era el `operationId` duplicado de `GET /v1/auth/sessions` que dejó T-15 (lo detecta la comprobación de `operationId` únicos de `test_t16_…`). No se rehace: el código ya está en la rama y la prueba lo cubre.
 
 ### T-17 — Cierre de fase: suites y subida del mínimo
 
@@ -2060,6 +2066,8 @@ fix1 de la revisión de la fase 3 (gap 11 y decisión del usuario sobre `grants.
 **Subtareas**
 - [ ] Matriz de perfiles
 - [ ] Casos de CSRF y origen
+
+**Notas**: añadido con nota (fix1 de la revisión de la fase 3, gap 10, decisión del usuario 2026-11-26): la ruta `GET /v1/users/{id}/sessions` (listar sesiones ajenas, CA-42) ya existe. Es solo para el administrador global con sesión (403 a una clave y a un no administrador) y tiene sus pruebas en `test_access_sessions.py`. La matriz de esta tarea la incluye como una ruta más de administración.
 
 ### T-74 — DOM de frontera compartido entre los tests del portal (O2)
 

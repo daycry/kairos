@@ -41,6 +41,13 @@ def password_changes_left(c, actor):
         raise MemoryError('too_many_attempts', 'Too many password changes; try again later', 429)
 
 
+def live_sessions(c, actor, user_id):
+    """The live sessions of `user_id` (not revoked, not expired) as the two lists show them: creation, expiry, client address and whether it is the caller's; never a token or a hash."""
+    rows = c.execute('SELECT id,created_at,expires_at,client_ip FROM memory.web_sessions WHERE actor_id=%s AND revoked_at IS NULL AND expires_at>clock_timestamp() ORDER BY created_at,id', (user_id,)).fetchall()
+    return [{'id': r['id'], 'created_at': r['created_at'].isoformat() if r['created_at'] else None, 'expires_at': r['expires_at'].isoformat(), 'client_ip': r['client_ip'],
+             'current': r['id'] == actor.get('session_id')} for r in rows]
+
+
 class AccessMixin:
     def _access_changed(self, c, actor, action, project_id=None, resource_id=None):
         """The end of every writer of access: the audit event of the change, then the permission cache of this transaction emptied (what was resolved before the change must not outlive it)."""
@@ -55,7 +62,7 @@ class AccessMixin:
         gate (`slot`, a callable that returns a context manager: the route gives `passwords.GATE.hold(ip)`; none in the tests and `admin`), then the derivations: the verification of the current password
         at the cost of ITS hash (a hash of an earlier release costs the cheap check, not a second derivation at the target cost) and the hash of the new one, outside any transaction.
         A wrong current password changes nothing and is a failed login of `client_ip`: it is recorded (committed on its own, under the advisory locks of the login, with the same recount) and
-        refused with 403. The last transaction locks the row of the user, recounts the changes and replaces the hash only if it is still the one that was verified."""
+        refused with 403. The last transaction locks the row of the user, checks the session again, recounts the changes and replaces the hash only if it is still the one that was verified."""
         with self.transaction() as c:
             self._active(c, actor)  # the credential is alive: a revoked one is 401 before anything else is said about the request
             if actor.get('credential_type') != 'session':
@@ -76,10 +83,13 @@ class AccessMixin:
                 c.execute('INSERT INTO memory.login_attempts(username,client_ip) VALUES(%s,%s)', (actor['username'], client_ip))
             raise MemoryError('invalid_current_password', 'The current password is not correct', 403)
         with self.transaction() as c:
-            self._active(c, actor)
             # The row of the user is locked first (`admin set-password`, the login that replaces an old hash and another change take it too): the count of changes is exact for two requests at once, and
-            # `WHERE password_hash=<the one verified>` keeps a password changed meanwhile from being overwritten.
+            # `WHERE password_hash=<the one verified>` keeps a password changed meanwhile from being overwritten. The session is checked AFTER the lock, with the cache emptied (fix1 of the review of
+            # phase 3, gap 2): a disabling, `users/{id}/sessions/revoke` or `revoke-others` that closed it while this derived holds that row until it commits, and then this request is 401, with
+            # nothing changed and no event. Only the other LIVE sessions are closed (gap 5): an expired one is already dead.
             c.execute('SELECT 1 FROM memory.actors WHERE id=%s FOR NO KEY UPDATE', (actor['id'],))
+            invalidate_auth(c)
+            self._active(c, actor)
             password_changes_left(c, actor)
             if not c.execute('UPDATE memory.actors SET password_hash=%s WHERE id=%s AND password_hash=%s', (fresh, actor['id'], stored)).rowcount:
                 raise Conflict('The password changed while this request was running')
@@ -194,9 +204,17 @@ class AccessMixin:
             self._active(c, actor)
             if actor.get('credential_type') != 'session':
                 raise Forbidden('Only a signed-in session may list the sessions')
-            rows = c.execute('SELECT id,created_at,expires_at,client_ip FROM memory.web_sessions WHERE actor_id=%s AND revoked_at IS NULL AND expires_at>clock_timestamp() ORDER BY created_at,id', (actor['id'],)).fetchall()
-        return [{'id': r['id'], 'created_at': r['created_at'].isoformat() if r['created_at'] else None, 'expires_at': r['expires_at'].isoformat(), 'client_ip': r['client_ip'],
-                 'current': r['id'] == actor['session_id']} for r in rows]
+            return live_sessions(c, actor, actor['id'])
+
+    def list_user_sessions(self, actor, user_id):
+        """`GET /v1/users/{id}/sessions` (CA-42; fix1 of the review of phase 3, gap 10): the global administrator with a session lists the live sessions of a user, with the fields of
+        `GET /v1/auth/sessions` (`current` is true only for the caller's own session, when it names itself); never a token or a hash. A key or anyone else gets 403 (`_global_admin`), an
+        unknown user 404. It reads `web_sessions`, which decides no access: no entry on the closed lists of the guard."""
+        with self.transaction() as c:
+            self._global_admin(c, actor)
+            if not c.execute('SELECT 1 FROM memory.actors WHERE id=%s', (user_id,)).fetchone():
+                raise NotFound()
+            return live_sessions(c, actor, user_id)
 
     def revoke_other_sessions(self, actor):
         """`POST /v1/auth/sessions/revoke-others` (CA-05): close every other session of the user and keep this one. The row of the user is locked first (a login in progress holds `FOR SHARE`

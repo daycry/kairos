@@ -1,4 +1,5 @@
-"""CA-05 (T-15): a user lists its sessions and closes every one but the current; the global administrator closes every session of another user. Each closed session gets 401 on its next request.
+"""CA-05 (T-15): a user lists its sessions and closes every one but the current; the global administrator lists and closes every session of another user (CA-42). Each closed session gets
+401 on its next request.
 
 The list shows creation, expiry, client address and which one is the current (DC-6), never a token or a hash.
 """
@@ -66,6 +67,52 @@ class SessionsTests(UsersFixture):
         self.assertEqual(self.events(self.bea), 1)
         self.assertEqual(root.post('/v1/users/nobody/sessions/revoke', headers={'Origin': ORIGIN, 'X-CSRF-Token': me.json()['csrf_token']}).status_code, 404)
 
+
+    def test_the_list_hides_the_expired_sessions(self):
+        # fix1 of the review of phase 3 (gap 6): a session that expired is dead, as a closed one
+        first, _ = self.session()
+        gone = self.auth.login('bea', pw.PASSWORD, '198.51.100.10')['actor']
+        self.observer.execute("UPDATE memory.web_sessions SET expires_at=clock_timestamp()-interval '1 second' WHERE id=%s", (gone['session_id'],))
+        self.assertEqual([item['current'] for item in first.get('/v1/auth/sessions').json()['items']], [True])
+
+    def test_the_administrator_who_names_itself_closes_its_current_session_too(self):
+        # fix1 of the review of phase 3 (gap 6): `users/{id}/sessions/revoke` closes EVERY session of the user, the caller's own current one when it names itself (T-15 decision)
+        root, headers = self.root()
+        self.auth.login('root-user', 'root-password-123', '198.51.100.11')
+        done = root.post('/v1/users/%s/sessions/revoke' % self.admin['id'], headers=headers)
+        self.assertEqual((done.status_code, done.json()), (200, {'id': self.admin['id'], 'revoked': 2}), done.text)
+        self.assertEqual(root.get('/v1/auth/me').status_code, 401, 'the current session is closed too')
+        self.assertEqual(self.count('SELECT count(*) FROM memory.web_sessions WHERE actor_id=%s AND revoked_at IS NULL', self.admin['id']), 0)
+
+    def test_the_administrator_lists_the_live_sessions_of_another_user_and_no_secret(self):
+        # fix1 of the review of phase 3 (gap 10, CA-42): `GET /v1/users/{id}/sessions`, the same fields as `GET /v1/auth/sessions`
+        first, _ = self.session()
+        other = self.auth.login('bea', pw.PASSWORD, '198.51.100.12')
+        closed = self.auth.login('bea', pw.PASSWORD, '198.51.100.13')
+        self.auth.logout(closed['session_token'])
+        expired = self.auth.login('bea', pw.PASSWORD, '198.51.100.14')['actor']
+        self.observer.execute("UPDATE memory.web_sessions SET expires_at=clock_timestamp()-interval '1 second' WHERE id=%s", (expired['session_id'],))
+        root, _ = self.root()
+        listed = root.get('/v1/users/%s/sessions' % self.bea)
+        self.assertEqual(listed.status_code, 200, listed.text)
+        items = listed.json()['items']
+        self.assertEqual(sorted(item['client_ip'] for item in items), ['198.51.100.12', 'testclient'], 'only the live ones')
+        self.assertTrue(all(set(item) == FIELDS for item in items), items)
+        self.assertEqual([item['current'] for item in items], [False, False], 'none of them is the session of the caller')
+        for secret in [first.cookies.get('memory_session'), other['session_token'], other['csrf_token']] + [r[0] for r in self.observer.execute(
+                'SELECT token_hash FROM memory.web_sessions WHERE actor_id=%s UNION ALL SELECT csrf_hash FROM memory.web_sessions WHERE actor_id=%s', (self.bea, self.bea)).fetchall()]:
+            self.assertNotIn(secret, listed.text)
+        mine = root.get('/v1/users/%s/sessions' % self.admin['id']).json()['items']
+        self.assertEqual([item['current'] for item in mine], [True], 'its own list marks the current one')
+        self.assertEqual(root.get('/v1/users/nobody/sessions').status_code, 404)
+
+    def test_listing_the_sessions_of_another_user_is_only_for_the_global_administrator(self):
+        bea, _ = self.session()  # administrator of p1, not global
+        self.assertEqual(bea.get('/v1/users/%s/sessions' % self.admin['id']).status_code, 403)
+        self.assertEqual(bea.get('/v1/users/%s/sessions' % self.bea).status_code, 403, 'not even its own: that is `GET /v1/auth/sessions`')
+        key = self.store.create_key(self.admin, {'name': 'k', 'project_ids': ['p1'], 'scopes': ['read', 'admin']})['token']
+        self.assertEqual(self.client().get('/v1/users/%s/sessions' % self.bea, headers={'Authorization': 'Bearer ' + key}).status_code, 403, 'a key is not a signed-in session')
+        self.assertEqual(self.client().get('/v1/users/%s/sessions' % self.bea).status_code, 401)
 
     def test_closing_the_sessions_of_another_user_is_only_for_the_global_administrator(self):
         bea, headers = self.session()  # administrator of p1, not global
@@ -159,10 +206,37 @@ class SessionsRaceTests(UsersFixture):
         self.assertIsInstance(closed, Unauthorized, closed)
         self.assertEqual(self.count('SELECT count(*) FROM memory.web_sessions WHERE actor_id=%s AND revoked_at IS NULL', self.bea), 1, 'the session of bea stays')
 
+    def change_while(self, closing, hold_action):
+        """The change of password of a session of bea derives while `closing` closes that session (and holds the row of bea, uncommitted): its last transaction waits for it."""
+        mine = self.auth.login('bea', pw.PASSWORD, '198.51.100.27')['actor']
+        before = self.count('SELECT count(*) FROM memory.audit_events')
+        stored = self.stored_hash('bea')
+        waited, closed, changed = self.run_pair(lambda: closing(mine), lambda: self.store.change_password(mine, pw.PASSWORD, 'brand-new-password-456', '198.51.100.27'), hold_action)
+        self.assertTrue(waited, 'the change did not wait for the row of the user')
+        self.assertIsInstance(closed, dict, closed)
+        self.assertIsInstance(changed, Unauthorized, 'a session closed while the change waited changed the password')
+        self.assertEqual(self.stored_hash('bea'), stored, 'nothing changed')
+        self.assertEqual(self.count("SELECT count(*) FROM memory.audit_events WHERE action='password.changed'"), 0, 'no event')
+        self.assertGreater(self.count('SELECT count(*) FROM memory.audit_events'), before)
+
+    def test_a_change_of_password_from_a_session_closed_by_a_disabling_is_401(self):
+        # fix1 of the review of phase 3 (gap 2): the session is checked again under the lock of the row of the user
+        root = self.auth.login('root-user', 'root-password-123', '198.51.100.28')['actor']
+        self.change_while(lambda mine: self.store.set_user_disabled(root, self.bea, True), 'user.disabled')
+
+    def test_a_change_of_password_from_a_session_closed_by_the_administrator_is_401(self):
+        root = self.auth.login('root-user', 'root-password-123', '198.51.100.29')['actor']
+        self.change_while(lambda mine: self.store.revoke_user_sessions(root, self.bea), 'sessions.revoked')
+
+    def test_a_change_of_password_from_a_session_closed_by_another_session_is_401(self):
+        other = self.auth.login('bea', pw.PASSWORD, '198.51.100.30')['actor']
+        self.change_while(lambda mine: self.store.revoke_other_sessions(other), 'sessions.revoked')
+
     def test_the_store_refuses_a_key_with_403_after_checking_it(self):
         token = self.store.create_key(self.admin, {'name': 'k', 'project_ids': ['p1'], 'scopes': ['read', 'admin']})['token']
         actor = self.auth.authenticate_bearer(token)
-        for call in (lambda: self.store.list_own_sessions(actor), lambda: self.store.revoke_other_sessions(actor), lambda: self.store.revoke_user_sessions(actor, self.bea)):
+        for call in (lambda: self.store.list_own_sessions(actor), lambda: self.store.revoke_other_sessions(actor), lambda: self.store.revoke_user_sessions(actor, self.bea),
+                     lambda: self.store.list_user_sessions(actor, self.bea)):
             with self.assertRaises(Forbidden):
                 call()
 

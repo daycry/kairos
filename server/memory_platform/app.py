@@ -413,6 +413,11 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
         # Global administrator with a session and CSRF; the next request of the user's sessions and keys sees the new grants (the cache lives one transaction).
         return store.replace_grants(actor, user_id, payload.grants)
 
+    @app.get('/v1/users/{user_id}/sessions', operation_id='memory_user_sessions', response_model=m.WebSessions)
+    def user_sessions(user_id: str, actor=Depends(identity)):
+        # Global administrator with a session (CA-42): the live sessions of a user, the fields of `GET /v1/auth/sessions`; a key or anyone else gets 403.
+        return {'items': store.list_user_sessions(actor, user_id)}
+
     @app.post('/v1/users/{user_id}/sessions/revoke', operation_id='memory_revoke_user_sessions', response_model=m.UserSessionsRevoked)
     def revoke_user_sessions(user_id: str, actor=Depends(identity)):
         # Global administrator with a session and CSRF: every session of the user is closed.

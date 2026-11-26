@@ -4888,6 +4888,45 @@
         "summary": "Replace Grants"
       }
     },
+    "/v1/users/{user_id}/sessions": {
+      "get": {
+        "operationId": "memory_user_sessions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebSessions"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "User Sessions"
+      }
+    },
     "/v1/users/{user_id}/sessions/revoke": {
       "post": {
         "operationId": "memory_revoke_user_sessions",
