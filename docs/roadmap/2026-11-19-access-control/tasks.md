@@ -57,7 +57,7 @@ test-plan: test-plan.md
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Medición de scrypt y guarda del resolvedor (CA-09, CA-38 a) | 5 | 5 | 100% | 0 / 19.8h | 4.77 / 6.3h | 0 / 1.6h | 0 / 1570 k |
 | Fase 2 — Esquema 13, scrypt y contraseñas (C-01) | 7 | 7 | 100% | 0 / 36.0h | 3.88 / 3.7h | 0 / 0.9h | 0 / 924 k |
-| Fase 3 — Usuarios, permisos y sesiones (C-01) | 0 | 6 | 0% | 0 / 36.0h | 0 / 3.7h | 0 / 0.9h | 0 / 924 k |
+| Fase 3 — Usuarios, permisos y sesiones (C-01) | 1 | 6 | 17% | 0 / 36.0h | 3.57 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01) | 0 | 7 | 0% | 0 / 48.0h | 0 / 4.9h | 0 / 1.2h | 0 / 1232 k |
 | Fase 5 — Login que no se bloquea entre clientes (C-02) | 0 | 5 | 0% | 0 / 43.2h | 0 / 4.4h | 0 / 1.1h | 0 / 1109 k |
 | Fase 6 — Cierre del hito A: acceso que se puede retirar | 0 | 4 | 0% | 0 / 9.6h | 0 / 3.5h | 0 / 0.9h | 0 / 873 k |
@@ -73,7 +73,7 @@ test-plan: test-plan.md
 | Fase 16 — Identidad: guía probada y extensibilidad (C-05) | 0 | 5 | 0% | 0 / 23.4h | 0 / 2.4h | 0 / 0.6h | 0 / 601 k |
 | Fase 17 — Revisión del hito C y revisión de seguridad (C-07) | 0 | 5 | 0% | 0 / 27.0h | 0 / 5.3h | 0 / 1.3h | 0 / 1320 k |
 | Fase 18 — Cierre del hito C y de la iniciativa: ensayo, versión 0.4.2 y PR | 0 | 4 | 0% | 0 / 11.4h | 0 / 1.2h | 0 / 0.3h | 0 / 293 k |
-| **TOTAL** | **12** | **106** | **11%** | **0 / 616.2h** | **8.65 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
+| **TOTAL** | **13** | **106** | **12%** | **0 / 616.2h** | **12.22 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -440,15 +440,16 @@ test-plan: test-plan.md
 
 ## Fase 3 — Usuarios, permisos y sesiones (C-01)
 
-**Estado**: borrador · **Hito**: A · **Estimado**: 36.0h (30h base, de ellas 15h de revisión adversarial) · **Real**: — · **Coste est.**: 1.800 € · **Tokens est.**: 924 k
+**Estado**: en-progreso · **Hito**: A · **Estimado**: 36.0h (30h base, de ellas 15h de revisión adversarial) · **Real**: — · **Coste est.**: 1.800 € · **Tokens est.**: 924 k
 
 ### T-13 — Deshabilitar y rehabilitar usuario: `PATCH /v1/users/{id}`, `admin disable-user` y `enable-user` (CA-03)
 
 - **Descripción**: Escritor en `store_access.py`, ruta del administrador global y dos subcomandos `admin` sobre el mismo escritor (DC-10). Deshabilitar revoca las sesiones del usuario y deja sin valor sus claves mientras dure; rehabilitar devuelve las claves no revocadas, no las sesiones. Deshabilitarse a uno mismo o al último administrador activo responde 409; el actor de `admin` no choca con «nunca a uno mismo». No se borran usuarios. Fuente: CA-03; S-03; DC-10.
 - **Changelog**: Nuevos `PATCH /v1/users/{id}`, `admin disable-user` y `admin enable-user`: al deshabilitar un usuario, sus sesiones y claves dejan de valer al instante.
-- **Estado**: borrador
+- **Estado**: completado
+- **Cerrada**: 2026-11-26
 - **Tiempo humano**: est. 5.5h · real —
-- **Tiempo IA (ejec.)**: est. 0.56h · real —
+- **Tiempo IA (ejec.)**: est. 0.56h · real 3.57h (medido; incluye montar el arnés de pruebas dirigidas y de mutantes que reutilizan T-14 a T-16)
 - **Supervisión**: est. 0.14h · real —
 - **Previsión IA**: 156 k in / 14 k out tok · ⚠️ verificar €
 - **Dependencias**: T-12
@@ -458,15 +459,20 @@ test-plan: test-plan.md
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_access_users|test_admin|test_auth_cache|MEMORY_TEST_RESULT"` → nombradas en `ok`; 0 fallos y 0 omitidos
 
 **Criterios de aceptación**
-- [ ] Con una sesión y dos claves: tras deshabilitar, las tres reciben 401 en su petición siguiente y el login responde como una contraseña incorrecta; al rehabilitar vuelven las claves no revocadas, no las sesiones
-- [ ] 409 al deshabilitarse a uno mismo o al último administrador activo, también con dos peticiones concurrentes y desde `admin` (código ≠ 0); eventos `user.disabled` y `user.enabled`
-- [ ] Los subcomandos tienen el mismo efecto y auditoría que la ruta, sin SQL propio en `admin.py`
+- [x] Con una sesión y dos claves: tras deshabilitar, las tres reciben 401 en su petición siguiente y el login responde como una contraseña incorrecta; al rehabilitar vuelven las claves no revocadas, no las sesiones
+- [x] 409 al deshabilitarse a uno mismo o al último administrador activo, también con dos peticiones concurrentes y desde `admin` (código ≠ 0); eventos `user.disabled` y `user.enabled`
+- [x] Los subcomandos tienen el mismo efecto y auditoría que la ruta, sin SQL propio en `admin.py`
 
 **Subtareas**
-- [ ] Prueba en rojo
-- [ ] Escritor, ruta y subcomandos
+- [x] Prueba en rojo
+- [x] Escritor, ruta y subcomandos
 
 **Notas**: Cada fix en `admin.py` suma un intento de revisión completo (R-08).
+
+RED: `test_access_users + test_admin.DisableUserCommandTests (18 pruebas, 16 fallos y 5 errores)` falló con AssertionError: 404 != 200 : {"detail":"Not Found"} (la ruta no existía) y AttributeError: 'Store' object has no attribute 'operator_set_disabled' · 2026-11-26.
+
+Commit 12926b5. Escritor `_set_disabled` (`store_access.py`): bloqueo consultivo `access-admins` que serializa toda deshabilitación (recuento exacto de administradores activos), caché vaciada y credencial del llamante comprobada otra vez tras la espera; el `UPDATE actors` va antes del cierre de sesiones, así espera al `FOR SHARE` de un login en curso y su sesión se cierra con las demás. Ruta `PATCH /v1/users/{id}` (`UserUpdate.disabled` opcional y estricto, para que el cuerpo pueda crecer: un `required` no se podría relajar; sin cambios → 422 `invalid_user_update`) y `admin disable-user|enable-user --username` (`operator_set_disabled`, sin actor; error `{disable,enable}_user_failed: <código>`). Guarda T-02: `READ_EXCEPTIONS` + `AccessMixin._set_disabled` (lee `is_admin` del usuario destino y cuenta administradores activos), `NOT_REQUEST_PATHS` + `operator_set_disabled`, `store_calls` + `set_user_disabled`, el recorrido de escritores exige `_set_disabled`, prueba nueva `test_the_access_writers_read_is_admin_only_where_the_closed_list_says`. Mutantes (copia en tmpfs, 18 pruebas por mutante; la copia intacta en verde): sin bloqueo consultivo → rojo; sin recomprobar tras el bloqueo → rojo; sin «uno mismo» → rojo; sin «último administrador» → 3 rojas; sin cerrar sesiones → 3; puerta sin auditoría → 6; recuento con deshabilitados → 3; cerrar sesiones antes del `UPDATE actors` → rojo (`test_a_session_the_login_opens_while_the_disabling_waits…`); ruta sin control de cuerpo vacío → 2 errores. Un `FOR NO KEY UPDATE` previo sobre las filas sobrevivió a su mutante (redundante con el `UPDATE`) y se retiró. Verificación con pruebas dirigidas (`kairos-test:i4p2-fix3`, árbol montado, PostgreSQL efímero, sin red): `test_auth_cache`, `test_store_surface`, `test_contract_additive`, `test_access_password`, `test_admin` → `SEL_RESULT tests=148 failures=0 errors=0 skipped=0`; `test_access_users` y `DisableUserCommandTests` → 18 OK; la suite completa la cierra T-17. `openapi-lint --diff` contra `cc44e76`: 0 rompedores.
+
 
 ### T-14 — Sustituir permisos por proyecto: `PUT /v1/users/{id}/grants` (CA-04)
 
