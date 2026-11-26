@@ -352,6 +352,34 @@ class CreateUserOrderTests(pw.Fixture):
         self.assertEqual((refused.status_code, refused.json()['error']['code']), (409, 'conflict'))
         self.assertEqual(self.users(), 1)
 
+    def test_a_username_taken_between_the_last_check_and_the_insert_is_409_by_the_unique_violation(self):
+        """Fix2 of the review of phase 2 (attempt 2, gap 4): the rival lands AFTER the check of the last transaction and BEFORE its INSERT (at `new_id`, the call between both), so only
+        the `except UniqueViolation` of `create_user` can turn it into a 409: without it the database error of the creation that lost
+        reaches the client as 503 `service_unavailable` (mutant run 2026-11-26)."""
+        from memory_platform import store_auth
+        real = store_auth.new_id
+        landed = []
+        created_before = self.audited('user.created')
+
+        def rival_before_the_insert():
+            if not landed:
+                with self.psycopg.connect(self.dsn) as c:
+                    c.execute("INSERT INTO memory.actors(id,username,password_hash) VALUES('u-rival','newbie','!')")
+                landed.append(True)
+            return real()
+        with patch.object(store_auth, 'new_id', rival_before_the_insert), TestClient(self.app, raise_server_exceptions=False) as client:
+            refused = client.post('/v1/users', json=self.BODY, headers={'Authorization': 'Bearer ' + self.admin_key['token']})
+        self.assertEqual(landed, [True], 'the rival is inserted once, between the check and the insert')
+        self.assertEqual((refused.status_code, refused.json()['error']['code']), (409, 'conflict'))
+        self.assertEqual(self.users(), 1)
+        with self.psycopg.connect(self.dsn) as c:
+            self.assertEqual(c.execute("SELECT id FROM memory.actors WHERE username='newbie'").fetchone()[0], 'u-rival', 'the rival stays and nothing of the creation that lost')
+        self.assertEqual(self.audited('user.created'), created_before, 'the creation that lost audits nothing')
+
+    def audited(self, action):
+        with self.psycopg.connect(self.dsn) as c:
+            return c.execute('SELECT count(*) FROM memory.audit_events WHERE action=%s', (action,)).fetchone()[0]
+
 
 class LoginRaceTests(pw.Fixture):
     """Gap 3: between verifying the password and opening the session another transaction may change it (`admin set-password`, `POST /v1/auth/password`) or disable the user. The session
