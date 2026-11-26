@@ -99,6 +99,21 @@ class UserUpdate(Model):
     """`PATCH /v1/users/{id}`: what changes of the user. Every field is optional so that the body may grow; one with nothing to change is 422 `invalid_user_update`."""
     disabled: Annotated[bool, Field(strict=True)] | None = None
 
+PERMISSION = Literal['read', 'write', 'admin', 'publish', 'validate']
+
+class ProjectGrant(Model):
+    project_id: Annotated[str, Field(pattern='^[a-z0-9][a-z0-9_-]{0,63}$')]
+    permissions: Annotated[list[PERMISSION], Field(min_length=1, max_length=5)]
+
+class GrantsInput(Model):
+    """`PUT /v1/users/{id}/grants`: every permission per project the user keeps; a project left out is taken away, an empty list takes every project away."""
+    grants: Annotated[list[ProjectGrant], Field(max_length=100)]
+
+class UserGrants(Model):
+    id: str
+    username: str
+    grants: list[ProjectGrant]
+
 class UserState(Model):
     id: str
     username: str

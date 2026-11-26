@@ -393,7 +393,7 @@ class WritersEmptyTheCacheTests(unittest.TestCase):
             writers.append(node.name)
             ends = [(c.lineno, c.col_offset) for c in ast.walk(node) if isinstance(c, ast.Call) and called(c) == CHANGED]
             self.assertTrue(ends and min(ends) > max(writes), '%s writes a permission table and does not end in `%s`' % (node.name, CHANGED))
-        self.assertTrue({'change_password', 'set_password', '_set_disabled'} <= set(writers), 'the walk sees the writers of T-09, T-10 and T-13: a scan that finds none would pass for the wrong reason')
+        self.assertTrue({'change_password', 'set_password', '_set_disabled', 'replace_grants'} <= set(writers), 'the walk sees the writers of T-09, T-10, T-13 and T-14: a scan that finds none would pass for the wrong reason')
         self.assertIsNotNone(door, '`_access_changed` is gone from store_access.py')
         inside = {called(c) for c in ast.walk(door) if isinstance(c, ast.Call)}
         self.assertTrue({'_audit', EMPTIES} <= inside, '`_access_changed` must audit and empty the cache, it calls %s' % sorted(inside))
@@ -507,6 +507,7 @@ READ_EXCEPTIONS = {
     ('auth.py', 'Auth.login'): ({'is_admin:row'}, False, 'proves a password: `SELECT *` of the actor row, handed whole to `_actor` -> `_describe` of the resolver, which is the only code that looks at `is_admin` in it'),
     ('store_auth.py', 'AuthMixin.bootstrap_user'): ({'is_admin'}, False, 'first start only: writes `is_admin=true` of the first actor and returns the row it stored; it decides no access (the advisory lock and the `Conflict` when an actor exists limit it to the first run)'),
     ('store_access.py', 'AccessMixin._set_disabled'): ({'is_admin'}, False, 'reads `is_admin` of the TARGET user and counts the active administrators, to keep at least one (409); the caller is decided by `_global_admin` before and again after the locks, not by this read'),
+    ('store_access.py', 'AccessMixin.replace_grants'): ({'project_grants'}, False, 'reads the grants of the TARGET user (the resource it replaces) only to audit the ones before; the caller is decided by `_global_admin`, before and again after the locks'),
     ('probe.py', 'probe_state'): ({'project_grants', 'is_admin'}, False, _PROBE + 'it reads whether the probe project already has grants of another actor and whether the service actor is an administrator, to refuse to adopt them'),
     ('probe.py', 'admin_actor'): ({'is_admin'}, False, _PROBE + 'it finds the administrator the command acts as (named by the operator, or the first one), no request is being decided'),
     ('probe.py', 'provision_locked'): ({'is_admin', 'api_keys', 'project_grants'}, False, _PROBE + 'it refuses a service actor that became administrator, WRITES its own `is_admin=false` when it creates it (`probe.py` INSERT of the service actor), inserts the grants of that actor and reads `RETURNING 1` to know which were new, and looks up its own key by hash to rotate it, under an advisory lock'),
@@ -1271,13 +1272,14 @@ class ResolverBoundaryTests(unittest.TestCase):
         self.assertIn('corpus_answers.py:CorpusAnswers._authorized', outside)
 
     def test_the_access_writers_read_is_admin_only_where_the_closed_list_says(self):
-        # T-13: `_set_disabled` reads `is_admin` of the target and counts the active administrators; without its entry it is outside the resolver, and the entry does not cover a sibling
+        # T-13 and T-14: `_set_disabled` reads `is_admin` of the target and counts the active administrators, `replace_grants` reads the grants it replaces; without its entry each one is
+        # outside the resolver, and an entry does not cover a sibling
         base = package_sources()
-        key = ('store_access.py', 'AccessMixin._set_disabled')
-        with patch.dict(READ_EXCEPTIONS):
-            del READ_EXCEPTIONS[key]
-            outside, _ = reads_outside_the_resolver(base)
-        self.assertEqual(sorted(outside), ['store_access.py:AccessMixin._set_disabled'])
+        for key in (('store_access.py', 'AccessMixin._set_disabled'), ('store_access.py', 'AccessMixin.replace_grants')):
+            with patch.dict(READ_EXCEPTIONS):
+                del READ_EXCEPTIONS[key]
+                outside, _ = reads_outside_the_resolver(base)
+            self.assertEqual(sorted(outside), ['%s:%s' % key], key)
         outside, _ = reads_outside_the_resolver({**base, 'store_access.py': inject(base['store_access.py'], 'AccessMixin.set_user_disabled', "self.c.execute('SELECT 1 FROM memory.project_grants')")})
         self.assertEqual(sorted(outside), ['store_access.py:AccessMixin.set_user_disabled'])
 
@@ -1871,7 +1873,7 @@ def store_calls(store, actor, pid, other, key_id):
         'search_items': lambda: store.search_items(actor, [pid], 'x'), 'search_native_facts': lambda: store.search_native_facts(actor, [pid], 'x'),
         'search_vectors': lambda: store.search_vectors(actor, [pid], [0.1, 0.2], 'm'),
         'set_policy': lambda: store.set_policy(actor, pid, {'capture_mode': 'summary', 'temporal_projection': True}), 'stats': lambda: store.stats(actor, pid),
-        'set_user_disabled': lambda: store.set_user_disabled(actor, 'nobody', True),
+        'set_user_disabled': lambda: store.set_user_disabled(actor, 'nobody', True), 'replace_grants': lambda: store.replace_grants(actor, 'nobody', []),
         'timeline': lambda: store.timeline(actor, {'project_ids': [pid]}),
     }
 

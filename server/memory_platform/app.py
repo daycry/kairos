@@ -399,6 +399,11 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
             raise MemoryError('invalid_user_update', 'Nothing to change', 422)
         return store.set_user_disabled(actor, user_id, payload.disabled)
 
+    @app.put('/v1/users/{user_id}/grants', operation_id='memory_replace_grants', response_model=m.UserGrants)
+    def replace_grants(user_id: str, payload: m.GrantsInput, actor=Depends(identity)):
+        # Global administrator with a session and CSRF; the next request of the user's sessions and keys sees the new grants (the cache lives one transaction).
+        return store.replace_grants(actor, user_id, payload.grants)
+
     @app.post('/v1/events', status_code=202, operation_id='memory_ingest_event')
     def ingest(payload: m.Event, actor=Depends(identity)):
         return store.ingest_event(actor, payload)

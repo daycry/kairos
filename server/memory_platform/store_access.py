@@ -14,6 +14,7 @@ from . import passwords
 from .auth import RECENT_ATTEMPTS, lock_attempts
 from .auth_scope import invalidate_auth
 from .errors import Conflict, Forbidden, MemoryError, NotFound
+from .store_common import as_dict, canonical
 
 # `POST /v1/auth/password`: at most this many CORRECT changes per user in the last 15 minutes (fix1 of the review of phase 2, gap 1). The failures have their own limit (10 per user or per IP,
 # the one of the login). A person changes a password once; five leave room for a typing mistake that was accepted, a password manager and a second device, and bound what a stolen session
@@ -142,3 +143,37 @@ class AccessMixin:
         closed = c.execute('UPDATE memory.web_sessions SET revoked_at=clock_timestamp() WHERE actor_id=%s AND revoked_at IS NULL', (user_id,)).rowcount if disabled else 0
         self._access_changed(c, actor or {'id': None}, 'user.disabled' if disabled else 'user.enabled', resource_id=user_id)
         return {'id': user_id, 'username': target['username'], 'disabled': disabled, 'sessions_revoked': closed}
+
+    def replace_grants(self, actor, user_id, grants):
+        """`PUT /v1/users/{id}/grants` (CA-04): the global administrator replaces the permissions per project of a user, all of them at once. The keys of the user are bounded by them
+        (`_require` intersects a key with the grants of its owner), so the next request of a session or a key on a project taken away answers as a project without access. A project that
+        does not exist, or one named twice, is 422 `invalid_grants` and nothing changes. The event `grants.replaced` carries the grants before and after: `audit_events` has no column for
+        them and version 13 is closed, so they travel as canonical JSON in `resource_id`, as `retention_prune` does (`{"after": ..., "before": ..., "user": <id>}`)."""
+        wanted = {}
+        for grant in grants:
+            grant = as_dict(grant)
+            if grant['project_id'] in wanted:
+                raise MemoryError('invalid_grants', 'A project is named more than once', 422)
+            wanted[grant['project_id']] = sorted(set(grant['permissions']))
+        with self.transaction() as c:
+            self._global_admin(c, actor)  # 401/403 before anything is locked
+            # The rows of the target and of the caller, in the order of their ids: two replacements of one user wait for each other (the second reads the grants the first left), and a
+            # disabling of the caller that commits meanwhile is seen by the check that follows the wait.
+            rows = c.execute('SELECT id,username FROM memory.actors WHERE id=ANY(%s) ORDER BY id FOR NO KEY UPDATE', ([user_id, actor['id']],)).fetchall()
+            invalidate_auth(c)
+            self._global_admin(c, actor)
+            target = next((r for r in rows if r['id'] == user_id), None)
+            if not target:
+                raise NotFound()
+            known = {r['id'] for r in c.execute('SELECT id FROM memory.projects WHERE id=ANY(%s)', (list(wanted),)).fetchall()}
+            if set(wanted) - known:
+                raise MemoryError('invalid_grants', 'Unknown project', 422)
+            before = {}
+            for row in c.execute('SELECT project_id,permission FROM memory.project_grants WHERE actor_id=%s ORDER BY project_id,permission', (user_id,)).fetchall():
+                before.setdefault(row['project_id'], []).append(row['permission'])
+            c.execute('DELETE FROM memory.project_grants WHERE actor_id=%s', (user_id,))
+            for project, permissions in sorted(wanted.items()):
+                for permission in permissions:
+                    c.execute('INSERT INTO memory.project_grants(actor_id,project_id,permission) VALUES(%s,%s,%s)', (user_id, project, permission))
+            self._access_changed(c, actor, 'grants.replaced', resource_id=canonical({'user': user_id, 'before': before, 'after': wanted}))
+        return {'id': user_id, 'username': target['username'], 'grants': [{'project_id': p, 'permissions': wanted[p]} for p in sorted(wanted)]}

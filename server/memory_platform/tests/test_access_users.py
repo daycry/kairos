@@ -3,6 +3,7 @@
 The oracle: with a session and two keys, after the user is disabled the three get 401 on their next request and the login answers as a wrong password; once enabled, the keys that were not
 revoked work again and the sessions do not. Disabling oneself or the last active administrator is 409, also with two requests at once.
 """
+import json
 import threading
 import time
 import unittest
@@ -14,7 +15,8 @@ from memory_platform import passwords
 from memory_platform.app import create_app
 from memory_platform.auth import Auth
 from memory_platform.config import Settings
-from memory_platform.errors import Conflict, MemoryError, Unauthorized
+from memory_platform.errors import Conflict, Forbidden, MemoryError, Unauthorized
+
 from memory_platform.tests import test_passwords as pw
 
 ORIGIN = 'http://127.0.0.1:5173'
@@ -287,5 +289,112 @@ class DisableLoginRaceTests(UsersFixture):
             self.auth.authenticate_session(out['login']['session_token'])
 
 
+class GrantsTests(UsersFixture):
+    """CA-04 (T-14): `PUT /v1/users/{id}/grants` replaces the permissions per project of a user; the next request of its session and of its keys on a project taken away answers as a
+    project without access (404, the current contract of `_require`), and the change is audited with the grants before and after."""
+
+    def setUp(self):
+        super().setUp()
+        self.store.create_project(self.admin, {'id': 'p2', 'title': 'Project 2'})
+        self.observer.execute("INSERT INTO memory.project_grants VALUES(%s,'p2','read'),(%s,'p2','write')", (self.bea, self.bea))
+
+    def put(self, client, headers, user_id, grants):
+        return client.put('/v1/users/%s/grants' % user_id, json={'grants': grants}, headers=headers)
+
+    def grants(self, user_id):
+        return [tuple(r) for r in self.observer.execute('SELECT project_id,permission FROM memory.project_grants WHERE actor_id=%s ORDER BY 1,2', (user_id,)).fetchall()]
+
+    def audit(self):
+        return [json.loads(r[0]) for r in self.observer.execute("SELECT resource_id FROM memory.audit_events WHERE action='grants.replaced' ORDER BY id").fetchall()]
+
+    def test_the_oracle_the_session_and_the_key_lose_the_project_taken_away_on_their_next_request(self):
+        session, _ = self.session()
+        actor = self.auth.login('bea', pw.PASSWORD, '198.51.100.50')['actor']
+        token = self.store.create_key(actor, {'name': 'k', 'project_ids': ['p1'], 'scopes': ['read']})['token']
+        self.observer.execute('UPDATE memory.api_keys SET project_ids=%s::jsonb WHERE actor_id=%s', ('["p1","p2"]', self.bea))  # a key over both projects
+        for path in ('/v1/projects/p1/policy', '/v1/projects/p2/policy'):
+            self.assertEqual(session.get(path).status_code, 200, path)
+            self.assertEqual(self.with_key(token, path), 200, path)
+        root, headers = self.root()
+        done = self.put(root, headers, self.bea, [{'project_id': 'p1', 'permissions': ['read', 'admin']}])
+        self.assertEqual(done.status_code, 200, done.text)
+        self.assertEqual(done.json(), {'id': self.bea, 'username': 'bea', 'grants': [{'project_id': 'p1', 'permissions': ['admin', 'read']}]})
+        self.assertEqual(session.get('/v1/projects/p2/policy').status_code, 404, 'a project without access, as the contract answers today')
+        self.assertEqual(self.with_key(token, '/v1/projects/p2/policy'), 404)
+        self.assertEqual(session.get('/v1/projects/p1/policy').status_code, 200)
+        self.assertEqual(self.with_key(token, '/v1/projects/p1/policy'), 200)
+        self.assertEqual(self.grants(self.bea), [('p1', 'admin'), ('p1', 'read')])
+        self.assertEqual(self.audit(), [{'user': self.bea, 'before': {'p1': ['admin', 'read'], 'p2': ['read', 'write']}, 'after': {'p1': ['admin', 'read']}}])
+
+    def test_a_permission_taken_away_is_refused_on_the_next_request(self):
+        session, headers = self.session()
+        self.assertEqual(session.put('/v1/projects/p1/policy', json={'capture_mode': 'summary', 'temporal_projection': False}, headers=headers).status_code, 200)
+        root, root_headers = self.root()
+        self.assertEqual(self.put(root, root_headers, self.bea, [{'project_id': 'p1', 'permissions': ['read']}, {'project_id': 'p2', 'permissions': ['read']}]).status_code, 200)
+        self.assertEqual(session.put('/v1/projects/p1/policy', json={'capture_mode': 'off', 'temporal_projection': False}, headers=headers).status_code, 403)
+
+    def test_an_empty_list_takes_every_project_away(self):
+        root, headers = self.root()
+        done = self.put(root, headers, self.bea, [])
+        self.assertEqual((done.status_code, done.json()['grants']), (200, []))
+        self.assertEqual(self.grants(self.bea), [])
+
+    def test_an_unknown_project_or_permission_or_a_project_named_twice_is_422_and_nothing_changes(self):
+        root, headers = self.root()
+        before = self.grants(self.bea)
+        for grants in ([{'project_id': 'p1', 'permissions': ['read']}, {'project_id': 'nope', 'permissions': ['read']}],
+                       [{'project_id': 'p1', 'permissions': ['read', 'own']}],
+                       [{'project_id': 'p1', 'permissions': []}],
+                       [{'project_id': 'p1', 'permissions': ['read']}, {'project_id': 'p1', 'permissions': ['write']}],
+                       [{'project_id': 'P1!', 'permissions': ['read']}]):
+            with self.subTest(grants=grants):
+                self.assertEqual(self.put(root, headers, self.bea, grants).status_code, 422)
+        self.assertEqual(self.grants(self.bea), before)
+        self.assertEqual(self.audit(), [])
+
+    def test_only_a_global_administrator_with_a_session_and_csrf_may_do_it(self):
+        bea, bea_headers = self.session()
+        body = [{'project_id': 'p1', 'permissions': ['read']}]
+        self.assertEqual(self.put(bea, bea_headers, self.bea, body).status_code, 403, 'an administrator of p1 is not the global administrator')
+        root_key = self.store.create_key(self.admin, {'name': 'k', 'project_ids': ['p1'], 'scopes': ['read', 'admin']})['token']
+        self.assertEqual(self.client().put('/v1/users/%s/grants' % self.bea, json={'grants': body}, headers={'Authorization': 'Bearer ' + root_key}).status_code, 403)
+        root, root_headers = self.root()
+        self.assertEqual(root.put('/v1/users/%s/grants' % self.bea, json={'grants': body}).status_code, 403, 'no origin, no CSRF')
+        self.assertEqual(self.client().put('/v1/users/%s/grants' % self.bea, json={'grants': body}).status_code, 401)
+        self.assertEqual(self.put(root, root_headers, 'nobody', body).status_code, 404)
+        self.assertEqual(len(self.grants(self.bea)), 4)
+
+    def test_two_replacements_of_one_user_at_once_wait_for_each_other(self):
+        root = self.auth.login('root-user', 'root-password-123', '198.51.100.60')['actor']
+        first = [{'project_id': 'p1', 'permissions': ['read']}]
+        second = [{'project_id': 'p2', 'permissions': ['write']}]
+        waited, one, two = self.run_pair(lambda: self.store.replace_grants(root, self.bea, first), lambda: self.store.replace_grants(root, self.bea, second), 'grants.replaced')
+        self.assertTrue(waited, 'the second replacement did not wait for the first (no lock on the row of the user)')
+        self.assertIsInstance(one, dict, one)
+        self.assertIsInstance(two, dict, two)
+        self.assertEqual(self.grants(self.bea), [('p2', 'write')])
+        self.assertEqual(self.audit()[1]['before'], {'p1': ['read']}, 'the second read the grants the first left')
+
+    def test_a_caller_disabled_while_it_waits_is_401(self):
+        self.make_admin('bea')
+        root = self.auth.login('root-user', 'root-password-123', '198.51.100.61')['actor']
+        bea = self.auth.login('bea', pw.PASSWORD, '198.51.100.62')['actor']
+        waited, disabled, replaced = self.run_pair(lambda: self.store.set_user_disabled(bea, self.admin['id'], True), lambda: self.store.replace_grants(root, self.bea, []), 'user.disabled')
+        self.assertTrue(waited)
+        self.assertIsInstance(disabled, dict, disabled)
+        self.assertIsInstance(replaced, Unauthorized, replaced)
+        self.assertEqual(len(self.grants(self.bea)), 4)
+
+    def test_a_caller_that_is_not_the_global_administrator_is_refused_before_it_waits_for_any_lock(self):
+        root = self.auth.login('root-user', 'root-password-123', '198.51.100.63')['actor']
+        bea = self.auth.login('bea', pw.PASSWORD, '198.51.100.64')['actor']
+        for refused in (lambda: self.store.replace_grants(bea, self.bea, []), lambda: self.store.set_user_disabled(bea, self.admin['id'], True)):
+            waited, replaced, outcome = self.run_pair(lambda: self.store.replace_grants(root, self.bea, [{'project_id': 'p1', 'permissions': ['read']}]), refused, 'grants.replaced')
+            self.assertFalse(waited, 'a credential that may not do it took a lock')
+            self.assertIsInstance(replaced, dict, replaced)
+            self.assertIsInstance(outcome, Forbidden, outcome)
+
+
 if __name__ == '__main__':
+
     unittest.main()

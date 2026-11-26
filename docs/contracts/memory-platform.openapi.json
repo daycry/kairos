@@ -676,6 +676,25 @@
         "title": "Fact",
         "type": "object"
       },
+      "GrantsInput": {
+        "additionalProperties": false,
+        "description": "`PUT /v1/users/{id}/grants`: every permission per project the user keeps; a project left out is taken away, an empty list takes every project away.",
+        "properties": {
+          "grants": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectGrant"
+            },
+            "maxItems": 100,
+            "title": "Grants",
+            "type": "array"
+          }
+        },
+        "required": [
+          "grants"
+        ],
+        "title": "GrantsInput",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1150,6 +1169,38 @@
         "title": "Policy",
         "type": "object"
       },
+      "ProjectGrant": {
+        "additionalProperties": false,
+        "properties": {
+          "permissions": {
+            "items": {
+              "enum": [
+                "read",
+                "write",
+                "admin",
+                "publish",
+                "validate"
+              ],
+              "type": "string"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Permissions",
+            "type": "array"
+          },
+          "project_id": {
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "permissions"
+        ],
+        "title": "ProjectGrant",
+        "type": "object"
+      },
       "ProjectInput": {
         "additionalProperties": false,
         "properties": {
@@ -1501,6 +1552,33 @@
           "project_ids"
         ],
         "title": "Timeline",
+        "type": "object"
+      },
+      "UserGrants": {
+        "additionalProperties": false,
+        "properties": {
+          "grants": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectGrant"
+            },
+            "title": "Grants",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "grants"
+        ],
+        "title": "UserGrants",
         "type": "object"
       },
       "UserInput": {
@@ -4622,6 +4700,55 @@
           }
         },
         "summary": "Update User"
+      }
+    },
+    "/v1/users/{user_id}/grants": {
+      "put": {
+        "operationId": "memory_replace_grants",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrantsInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserGrants"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Replace Grants"
       }
     }
   }

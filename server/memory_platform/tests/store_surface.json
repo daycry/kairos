@@ -303,6 +303,11 @@
       "kind": "function",
       "signature": "(self, job_id, fence, lease_seconds=120)"
     },
+    "replace_grants": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, user_id, grants)"
+    },
     "require_permission": {
       "contextmanager": false,
       "kind": "function",
