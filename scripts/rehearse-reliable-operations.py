@@ -141,6 +141,23 @@ restore_module = load('kairos_rehearse_restore_ops', 'rehearse-restore.py')
 RehearsalError = restore_module.RehearsalError
 
 
+def bootstrap_password(path):
+    """The password of `secrets/bootstrap_password` with the rule of `password_from_file` (server/memory_platform/admin.py), the one `admin bootstrap` created the account with:
+    the text minus ONE final line break (LF or CR LF) and nothing else; a file that is not UTF-8 or that starts with a UTF-8 byte order mark is `password_file_invalid` without a
+    byte of it. The host cannot import memory_platform, so the rule is repeated here; scripts/tests/test_bootstrap_password_file.py runs the same cases against this copy and the server's."""
+    raw = Path(path).read_bytes()
+    if raw.startswith(b'\xef\xbb\xbf'):
+        raise RehearsalError('password_file_invalid: the file starts with a byte order mark; save it as UTF-8 without BOM')
+    try:
+        text = raw.decode('utf-8')
+    except UnicodeDecodeError:
+        raise RehearsalError('password_file_invalid: the file is not UTF-8 text') from None
+    for ending in ('\r\n', '\n'):
+        if text.endswith(ending):
+            return text[:-len(ending)]
+    return text
+
+
 class OperationsRehearsal(restore_module.Rehearsal):
     def __init__(self, args, root=ROOT, run=None, portal=None):
         super().__init__(args, root, run)
@@ -234,7 +251,7 @@ class OperationsRehearsal(restore_module.Rehearsal):
     def queue_jobs(self):
         """Stop the worker, write `--queue-jobs` events through the API (each one queues an embed job), start the worker again: the queue is what it has to drain."""
         self.step('queue')
-        password = restore_module.Path(self.work / 'secrets' / 'bootstrap_password').read_text(encoding='utf-8').strip()
+        password = bootstrap_password(self.work / 'secrets' / 'bootstrap_password')
         portal = self.portal()
         portal.login(password)
         key_id = None

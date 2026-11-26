@@ -48,6 +48,22 @@ def safe(path):
             raise AcceptanceError('Linked path rejected')
     return path
 
+def bootstrap_password(path):
+    """The password of `secrets/bootstrap_password` with the rule of `password_from_file` (server/memory_platform/admin.py), the one `admin bootstrap` created the account with:
+    the text minus ONE final line break (LF or CR LF) and nothing else; a file that is not UTF-8 or that starts with a UTF-8 byte order mark is `password_file_invalid` without a
+    byte of it. The host cannot import memory_platform, so the rule is repeated here; scripts/tests/test_bootstrap_password_file.py runs the same cases against this copy and the server's."""
+    raw = Path(path).read_bytes()
+    if raw.startswith(b'\xef\xbb\xbf'):
+        raise AcceptanceError('password_file_invalid: the file starts with a byte order mark; save it as UTF-8 without BOM')
+    try:
+        text = raw.decode('utf-8')
+    except UnicodeDecodeError:
+        raise AcceptanceError('password_file_invalid: the file is not UTF-8 text') from None
+    for ending in ('\r\n', '\n'):
+        if text.endswith(ending):
+            return text[:-len(ending)]
+    return text
+
 def save(path,value):
     path=safe(path)
     path.parent.mkdir(parents=True,exist_ok=True)
@@ -105,7 +121,7 @@ def administrator(secret_dir):
             body=response.read(1_048_577)
             if len(body)>1_048_576:raise AcceptanceError('Native acceptance response too large')
             return json.loads(body) if body else None
-    password=safe(Path(secret_dir)/'bootstrap_password').read_text(encoding='utf-8').strip()
+    password=bootstrap_password(safe(Path(secret_dir)/'bootstrap_password'))
     login=request('/v1/auth/login',{'username':'admin','password':password});del password
     headers['X-CSRF-Token']=login['csrf_token']
     try:yield request

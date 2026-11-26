@@ -104,7 +104,7 @@ class OperationsTests(unittest.TestCase):
         return rehearsal, docker
 
     def run_steps(self, rehearsal):
-        password = patch.object(Path, 'read_text', return_value='bootstrap-password\n')
+        password = patch.object(Path, 'read_bytes', return_value=b'bootstrap-password\n')  # bootstrap_password() reads bytes, like password_from_file of the server (fix3)
         with password:
             rehearsal.seed_embeddings()
             rehearsal.measure_fingerprints()
@@ -189,7 +189,7 @@ class OperationsTests(unittest.TestCase):
                 raise ops.RehearsalError('the event was refused')
             return {'id': 'key-1', 'token': 'secret-token'} if path == '/v1/keys' and method is None else {}
         portal.request = failing
-        with patch.object(rehearsal, 'portal', return_value=portal), patch.object(Path, 'read_text', return_value='x\n'):
+        with patch.object(rehearsal, 'portal', return_value=portal), patch.object(Path, 'read_bytes', return_value=b'x\n'):
             with self.assertRaises(ops.RehearsalError):
                 rehearsal.queue_jobs()
         self.assertIn(('DELETE', '/v1/keys/key-1', None), requests)

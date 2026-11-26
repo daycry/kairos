@@ -584,6 +584,23 @@ def safe_path(path):
     return path
 
 
+def bootstrap_password(path):
+    """The password of `secrets/bootstrap_password` with the rule of `password_from_file` (server/memory_platform/admin.py), the one `admin bootstrap` created the account with:
+    the text minus ONE final line break (LF or CR LF) and nothing else; a file that is not UTF-8 or that starts with a UTF-8 byte order mark is `password_file_invalid` without a
+    byte of it. The host cannot import memory_platform, so the rule is repeated here; scripts/tests/test_bootstrap_password_file.py runs the same cases against this copy and the server's."""
+    raw = Path(path).read_bytes()
+    if raw.startswith(b'\xef\xbb\xbf'):
+        raise DeploymentError('password_file_invalid: the file starts with a byte order mark; save it as UTF-8 without BOM')
+    try:
+        text = raw.decode('utf-8')
+    except UnicodeDecodeError:
+        raise DeploymentError('password_file_invalid: the file is not UTF-8 text') from None
+    for ending in ('\r\n', '\n'):
+        if text.endswith(ending):
+            return text[:-len(ending)]
+    return text
+
+
 def decode_json(output):
     # Compose diagnostics belong on stderr; require one complete JSON value.
     try:
@@ -1081,7 +1098,7 @@ class Deployment:
 
     def run_roundtrip(self):
         """CLI -> memory-web (`/mcp/`) -> kairos-mcp -> `/v1` -> PostgreSQL, then the worker and the stub: write one observation and find it by search (T-72, CA-31)."""
-        password = safe_path(self.secret_dir / 'bootstrap_password').read_text(encoding='utf-8').strip()
+        password = bootstrap_password(safe_path(self.secret_dir / 'bootstrap_password'))
         origin = f'http://127.0.0.1:{self.web_port}'
         before = self.spy_report()
         result = roundtrip(origin, password, self.private, self.root, warnings=self.report.setdefault('warnings', []))
@@ -1415,7 +1432,7 @@ def verify_runtime(manifest, secret_dir, key_file=None, origin='http://127.0.0.1
     if key_file:
         bearer = safe_path(Path(key_file)).read_text(encoding='utf-8').strip()
     else:
-        portal.login(safe_path(secret_dir / 'bootstrap_password').read_text(encoding='utf-8').strip())
+        portal.login(bootstrap_password(safe_path(secret_dir / 'bootstrap_password')))
         if not manifest['projects']:
             # A key needs at least one project to be granted on, and an installation without projects has nothing to read: the `/mcp/` check is not possible (and is reported as such).
             portal.logout()
