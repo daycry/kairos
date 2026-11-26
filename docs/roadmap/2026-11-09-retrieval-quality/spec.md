@@ -1,9 +1,9 @@
 ---
 spec: retrieval-quality
 descripcion: Calidad de recuperación de Kairos — evaluación medible, refactor de Store, pgvector/HNSW, búsqueda híbrida robusta, FTS por idioma, troceado para embeddings y observabilidad.
-estado: aprobada          # borrador | aprobada | implementada | obsoleta
+estado: implementada      # borrador | aprobada | implementada | obsoleta
 creado: 2026-11-09
-actualizado: 2026-11-09
+actualizado: 2026-11-26
 evaluacion: evaluation.md
 design: n/a
 plan: improvement-plan.md
