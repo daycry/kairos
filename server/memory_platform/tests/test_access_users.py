@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from memory_platform import passwords
+from memory_platform import passwords, store_auth
 from memory_platform.app import create_app
 from memory_platform.auth import Auth
 from memory_platform.config import Settings
@@ -72,12 +72,17 @@ class UsersFixture(pw.Fixture):
     def run_pair(self, first, second, hold_action):
         """`first` runs on a thread and stops, with its transaction open, right after it audits `hold_action`; `second` starts then and its wait for a lock is seen in `pg_stat_activity`;
         `first` is released. No sleep, no clock. Returns (waited, outcome of first, outcome of second)."""
-        entered, release, out = threading.Event(), threading.Event(), {}
-        real = self.store._audit
+        return self.run_held(first, second, self.store, '_audit', lambda c, actor, action, *args, **kwargs: action == hold_action)
 
-        def hold(c, actor, action, *args, **kwargs):
-            result = real(c, actor, action, *args, **kwargs)
-            if action == hold_action and threading.current_thread() is one:
+    def run_held(self, first, second, owner, name, when=lambda *args, **kwargs: True):
+        """`run_pair` with the stop anywhere: `first` stops, with its transaction open, right after its first call of `owner.name` for which `when` is true (`store_auth.new_id` stops
+        `create_user` between its last check and its insert)."""
+        entered, release, out = threading.Event(), threading.Event(), {}
+        real = getattr(owner, name)
+
+        def hold(*args, **kwargs):
+            result = real(*args, **kwargs)
+            if threading.current_thread() is one and not entered.is_set() and when(*args, **kwargs):
                 entered.set()
                 release.wait(60)
             return result
@@ -87,7 +92,7 @@ class UsersFixture(pw.Fixture):
                 out[name] = call()
             except BaseException as exc:  # reported by the assertions
                 out[name] = exc
-        with patch.object(self.store, '_audit', hold):
+        with patch.object(owner, name, hold):
             one = threading.Thread(target=run, args=('first', first))
             one.start()
             try:
@@ -187,6 +192,47 @@ class DisableRouteTests(UsersFixture):
         self.assertTrue(self.disabled('bea'))
         self.assertEqual(self.events('user.disabled', self.bea), 2)
 
+    def test_a_caller_that_is_not_the_global_administrator_gets_403_before_the_422_of_a_body_without_a_change(self):
+        # fix1 of the review of phase 3 (gap 11): authorize first, then say what is wrong with the request
+        bea, headers = self.session()
+        for body in ({}, {'disabled': None}):
+            with self.subTest(body=body):
+                self.assertEqual(self.patch_user(bea, headers, self.admin['id'], body).status_code, 403)
+        root, root_headers = self.root()
+        self.assertEqual(self.patch_user(root, root_headers, self.bea, {}).status_code, 422, 'the global administrator still gets the 422')
+
+
+class ClosingSkipsTheExpiredSessionsTests(UsersFixture):
+    """fix1 of the review of phase 3 (gap 5): disabling, `admin set-password` and the change of password close only the sessions that are still alive, as the two closings of T-15 do: a
+    session that expired is already dead, rewriting it costs a write per row of a table without pruning, and `sessions_revoked` counts what `users/{id}/sessions/revoke` counts."""
+
+    def sessions(self, n):
+        return [self.auth.login('bea', pw.PASSWORD, '198.51.100.%d' % (80 + i))['actor'] for i in range(n)]
+
+    def expire(self, actor):
+        self.observer.execute("UPDATE memory.web_sessions SET expires_at=clock_timestamp()-interval '1 second' WHERE id=%s", (actor['session_id'],))
+
+    def revoked(self, actor):
+        return self.count('SELECT (revoked_at IS NOT NULL)::int FROM memory.web_sessions WHERE id=%s', actor['session_id']) == 1
+
+    def test_disabling_closes_only_the_live_sessions(self):
+        gone, live = self.sessions(2)
+        self.expire(gone)
+        self.assertEqual(self.store.operator_set_disabled('bea', True)['sessions_revoked'], 1)
+        self.assertEqual((self.revoked(gone), self.revoked(live)), (False, True))
+
+    def test_set_password_closes_only_the_live_sessions(self):
+        gone, live = self.sessions(2)
+        self.expire(gone)
+        self.assertEqual(self.store.set_password('bea', 'another-password-456')['sessions_revoked'], 1)
+        self.assertEqual((self.revoked(gone), self.revoked(live)), (False, True))
+
+    def test_the_change_of_password_closes_only_the_other_live_sessions(self):
+        mine, gone, other = self.sessions(3)
+        self.expire(gone)
+        self.assertEqual(self.store.change_password(mine, pw.PASSWORD, 'another-password-456', '198.51.100.89'), {'changed': True})
+        self.assertEqual((self.revoked(mine), self.revoked(gone), self.revoked(other)), (False, False, True))
+
 
 class LastAdministratorTests(UsersFixture):
     def setUp(self):
@@ -230,6 +276,78 @@ class LastAdministratorTests(UsersFixture):
         self.assertIsInstance(first, dict, first)
         self.assertIsInstance(second, Conflict, 'root is the last active administrator once bea is disabled')
         self.assertFalse(self.disabled('root-user'))
+
+
+class CallerLockTests(UsersFixture):
+    """fix1 of the review of phase 3 (gap 4): the disabling locks the row of its caller too (with the target, in the order of their ids, as `replace_grants` does) and checks the credential
+    again after the wait: an administrator whose session is closed meanwhile disables nobody. Two administrators who disable each other at once do not wait in a circle
+    (`LastAdministratorTests.test_two_administrators_who_disable_each_other_at_once_leave_one`)."""
+
+    def test_an_administrator_whose_session_is_closed_while_the_disabling_waits_is_401(self):
+        first = self.auth.login('root-user', 'root-password-123', '198.51.100.71')['actor']
+        other = self.auth.login('root-user', 'root-password-123', '198.51.100.72')['actor']
+        waited, closed, disabled = self.run_pair(lambda: self.store.revoke_other_sessions(other), lambda: self.store.set_user_disabled(first, self.bea, True), 'sessions.revoked')
+        self.assertTrue(waited, 'the disabling did not wait for the row of its caller')
+        self.assertEqual(closed, {'revoked': 1})
+        self.assertIsInstance(disabled, Unauthorized, disabled)
+        self.assertFalse(self.disabled('bea'))
+        self.assertEqual(self.events('user.disabled', self.bea), 0)
+
+
+class CreateUserRaceTests(UsersFixture):
+    """fix1 of the review of phase 3 (gap 1): the insert of `create_user` locks the row of the delegate (`FOR SHARE`) before it authorizes again, as `create_key` does. A disabling or a
+    replacement of grants of the delegate that got there first makes the creation wait and then refuse it; a creation that got there first makes them wait, and they see it.
+
+    What happens to the user created in the second order: it stays, with its grants. Its creation was authorized when it committed, and disabling the delegate or taking its grants away does
+    not undo the users it created (they are people of their own, not credentials of the delegate); the audit shows `user.created` before the `user.disabled` or `grants.replaced` that followed."""
+
+    def setUp(self):
+        super().setUp()
+        self.delegate = self.auth.login('bea', pw.PASSWORD, '198.51.100.70')['actor']  # administrator of p1, not global: it delegates
+        self.root_actor = self.auth.login('root-user', 'root-password-123', '198.51.100.73')['actor']
+        self.since = self.count('SELECT coalesce(max(id), 0) FROM memory.audit_events')  # the events of the fixture (bea's own `user.created`) are not this test's
+
+    def create(self):
+        return self.store.create_user(self.delegate, {'username': 'shadow', 'password': pw.PASSWORD, 'project_ids': ['p1'], 'scopes': ['read', 'admin']})
+
+    def shadow(self):
+        return self.count("SELECT count(*) FROM memory.actors WHERE username='shadow'")
+
+    def order(self, *actions):
+        return [r[0] for r in self.observer.execute('SELECT action FROM memory.audit_events WHERE id>%s AND action=ANY(%s) ORDER BY id', (self.since, list(actions))).fetchall()]
+
+    def test_a_delegate_disabled_before_the_insert_creates_nothing(self):
+        waited, disabled, created = self.run_pair(lambda: self.store.set_user_disabled(self.root_actor, self.bea, True), self.create, 'user.disabled')
+        self.assertTrue(waited, 'the creation did not wait for the row of its delegate')
+        self.assertIsInstance(disabled, dict, disabled)
+        self.assertIsInstance(created, Unauthorized, created)
+        self.assertEqual((self.shadow(), self.order('user.created')), (0, []))
+
+    def test_grants_taken_from_the_delegate_before_the_insert_create_nothing(self):
+        waited, replaced, created = self.run_pair(lambda: self.store.replace_grants(self.root_actor, self.bea, [{'project_id': 'p1', 'permissions': ['read']}]), self.create, 'grants.replaced')
+        self.assertTrue(waited, 'the creation did not wait for the row of its delegate')
+        self.assertIsInstance(replaced, dict, replaced)
+        self.assertIsInstance(created, Forbidden, created)
+        self.assertEqual((self.shadow(), self.order('user.created')), (0, []))
+
+    def test_a_creation_that_got_there_first_is_seen_by_the_disabling_that_follows(self):
+        waited, created, disabled = self.run_held(self.create, lambda: self.store.set_user_disabled(self.root_actor, self.bea, True), store_auth, 'new_id')
+        self.assertTrue(waited, 'the disabling did not wait for the creation in progress')
+        self.assertIsInstance(created, dict, created)
+        self.assertIsInstance(disabled, dict, disabled)
+        self.assertEqual(self.order('user.created', 'user.disabled'), ['user.created', 'user.disabled'])
+        self.assertEqual(self.shadow(), 1, 'the user created stays')
+        self.assertFalse(self.disabled('shadow'))
+        with self.assertRaises(Unauthorized):
+            self.store.list_own_sessions(self.delegate)
+
+    def test_a_creation_that_got_there_first_is_seen_by_the_replacement_that_follows(self):
+        waited, created, replaced = self.run_held(self.create, lambda: self.store.replace_grants(self.root_actor, self.bea, [{'project_id': 'p1', 'permissions': ['read']}]), store_auth, 'new_id')
+        self.assertTrue(waited, 'the replacement did not wait for the creation in progress')
+        self.assertIsInstance(created, dict, created)
+        self.assertIsInstance(replaced, dict, replaced)
+        self.assertEqual(self.order('user.created', 'grants.replaced'), ['user.created', 'grants.replaced'])
+        self.assertEqual(self.count("SELECT count(*) FROM memory.project_grants g JOIN memory.actors a ON a.id=g.actor_id WHERE a.username='shadow'"), 2, 'the user created keeps its grants')
 
 
 class DisableLoginRaceTests(UsersFixture):

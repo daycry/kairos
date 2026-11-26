@@ -214,6 +214,13 @@ class AuthMixin:
             password = hash_password(data['password'])
         try:
             with self.transaction() as c:
+                # The row of the delegate is locked BEFORE it is authorized again (fix1 of the review of phase 3, gap 1; the pattern of `create_key`): a disabling of the delegate or a
+                # replacement of its grants holds that row until it commits, so this waits for it and the check that follows (with the cache emptied) sees it: 401 or 403, nothing created.
+                # If this creation gets there first, they wait for it and come after it; the user created stays (it was authorized when it committed; disabling the delegate or taking its
+                # grants away does not undo the users it created), and the audit shows `user.created` before their event.
+                if actor and actor.get('id'):
+                    c.execute('SELECT 1 FROM memory.actors WHERE id=%s FOR SHARE', (actor['id'],))
+                    invalidate_auth(c)
                 may_create(c)
                 aid = new_id()
                 c.execute('INSERT INTO memory.actors(id,username,password_hash) VALUES(%s,%s,%s)', (aid, data['username'], password))

@@ -405,8 +405,7 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
     @app.patch('/v1/users/{user_id}', operation_id='memory_update_user', response_model=m.UserState)
     def update_user(user_id: str, payload: m.UserUpdate, actor=Depends(identity)):
         # Global administrator with a session and CSRF (`identity` checks the CSRF of a session; the store refuses a key and anyone else with 403). Disabling closes the sessions of the user.
-        if payload.disabled is None:
-            raise MemoryError('invalid_user_update', 'Nothing to change', 422)
+        # A body without a change is 422, decided by the store AFTER it authorizes the caller (403 first).
         return store.set_user_disabled(actor, user_id, payload.disabled)
 
     @app.put('/v1/users/{user_id}/grants', operation_id='memory_replace_grants', response_model=m.UserGrants)

@@ -83,7 +83,7 @@ class AccessMixin:
             password_changes_left(c, actor)
             if not c.execute('UPDATE memory.actors SET password_hash=%s WHERE id=%s AND password_hash=%s', (fresh, actor['id'], stored)).rowcount:
                 raise Conflict('The password changed while this request was running')
-            c.execute('UPDATE memory.web_sessions SET revoked_at=clock_timestamp() WHERE actor_id=%s AND id<>%s AND revoked_at IS NULL', (actor['id'], actor['session_id']))
+            c.execute('UPDATE memory.web_sessions SET revoked_at=clock_timestamp() WHERE actor_id=%s AND id<>%s AND revoked_at IS NULL AND expires_at>clock_timestamp()', (actor['id'], actor['session_id']))
             self._access_changed(c, actor, 'password.changed', resource_id=actor['id'])
         return {'changed': True}
 
@@ -92,7 +92,7 @@ class AccessMixin:
         current one too: whoever knew the old password may be the one holding a session. The API keys of the user stay (they are credentials of their own) unless `revoke_keys`: then
         they are revoked in the same transaction, which is what recovering an account that someone else had access to needs (a key that person made would otherwise keep working).
         The audit event is `password.reset`, with no actor (the operator is not an actor of the service) and the user as the resource, plus `keys.revoked` when keys were revoked.
-        Returns what the command may print: the user and how many sessions and keys it closed, never the password or its hash.
+        Returns what the command may print: the user and how many sessions and keys it closed (the live ones: an expired session is already dead and is not rewritten), never the password or its hash.
         One derivation at the target cost, outside the transaction; `passwords.GATE` is the API's and is not used here."""
         fresh = passwords.hash_password(new)
         with self.transaction() as c:
@@ -100,7 +100,7 @@ class AccessMixin:
             if not row:
                 raise NotFound()
             c.execute('UPDATE memory.actors SET password_hash=%s WHERE id=%s', (fresh, row['id']))
-            closed = c.execute('UPDATE memory.web_sessions SET revoked_at=clock_timestamp() WHERE actor_id=%s AND revoked_at IS NULL', (row['id'],)).rowcount
+            closed = c.execute('UPDATE memory.web_sessions SET revoked_at=clock_timestamp() WHERE actor_id=%s AND revoked_at IS NULL AND expires_at>clock_timestamp()', (row['id'],)).rowcount
             keys = c.execute('UPDATE memory.api_keys SET revoked_at=clock_timestamp() WHERE actor_id=%s AND revoked_at IS NULL', (row['id'],)).rowcount if revoke_keys else 0
             if keys:
                 self._audit(c, {'id': None}, 'keys.revoked', resource_id=row['id'])
@@ -109,9 +109,12 @@ class AccessMixin:
 
     def set_user_disabled(self, actor, user_id, disabled):
         """`PATCH /v1/users/{id}` (CA-03): the global administrator disables or enables a user. Disabling closes every session of the user and leaves the keys without value while it lasts
-        (`actors.disabled` is checked by every credential); enabling brings back the keys that were not revoked, not the sessions. Never oneself, never the last active administrator (409)."""
+        (`actors.disabled` is checked by every credential); enabling brings back the keys that were not revoked, not the sessions. Never oneself, never the last active administrator (409).
+        `disabled` None (a body without a change) is 422 `invalid_user_update`, decided AFTER the caller is authorized: someone who may not do it gets 403 whatever it sends."""
         with self.transaction() as c:
             self._global_admin(c, actor)  # 401/403 before anything is locked
+            if disabled is None:
+                raise MemoryError('invalid_user_update', 'Nothing to change', 422)
             return self._set_disabled(c, actor, user_id, disabled)
 
     def operator_set_disabled(self, username, disabled):
@@ -125,10 +128,15 @@ class AccessMixin:
 
     def _set_disabled(self, c, actor, user_id, disabled):
         """The writer of `disabled`. Order: the advisory lock of every disabling (the count of active administrators is exact under it: nothing else writes `disabled` or `is_admin` at run
-        time), then the cache emptied and the credential of the caller checked AGAIN (it may have been disabled while this waited), then the checks and the writes. The `UPDATE` of the row of
-        the user comes BEFORE the closing of its sessions: a login of the user in progress holds `FOR SHARE` on that row, so the `UPDATE` waits for it and the closing that follows (a new
-        statement) sees the session it opened; a login that comes after sees `disabled` under its own lock and opens none."""
+        time), then the rows of the target and of the caller under `FOR NO KEY UPDATE` in the order of their ids (fix1 of the review of phase 3, gap 4; the pattern of `replace_grants`), then the
+        cache emptied and the credential of the caller checked AGAIN (it may have been disabled, or its session closed, while this waited), then the checks and the writes. The row of the
+        user is locked BEFORE the closing of its sessions: a login of the user in progress holds `FOR SHARE` on that row, so the lock waits for it and the closing that follows (a new
+        statement) sees the session it opened; a login that comes after sees `disabled` under its own lock and opens none. Only the live sessions are closed (gap 5): an expired one is
+        already dead, and `sessions_revoked` counts what `users/{id}/sessions/revoke` counts.
+        No wait in a circle: the advisory lock comes first in every disabling and nothing else takes it, and every writer of this module that locks two rows of `actors` takes them in the
+        order of their ids."""
         c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', (ADMINS_LOCK,))
+        c.execute('SELECT id FROM memory.actors WHERE id=ANY(%s) ORDER BY id FOR NO KEY UPDATE', ([user_id] + ([actor['id']] if actor else []),))
         invalidate_auth(c)
         if actor:
             self._global_admin(c, actor)
@@ -140,7 +148,7 @@ class AccessMixin:
         if disabled and target['is_admin'] and not target['disabled'] and c.execute('SELECT count(*) AS n FROM memory.actors WHERE is_admin AND NOT disabled').fetchone()['n'] <= 1:
             raise Conflict('The last active administrator cannot be disabled')
         c.execute('UPDATE memory.actors SET disabled=%s WHERE id=%s', (disabled, user_id))
-        closed = c.execute('UPDATE memory.web_sessions SET revoked_at=clock_timestamp() WHERE actor_id=%s AND revoked_at IS NULL', (user_id,)).rowcount if disabled else 0
+        closed = c.execute('UPDATE memory.web_sessions SET revoked_at=clock_timestamp() WHERE actor_id=%s AND revoked_at IS NULL AND expires_at>clock_timestamp()', (user_id,)).rowcount if disabled else 0
         self._access_changed(c, actor or {'id': None}, 'user.disabled' if disabled else 'user.enabled', resource_id=user_id)
         return {'id': user_id, 'username': target['username'], 'disabled': disabled, 'sessions_revoked': closed}
 
