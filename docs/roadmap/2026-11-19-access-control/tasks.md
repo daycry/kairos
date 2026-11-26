@@ -57,7 +57,7 @@ test-plan: test-plan.md
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Medición de scrypt y guarda del resolvedor (CA-09, CA-38 a) | 5 | 5 | 100% | 0 / 19.8h | 4.77 / 6.3h | 0 / 1.6h | 0 / 1570 k |
 | Fase 2 — Esquema 13, scrypt y contraseñas (C-01) | 7 | 7 | 100% | 0 / 36.0h | 3.88 / 3.7h | 0 / 0.9h | 0 / 924 k |
-| Fase 3 — Usuarios, permisos y sesiones (C-01) | 2 | 6 | 33% | 0 / 36.0h | 4.53 / 3.7h | 0 / 0.9h | 0 / 924 k |
+| Fase 3 — Usuarios, permisos y sesiones (C-01) | 3 | 6 | 50% | 0 / 36.0h | 4.84 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01) | 0 | 7 | 0% | 0 / 48.0h | 0 / 4.9h | 0 / 1.2h | 0 / 1232 k |
 | Fase 5 — Login que no se bloquea entre clientes (C-02) | 0 | 5 | 0% | 0 / 43.2h | 0 / 4.4h | 0 / 1.1h | 0 / 1109 k |
 | Fase 6 — Cierre del hito A: acceso que se puede retirar | 0 | 4 | 0% | 0 / 9.6h | 0 / 3.5h | 0 / 0.9h | 0 / 873 k |
@@ -73,7 +73,7 @@ test-plan: test-plan.md
 | Fase 16 — Identidad: guía probada y extensibilidad (C-05) | 0 | 5 | 0% | 0 / 23.4h | 0 / 2.4h | 0 / 0.6h | 0 / 601 k |
 | Fase 17 — Revisión del hito C y revisión de seguridad (C-07) | 0 | 5 | 0% | 0 / 27.0h | 0 / 5.3h | 0 / 1.3h | 0 / 1320 k |
 | Fase 18 — Cierre del hito C y de la iniciativa: ensayo, versión 0.4.2 y PR | 0 | 4 | 0% | 0 / 11.4h | 0 / 1.2h | 0 / 0.3h | 0 / 293 k |
-| **TOTAL** | **14** | **106** | **13%** | **0 / 616.2h** | **13.18 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
+| **TOTAL** | **15** | **106** | **14%** | **0 / 616.2h** | **13.49 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -509,26 +509,33 @@ Commit 87ee0f6. `replace_grants` (`store_access.py`): `_global_admin` antes de b
 
 - **Descripción**: La sesión guarda `client_ip` y `created_at`. Rutas para listar las sesiones propias (creación, caducidad, IP y cuál es la actual), cerrarlas todas menos la actual y, para el administrador global, cerrar todas las de un usuario. Fuente: CA-05; DC-6.
 - **Changelog**: Cada usuario ve y cierra sus sesiones; un administrador cierra todas las de otro usuario.
-- **Estado**: borrador
+- **Estado**: completado
+- **Cerrada**: 2026-11-26
 - **Tiempo humano**: est. 4h · real —
-- **Tiempo IA (ejec.)**: est. 0.41h · real —
+- **Tiempo IA (ejec.)**: est. 0.41h · real 0.31h (medido)
 - **Supervisión**: est. 0.10h · real —
 - **Previsión IA**: 113 k in / 10 k out tok · ⚠️ verificar €
 - **Dependencias**: T-14
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/store_access.py`, `server/memory_platform/auth.py`, `server/memory_platform/app.py`, `server/memory_platform/models.py`, `server/memory_platform/tests/test_access_sessions.py`, `server/memory_platform/tests/test_auth_cache.py`, `docs/contracts/memory-platform.openapi.json`
+- **Archivos**: `server/memory_platform/store_access.py`, `server/memory_platform/auth.py`, `server/memory_platform/app.py`, `server/memory_platform/models.py`, `server/memory_platform/tests/test_access_sessions.py`, `server/memory_platform/tests/test_auth_cache.py`, `docs/contracts/memory-platform.openapi.json`, `server/memory_platform/tests/store_surface.json` (añadido con nota: tres métodos nuevos en la superficie de `Store`)
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_access_sessions|test_auth_cache|MEMORY_TEST_RESULT"` → nombradas en `ok`; 0 fallos y 0 omitidos
 
 **Criterios de aceptación**
-- [ ] Cada sesión cerrada recibe 401 en su petición siguiente; la actual sigue valiendo
-- [ ] La lista no expone hashes ni tokens de sesión
-- [ ] Cerrar sesiones ajenas sin ser administrador global → 403; evento `sessions.revoked`
+- [x] Cada sesión cerrada recibe 401 en su petición siguiente; la actual sigue valiendo
+- [x] La lista no expone hashes ni tokens de sesión
+- [x] Cerrar sesiones ajenas sin ser administrador global → 403; evento `sessions.revoked`
 
 **Subtareas**
-- [ ] Prueba en rojo
-- [ ] Guardar `client_ip` al abrir sesión
-- [ ] Rutas y modelos
+- [x] Prueba en rojo
+- [x] Guardar `client_ip` al abrir sesión
+- [x] Rutas y modelos
+
+
+RED: `test_access_sessions (9 pruebas, contra el código de 407dac0)` falló con AssertionError: 404 != 200 : {"detail":"Not Found"} (rutas inexistentes), AttributeError: 'Store' object has no attribute 'list_own_sessions' y 0 != 1 (el login no guardaba client_ip) · 2026-11-26.
+
+Commit 172da5f. El login guarda `client_ip` (la IP del par, como hoy; la IP real llega con T-27). `GET /v1/auth/sessions` (sesiones vivas: `id`, `created_at`, `expires_at`, `client_ip`, `current`; sin tokens ni hashes), `POST /v1/auth/sessions/revoke-others` y `POST /v1/users/{id}/sessions/revoke` (administrador global). Decisión por defecto: las tres rutas son solo de sesión (una clave recibe 403: es credencial de máquina, no de la persona); cerrar las de uno mismo con la ruta de administrador cierra también la actual. Los dos escritores bloquean la fila del usuario (y la del llamante) con `FOR NO KEY UPDATE`, vacían la caché y vuelven a comprobar la credencial: una sesión que un login en curso abre mientras esperan se cierra con las demás, y una credencial cerrada mientras esperan da 401. Evento `sessions.revoked` con el usuario como recurso. Guarda T-02: `store_calls` + `list_own_sessions`, `revoke_other_sessions`, `revoke_user_sessions`; el recorrido de escritores exige los dos escritores; sin excepciones nuevas (leer `web_sessions` no decide un acceso). RED real contra el código de 407dac0 (la primera ejecución ya cargó la implementación y no vale como rojo). Mutantes (10 pruebas; copia intacta en verde): sin bloqueo de fila (propias) → 2 rojas; sin recomprobar (propias) → rojo; cerrar también la actual → 2; clave puede listar → rojo; clave puede cerrar → 2 errores; sin bloqueo de fila (ajenas) → 2; sin recomprobar (ajenas) → rojo; lista con revocadas → 3; login sin `client_ip` → 2; sin auditoría → rojo. Verificación dirigida (`kairos-test:i4p2-fix3`): `test_access_sessions`, `test_auth_cache` (con la guarda), `test_store_surface`, `test_contract_additive` → `SEL_RESULT tests=88 failures=0 errors=0 skipped=0`; `test_auth`, `test_access_password`, `test_access_users`, `test_auth_race` → 74 OK. `openapi-lint --diff` contra `cc44e76`: 0 rompedores; `kairos-mcp.json` sin cambios al exportar con Python 3.13 local.
+
 
 ### T-16 — Contrato y tabla de rutas de las acciones de acceso
 
