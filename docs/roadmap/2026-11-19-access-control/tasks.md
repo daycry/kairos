@@ -57,7 +57,7 @@ test-plan: test-plan.md
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Medición de scrypt y guarda del resolvedor (CA-09, CA-38 a) | 5 | 5 | 100% | 0 / 19.8h | 4.77 / 6.3h | 0 / 1.6h | 0 / 1570 k |
 | Fase 2 — Esquema 13, scrypt y contraseñas (C-01) | 7 | 7 | 100% | 0 / 36.0h | 3.88 / 3.7h | 0 / 0.9h | 0 / 924 k |
-| Fase 3 — Usuarios, permisos y sesiones (C-01) | 4 | 6 | 67% | 0 / 36.0h | 5.01 / 3.7h | 0 / 0.9h | 0 / 924 k |
+| Fase 3 — Usuarios, permisos y sesiones (C-01) | 5 | 6 | 83% | 0 / 36.0h | 5.14 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01) | 0 | 7 | 0% | 0 / 48.0h | 0 / 4.9h | 0 / 1.2h | 0 / 1232 k |
 | Fase 5 — Login que no se bloquea entre clientes (C-02) | 0 | 5 | 0% | 0 / 43.2h | 0 / 4.4h | 0 / 1.1h | 0 / 1109 k |
 | Fase 6 — Cierre del hito A: acceso que se puede retirar | 0 | 4 | 0% | 0 / 9.6h | 0 / 3.5h | 0 / 0.9h | 0 / 873 k |
@@ -73,7 +73,7 @@ test-plan: test-plan.md
 | Fase 16 — Identidad: guía probada y extensibilidad (C-05) | 0 | 5 | 0% | 0 / 23.4h | 0 / 2.4h | 0 / 0.6h | 0 / 601 k |
 | Fase 17 — Revisión del hito C y revisión de seguridad (C-07) | 0 | 5 | 0% | 0 / 27.0h | 0 / 5.3h | 0 / 1.3h | 0 / 1320 k |
 | Fase 18 — Cierre del hito C y de la iniciativa: ensayo, versión 0.4.2 y PR | 0 | 4 | 0% | 0 / 11.4h | 0 / 1.2h | 0 / 0.3h | 0 / 293 k |
-| **TOTAL** | **16** | **106** | **15%** | **0 / 616.2h** | **13.66 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
+| **TOTAL** | **17** | **106** | **16%** | **0 / 616.2h** | **13.79 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -434,7 +434,7 @@ test-plan: test-plan.md
 **Subtareas**
 - [x] Lentes A y B; corregir y repetir hasta cero abiertos
 
-**Notas**: tres intentos con lentes A, B, C y D (Opus 5.5 en el intento 3; tabla en `review.md`; detalle de los intentos 1 y 2 en `execution-history.md`, el 3 en este ledger). Intento 1: 5 Important → fix1; intento 2: 2 Important → fix2; intento 3: sin Critical ni Important, 6 Minor (3 de ledger corregidos por el orquestador, 1 aceptado como límite en DC-5, 2 corregidos en fix3). Desviación declarada del criterio «cada fix con su revisión completa»: el fix3 (BOM y lectores del fichero de secreto en los scripts) se verificó con una comprobación dirigida del orquestador por decisión del usuario «Fix3 pequeño y cerrar» (2026-11-26): `kairos-test:i4p2-fix3` sin red, `password_from_file` da `password_file_invalid` con BOM inicial y con bytes no UTF-8 (sin bytes del secreto), conserva espacios, quita un solo salto final (LF o CRLF) y deja un `U+FEFF` interior; `test_admin` 35 OK (27 omitidas sin PostgreSQL, cubiertas por la suite completa 1687, 0 fallos); `scripts/tests/test_bootstrap_password_file.py` 4 OK en el host. Las notas de DC-5 sobre el reintento del login y el coste del recuento las escribió el orquestador («Hazlo tú», 2026-11-26).
+**Notas**: tres intentos con lentes A, B, C y D (Opus 5.5 en el intento 3; tabla en `review.md`; detalle de los intentos 1 y 2 en `execution-history.md`, el 3 en este ledger). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `7c9b53763a88`.
 
 ---
 
@@ -467,12 +467,7 @@ test-plan: test-plan.md
 - [x] Prueba en rojo
 - [x] Escritor, ruta y subcomandos
 
-**Notas**: Cada fix en `admin.py` suma un intento de revisión completo (R-08).
-
-RED: `test_access_users + test_admin.DisableUserCommandTests (18 pruebas, 16 fallos y 5 errores)` falló con AssertionError: 404 != 200 : {"detail":"Not Found"} (la ruta no existía) y AttributeError: 'Store' object has no attribute 'operator_set_disabled' · 2026-11-26.
-
-Commit 12926b5. Escritor `_set_disabled` (`store_access.py`): bloqueo consultivo `access-admins` que serializa toda deshabilitación (recuento exacto de administradores activos), caché vaciada y credencial del llamante comprobada otra vez tras la espera; el `UPDATE actors` va antes del cierre de sesiones, así espera al `FOR SHARE` de un login en curso y su sesión se cierra con las demás. Ruta `PATCH /v1/users/{id}` (`UserUpdate.disabled` opcional y estricto, para que el cuerpo pueda crecer: un `required` no se podría relajar; sin cambios → 422 `invalid_user_update`) y `admin disable-user|enable-user --username` (`operator_set_disabled`, sin actor; error `{disable,enable}_user_failed: <código>`). Guarda T-02: `READ_EXCEPTIONS` + `AccessMixin._set_disabled` (lee `is_admin` del usuario destino y cuenta administradores activos), `NOT_REQUEST_PATHS` + `operator_set_disabled`, `store_calls` + `set_user_disabled`, el recorrido de escritores exige `_set_disabled`, prueba nueva `test_the_access_writers_read_is_admin_only_where_the_closed_list_says`. Mutantes (copia en tmpfs, 18 pruebas por mutante; la copia intacta en verde): sin bloqueo consultivo → rojo; sin recomprobar tras el bloqueo → rojo; sin «uno mismo» → rojo; sin «último administrador» → 3 rojas; sin cerrar sesiones → 3; puerta sin auditoría → 6; recuento con deshabilitados → 3; cerrar sesiones antes del `UPDATE actors` → rojo (`test_a_session_the_login_opens_while_the_disabling_waits…`); ruta sin control de cuerpo vacío → 2 errores. Un `FOR NO KEY UPDATE` previo sobre las filas sobrevivió a su mutante (redundante con el `UPDATE`) y se retiró. Verificación con pruebas dirigidas (`kairos-test:i4p2-fix3`, árbol montado, PostgreSQL efímero, sin red): `test_auth_cache`, `test_store_surface`, `test_contract_additive`, `test_access_password`, `test_admin` → `SEL_RESULT tests=148 failures=0 errors=0 skipped=0`; `test_access_users` y `DisableUserCommandTests` → 18 OK; la suite completa la cierra T-17. `openapi-lint --diff` contra `cc44e76`: 0 rompedores.
-
+**Notas**: Cada fix en `admin.py` suma un intento de revisión completo (R-08). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `81b71548536a`.
 
 ### T-14 — Sustituir permisos por proyecto: `PUT /v1/users/{id}/grants` (CA-04)
 
@@ -499,11 +494,7 @@ Commit 12926b5. Escritor `_set_disabled` (`store_access.py`): bloqueo consultivo
 - [x] Prueba en rojo
 - [x] Escritor y ruta
 
-
-RED: `test_access_users.GrantsTests (7 pruebas)` falló con AssertionError: 404 != 200 : {"detail":"Not Found"} (la ruta PUT /v1/users/{id}/grants no existía) y 404 != 422 en los cinco cuerpos inválidos · 2026-11-26.
-
-Commit 87ee0f6. `replace_grants` (`store_access.py`): `_global_admin` antes de bloquear nada, filas del destino y del llamante `FOR NO KEY UPDATE` en orden de id, caché vaciada y llamante comprobado otra vez; proyecto inexistente o repetido → 422 `invalid_grants` (permiso inválido o lista vacía de permisos → 422 de validación); `DELETE` + `INSERT` y `_access_changed`. Proyecto retirado → 404 (contrato actual de `_require`), con sesión y con clave. **DECISIÓN ABIERTA**: `audit_events` no tiene columna de detalle y la versión 13 está cerrada; el evento `grants.replaced` lleva `{"after":…,"before":…,"user":<id>}` en JSON canónico en `resource_id`, como ya hace `retention_prune`. Cuerpo `{"grants":[{"project_id","permissions"}]}`; respuesta `UserGrants`. Guarda T-02: `READ_EXCEPTIONS` + `AccessMixin.replace_grants` (lee los permisos del destino solo para auditar los anteriores), `store_calls` + `replace_grants`, recorrido de escritores y prueba de excepciones ampliados. Mutantes (8 pruebas; copia intacta en verde): sin bloqueo de filas → 2 rojas; sin recomprobar → rojo; sin control de proyecto inexistente → error (FK); sin control de repetido → 2; sin `DELETE` → 3; auditoría sin `before` → 2; sin `_global_admin` previo → rojo (`test_a_caller_that_is_not_the_global_administrator_is_refused_before_it_waits_for_any_lock`, añadida tras sobrevivir ese mutante). Verificación dirigida (`kairos-test:i4p2-fix3`): `test_access_users` + `ResolverBoundaryTests`, `WritersEmptyTheCacheTests`, `EveryTransactionTests`, `RevocationTableTests` → `SEL_RESULT tests=58 failures=0 errors=0 skipped=0`; `test_store_surface`, `test_contract_additive`, `RouteTableTests`, `RevocationTableTests` → 23 OK. `openapi-lint --diff` contra `cc44e76`: 0 rompedores.
-
+**Notas**: RED: `test_access_users.GrantsTests (7 pruebas)` falló con AssertionError: 404 != 200 : {"detail":"Not Found"} (la ruta PUT /v1/users/{id}/grants no existía) y 404 != 422 en los cinco cuerpos inválidos · 2026-11-26. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `d126ae3b7b93`.
 
 ### T-15 — Sesiones: listar y cerrar las propias, cerrar las de otro usuario (CA-05)
 
@@ -531,11 +522,7 @@ Commit 87ee0f6. `replace_grants` (`store_access.py`): `_global_admin` antes de b
 - [x] Guardar `client_ip` al abrir sesión
 - [x] Rutas y modelos
 
-
-RED: `test_access_sessions (9 pruebas, contra el código de 407dac0)` falló con AssertionError: 404 != 200 : {"detail":"Not Found"} (rutas inexistentes), AttributeError: 'Store' object has no attribute 'list_own_sessions' y 0 != 1 (el login no guardaba client_ip) · 2026-11-26.
-
-Commit 172da5f. El login guarda `client_ip` (la IP del par, como hoy; la IP real llega con T-27). `GET /v1/auth/sessions` (sesiones vivas: `id`, `created_at`, `expires_at`, `client_ip`, `current`; sin tokens ni hashes), `POST /v1/auth/sessions/revoke-others` y `POST /v1/users/{id}/sessions/revoke` (administrador global). Decisión por defecto: las tres rutas son solo de sesión (una clave recibe 403: es credencial de máquina, no de la persona); cerrar las de uno mismo con la ruta de administrador cierra también la actual. Los dos escritores bloquean la fila del usuario (y la del llamante) con `FOR NO KEY UPDATE`, vacían la caché y vuelven a comprobar la credencial: una sesión que un login en curso abre mientras esperan se cierra con las demás, y una credencial cerrada mientras esperan da 401. Evento `sessions.revoked` con el usuario como recurso. Guarda T-02: `store_calls` + `list_own_sessions`, `revoke_other_sessions`, `revoke_user_sessions`; el recorrido de escritores exige los dos escritores; sin excepciones nuevas (leer `web_sessions` no decide un acceso). RED real contra el código de 407dac0 (la primera ejecución ya cargó la implementación y no vale como rojo). Mutantes (10 pruebas; copia intacta en verde): sin bloqueo de fila (propias) → 2 rojas; sin recomprobar (propias) → rojo; cerrar también la actual → 2; clave puede listar → rojo; clave puede cerrar → 2 errores; sin bloqueo de fila (ajenas) → 2; sin recomprobar (ajenas) → rojo; lista con revocadas → 3; login sin `client_ip` → 2; sin auditoría → rojo. Verificación dirigida (`kairos-test:i4p2-fix3`): `test_access_sessions`, `test_auth_cache` (con la guarda), `test_store_surface`, `test_contract_additive` → `SEL_RESULT tests=88 failures=0 errors=0 skipped=0`; `test_auth`, `test_access_password`, `test_access_users`, `test_auth_race` → 74 OK. `openapi-lint --diff` contra `cc44e76`: 0 rompedores; `kairos-mcp.json` sin cambios al exportar con Python 3.13 local.
-
+**Notas**: RED: `test_access_sessions (9 pruebas, contra el código de 407dac0)` falló con AssertionError: 404 != 200 : {"detail":"Not Found"} (rutas inexistentes), AttributeError: 'Store' object has no attribute 'list_own_sessions' y 0 != 1 (el login no guardaba client_ip) · 2026-11-26. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `16218c9a150b`.
 
 ### T-16 — Contrato y tabla de rutas de las acciones de acceso
 
@@ -565,23 +552,21 @@ Commit 172da5f. El login guarda `client_ip` (la IP del par, como hoy; la IP real
 - [x] Exportar contratos
 - [x] Ampliar la tabla de rutas
 
-RED: `test_auth_cache.AccessRoutesTableTests + test_contract_additive.test_t16_… (contra el código de cc44e76)` falló con AttributeError: 'Store' object has no attribute 'operator_set_disabled' y rutas ausentes del OpenAPI · 2026-11-26.
-
-Commits f6c635a y 65a1919. `AccessRoutesTableTests` (`test_auth_cache.py`): `ACCESS_ROUTES` con las seis rutas nuevas; una prueba exige que toda ruta de `/v1/auth` y `/v1/users` que no sea de las cinco anteriores esté en la tabla; cada ruta responde 401 a una clave revocada, caducada o de usuario deshabilitado y a una sesión cerrada, caducada o de usuario deshabilitado (36 casos; antes de matarla, la credencial viva no recibe 401), y cada ruta que cambia estado con sesión responde 403 sin origen, sin token, con token erróneo o con origen ajeno, sin tocar nada. `test_t16_…` (`test_contract_additive.py`): rutas y modelos publicados, `UserUpdate` sin `required`, `WebSession` sin campos de secreto, ninguna herramienta MCP apunta a ellas y `operationId` únicos. Hallazgo: `GET /v1/auth/sessions` repetía el `operationId` `memory_sessions` de `GET /v1/sessions` (lo vio `openapi-lint`); pasa a `memory_own_sessions` (ruta nueva de esta fase, sin cliente). Mutantes (4 pruebas; copia intacta en verde): clave caducada aceptada → 6 rojas; sesión de usuario deshabilitado aceptada → 6; clave de usuario deshabilitado aceptada → 6; `PATCH` sin CSRF → rojo; ruta fuera de la tabla → rojo; cuerpo de `PATCH` obligatorio → rojo; `WebSession` con `token_hash` → rojo; `operationId` repetido → rojo. Verificación: `PYTHONPATH=server python -m unittest memory_platform.tests.test_contract_additive` (Python 3.13 local, venv de pruebas) → `Ran 18 tests … OK`; `python scripts/export-contracts.py && git diff --ignore-cr-at-eol --exit-code -- docs/contracts/kairos-mcp.json mcp/contract/kairos-mcp.json` → exit 0 (en el contenedor, Python 3.11 cambia la sangría de las descripciones: por eso el contrato MCP se exporta en local); `openapi-lint --diff` contra `cc44e76`: 0 rompedores, 5 rutas nuevas (más `/v1/auth/password` de la Fase 2); sus dos avisos nuevos «sin respuesta 4xx/5xx» (rutas sin cuerpo) siguen el patrón de las 7 rutas anteriores. La suite completa con `test_auth_cache` la cierra T-17.
-
+**Notas**: RED: `test_auth_cache.AccessRoutesTableTests + test_contract_additive.test_t16_… (contra el código de cc44e76)` falló con AttributeError: 'Store' object has no attribute 'operator_set_disabled' y rutas ausentes del OpenAPI · 2026-11-26. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `ec14fd2dcb56`.
 
 ### T-17 — Cierre de fase: suites y subida del mínimo
 
 - **Descripción**: Protocolo de cierre de fase (cabecera) con las suites: servidor, contratos.
 - **Changelog**: Interno: cierre de fase.
-- **Estado**: borrador
+- **Estado**: completado
+- **Cerrada**: 2026-11-26
 - **Tiempo humano**: est. 0.5h · real —
-- **Tiempo IA (ejec.)**: est. 0.05h · real —
+- **Tiempo IA (ejec.)**: est. 0.05h · real 0.13h (medido; la suite completa, 47 min de reloj, corre fuera de la medición de tokens)
 - **Supervisión**: est. 0.01h · real —
 - **Previsión IA**: 14 k in / 1 k out tok · ⚠️ verificar €
 - **Dependencias**: T-16
 - **Tipo**: test
-- **Archivos**: `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `docs/operations.md`, `README.md`
+- **Archivos**: `.github/workflows/ci.yml`, `scripts/tests/test_ci_workflow.py`, `docs/operations.md`, `README.md`, `docs/roadmap/2026-11-09-retrieval-quality/spec.md` (añadido con nota: lo cambió el commit 6a0706f del orquestador, «Roadmap index: retrieval-quality marked implemented», hecho en esta rama durante la fase; ninguna tarea de la fase lo toca, se declara para que `scope-check --base main` lo cuente)
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep MEMORY_TEST_RESULT` → 0 fallos, errores y omitidos; `tests` ≥ mínimo vigente
@@ -589,10 +574,12 @@ Commits f6c635a y 65a1919. `AccessRoutesTableTests` (`test_auth_cache.py`): `ACC
   - `PYTHONPATH=server python -m unittest memory_platform.tests.test_contract_additive` → `OK`
 
 **Criterios de aceptación**
-- [ ] Suites con 0 fallos y 0 omitidos; el mínimo iguala el recuento observado en los cuatro sitios y el equivalente local queda anotado
+- [x] Suites con 0 fallos y 0 omitidos; el mínimo iguala el recuento observado en los cuatro sitios y el equivalente local queda anotado
 
 **Subtareas**
-- [ ] Suites, mínimo y archivo de las notas de la fase
+- [x] Suites, mínimo y archivo de las notas de la fase
+
+**Notas**: Suite completa una vez, en primer plano, sobre `65a1919` (código de T-13 a T-16): `docker build -f server/memory_platform/Dockerfile --target test --progress=plain -t kairos-test:i4p3 .` → exit 0, `MEMORY_TEST_RESULT {"database": "PostgreSQL", "database_version": "postgres (PostgreSQL) 17.11 (Debian 17.11-1.pgdg12+2)", "environment": "isolated-container-build", "errors": 0, "failures": 0,… Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `bdee6a7e451f`.
 
 ### T-18 — Revisión adversarial de la fase (dos lentes)
 
