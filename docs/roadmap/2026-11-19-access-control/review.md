@@ -72,3 +72,32 @@ En el docstring de `ResolverBoundaryTests` y en la nota DC-1 de `design.md`:
 - `Retry-After` en los 429 de `POST /v1/auth/password` → T-26 (criterio añadido).
 - Altas de usuario encadenadas por un admin de proyecto que ocupan el hueco de la IP del proxy → T-27 (IP real) y T-55 (tasa por credencial).
 - `login_attempts` cuenta también los logins correctos → T-26 (solo fallos).
+
+## Fase 3 — Usuarios, permisos y sesiones (T-13 a T-18)
+
+- **Fecha**: 2026-11-26 a 2026-11-27
+- **Lentes**: A, B, C y D en Opus 5.5 en los dos intentos (C por `auth`, `sessions` y `users`; D por caché y bloqueos). Las lentes ejecutaron solo imágenes locales de pruebas (`kairos-test:i4p3`, `-fix1`) sin red, con PostgreSQL efímero dentro del contenedor.
+- **Veredicto**: cerrada. El intento 2 no dejó Critical ni Important. De sus tres Minor, uno de ledger lo corrigió el orquestador, uno se acepta como límite del marco y uno se difiere a T-22.
+- **Evidencia**: suite del servidor 1745 tests, 0 fallos, errores y omitidos (`kairos-test:i4p3-fix1`); `KAIROS_MIN_TESTS` y `MIN_FLOOR` 1745; `scope-check.py --base main` exit 0; `openapi-lint --diff` contra `cc44e76` 0 rompedores de 6 (solo rutas nuevas); `kairos-mcp.json` sin cambios; guarda de T-02 con tres excepciones nuevas declaradas en DC-1; carga de 1 905 operaciones de acceso concurrentes sin interbloqueos.
+
+| Intento | Diff | Important | Hallazgo principal | Estado |
+|---|---|---|---|---|
+| 1 | `cc44e76..baef4b6` | 3 | Alta de usuario en carrera con la deshabilitación del delegante; cambio de contraseña desde una sesión ya cerrada; fines de línea CRLF convertidos | Fix1, OK del usuario («Important + Minors baratos») |
+| 2 | `baef4b6..3e6c4af` | 0 | Revocar la clave o cerrar la sesión con que se hace un alta no la detiene; 422 de Pydantic antes del 403; trazabilidad de la ruta nueva | Cerrada: un Minor corregido, uno aceptado y uno diferido |
+
+### Decisiones del usuario (2026-11-26)
+
+- Fix1 con los Important y los Minor baratos.
+- `grants.replaced` mantiene en `resource_id` el JSON canónico `{user, before, after}`; formato documentado en `docs/operations.md`.
+- Ruta nueva `GET /v1/users/{id}/sessions`, solo para el administrador global (CA-42).
+- Nota de DC-1 con las tres excepciones nuevas de la guarda, escrita por el orquestador («Hazlo tú»).
+
+### Límites declarados
+
+- Un cuerpo que no pasa la validación de FastAPI (tipo o permiso inexistente) responde 422 antes de comprobar la autorización. Los 422 que decide el store salen después del 403.
+- Al deshabilitar, cambiar o fijar la contraseña solo se cierran las sesiones vivas; las caducadas quedan como están, porque ya no autentican y nada reescribe `expires_at`.
+
+### Diferido a otras tareas
+
+- Revocar la clave o cerrar la sesión con que está en curso un `create_user` o un `create_key` → T-22 (criterio y ficheros añadidos).
+- 404 de `GET /v1/users/{id}/sessions` y sobre `{code, message}` del esquema `Error` en el OpenAPI → T-26 (criterio añadido).

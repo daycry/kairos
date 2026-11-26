@@ -353,7 +353,7 @@ CA-35 lo cubren todas las tareas de revisión y CA-37 todos los cierres de fase 
 | CA-39 | T-71, T-74, T-84, T-85, T-87, T-89, T-90 |
 | CA-40 | T-71, T-74, T-78, T-80, T-81, T-89 |
 | CA-41 | T-71, T-74, T-79, T-80, T-81, T-89 |
-| CA-42 | T-71, T-72, T-73, T-74, T-86, T-87, T-90 |
+| CA-42 | T-15, T-71, T-72, T-73, T-74, T-86, T-87, T-90 |
 | CA-43 | T-75, T-88 |
 
 ---

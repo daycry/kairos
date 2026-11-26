@@ -57,7 +57,7 @@ test-plan: test-plan.md
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Medición de scrypt y guarda del resolvedor (CA-09, CA-38 a) | 5 | 5 | 100% | 0 / 19.8h | 4.77 / 6.3h | 0 / 1.6h | 0 / 1570 k |
 | Fase 2 — Esquema 13, scrypt y contraseñas (C-01) | 7 | 7 | 100% | 0 / 36.0h | 3.88 / 3.7h | 0 / 0.9h | 0 / 924 k |
-| Fase 3 — Usuarios, permisos y sesiones (C-01) | 5 | 6 | 83% | 0 / 36.0h | 5.14 / 3.7h | 0 / 0.9h | 0 / 924 k |
+| Fase 3 — Usuarios, permisos y sesiones (C-01) | 6 | 6 | 100% | 0 / 36.0h | 5.14 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01) | 0 | 7 | 0% | 0 / 48.0h | 0 / 4.9h | 0 / 1.2h | 0 / 1232 k |
 | Fase 5 — Login que no se bloquea entre clientes (C-02) | 0 | 5 | 0% | 0 / 43.2h | 0 / 4.4h | 0 / 1.1h | 0 / 1109 k |
 | Fase 6 — Cierre del hito A: acceso que se puede retirar | 0 | 4 | 0% | 0 / 9.6h | 0 / 3.5h | 0 / 0.9h | 0 / 873 k |
@@ -216,7 +216,7 @@ test-plan: test-plan.md
 **Subtareas**
 - [x] Lentes A y B; corregir y repetir hasta cero abiertos
 
-**Notas**: doce intentos con lentes A, B, C y D (tabla en `review.md`; detalle de los intentos 1-11 en `execution-history.md`, el 12 en este ledger). Sin Critical ni Important abiertos tras el fix12. Desviación declarada del criterio «cada fix con su revisión completa»: el fix12 se verificó con una comprobación dirigida del orquestador en `kairos-test:i4p1-fix12` (los cinco casos `raise` en rojo, `memory.{t}` en rojo, prosa en verde, paquete `({}, [])`, `ResolverBoundaryTests` 27 OK) por decisión del usuario «Fix12 mínimo y cerrar» (2026-11-23). Límites de la guarda declarados en el docstring y en DC-1.
+**Notas**: doce intentos con lentes A, B, C y D (tabla en `review.md`; detalle de los doce intentos en `execution-history.md`). Sin Critical ni Important abiertos tras el fix12. Desviación declarada del criterio «cada fix con su revisión completa»: el fix12 se verificó con una comprobación dirigida del orquestador en `kairos-test:i4p1-fix12` (los cinco casos `raise` en rojo, `memory.{t}` en rojo, prosa en verde, paquete `({}, [])`, `ResolverBoundaryTests` 27 OK) por decisión del usuario «Fix12 mínimo y cerrar» (2026-11-23). Límites de la guarda declarados en el docstring y en DC-1.
 
 ---
 
@@ -434,13 +434,13 @@ test-plan: test-plan.md
 **Subtareas**
 - [x] Lentes A y B; corregir y repetir hasta cero abiertos
 
-**Notas**: tres intentos con lentes A, B, C y D (Opus 5.5 en el intento 3; tabla en `review.md`; detalle de los intentos 1 y 2 en `execution-history.md`, el 3 en este ledger). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `7c9b53763a88`.
+**Notas**: tres intentos con lentes A, B, C y D (Opus 5.5 en el intento 3; tabla en `review.md`; detalle de los tres intentos en `execution-history.md`). Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `7c9b53763a88`.
 
 ---
 
 ## Fase 3 — Usuarios, permisos y sesiones (C-01)
 
-**Estado**: en-progreso · **Hito**: A · **Estimado**: 36.0h (30h base, de ellas 15h de revisión adversarial) · **Real**: — · **Coste est.**: 1.800 € · **Tokens est.**: 924 k
+**Estado**: completado · **Hito**: A · **Estimado**: 36.0h (30h base, de ellas 15h de revisión adversarial) · **Real**: 5.14h IA (medido; incluye 0.91h del fix1 en T-13..T-17; revisión T-18 del orquestador sin medir) · **Coste est.**: 1.800 € · **Tokens est.**: 924 k
 
 ### T-13 — Deshabilitar y rehabilitar usuario: `PATCH /v1/users/{id}`, `admin disable-user` y `enable-user` (CA-03)
 
@@ -504,8 +504,8 @@ RED: `fix1 fase 3: test_access_users.GrantsTests.test_a_caller_that_is_not_the_g
 
 ### T-15 — Sesiones: listar y cerrar las propias, cerrar las de otro usuario (CA-05)
 
-- **Descripción**: La sesión guarda `client_ip` y `created_at`. Rutas para listar las sesiones propias (creación, caducidad, IP y cuál es la actual), cerrarlas todas menos la actual y, para el administrador global, cerrar todas las de un usuario. Fuente: CA-05; DC-6.
-- **Changelog**: Cada usuario ve y cierra sus sesiones; un administrador cierra todas las de otro usuario.
+- **Descripción**: La sesión guarda `client_ip` y `created_at`. Rutas para listar las sesiones propias (creación, caducidad, IP y cuál es la actual), cerrarlas todas menos la actual y, para el administrador global, listar (`GET /v1/users/{id}/sessions`, añadida en el fix1 por decisión del usuario, revisión de la fase 3, intento 1, gap 10) y cerrar todas las de un usuario. Fuente: CA-05, CA-42; DC-6.
+- **Changelog**: Cada usuario ve y cierra sus sesiones; el administrador global lista y cierra las de otro usuario.
 - **Estado**: completado
 - **Cerrada**: 2026-11-26
 - **Tiempo humano**: est. 4h · real —
@@ -601,7 +601,8 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 
 - **Descripción**: Protocolo de revisión adversarial (cabecera), a 1,0 × la implementación. Superficie: autorización de cada ruta nueva (403 con clave y con sesión no administradora, CSRF), carreras de «último administrador» y caché de permisos tras cada escritor.
 - **Changelog**: Interno: revisión adversarial de la fase.
-- **Estado**: en-progreso
+- **Estado**: completado
+- **Cerrada**: 2026-11-27
 - **Tiempo humano**: est. 15h · real —
 - **Tiempo IA (ejec.)**: est. 1.54h · real —
 - **Supervisión**: est. 0.39h · real —
@@ -615,10 +616,12 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
   - `python3 "$SHAREDKIT/scope-check.py" docs/roadmap/2026-11-19-access-control` → exit 0
 
 **Criterios de aceptación**
-- [ ] Sin Critical ni Important abiertos; cada control nuevo con su mutante comprobado y cada fix con su revisión completa
+- [x] Sin Critical ni Important abiertos; cada control nuevo con su mutante comprobado y cada fix con su revisión completa
 
 **Subtareas**
-- [ ] Lentes A y B; corregir y repetir hasta cero abiertos
+- [x] Lentes A y B; corregir y repetir hasta cero abiertos
+
+**Notas**: dos intentos con lentes A, B, C y D en Opus 5.5 (tabla en `review.md`; detalle del intento 1 en `execution-history.md`, el 2 en este ledger). Intento 1: 3 Important → fix1 (`b57b0df`..`3e6c4af`, suite 1745). Intento 2: sin Critical ni Important; 3 Minor: uno de ledger corregido por el orquestador, uno aceptado como límite del marco y uno diferido a T-22. Verificación: `scope-check.py --base main` exit 0 · `openapi-lint --diff` contra `cc44e76` 0 rompedores de 6 · `ledger-lint` 0 incoherencias.
 
 ---
 
@@ -713,7 +716,7 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 - **Previsión IA**: 170 k in / 15 k out tok · ⚠️ verificar €
 - **Dependencias**: T-21
 - **Tipo**: test
-- **Archivos**: `server/memory_platform/tests/test_revocation_matrix.py`, `server/memory_platform/tests/nginx_portal_probe.py`, `server/memory_platform/tests/chain_harness.py`, `server/memory_platform/tests/test_nginx_portal.py`
+- **Archivos**: `server/memory_platform/tests/test_revocation_matrix.py`, `server/memory_platform/tests/nginx_portal_probe.py`, `server/memory_platform/tests/chain_harness.py`, `server/memory_platform/tests/test_nginx_portal.py`, `server/memory_platform/store_auth.py`, `server/memory_platform/auth.py`, `server/memory_platform/tests/test_access_users.py` (añadidos con nota: revocar la clave o cerrar la sesión con que se hace un alta en curso no la detiene; revisión de la fase 3, intento 2, gap 1)
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_revocation_matrix|MEMORY_TEST_RESULT"` → nombradas en `ok`; 0 fallos y 0 omitidos
 
@@ -721,6 +724,7 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 - [ ] Tres causas (revocar, caducar, deshabilitar al dueño) × cuatro rutas → 401 en la petición siguiente; el flujo se cierra en un sondeo más un margen
 - [ ] Sesión del portal cerrada o de un usuario deshabilitado → 401
 - [ ] Mutante: quitar el vaciado de caché de un escritor deja la matriz en rojo
+- [ ] Revocar la clave (`revoke_key`) o cerrar la sesión (logout) con que está en curso un `create_user` o un `create_key` bloquea la fila del dueño: el alta espera y falla con 401 sin crear nada; prueba en los dos órdenes y mutante (revisión de la fase 3, intento 2, gap 1)
 
 **Subtareas**
 - [ ] Montar la matriz sobre los arneses existentes
@@ -816,7 +820,7 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 - **Previsión IA**: 184 k in / 16 k out tok · ⚠️ verificar €
 - **Dependencias**: T-25
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/auth.py`, `server/memory_platform/limits.py`, `server/memory_platform/passwords.py`, `server/memory_platform/app.py`, `server/memory_platform/config.py`, `server/memory_platform/observability.py`, `server/memory_platform/tests/test_login_limits.py`, `server/memory_platform/tests/test_auth.py`, `server/memory_platform/tests/test_auth_race.py`, `server/memory_platform/tests/test_observability.py`, `server/memory_platform/tests/test_prune_tables.py`, `server/memory_platform/store_access.py`, `server/memory_platform/tests/test_access_password.py` (añadidos con nota: 429 de `POST /v1/auth/password` sin `Retry-After` (revisión fase 2, intento 2, gap 6; intento 3, gap 5))
+- **Archivos**: `server/memory_platform/auth.py`, `server/memory_platform/limits.py`, `server/memory_platform/passwords.py`, `server/memory_platform/app.py`, `server/memory_platform/config.py`, `server/memory_platform/observability.py`, `server/memory_platform/tests/test_login_limits.py`, `server/memory_platform/tests/test_auth.py`, `server/memory_platform/tests/test_auth_race.py`, `server/memory_platform/tests/test_observability.py`, `server/memory_platform/tests/test_prune_tables.py`, `server/memory_platform/store_access.py`, `server/memory_platform/tests/test_access_password.py`, `docs/contracts/memory-platform.openapi.json`, `server/memory_platform/tests/test_contract_additive.py` (añadidos con nota: 429 de `POST /v1/auth/password` sin `Retry-After` (revisión fase 2, intento 2, gap 6; intento 3, gap 5); 404 y esquema `Error` en el OpenAPI (revisión fase 3, intento 2))
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_login_limits|test_auth|test_auth_race|test_observability|test_prune_tables|MEMORY_TEST_RESULT"` → nombradas en `ok`; 0 fallos y 0 omitidos
 
@@ -826,6 +830,7 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 - [ ] Veinte fallos concurrentes de una IP no dejan pasar más de diez verificaciones; una IP bloqueada no deriva scrypt ni ocupa hueco
 - [ ] `login_user_failures` se publica sin bloquear; ningún registro guarda la contraseña; `prune-tables` sigue purgando `login_attempts`
 - [ ] Los 429 de `POST /v1/auth/password` (`rate_limited` y `too_many_attempts`, `store_access.py`) salen del constructor único de DC-2 con `Retry-After` ≥ 1 (revisión de la fase 2, intento 2, gap 6)
+- [ ] El OpenAPI publica el 404 de `GET /v1/users/{id}/sessions` y el esquema `Error` declara el sobre real `{code, message}` (revisión de la fase 3, intento 2, fuera de lente)
 
 **Subtareas**
 - [ ] Pruebas en rojo (oráculo de A-02) y de carrera
@@ -2942,51 +2947,18 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 - 2026-11-23 · «Revisión de dos lentes — intento 11: Fase 1 (fix10) (T-01, T-02, T-03, T-04) — 1 Important: sentencias completas con tabla dinámica y huecos de cláusula» → [execution-history.md](execution-history.md) · SHA-256 `573aef42c452b7e89333ce006829a1a040db517dc0a9cb6c3a4eaf47818cfcc0`
 - 2026-11-26 · «Revisión de dos lentes — intento 1: Fase 2 (T-06, T-07, T-08, T-09, T-10, T-11) — 5 Important: semáforo sin tope para sesiones, carrera del login, coste sin fijar» → [execution-history.md](execution-history.md) · SHA-256 `9449f3fda926ec4f05eabf3374711fe6c008ab47951a99d0b0fc8ecf93266697`
 - 2026-11-26 · «Revisión de dos lentes — intento 2: Fase 2 (fix1) (T-06, T-07, T-08, T-09, T-10, T-11) — 2 Important: clave creada durante `--revoke-keys`, recuento sin índice» → [execution-history.md](execution-history.md) · SHA-256 `f9ffe76e2ecd9b085eb8c0fe197d2a1cfba9dc31772deeb545fa112752a3a05c`
+- 2026-11-27 · «Revisión de dos lentes — intento 12: Fase 1 (fix11) (T-01, T-02, T-03, T-04) — 1 Important: la retirada de RAISE» → [execution-history.md](execution-history.md) · SHA-256 `1bca766ffaff62849ab9e7ecb074d4fad8d6eafa8c0fd1bf2bcae1ef6a39194f`
+- 2026-11-27 · «Revisión de dos lentes — intento 3: Fase 2 (fix2) (T-06, T-07, T-08, T-09, T-10, T-11) — sin Critical ni Important; 6 Minor» → [execution-history.md](execution-history.md) · SHA-256 `c01d7449717046602020417abca565bc6ce748de1aeb5ed5f3620f55d592f7ff`
+- 2026-11-27 · «Revisión de dos lentes — intento 1: Fase 3 (T-13, T-14, T-15, T-16, T-17) — 3 Important: alta en carrera con la revocación, cambio de contraseña desde una sesión cerrada, fines de línea» → [execution-history.md](execution-history.md) · SHA-256 `4e2c3669d547113c2b102dcaa40567268c65c975f56e940c0bc3656799a71542`
 
+## Revisión de dos lentes — intento 2: Fase 3 (fix1) (T-13, T-14, T-15, T-16, T-17) — sin Critical ni Important; 3 Minor
 
-## Revisión de dos lentes — intento 12: Fase 1 (fix11) (T-01, T-02, T-03, T-04) — 1 Important: la retirada de RAISE
-
-Lentes: A+B+C+D sobre `eb6f105..HEAD` (fix11: `5a4e0c5`, `686a3d6`, `9e2243b`), solo con `kairos-test:i4p1-fix10`/`-fix11` sin red. Gaps del intento 11: 1-5 corregidos con mutante; las plantillas con `memory.{t}` y huecos de cláusula quedan cerradas, también dentro de `Auth.login`. Paquete en verde y sin falsos positivos de prosa. D sin bloqueo: cifras reproducidas, la suite baja unos 2,5 s.
-
-| # | Grado | Gap | Tarea | Corrección | Evidencia |
-|---|---|---|---|---|---|
-| 1 | Important | Regresión del fix11: `_without_raise` se aplica a todo texto que no parsea y borra desde cualquier palabra `raise` (comentario, alias, literal, columna) hasta el siguiente `;` o el final; tras ella dejan de verse `memory.<tabla vigilada>` y las tablas con palabra de SQL (`f'SELECT k.scopes AS raise FROM memory.api_keys k WHERE {cond} {order}'`, `-- raise …`, `/* raise */`, `'raise' AS action`, `RAISE NOTICE '%', (SELECT … FROM memory.api_keys)`). ce7fde1 los daba en rojo (lentes A, B y C) | T-02 | corregido (fix12, 1b7a6f3); fix12 aprobado por el usuario 2026-11-23 | `test_auth_cache.py:811-821, :830-833` |
-| 2 | Minor | La retirada de comentarios no sigue al lexer: `--` termina también en `\r`; los comentarios de bloque se anidan; `a$x$` se toma por apertura de cita con dólar (lentes A, B, C y D) | T-02 | corregido (fix12, 1b7a6f3) para `\r`; comentarios anidados y `a$x$`: aceptado: límite declarado | `test_auth_cache.py:539, :594-610` |
-| 3 | Minor | `memory /*x*/ .api_keys` sin palabra de SQL calla porque `_MEMORY_TABLE` mira el texto crudo (heredado); DDL de esquema completo (`GRANT … ON ALL TABLES IN SCHEMA memory`, `ALTER SCHEMA memory …`, `DROP OWNED`) e `INHERITS (memory.actors)` sin clasificar (lentes B y C) | T-02 | corregido (fix12, 1b7a6f3) para `memory /*x*/ .api_keys`; DDL de esquema completo e `INHERITS`: aceptado: límite declarado | `test_auth_cache.py:534, :753-772, :831` |
-| 4 | Minor | Controles sin mutante (`closed` del comentario sin cerrar, `CreateStmt`); series de `+`/`-` cuadráticas en el lexer sin cubrir y el test de tiempo actúa como cota absoluta de 0,5 s; una cifra del docstring no se reproduce (lentes A y D) | T-02 | corregido (fix12, 1b7a6f3); series de `+`/`-` y cota del test de tiempo: aceptado: límite declarado | `test_auth_cache.py:600, :753, :845, :1158, :1602-1605` |
-| 5 | Minor | Documentación de límites inexacta tras el fix11 (`:522-526`, `:550-551`, `:1138-1144`, `design.md:116` «siempre»); nota RED de fix11: 20 fallos, no 19 (lente A) | T-02 | corregido (fix12, 1b7a6f3) | `test_auth_cache.py:522-551, :1138-1144`; `design.md:116`; `tasks.md` nota fix11 |
-
-Comprobación dirigida del fix12 (orquestador, 2026-11-23, `kairos-test:i4p1-fix12` sin red, por decisión del usuario «Fix12 mínimo y cerrar»): `AS raise`, `-- raise`, `/* raise */`, `'raise' AS action` y `RAISE NOTICE … (SELECT … memory.api_keys)` dan lectura de `api_keys`/`project_grants` + `unparseable SQL`; `memory.\x00 WHERE \x00 \x00` da `unknown table`; la prosa `cannot restore from \x00` calla; paquete `({}, [])` y escritores `[]`; `ResolverBoundaryTests` 27 pruebas OK. Sin Critical ni Important abiertos: la fase cierra.
-
-## Revisión de dos lentes — intento 3: Fase 2 (fix2) (T-06, T-07, T-08, T-09, T-10, T-11) — sin Critical ni Important; 6 Minor
-
-Lentes: A+B+C+D (Opus 5.5) sobre `22de18e..682d5f5` (fix2: `328a446`..`682d5f5`), solo con `kairos-test:i4p2-fix2` sin red. Gaps 1-8 del intento 2 corregidos o diferidos con nota; A volvió a ejecutar los mutantes sobre copias (sin `FOR SHARE` en `create_key` 4 fallos; sin `invalidate_auth` rojo en `test_auth_cache`; suelo 0 y `ORDER BY ASC` rojos; siempre `FOR SHARE`, sin verificar en el reintento, dos reintentos y sin reintento, rojos; sin `except UniqueViolation` rojo; `bootstrap` con `.strip()` 5 fallos y 1 error). C: carrera de `--revoke-keys` cerrada en los dos órdenes con sesión y con clave admin (0 claves vivas); el reintento del login no reabre la carrera de `set-password`; `password_from_file` no filtra bytes. B: estrés de 12 rondas (creación de claves, `--revoke-keys`, login con rehash y cambio de contraseña a la vez) sin interbloqueos ni errores inesperados. D: recuento acotado 4+4 buffers con 1 M filas antiguas. `openapi-lint --diff` 0 rompedores; `kairos-mcp.json` intacto; suite 1686, mínimo 1686.
+Lentes: A+B+C+D (Opus 5.5) sobre `baef4b6..3e6c4af` (fix1: `b57b0df`..`3e6c4af`); solo B ejecutó Docker, con `kairos-test:i4p3-fix1` sin red y PostgreSQL efímero. Las 11 filas del intento 1 están corregidas (A las cita en código y prueba). B: las pruebas de acceso, sesiones, contraseña y carreras, 282, tres veces seguidas en verde; los tres mutantes (sin `FOR SHARE` en `create_user`, `_active` antes del bloqueo en `change_password`, sin la fila del llamante en `_set_disabled`) fallan por aserción; carga de 8 hilos × 250 operaciones al azar (1 905 operaciones) sin interbloqueos ni excepciones inesperadas. C: gaps 1, 2 y 4 cerrados sin desplazar la carrera; la ruta nueva da 403 antes del 404 y no expone tokens ni hashes. D: sin hallazgos; los bloqueos nuevos solo afectan a operaciones de administración, no al login ni a `/mcp`. `openapi-lint --diff` contra `cc44e76` 0 rompedores de 6; `kairos-mcp.json` intacto; suite 1745, mínimo 1745; fines de línea conservados.
 
 | # | Grado | Gap | Tarea | Corrección | Evidencia |
 |---|---|---|---|---|---|
-| 1 | Minor | Los scripts que entran con `secrets/bootstrap_password` siguen con `.read_text().strip()` mientras `bootstrap` ya no recorta: una contraseña puesta a mano con espacios en los extremos, dos saltos o un `\r` final da 401 en la ida y vuelta de despliegue, la aceptación nativa y el ensayo (con el secreto generado no pasa) (lente B) | T-10 | corregido (fix3, b068912) | `admin.py:511`; `scripts/deploy-memory.py:1084, :1418`; `scripts/accept-native-clients.py:108`; `scripts/rehearse-reliable-operations.py:237` |
-| 2 | Minor | Un fichero UTF-8 con BOM (`Set-Content`/`Out-File -Encoding UTF8` de PowerShell 5.1) deja `U+FEFF` dentro de la contraseña sin aviso; no es regresión (lente B) | T-10 | corregido (fix3, 56737bf) | `admin.py:341-347` |
-| 3 | Minor | El coste del recuento acotado crece con todos los eventos de auditoría de los últimos 15 min de cualquier actor (100 k en la ventana: ~128 ms por cambio; sin fila anterior al corte, 1 M filas: ~365 ms) y DC-5 solo declara el borde de microsegundos; transitorio y de pocos ms con la carga habitual (lente D) | T-09 | aceptado: límite declarado en `design.md` DC-5 (orquestador, decisión del usuario 2026-11-26) | `store_access.py:27-35, :77`; `design.md` DC-5 |
-| 4 | Minor | Notas de fix2 de T-09 con referencias de línea erróneas (`LoginRetryTests` `:454` → `:482`; `RecentChangesCostTests` `:577` → `:583`) (lente A) | T-09 | corregido (orquestador, en este commit) | `tasks.md` T-09 Notas fix2 |
-| 5 | Minor | El diferimiento del `Retry-After` (gap 6 del intento 2) quedaba en un paréntesis de Archivos de T-26 sin criterio que lo exija (lente A) | T-26 | corregido (orquestador, en este commit): criterio nuevo en T-26 y `test_access_password.py` en sus Archivos | `tasks.md` T-26 |
-| 6 | Minor | El campo Changelog de T-10 no recogía el cambio visible de `bootstrap` (sin recorte de espacios; `password_file_invalid`) (lente A) | T-10 | corregido (orquestador, en este commit) | `tasks.md` T-10 Changelog |
+| 1 | Minor | Revocar la clave (`revoke_key`) o cerrar la sesión (logout) que usa un `create_user` en curso no bloquea la fila del dueño: el alta no espera y se confirma (auditoría `key.revoked` antes que `user.created`); misma exposición en `create_key` desde la fase 2; serializable, ventana de milisegundos (lentes B y C) | T-13 | diferido a T-22 (criterio y Archivos añadidos con nota, orquestador) | `store_auth.py:221-224, :275-285`; `auth.py:107-110` |
+| 2 | Minor | «403 antes de 422» solo vale para los 422 del store: un cuerpo que no pasa Pydantic da 422 a un no administrador, porque FastAPI valida antes del handler (lente B) | T-13, T-14 | aceptado: límite del marco, declarado en `review.md` | `app.py:409, :414` |
+| 3 | Minor | La ruta nueva `GET /v1/users/{id}/sessions` no constaba en la Descripción ni en el Changelog de T-15 ni en la trazabilidad de CA-42 del plan (lente A) | T-15 | corregido (orquestador, en este commit) | `tasks.md` T-15; `improvement-plan.md` CA-42 |
 
-Línea de DC-5 sobre el reintento único del login (gap 3 del intento 2): escrita por el orquestador en `design.md` con la decisión del usuario («Hazlo tú», 2026-11-26). Gaps 1 y 2: fix3 fuera del bucle con comprobación dirigida, decisión del usuario («Fix3 pequeño y cerrar», 2026-11-26).
-
-## Revisión de dos lentes — intento 1: Fase 3 (T-13, T-14, T-15, T-16, T-17) — 3 Important: alta en carrera con la revocación, cambio de contraseña desde una sesión cerrada, fines de línea
-
-Lentes: A+B+C+D (Opus 5.5) sobre `cc44e76..53c7cad`, solo con `kairos-test:i4p3` sin red. A: T-13 a T-17 cumplen sus criterios con test; `openapi-lint --diff` 0 rompedores (5 rutas nuevas); `kairos-mcp.json` sin cambios; guarda T-02 con dos entradas mínimas y probadas; RED de T-15 reproducido. B y C: deshabilitar frente a login, `create_key` y `set_password` cerrado; último administrador serializado; sin interbloqueos; CSRF y 403 en las rutas nuevas; sin fugas en la lista de sesiones; `client_ip` no manipulable (IP del proxy hasta T-27). D: las consultas de sesiones usan `web_session_actor`; sin N+1. La DECISIÓN ABIERTA de T-14 (JSON en `resource_id`) no choca con spec ni diseño y no tiene lectores en producción (lente A).
-
-| # | Grado | Gap | Tarea | Corrección | Evidencia |
-|---|---|---|---|---|---|
-| 1 | Important | `create_user` vuelve a autorizar en su segunda transacción sin bloquear la fila del que delega: no espera a `_set_disabled` ni a `replace_grants`, y un alta que pasó la comprobación se confirma tras deshabilitar al delegante o retirarle los permisos (demo: `shadow` entra y es admin de p1; auditoría `user.created` tras `user.disabled`/`grants.replaced`) (lente C) | T-13, T-14 | corregido (fix1, b57b0df): bloqueo `FOR SHARE` del delegante, caché vaciada y `may_create` repetida; pruebas en los dos órdenes con deshabilitar y sustituir permisos (`store_auth.py:216-224`; `test_access_users.py:297`) | `store_auth.py:216-224`; `store_access.py:131-141, :157-173` |
-| 2 | Important | `change_password` comprueba la credencial antes del `FOR NO KEY UPDATE` y no la repite bajo el bloqueo: una sesión cerrada por `_set_disabled`, `revoke_user_sessions` o `revoke-others` termina el cambio (`{'changed': True}`) y deja una contraseña elegida por una sesión muerta (lente B) | T-13, T-15 (código de T-09) | corregido (fix1, f63498d): `_active` tras el `FOR NO KEY UPDATE` y la caché vaciada; 401 sin cambio ni evento en los tres escenarios (`store_access.py:85-92`; `test_access_sessions.py:209-233`) | `store_access.py:79-86` |
-| 3 | Important | El commit del orquestador `6a0706f` convirtió CRLF en LF en `docs/roadmap/README.md` y `docs/roadmap/2026-11-09-retrieval-quality/spec.md` (restricción «fin de línea conservado», `.gitattributes`); T-17 lo absorbió «con nota» (lente A) | T-17 | corregido (orquestador, 68a152b: CRLF restaurado, solo difieren las 4 líneas cambiadas) | `git diff 6a0706f~1 68a152b --stat` |
-| 4 | Minor | `_set_disabled` no bloquea la fila del llamante ni vuelve a comprobar su credencial tras esperar la fila del objetivo: un administrador cuya sesión se cierra en ese intervalo deshabilita igualmente (lente B) | T-13 | corregido (fix1, b57b0df): filas del destino y del llamante en orden de id tras el bloqueo consultivo y recomprobación (`store_access.py:148-152`; `test_access_users.py:281`) | `store_access.py:131-141` |
-| 5 | Minor | Al deshabilitar se revocan también las sesiones caducadas (sin filtro `expires_at`): coste con sesiones acumuladas sin poda (2 010 filas: 245 ms; 102 010: 5,6 s, bloqueando logins del usuario) y `sessions_revoked` distinto del de `users/{id}/sessions/revoke` (lente D) | T-13 | corregido (fix1, b57b0df): solo sesiones vivas al deshabilitar y también en `set_password` y `change_password` (`store_access.py:96, :113, :161`; `test_access_users.py:205`) | `store_access.py:143` |
-| 6 | Minor | Sin prueba: el administrador sobre sí mismo cierra también la sesión actual, y el filtro de caducadas de `list_own_sessions` (los dos mutantes sobreviven) (lente A) | T-15 | corregido (fix1, f63498d): dos pruebas, cada una con su mutante (`test_access_sessions.py:71-85`) | `store_access.py:188, :206-216` |
-| 7 | Minor | `design.md` DC-1 no recoge las excepciones nuevas de la guarda (`_set_disabled`, `replace_grants`, `operator_set_disabled`) (lente A) | T-13, T-14 | corregido (orquestador, baef4b6): nota de DC-1 del 2026-11-26 (`design.md:120`) | `design.md:97-110`; `test_auth_cache.py:465, :509-510` |
-| 8 | Minor | Ledger: el RED de T-16 se tomó contra `cc44e76` y no aísla su cambio (el rojo propio era el `operationId` duplicado); el RED de T-13 solo queda en `execution-history.md` (lente A) | T-13, T-16 | corregido (fix1, b57b0df y f63498d): RED de T-13 devuelto al ledger y nota del RED propio de T-16 (`tasks.md` T-13, T-16) | `tasks.md` T-13, T-16 |
-| 9 | Minor | `GET /v1/auth/sessions` y `POST /v1/auth/sessions/revoke-others` sin respuestas 4xx en el OpenAPI (`openapi-lint` los da como errores, 7 → 9) aunque responden 401/403 (lente A) | T-16 | corregido (fix1, 4b80e6f): 401/403 con el esquema `Error` en las dos rutas y en la nueva; lint 9 → 7, 0 rompedores (`app.py:26-28, :241, :246, :419`; `test_contract_additive.py:268-273`) | `memory-platform.openapi.json:2162, :2180` |
-| 10 | Minor | CA-42 y T-73 nombran «listar sesiones ajenas» del administrador global, que ninguna ruta ni tarea crea (decisión de alcance) (lente A) | T-15, T-73 | corregido (fix1, f63498d): `GET /v1/users/{id}/sessions` solo para el administrador global con sesión; nota en T-73 (`store_access.py:209-217`; `app.py:419`; `test_access_sessions.py:87-114`) | `spec.md:284`; `tasks.md` T-73 |
-| 11 | Minor | Orden de errores: un no administrador recibe 422 antes que 403 (PATCH sin cambios; proyecto repetido en `replace_grants`) (lentes A y B) | T-13, T-14 | corregido (fix1, b57b0df y ffb5c1c): `_global_admin` antes del 422 en `PATCH` y en `replace_grants` (`store_access.py:126, :172`; `test_access_users.py:195, :471`) | `app.py` PATCH; `store_access.py:153-159` |
+Fuera de lente, sin fila: el OpenAPI de la ruta nueva no publica su 404 y el esquema `Error` declara `error` como objeto libre en vez de `{code, message}`; es solo documentación y se recoge en T-26 junto al constructor único de errores de DC-2 (criterio añadido).
