@@ -22,6 +22,9 @@ from .store_pool import attach_pool, close_pool, ready_probe
 COOKIE = 'memory_session'
 # Headers a reverse proxy adds: a request that carries any of them did not come from inside the internal network.
 PROXY_HEADERS = ('x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-forwarded-port', 'x-real-ip', 'forwarded')
+# The 401 and 403 of the session routes, published in the OpenAPI (fix1 of the review of phase 3, gap 9): the body is the error envelope of every refusal.
+ACCESS_ERRORS = {401: {'model': m.Error, 'description': 'No credential, or one that is revoked, expired or of a disabled user'},
+                 403: {'model': m.Error, 'description': 'A key, a session that may not do it, or a state change without an allowed origin and the CSRF token'}}
 
 
 class BodyLimit:
@@ -235,12 +238,12 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
         ip = request.client.host if request.client else ''
         return store.change_password(actor, payload.current_password, payload.new_password, ip, slot=lambda: passwords.GATE.hold(ip))
 
-    @app.get('/v1/auth/sessions', operation_id='memory_own_sessions', response_model=m.WebSessions)
+    @app.get('/v1/auth/sessions', operation_id='memory_own_sessions', response_model=m.WebSessions, responses=ACCESS_ERRORS)
     def sessions(actor=Depends(identity)):
         # The sessions of the user signed in (a key gets 403): creation, expiry, client address and which one is this; no token and no hash.
         return {'items': store.list_own_sessions(actor)}
 
-    @app.post('/v1/auth/sessions/revoke-others', operation_id='memory_revoke_other_sessions', response_model=m.SessionsRevoked)
+    @app.post('/v1/auth/sessions/revoke-others', operation_id='memory_revoke_other_sessions', response_model=m.SessionsRevoked, responses=ACCESS_ERRORS)
     def revoke_other_sessions(actor=Depends(identity)):
         # Session and CSRF only: every other session of the user gets 401 on its next request, this one stays.
         return store.revoke_other_sessions(actor)
@@ -413,7 +416,7 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
         # Global administrator with a session and CSRF; the next request of the user's sessions and keys sees the new grants (the cache lives one transaction).
         return store.replace_grants(actor, user_id, payload.grants)
 
-    @app.get('/v1/users/{user_id}/sessions', operation_id='memory_user_sessions', response_model=m.WebSessions)
+    @app.get('/v1/users/{user_id}/sessions', operation_id='memory_user_sessions', response_model=m.WebSessions, responses=ACCESS_ERRORS)
     def user_sessions(user_id: str, actor=Depends(identity)):
         # Global administrator with a session (CA-42): the live sessions of a user, the fields of `GET /v1/auth/sessions`; a key or anyone else gets 403.
         return {'items': store.list_user_sessions(actor, user_id)}

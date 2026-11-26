@@ -255,7 +255,8 @@ class ContractAdditiveTests(unittest.TestCase):
         paths = self.exported['memory-platform.openapi.json']['paths']
         schemas = self.exported['memory-platform.openapi.json']['components']['schemas']
         routes = {('/v1/auth/password', 'post'): 'PasswordChange', ('/v1/users/{user_id}', 'patch'): 'UserUpdate', ('/v1/users/{user_id}/grants', 'put'): 'GrantsInput',
-                  ('/v1/auth/sessions', 'get'): None, ('/v1/auth/sessions/revoke-others', 'post'): None, ('/v1/users/{user_id}/sessions/revoke', 'post'): None}
+                  ('/v1/auth/sessions', 'get'): None, ('/v1/auth/sessions/revoke-others', 'post'): None, ('/v1/users/{user_id}/sessions/revoke', 'post'): None,
+                  ('/v1/users/{user_id}/sessions', 'get'): None}
         for (path, method), body in routes.items():
             with self.subTest(route=(method, path)):
                 self.assertIn(method, paths.get(path, {}))
@@ -265,6 +266,12 @@ class ContractAdditiveTests(unittest.TestCase):
                     self.assertEqual(operation['requestBody']['content']['application/json']['schema']['$ref'], '#/components/schemas/' + body)
                 else:
                     self.assertNotIn('requestBody', operation)
+        # fix1 of the review of phase 3 (gap 9): the session routes publish their 401 and 403, with the error envelope (they had no 4xx at all)
+        for path, method in (('/v1/auth/sessions', 'get'), ('/v1/auth/sessions/revoke-others', 'post'), ('/v1/users/{user_id}/sessions', 'get')):
+            for status in ('401', '403'):
+                with self.subTest(route=(method, path), status=status):
+                    self.assertEqual(paths[path][method]['responses'][status]['content']['application/json']['schema'], {'$ref': '#/components/schemas/Error'})
+        self.assertEqual(sorted(schemas['Error']['required']), ['error', 'request_id'])
         operation_ids = [operation['operationId'] for item in paths.values() for operation in item.values()]
         self.assertEqual(sorted({i for i in operation_ids if operation_ids.count(i) > 1}), [], 'an operationId names one operation (a generated client would merge two)')
         self.assertNotIn('required', schemas['UserUpdate'], 'every field of a PATCH is optional, so the body may grow')

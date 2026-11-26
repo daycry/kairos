@@ -545,7 +545,7 @@ fix1 de la revisión de la fase 3 (gaps 2, 6 y 10; T-18 intento 1). Gap 2 (códi
 - **Estado**: completado
 - **Cerrada**: 2026-11-26
 - **Tiempo humano**: est. 2h · real —
-- **Tiempo IA (ejec.)**: est. 0.21h · real 0.17h (medido)
+- **Tiempo IA (ejec.)**: est. 0.21h · real 0.24h (medido; fix1 de la fase 3: 0.07h)
 - **Supervisión**: est. 0.05h · real —
 - **Previsión IA**: 57 k in / 5 k out tok · ⚠️ verificar €
 - **Dependencias**: T-15
@@ -569,6 +569,10 @@ fix1 de la revisión de la fase 3 (gaps 2, 6 y 10; T-18 intento 1). Gap 2 (códi
 **Notas**: RED: `test_auth_cache.AccessRoutesTableTests + test_contract_additive.test_t16_… (contra el código de cc44e76)` falló con AttributeError: 'Store' object has no attribute 'operator_set_disabled' y rutas ausentes del OpenAPI · 2026-11-26. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `ec14fd2dcb56`.
 
 Nota de RED (fix1 de la revisión de la fase 3, gap 8): ese RED se tomó contra `cc44e76` y no aísla el cambio propio de T-16. Su rojo propio era el `operationId` duplicado de `GET /v1/auth/sessions` que dejó T-15 (lo detecta la comprobación de `operationId` únicos de `test_t16_…`). No se rehace: el código ya está en la rama y la prueba lo cubre.
+
+RED: `fix1 fase 3: test_contract_additive.test_t16_the_access_routes_are_in_the_openapi_and_their_bodies_only_have_optional_or_closed_fields (6 subpruebas 401/403)` falló con KeyError: '401' y KeyError: '403' en GET /v1/auth/sessions, POST /v1/auth/sessions/revoke-others y GET /v1/users/{id}/sessions · 2026-11-26.
+
+fix1 de la revisión de la fase 3 (gap 9; T-18 intento 1). `GET /v1/auth/sessions`, `POST /v1/auth/sessions/revoke-others` y la ruta nueva `GET /v1/users/{id}/sessions` publican en el OpenAPI sus 401 y 403 con el sobre de error (`ACCESS_ERRORS` en `app.py`, esquema `Error` nuevo en `components.schemas`). Ninguna ruta documentaba hasta ahora un 4xx propio y no había un patrón que copiar: el esquema es el del sobre que devuelven todas las negativas. Es un cambio solo aditivo. `openapi-lint --diff` contra `cc44e76`: 0 cambios rompedores de 6 (las 6 rutas nuevas). `openapi-lint` de la spec: 7 errores, los mismos 7 de `cc44e76` (antes de este fix eran 9). `test_t16_…` comprueba además la ruta nueva y el 401/403 de las tres. Mutante: la ruta nueva sin `responses` → 2 errores. Verificación dirigida: `test_contract_additive`, `test_access_sessions`, `AccessRoutesTableTests`, `RouteTableTests` → `SEL_RESULT tests=39 failures=0 errors=0 skipped=0`. usage-meter `access-control/T-16`: 0.07 h IA (medido).
 
 ### T-17 — Cierre de fase: suites y subida del mínimo
 
