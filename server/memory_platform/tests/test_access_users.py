@@ -468,6 +468,15 @@ class GrantsTests(UsersFixture):
         self.assertEqual(self.grants(self.bea), before)
         self.assertEqual(self.audit(), [])
 
+    def test_a_caller_that_is_not_the_global_administrator_gets_403_before_the_422_of_a_project_named_twice(self):
+        # fix1 of the review of phase 3 (gap 11): authorize first, then say what is wrong with the grants
+        twice = [{'project_id': 'p1', 'permissions': ['read']}, {'project_id': 'p1', 'permissions': ['write']}]
+        bea, headers = self.session()
+        self.assertEqual(self.put(bea, headers, self.bea, twice).status_code, 403)
+        root, root_headers = self.root()
+        self.assertEqual(self.put(root, root_headers, self.bea, twice).status_code, 422, 'the global administrator still gets the 422')
+        self.assertEqual(self.audit(), [])
+
     def test_only_a_global_administrator_with_a_session_and_csrf_may_do_it(self):
         bea, bea_headers = self.session()
         body = [{'project_id': 'p1', 'permissions': ['read']}]

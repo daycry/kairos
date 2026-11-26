@@ -482,12 +482,12 @@ fix1 de la revisión de la fase 3 (gaps 1, 4, 5 y 11; T-18 intento 1). Gap 1: la
 - **Estado**: completado
 - **Cerrada**: 2026-11-26
 - **Tiempo humano**: est. 3h · real —
-- **Tiempo IA (ejec.)**: est. 0.31h · real 0.96h (medido)
+- **Tiempo IA (ejec.)**: est. 0.31h · real 1.05h (medido; fix1 de la fase 3: 0.09h)
 - **Supervisión**: est. 0.08h · real —
 - **Previsión IA**: 85 k in / 7 k out tok · ⚠️ verificar €
 - **Dependencias**: T-13
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/store_access.py`, `server/memory_platform/app.py`, `server/memory_platform/models.py`, `server/memory_platform/tests/test_access_users.py`, `server/memory_platform/tests/test_auth_cache.py`, `docs/contracts/memory-platform.openapi.json`, `server/memory_platform/tests/store_surface.json` (añadido con nota: método nuevo `replace_grants` en la superficie de `Store`)
+- **Archivos**: `server/memory_platform/store_access.py`, `server/memory_platform/app.py`, `server/memory_platform/models.py`, `server/memory_platform/tests/test_access_users.py`, `server/memory_platform/tests/test_auth_cache.py`, `docs/contracts/memory-platform.openapi.json`, `server/memory_platform/tests/store_surface.json` (añadido con nota: método nuevo `replace_grants` en la superficie de `Store`), `docs/operations.md` (añadido con nota: fix1 de la fase 3, formato de `grants.replaced`)
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_access_users|test_auth_cache|MEMORY_TEST_RESULT"` → nombradas en `ok`; 0 fallos y 0 omitidos
 
@@ -501,6 +501,10 @@ fix1 de la revisión de la fase 3 (gaps 1, 4, 5 y 11; T-18 intento 1). Gap 1: la
 - [x] Escritor y ruta
 
 **Notas**: RED: `test_access_users.GrantsTests (7 pruebas)` falló con AssertionError: 404 != 200 : {"detail":"Not Found"} (la ruta PUT /v1/users/{id}/grants no existía) y 404 != 422 en los cinco cuerpos inválidos · 2026-11-26. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `d126ae3b7b93`.
+
+RED: `fix1 fase 3: test_access_users.GrantsTests.test_a_caller_that_is_not_the_global_administrator_gets_403_before_the_422_of_a_project_named_twice` falló con AssertionError: 422 != 403 · 2026-11-26.
+
+fix1 de la revisión de la fase 3 (gap 11 y decisión del usuario sobre `grants.replaced`; T-18 intento 1). `replace_grants` autoriza (`_global_admin`) antes de juzgar los permisos: un no administrador recibe 403 y no el 422 `invalid_grants` de un proyecto repetido. Un permiso inexistente o una lista vacía de permisos siguen en 422 del modelo antes de autenticar, como en todas las rutas. Formato de `grants.replaced` documentado en `docs/operations.md` («Auditoría de los cambios de acceso»): `resource_id` con JSON canónico `{"after":…,"before":…,"user":<id>}`, y los demás eventos de acceso llevan ahí el id del usuario (las claves, el de la clave). La DECISIÓN ABIERTA de T-14 queda cerrada por el usuario (2026-11-26): se mantiene el JSON en `resource_id`. Mutante (copia en `kairos-test:i4p3`): proyecto repetido juzgado antes de `_global_admin` → rojo; copia intacta: `GrantsTests` + `CreateUserRaceTests` → 13 OK. usage-meter `access-control/T-14`: 0.09 h IA (medido).
 
 ### T-15 — Sesiones: listar y cerrar las propias, cerrar las de otro usuario (CA-05)
 

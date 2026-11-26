@@ -156,15 +156,16 @@ class AccessMixin:
         """`PUT /v1/users/{id}/grants` (CA-04): the global administrator replaces the permissions per project of a user, all of them at once. The keys of the user are bounded by them
         (`_require` intersects a key with the grants of its owner), so the next request of a session or a key on a project taken away answers as a project without access. A project that
         does not exist, or one named twice, is 422 `invalid_grants` and nothing changes. The event `grants.replaced` carries the grants before and after: `audit_events` has no column for
-        them and version 13 is closed, so they travel as canonical JSON in `resource_id`, as `retention_prune` does (`{"after": ..., "before": ..., "user": <id>}`)."""
-        wanted = {}
-        for grant in grants:
-            grant = as_dict(grant)
-            if grant['project_id'] in wanted:
-                raise MemoryError('invalid_grants', 'A project is named more than once', 422)
-            wanted[grant['project_id']] = sorted(set(grant['permissions']))
+        them and version 13 is closed, so they travel as canonical JSON in `resource_id`, as `retention_prune` does (`{"after": ..., "before": ..., "user": <id>}`; format in `docs/operations.md`).
+        The caller is authorized BEFORE the grants are judged (fix1 of the review of phase 3, gap 11): someone who may not do it gets 403, not the 422 of a project named twice."""
         with self.transaction() as c:
-            self._global_admin(c, actor)  # 401/403 before anything is locked
+            self._global_admin(c, actor)  # 401/403 before anything is locked or judged
+            wanted = {}
+            for grant in grants:
+                grant = as_dict(grant)
+                if grant['project_id'] in wanted:
+                    raise MemoryError('invalid_grants', 'A project is named more than once', 422)
+                wanted[grant['project_id']] = sorted(set(grant['permissions']))
             # The rows of the target and of the caller, in the order of their ids: two replacements of one user wait for each other (the second reads the grants the first left), and a
             # disabling of the caller that commits meanwhile is seen by the check that follows the wait.
             rows = c.execute('SELECT id,username FROM memory.actors WHERE id=ANY(%s) ORDER BY id FOR NO KEY UPDATE', ([user_id, actor['id']],)).fetchall()
