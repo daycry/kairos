@@ -56,7 +56,7 @@ test-plan: test-plan.md
 | Fase | Completadas | Total | Progreso | H. humanas (real/est) | H. IA ejec. (real/est) | Supervisión (real/est) | Tokens (real/est) |
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Medición de scrypt y guarda del resolvedor (CA-09, CA-38 a) | 5 | 5 | 100% | 0 / 19.8h | 4.77 / 6.3h | 0 / 1.6h | 0 / 1570 k |
-| Fase 2 — Esquema 13, scrypt y contraseñas (C-01) | 6 | 7 | 86% | 0 / 36.0h | 3.88 / 3.7h | 0 / 0.9h | 0 / 924 k |
+| Fase 2 — Esquema 13, scrypt y contraseñas (C-01) | 7 | 7 | 100% | 0 / 36.0h | 3.88 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 3 — Usuarios, permisos y sesiones (C-01) | 0 | 6 | 0% | 0 / 36.0h | 0 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01) | 0 | 7 | 0% | 0 / 48.0h | 0 / 4.9h | 0 / 1.2h | 0 / 1232 k |
 | Fase 5 — Login que no se bloquea entre clientes (C-02) | 0 | 5 | 0% | 0 / 43.2h | 0 / 4.4h | 0 / 1.1h | 0 / 1109 k |
@@ -73,7 +73,7 @@ test-plan: test-plan.md
 | Fase 16 — Identidad: guía probada y extensibilidad (C-05) | 0 | 5 | 0% | 0 / 23.4h | 0 / 2.4h | 0 / 0.6h | 0 / 601 k |
 | Fase 17 — Revisión del hito C y revisión de seguridad (C-07) | 0 | 5 | 0% | 0 / 27.0h | 0 / 5.3h | 0 / 1.3h | 0 / 1320 k |
 | Fase 18 — Cierre del hito C y de la iniciativa: ensayo, versión 0.4.2 y PR | 0 | 4 | 0% | 0 / 11.4h | 0 / 1.2h | 0 / 0.3h | 0 / 293 k |
-| **TOTAL** | **11** | **106** | **10%** | **0 / 616.2h** | **8.65 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
+| **TOTAL** | **12** | **106** | **11%** | **0 / 616.2h** | **8.65 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -222,7 +222,7 @@ test-plan: test-plan.md
 
 ## Fase 2 — Esquema 13, scrypt y contraseñas (C-01)
 
-**Estado**: en-progreso · **Hito**: A · **Estimado**: 36.0h (30h base, de ellas 15h de revisión adversarial) · **Real**: 3.88h IA (medido; incluye 0.94h de fix1, 0.52h de fix2 medidas el 2026-11-26 en T-08 y T-11 y 0.76h de fix3 en T-10; las horas de fix2 del 2026-11-23 no constan; T-12 sin hacer) · **Coste est.**: 1.800 € · **Tokens est.**: 924 k
+**Estado**: completado · **Hito**: A · **Estimado**: 36.0h (30h base, de ellas 15h de revisión adversarial) · **Real**: 3.88h IA (medido; incluye 0.94h de fix1, 0.52h de fix2 medidas el 2026-11-26 en T-08 y T-11 y 0.76h de fix3 en T-10; las horas de fix2 del 2026-11-23 no constan; revisión T-12 del orquestador sin medir) · **Coste est.**: 1.800 € · **Tokens est.**: 924 k
 
 ### T-06 — Esquema 13: columnas e índices de los tres hitos, de una vez (CA-10)
 
@@ -414,7 +414,8 @@ test-plan: test-plan.md
 
 - **Descripción**: Protocolo de revisión adversarial (cabecera), a 1,0 × la implementación. Superficie: scrypt y el semáforo (agotamiento de memoria, bloqueo entre clientes, coste constante), la caché de permisos tras el cambio de contraseña y la migración 13.
 - **Changelog**: Interno: revisión adversarial de la fase.
-- **Estado**: en-progreso
+- **Estado**: completado
+- **Cerrada**: 2026-11-26
 - **Tiempo humano**: est. 15h · real —
 - **Tiempo IA (ejec.)**: est. 1.54h · real —
 - **Supervisión**: est. 0.39h · real —
@@ -428,10 +429,12 @@ test-plan: test-plan.md
   - `python3 "$SHAREDKIT/scope-check.py" docs/roadmap/2026-11-19-access-control` → exit 0
 
 **Criterios de aceptación**
-- [ ] Sin Critical ni Important abiertos; cada control nuevo con su mutante comprobado y cada fix con su revisión completa
+- [x] Sin Critical ni Important abiertos; cada control nuevo con su mutante comprobado y cada fix con su revisión completa
 
 **Subtareas**
-- [ ] Lentes A y B; corregir y repetir hasta cero abiertos
+- [x] Lentes A y B; corregir y repetir hasta cero abiertos
+
+**Notas**: tres intentos con lentes A, B, C y D (Opus 5.5 en el intento 3; tabla en `review.md`; detalle de los intentos 1 y 2 en `execution-history.md`, el 3 en este ledger). Intento 1: 5 Important → fix1; intento 2: 2 Important → fix2; intento 3: sin Critical ni Important, 6 Minor (3 de ledger corregidos por el orquestador, 1 aceptado como límite en DC-5, 2 corregidos en fix3). Desviación declarada del criterio «cada fix con su revisión completa»: el fix3 (BOM y lectores del fichero de secreto en los scripts) se verificó con una comprobación dirigida del orquestador por decisión del usuario «Fix3 pequeño y cerrar» (2026-11-26): `kairos-test:i4p2-fix3` sin red, `password_from_file` da `password_file_invalid` con BOM inicial y con bytes no UTF-8 (sin bytes del secreto), conserva espacios, quita un solo salto final (LF o CRLF) y deja un `U+FEFF` interior; `test_admin` 35 OK (27 omitidas sin PostgreSQL, cubiertas por la suite completa 1687, 0 fallos); `scripts/tests/test_bootstrap_password_file.py` 4 OK en el host. Las notas de DC-5 sobre el reintento del login y el coste del recuento las escribió el orquestador («Hazlo tú», 2026-11-26).
 
 ---
 

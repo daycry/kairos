@@ -42,3 +42,33 @@ En el docstring de `ResolverBoundaryTests` y en la nota DC-1 de `design.md`:
 
 - `_load_active` acepta `credential_type: 'bootstrap'` sin comprobar credencial; hoy ningún camino HTTP lo produce (intento 1, lente C).
 - `prune_tables` deja un evento `retention_prune` por ejecución y no uno por sesión borrada (decisión abierta, sin cambio).
+
+## Fase 2 — Esquema 13, scrypt y contraseñas (T-06 a T-12)
+
+- **Fecha**: 2026-11-23 a 2026-11-26
+- **Lentes**: A, B, C y D en los tres intentos (C por `auth`, `password`, `docker-compose.yml` y `ci.yml`; D por `schema.sql`, caché y migraciones). Intento 3 con Opus 5.5 por petición del usuario. Las lentes ejecutaron solo imágenes locales de pruebas (`kairos-test:i4p2`, `-fix1`, `-fix2`) sin red, con PostgreSQL efímero dentro del contenedor.
+- **Veredicto**: cerrada. El intento 3 no dejó Critical ni Important. Sus seis Minor quedaron así: tres de ledger corregidos por el orquestador, uno aceptado como límite declarado en DC-5 y dos corregidos en el fix3. El fix3 se verificó con una comprobación dirigida, no con una ronda completa, por decisión del usuario («Fix3 pequeño y cerrar», 2026-11-26).
+- **Evidencia**: suite del servidor 1687 tests, 0 fallos, errores y omitidos (`kairos-test:i4p2-fix3`); `KAIROS_MIN_TESTS` y `MIN_FLOOR` 1687; `scope-check.py --base main` exit 0; `openapi-lint --diff` contra `c926f7a` sin cambios rompedores (solo `/v1/auth/password`); `kairos-mcp.json` sin cambios en la fase; migración 13 aditiva y cerrada. Comprobación dirigida del fix3: BOM inicial y bytes no UTF-8 dan `password_file_invalid` sin bytes del secreto; los espacios se conservan y solo se quita un salto final; `scripts/tests/test_bootstrap_password_file.py` 4 OK.
+
+| Intento | Diff | Important | Hallazgo principal | Estado |
+|---|---|---|---|---|
+| 1 | `c926f7a..d5986db` | 5 | Cambio de contraseña sin tope acaparando el semáforo; `create_user` derivaba antes de autorizar; carrera entre login y cambio de contraseña; coste de producción sin fijar por test; DC-6 probado como «contiene» | Fix1, OK del usuario («5 Important + Minors») |
+| 2 | `01e5e12..c9b6dae` | 2 | Clave creada en paralelo a `set-password --revoke-keys`; recuento de cambios recorriendo `audit_events` entera | Corregido (fix2, en dos sesiones) |
+| 3 | `22de18e..682d5f5` | 0 | Lectores del fichero de secreto en los scripts; BOM; coste del recuento con el volumen de la ventana | Fix3 fuera del bucle y comprobación dirigida, OK del usuario |
+
+### Decisiones del usuario
+
+- `admin set-password --revoke-keys`: por defecto conserva las claves; con la opción las revoca en la misma transacción (2026-11-23).
+- Notas de límite en DC-5 escritas por el orquestador, porque el implementador no puede editar el diseño («Hazlo tú», 2026-11-26).
+
+### Límites declarados (DC-5)
+
+- Con un hash anterior, el login tarda distinto que con un usuario inexistente; desaparece cuando cada cuenta entra una vez.
+- El recuento de cambios de contraseña está acotado por la clave primaria: un margen de microsegundos en el borde de la ventana, y un coste que crece con los eventos de auditoría de los últimos 15 minutos (unos 128 ms con 100 000). Lo resolvería un índice por `happened_at` en una versión 14.
+- En la carrera con otro login que rehízo el hash, un intento hace dos derivaciones (reintento único).
+
+### Diferido a otras tareas
+
+- `Retry-After` en los 429 de `POST /v1/auth/password` → T-26 (criterio añadido).
+- Altas de usuario encadenadas por un admin de proyecto que ocupan el hueco de la IP del proxy → T-27 (IP real) y T-55 (tasa por credencial).
+- `login_attempts` cuenta también los logins correctos → T-26 (solo fallos).
