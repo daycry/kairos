@@ -57,7 +57,7 @@ test-plan: test-plan.md
 |------|------------|-------|----------|-----------------------|------------------------|------------------------|-------------------|
 | Fase 1 — Medición de scrypt y guarda del resolvedor (CA-09, CA-38 a) | 5 | 5 | 100% | 0 / 19.8h | 4.77 / 6.3h | 0 / 1.6h | 0 / 1570 k |
 | Fase 2 — Esquema 13, scrypt y contraseñas (C-01) | 7 | 7 | 100% | 0 / 36.0h | 3.88 / 3.7h | 0 / 0.9h | 0 / 924 k |
-| Fase 3 — Usuarios, permisos y sesiones (C-01) | 1 | 6 | 17% | 0 / 36.0h | 3.57 / 3.7h | 0 / 0.9h | 0 / 924 k |
+| Fase 3 — Usuarios, permisos y sesiones (C-01) | 2 | 6 | 33% | 0 / 36.0h | 4.53 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01) | 0 | 7 | 0% | 0 / 48.0h | 0 / 4.9h | 0 / 1.2h | 0 / 1232 k |
 | Fase 5 — Login que no se bloquea entre clientes (C-02) | 0 | 5 | 0% | 0 / 43.2h | 0 / 4.4h | 0 / 1.1h | 0 / 1109 k |
 | Fase 6 — Cierre del hito A: acceso que se puede retirar | 0 | 4 | 0% | 0 / 9.6h | 0 / 3.5h | 0 / 0.9h | 0 / 873 k |
@@ -73,7 +73,7 @@ test-plan: test-plan.md
 | Fase 16 — Identidad: guía probada y extensibilidad (C-05) | 0 | 5 | 0% | 0 / 23.4h | 0 / 2.4h | 0 / 0.6h | 0 / 601 k |
 | Fase 17 — Revisión del hito C y revisión de seguridad (C-07) | 0 | 5 | 0% | 0 / 27.0h | 0 / 5.3h | 0 / 1.3h | 0 / 1320 k |
 | Fase 18 — Cierre del hito C y de la iniciativa: ensayo, versión 0.4.2 y PR | 0 | 4 | 0% | 0 / 11.4h | 0 / 1.2h | 0 / 0.3h | 0 / 293 k |
-| **TOTAL** | **13** | **106** | **12%** | **0 / 616.2h** | **12.22 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
+| **TOTAL** | **14** | **106** | **13%** | **0 / 616.2h** | **13.18 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -478,25 +478,32 @@ Commit 12926b5. Escritor `_set_disabled` (`store_access.py`): bloqueo consultivo
 
 - **Descripción**: Escritor y ruta del administrador global que sustituyen los permisos por proyecto de un usuario. Sus claves quedan acotadas por esos permisos (`store_auth.py:76-82`). Fuente: CA-04; S-03.
 - **Changelog**: Nuevo `PUT /v1/users/{id}/grants`: un administrador sustituye los permisos por proyecto de un usuario, con efecto en la petición siguiente.
-- **Estado**: borrador
+- **Estado**: completado
+- **Cerrada**: 2026-11-26
 - **Tiempo humano**: est. 3h · real —
-- **Tiempo IA (ejec.)**: est. 0.31h · real —
+- **Tiempo IA (ejec.)**: est. 0.31h · real 0.96h (medido)
 - **Supervisión**: est. 0.08h · real —
 - **Previsión IA**: 85 k in / 7 k out tok · ⚠️ verificar €
 - **Dependencias**: T-13
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/store_access.py`, `server/memory_platform/app.py`, `server/memory_platform/models.py`, `server/memory_platform/tests/test_access_users.py`, `server/memory_platform/tests/test_auth_cache.py`, `docs/contracts/memory-platform.openapi.json`
+- **Archivos**: `server/memory_platform/store_access.py`, `server/memory_platform/app.py`, `server/memory_platform/models.py`, `server/memory_platform/tests/test_access_users.py`, `server/memory_platform/tests/test_auth_cache.py`, `docs/contracts/memory-platform.openapi.json`, `server/memory_platform/tests/store_surface.json` (añadido con nota: método nuevo `replace_grants` en la superficie de `Store`)
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_access_users|test_auth_cache|MEMORY_TEST_RESULT"` → nombradas en `ok`; 0 fallos y 0 omitidos
 
 **Criterios de aceptación**
-- [ ] La petición siguiente de la sesión y de las claves del usuario sobre un proyecto retirado responde como un proyecto sin acceso (404 o 403, según el contrato actual)
-- [ ] Evento `grants.replaced` con los permisos anteriores y los nuevos
-- [ ] Proyectos o permisos inexistentes → 422, sin cambio parcial
+- [x] La petición siguiente de la sesión y de las claves del usuario sobre un proyecto retirado responde como un proyecto sin acceso (404 o 403, según el contrato actual)
+- [x] Evento `grants.replaced` con los permisos anteriores y los nuevos
+- [x] Proyectos o permisos inexistentes → 422, sin cambio parcial
 
 **Subtareas**
-- [ ] Prueba en rojo
-- [ ] Escritor y ruta
+- [x] Prueba en rojo
+- [x] Escritor y ruta
+
+
+RED: `test_access_users.GrantsTests (7 pruebas)` falló con AssertionError: 404 != 200 : {"detail":"Not Found"} (la ruta PUT /v1/users/{id}/grants no existía) y 404 != 422 en los cinco cuerpos inválidos · 2026-11-26.
+
+Commit 87ee0f6. `replace_grants` (`store_access.py`): `_global_admin` antes de bloquear nada, filas del destino y del llamante `FOR NO KEY UPDATE` en orden de id, caché vaciada y llamante comprobado otra vez; proyecto inexistente o repetido → 422 `invalid_grants` (permiso inválido o lista vacía de permisos → 422 de validación); `DELETE` + `INSERT` y `_access_changed`. Proyecto retirado → 404 (contrato actual de `_require`), con sesión y con clave. **DECISIÓN ABIERTA**: `audit_events` no tiene columna de detalle y la versión 13 está cerrada; el evento `grants.replaced` lleva `{"after":…,"before":…,"user":<id>}` en JSON canónico en `resource_id`, como ya hace `retention_prune`. Cuerpo `{"grants":[{"project_id","permissions"}]}`; respuesta `UserGrants`. Guarda T-02: `READ_EXCEPTIONS` + `AccessMixin.replace_grants` (lee los permisos del destino solo para auditar los anteriores), `store_calls` + `replace_grants`, recorrido de escritores y prueba de excepciones ampliados. Mutantes (8 pruebas; copia intacta en verde): sin bloqueo de filas → 2 rojas; sin recomprobar → rojo; sin control de proyecto inexistente → error (FK); sin control de repetido → 2; sin `DELETE` → 3; auditoría sin `before` → 2; sin `_global_admin` previo → rojo (`test_a_caller_that_is_not_the_global_administrator_is_refused_before_it_waits_for_any_lock`, añadida tras sobrevivir ese mutante). Verificación dirigida (`kairos-test:i4p2-fix3`): `test_access_users` + `ResolverBoundaryTests`, `WritersEmptyTheCacheTests`, `EveryTransactionTests`, `RevocationTableTests` → `SEL_RESULT tests=58 failures=0 errors=0 skipped=0`; `test_store_surface`, `test_contract_additive`, `RouteTableTests`, `RevocationTableTests` → 23 OK. `openapi-lint --diff` contra `cc44e76`: 0 rompedores.
+
 
 ### T-15 — Sesiones: listar y cerrar las propias, cerrar las de otro usuario (CA-05)
 
