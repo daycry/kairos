@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from memory_platform import passwords, store_auth
+from memory_platform import auth as auth_module, passwords, store_auth
 from memory_platform.app import create_app
 from memory_platform.auth import Auth
 from memory_platform.config import Settings
@@ -518,6 +518,71 @@ class GrantsTests(UsersFixture):
             self.assertFalse(waited, 'a credential that may not do it took a lock')
             self.assertIsInstance(replaced, dict, replaced)
             self.assertIsInstance(outcome, Forbidden, outcome)
+
+
+class CredentialEndRaceTests(UsersFixture):
+    """T-22 (revision of phase 3, attempt 2, gap 1): `revoke_key` and the logout lock the row of the OWNER of the credential they end (`FOR NO KEY UPDATE`), and `create_key` and
+    `create_user` lock it with `FOR SHARE` before they check the credential again. If the end of the credential gets there first, the creation in progress with that credential
+    waits for it and fails with 401, and nothing is created; if the creation gets there first, the end waits for it and the creation stays (it was authorized when it committed)."""
+
+    def setUp(self):
+        super().setUp()
+        self.root_actor = self.auth.login('root-user', 'root-password-123', '198.51.100.80')['actor']
+
+    def made(self):
+        return self.count("SELECT count(*) FROM memory.api_keys WHERE name='made'"), self.count("SELECT count(*) FROM memory.actors WHERE username='made'")
+
+    def create(self, what, actor):
+        if what == 'key':
+            return lambda: self.store.create_key(actor, {'name': 'made', 'project_ids': ['p1'], 'scopes': ['read']})
+        return lambda: self.store.create_user(actor, {'username': 'made', 'password': pw.PASSWORD, 'project_ids': ['p1'], 'scopes': ['read']})
+
+    def end(self, credential):
+        return (lambda: self.store.revoke_key(self.root_actor, self.key_id)) if credential == 'key' else (lambda: self.auth.logout(self.session_token))
+
+    def actor_of(self, credential):
+        return self.key_actor if credential == 'key' else self.session_actor
+
+    def run_end_first(self, credential, first, second):
+        """The end of the credential stops with its transaction open: right after its audit event (`key.revoked`) or, for the logout, right after it empties the cache."""
+        if credential == 'key':
+            return self.run_pair(first, second, 'key.revoked')
+        return self.run_held(first, second, auth_module, 'invalidate_auth')
+
+    def test_a_creation_with_a_credential_that_ends_before_its_insert_waits_and_fails_with_401(self):
+        for credential in ('key', 'session'):
+            for what in ('key', 'user'):
+                with self.subTest(credential=credential, creates=what):
+                    self.setUp_case(credential)
+                    waited, ended, created = self.run_end_first(credential, self.end(credential), self.create(what, self.actor_of(credential)))
+                    self.assertTrue(waited, 'the creation did not wait for the end of its credential')
+                    self.assertNotIsInstance(ended, BaseException, ended)
+                    self.assertIsInstance(created, Unauthorized, created)
+                    self.assertEqual(self.made(), (0, 0), 'nothing is created')
+
+    def test_an_end_of_the_credential_that_comes_after_the_creation_waits_for_it_and_the_creation_stays(self):
+        for credential in ('key', 'session'):
+            for what in ('key', 'user'):
+                with self.subTest(credential=credential, creates=what):
+                    self.setUp_case(credential)
+                    hold = ('key.created' if what == 'key' else 'user.created')
+                    waited, created, ended = self.run_pair(self.create(what, self.actor_of(credential)), self.end(credential), hold)
+                    self.assertTrue(waited, 'the end of the credential did not wait for the creation in progress')
+                    self.assertIsInstance(created, dict, created)
+                    self.assertNotIsInstance(ended, BaseException, ended)
+                    self.assertEqual(self.made(), (1, 0) if what == 'key' else (0, 1))
+                    with self.assertRaises(Unauthorized):
+                        self.store.list_keys(self.actor_of(credential))  # and the credential is dead
+
+    def setUp_case(self, credential):
+        """A fresh credential for each case (the previous one ended) and nothing made yet."""
+        self.observer.execute("DELETE FROM memory.project_grants WHERE actor_id IN (SELECT id FROM memory.actors WHERE username='made')")
+        self.observer.execute("DELETE FROM memory.actors WHERE username='made'")
+        self.observer.execute("DELETE FROM memory.api_keys WHERE name='made'")
+        login = self.auth.login('bea', pw.PASSWORD, '198.51.100.%d' % (82 + self.count('SELECT count(*) FROM memory.web_sessions') % 100))
+        self.session_actor, self.session_token = login['actor'], login['session_token']
+        key = self.store.create_key(self.session_actor, {'name': 'k', 'project_ids': ['p1'], 'scopes': ['read', 'admin']})
+        self.key_id, self.key_actor = key['id'], self.auth.authenticate_bearer(key['token'])
 
 
 if __name__ == '__main__':

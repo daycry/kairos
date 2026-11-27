@@ -128,6 +128,11 @@ class Auth:
 
     def logout(self, token):
         with self.store.transaction() as c:
+            # The row of the owner of the session first (T-22; revision of phase 3, attempt 2, gap 1): a `create_key` or `create_user` in progress with this session holds
+            # `FOR SHARE` on it, so the logout waits for it; one that comes after waits for the logout and is refused with 401.
+            owner = c.execute('SELECT actor_id FROM memory.web_sessions WHERE token_hash=%s', (token_hash(token),)).fetchone()
+            if owner:
+                c.execute('SELECT 1 FROM memory.actors WHERE id=%s FOR NO KEY UPDATE', (owner['actor_id'],))
             c.execute('UPDATE memory.web_sessions SET revoked_at=clock_timestamp() WHERE token_hash=%s', (token_hash(token),))
             invalidate_auth(c)
 

@@ -281,9 +281,14 @@ class AuthMixin:
     def revoke_key(self, actor, key_id):
         with self.transaction() as c:
             self._active(c, actor)
-            row = c.execute('SELECT id,project_ids FROM memory.api_keys WHERE id=%s', (key_id,)).fetchone()
+            row = c.execute('SELECT id,actor_id,project_ids FROM memory.api_keys WHERE id=%s', (key_id,)).fetchone()
             if not row:
                 raise NotFound()
+            # The rows of the OWNER of the key and of the caller, in the order of their ids (T-22; revision of phase 3, attempt 2, gap 1). `create_key`, `create_user` and
+            # `rotate_key` take `FOR SHARE` on the row of their actor before they check the credential again: a creation in progress with this key makes the revocation wait
+            # for it (what it created stays, it was authorized when it committed), and a creation that comes after the revocation waits for it and is refused with 401.
+            c.execute('SELECT id FROM memory.actors WHERE id=ANY(%s) ORDER BY id FOR NO KEY UPDATE', ([actor['id'], row['actor_id']],))
+            invalidate_auth(c)
             for project in row['project_ids']:
                 self._require(c, actor, project, 'admin')
             c.execute('UPDATE memory.api_keys SET revoked_at=clock_timestamp() WHERE id=%s', (key_id,))
