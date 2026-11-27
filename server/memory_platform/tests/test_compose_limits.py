@@ -288,3 +288,16 @@ class ProbeServiceTests(unittest.TestCase):
             row = next((line for line in text.splitlines() if line.startswith(f'| `{name}`')), None)
             self.assertIsNotNone(row, name)
             self.assertIn(f'`{default}`', row, name)
+
+    def test_t27_memory_api_trusts_the_private_ranges_of_docker_and_the_manual_says_it(self):
+        # CA-14 (R-07): the variable is defined for every service of the shared environment; its default parses and is the one of the manual
+        from memory_platform.config import trusted_proxies
+        shared = compose()['x-memory-environment']
+        self.assertEqual(shared['MEMORY_TRUSTED_PROXIES'], '${MEMORY_TRUSTED_PROXIES:-172.16.0.0/12,192.168.0.0/16}')
+        self.assertEqual([str(n) for n in trusted_proxies('172.16.0.0/12,192.168.0.0/16')], ['172.16.0.0/12', '192.168.0.0/16'])
+        self.assertIn('MEMORY_TRUSTED_PROXIES', self.services['memory-api']['environment'])
+        text = CONFIGURATION.read_text(encoding='utf-8')
+        for name, default in (('MEMORY_TRUSTED_PROXIES', '172.16.0.0/12,192.168.0.0/16'), ('MEMORY_LOGIN_MAX_FAILURES', '10'), ('MEMORY_LOGIN_WINDOW', '900')):
+            row = next((line for line in text.splitlines() if line.startswith(f'| `{name}`')), None)
+            self.assertIsNotNone(row, name)
+            self.assertIn(f'`{default}`', row, name)

@@ -45,6 +45,16 @@ class McpRouteTests(unittest.TestCase):
         self.assertIn('proxy_pass http://memory-api:8790;', directives(block('location /v1/ {')))
         self.assertIn('upstream memory_api { server memory-api:8790; }', CONF)
 
+    def test_t27_every_route_to_the_api_sends_the_address_of_the_client(self):
+        # CA-14: `$proxy_add_x_forwarded_for` (the peer of nginx appended to what came), in the three blocks that reach memory-api; `/mcp` goes to kairos-mcp, which does not use it
+        header = 'proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;'
+        for location in ('location /memory-api/ {', 'location /v1/ {', 'location = /health/ready {'):
+            with self.subTest(location=location):
+                self.assertIn(header, directives(block(location)) if location != 'location = /health/ready {' else block(location))
+        to_api = [line for line in CONF.splitlines() if 'proxy_pass http://memory-api' in line or 'proxy_pass http://memory_api' in line]
+        self.assertEqual(len(to_api), 3)
+        self.assertEqual(CONF.count('X-Forwarded-For'), 3, 'no other route sets it, and none sets it to a fixed value')
+
     def test_the_test_target_replaces_both_upstreams_for_nginx_t(self):
         self.assertIn('memory-api:8790/127.0.0.1:8790', WEB)
         self.assertIn('memory-mcp:8791/127.0.0.1:8791', WEB)

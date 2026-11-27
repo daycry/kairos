@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+import ipaddress
 import time
 import uuid
 from fastapi import FastAPI, Request, Depends, Query
@@ -14,7 +15,7 @@ from . import observability
 from . import schemas
 from .auth import Auth
 from . import limits, passwords
-from .config import Settings
+from .config import Settings, trusted_proxies
 from .errors import MemoryError, StoreBusy, Unauthorized, Forbidden, public_store_failure
 from .store import Store
 from .store_pool import attach_pool, close_pool, ready_probe
@@ -32,6 +33,41 @@ ROTATION_ERRORS = {401: ACCESS_ERRORS[401], 403: {'model': m.Error, 'description
 
 # `GET /v1/users/{id}/sessions` also answers 404 for an unknown user (fix1 of the review of phase 3, gap 10), published since T-26 (review of phase 3, attempt 2, outside the lens).
 USER_SESSIONS_ERRORS = {**ACCESS_ERRORS, 404: {'model': m.Error, 'description': 'No such user'}}
+
+# How `memory-api` is served (`python -m memory_platform.app`; the end-to-end tests run the same). One process (the Prometheus registry lives in it), our own JSON access line
+# instead of uvicorn's, and uvicorn's own proxy headers OFF: it would otherwise rewrite the address of the client from `X-Forwarded-For` for peers in FORWARDED_ALLOW_IPS
+# (127.0.0.1 by default), and MEMORY_TRUSTED_PROXIES must be the only authority on who the client is (CA-14).
+SERVER_OPTIONS = {'host': '0.0.0.0', 'port': 8790, 'log_config': None, 'access_log': False, 'proxy_headers': False}
+
+
+def _address(text):
+    """An IP address as the API compares and keeps it (an IPv4 mapped in IPv6 is the IPv4); ValueError for anything else (a port, brackets, a name, an empty entry)."""
+    address = ipaddress.ip_address(text.strip())
+    return address.ipv4_mapped or address if address.version == 6 else address
+
+
+def client_address(peer, forwarded, trusted):
+    """The IP of the client (CA-14, S-02). `peer` is the address that connected, `forwarded` the values of every `X-Forwarded-For` line in order, `trusted` the networks of
+    MEMORY_TRUSTED_PROXIES. With no trusted proxy, or a peer that is not one, the peer is the client and the header is ignored (it cannot dodge a block nor block another IP).
+    Otherwise the list is walked from the right, the side the proxies append to, and the first address that is not a trusted proxy is the client: what a client wrote on the left is
+    never reached. An entry on that walk that is not an address makes the header worthless: the peer. Every hop trusted: the leftmost."""
+    if not trusted:
+        return peer
+    try:
+        hop = _address(peer)
+    except ValueError:
+        return peer
+    if not any(hop in network for network in trusted):
+        return peer
+    entries = [entry for value in forwarded for entry in value.split(',')]
+    for entry in reversed(entries):
+        try:
+            hop = _address(entry)
+        except ValueError:
+            return peer
+        if not any(hop in network for network in trusted):
+            return str(hop)
+    return str(hop) if entries else peer
 
 
 class BodyLimit:
@@ -116,6 +152,11 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
         app.router.lifespan_context = lifespan
     app.state.store, app.state.auth, app.state.retrieval = store, auth, retrieval
     app.state.settings = settings
+    proxies = trusted_proxies(getattr(settings, 'trusted_proxies', ()) or ())
+
+    def client_ip(request):
+        """The IP of the client of this request (`client_address`): the one of the login block, of the slot of the gate and of the sessions."""
+        return client_address(request.client.host if request.client else '', request.headers.getlist('x-forwarded-for'), proxies)
     app.add_middleware(BodyLimit, maximum=settings.max_body_bytes)
 
     @app.middleware('http')
@@ -226,7 +267,7 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
     def login(payload: m.Login, request: Request):
         if request.headers.get('origin') not in settings.allowed_origins:
             raise Forbidden('Invalid login origin')
-        result = auth.login(payload.username, payload.password, request.client.host if request.client else '')
+        result = auth.login(payload.username, payload.password, client_ip(request))
         response = JSONResponse({'actor': public_actor(result['actor']), 'csrf_token': result['csrf_token']})
         response.set_cookie(COOKIE, result['session_token'], max_age=settings.session_ttl, httponly=True, secure=settings.cookie_secure, samesite='strict', path='/')
         return response
@@ -250,7 +291,7 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
     def change_password(payload: m.PasswordChange, request: Request, actor=Depends(identity)):
         # Session and CSRF only (`identity` checks the CSRF of a session; the store refuses a key). The store decides the 429 (failures of the IP or the user, too many changes) BEFORE the slot
         # (DC-5) and takes it, ONE slot of the gate of this process like the login, only around the two derivations.
-        ip = request.client.host if request.client else ''
+        ip = client_ip(request)
         return store.change_password(actor, payload.current_password, payload.new_password, ip, slot=lambda: passwords.GATE.hold(ip))
 
     @app.get('/v1/auth/sessions', operation_id='memory_own_sessions', response_model=m.WebSessions, responses=ACCESS_ERRORS)
@@ -422,7 +463,7 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
 
     @app.post('/v1/users', operation_id='memory_create_user')
     def user(payload: m.UserInput, request: Request, actor=Depends(identity)):
-        ip = request.client.host if request.client else ''
+        ip = client_ip(request)
         # The password of the new user is derived under the same gate as the login, but the store authorizes (403) and refuses a duplicate (409) before it takes the slot.
         return store.create_user(actor, payload, slot=lambda: passwords.GATE.hold(ip))
 
@@ -570,7 +611,7 @@ def main():
     import uvicorn
     observability.configure_logging()
     # One process only: the Prometheus registry lives in it (no multiprocess mode). Our own JSON access line replaces uvicorn's text one.
-    uvicorn.run(create_app(), host='0.0.0.0', port=8790, log_config=None, access_log=False)
+    uvicorn.run(create_app(), **SERVER_OPTIONS)
 
 
 if __name__ == '__main__':

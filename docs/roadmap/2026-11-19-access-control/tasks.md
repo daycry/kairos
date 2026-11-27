@@ -59,7 +59,7 @@ test-plan: test-plan.md
 | Fase 2 — Esquema 13, scrypt y contraseñas (C-01) | 7 | 7 | 100% | 0 / 36.0h | 3.88 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 3 — Usuarios, permisos y sesiones (C-01) | 6 | 6 | 100% | 0 / 36.0h | 5.14 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01) | 7 | 7 | 100% | 0 / 48.0h | 3.11 / 4.9h | 0 / 1.2h | 0 / 1232 k |
-| Fase 5 — Login que no se bloquea entre clientes (C-02) | 1 | 5 | 20.0% | 0 / 43.2h | 0 / 4.4h | 0 / 1.1h | 0 / 1109 k |
+| Fase 5 — Login que no se bloquea entre clientes (C-02) | 2 | 5 | 40.0% | 0 / 43.2h | 0 / 4.4h | 0 / 1.1h | 0 / 1109 k |
 | Fase 6 — Cierre del hito A: acceso que se puede retirar | 0 | 4 | 0% | 0 / 9.6h | 0 / 3.5h | 0 / 0.9h | 0 / 873 k |
 | Fase 7 — Mediciones del hito B y superficie de secretos (C-06) | 0 | 8 | 0% | 0 / 44.4h | 0 / 12.3h | 0 / 3.1h | 0 / 3082 k |
 | Fase 8 — Redacción: casos compartidos, patrones y entropía (C-04) | 0 | 6 | 0% | 0 / 42.0h | 0 / 4.3h | 0 / 1.1h | 0 / 1078 k |
@@ -73,7 +73,7 @@ test-plan: test-plan.md
 | Fase 16 — Identidad: guía probada y extensibilidad (C-05) | 0 | 5 | 0% | 0 / 23.4h | 0 / 2.4h | 0 / 0.6h | 0 / 601 k |
 | Fase 17 — Revisión del hito C y revisión de seguridad (C-07) | 0 | 5 | 0% | 0 / 27.0h | 0 / 5.3h | 0 / 1.3h | 0 / 1320 k |
 | Fase 18 — Cierre del hito C y de la iniciativa: ensayo, versión 0.4.2 y PR | 0 | 4 | 0% | 0 / 11.4h | 0 / 1.2h | 0 / 0.3h | 0 / 293 k |
-| **TOTAL** | **26** | **106** | **24.5%** | **0 / 616.2h** | **15.69 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
+| **TOTAL** | **27** | **106** | **25.5%** | **0 / 616.2h** | **15.69 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -885,29 +885,35 @@ RED: `server/memory_platform/tests/test_login_limits.py (14 pruebas, código de 
 
 - **Descripción**: La API toma la dirección no fiable más a la derecha de `X-Forwarded-For`, y solo si el par inmediato pertenece a `MEMORY_TRUSTED_PROXIES`; vacía, ignora la cabecera y se comporta como hoy. `web/nginx.conf` envía la cabecera en sus tres bloques hacia la API y el Compose define la variable con sus redes internas. Los dos ficheros los usa la instalación desplegada: ninguna tarea ejecuta su `up` (R-07). Fuente: CA-14; S-02; R-07.
 - **Changelog**: Nueva `MEMORY_TRUSTED_PROXIES`: detrás del proxy web, la API registra la IP real del cliente; el proxy envía `X-Forwarded-For`.
-- **Estado**: borrador
+- **Estado**: completado
+- **Cerrada**: 2026-11-27
 - **Tiempo humano**: est. 5.5h · real —
-- **Tiempo IA (ejec.)**: est. 0.56h · real —
+- **Tiempo IA (ejec.)**: est. 0.56h · real 0.10h (medido; las pruebas, los manuales y los cambios de `web/nginx.conf` y `docker-compose.yml` se redactaron en la ventana de T-26)
 - **Supervisión**: est. 0.14h · real —
 - **Previsión IA**: 156 k in / 14 k out tok · ⚠️ verificar €
 - **Dependencias**: T-26
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/app.py`, `server/memory_platform/auth.py`, `server/memory_platform/config.py`, `web/nginx.conf`, `docker-compose.yml`, `server/memory_platform/tests/test_client_ip.py`, `server/memory_platform/tests/test_nginx_routes.py`, `server/memory_platform/tests/test_compose_limits.py`, `docs/configuration.md`, `docs/operations.md`
+- **Archivos**: `server/memory_platform/app.py`, `server/memory_platform/auth.py`, `server/memory_platform/config.py`, `web/nginx.conf`, `docker-compose.yml`, `server/memory_platform/tests/test_client_ip.py`, `server/memory_platform/tests/test_nginx_routes.py`, `server/memory_platform/tests/test_compose_limits.py`, `docs/configuration.md`, `docs/operations.md`, `server/memory_platform/tests/test_nginx_portal.py` (añadido con nota en T-27: fijaba el texto exacto de `location = /health/ready`, que ahora lleva la cabecera)
 - **Cubre (tests)**: —
-- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_client_ip|test_nginx_routes|test_compose_limits|MEMORY_TEST_RESULT"` → nombradas en `ok`; 0 fallos y 0 omitidos
+- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_client_ip|test_nginx_routes|test_compose_limits|MEMORY_TEST_RESULT"` → nombradas en `ok`; 0 fallos y 0 omitidos. Evidencia (dirigidas en `kairos-test:i4p4-fix2`, árbol montado, sin red): `test_client_ip`, `test_login_limits`, `test_passwords`, `test_contract_additive`, `test_api`, `test_compose_limits`, `test_nginx_routes`, `test_nginx_portal`, `test_access_sessions`, `test_access_users`, `test_access_password` → `SEL_RESULT tests=232 failures=0 errors=0 skipped=0`. La suite completa la cierra T-29
 
 **Criterios de aceptación**
-- [ ] Un `X-Forwarded-For` de un par que no es de confianza se ignora: ni esquiva el bloqueo ni bloquea a otra IP
-- [ ] Con dos proxies de confianza encadenados se toma la dirección no fiable más a la derecha; una cabecera mal formada cae en la IP del par
-- [ ] `/metrics` en modo `internal` sigue respondiendo 404 a través del proxy; una lista de proxies inválida impide arrancar con un error claro
-- [ ] Los manuales documentan `MEMORY_TRUSTED_PROXIES`, `MEMORY_LOGIN_MAX_FAILURES` y `MEMORY_LOGIN_WINDOW`, cómo leer el 429 de login y el riesgo de una lista mal configurada
+- [x] Un `X-Forwarded-For` de un par que no es de confianza se ignora: ni esquiva el bloqueo ni bloquea a otra IP
+- [x] Con dos proxies de confianza encadenados se toma la dirección no fiable más a la derecha; una cabecera mal formada cae en la IP del par
+- [x] `/metrics` en modo `internal` sigue respondiendo 404 a través del proxy; una lista de proxies inválida impide arrancar con un error claro
+- [x] Los manuales documentan `MEMORY_TRUSTED_PROXIES`, `MEMORY_LOGIN_MAX_FAILURES` y `MEMORY_LOGIN_WINDOW`, cómo leer el 429 de login y el riesgo de una lista mal configurada
 
 **Subtareas**
-- [ ] Pruebas en rojo
-- [ ] IP real en la API, nginx y Compose
-- [ ] Manuales
+- [x] Pruebas en rojo
+- [x] IP real en la API, nginx y Compose
+- [x] Manuales
 
 **Notas**: Revisión fase 2, intento 2, gap 7 (diferido aquí y a T-55): el hueco por IP de la compuerta de T-08 lo toman el login, `POST /v1/auth/password` y `POST /v1/users` (`app.py`, `request.client.host`); tras nginx todos comparten hoy la IP del proxy, así que un admin de proyecto que encadena altas autorizadas ocupa el hueco de todos. La IP real de esta tarea debe llegar también a esas dos rutas, no solo al login, para que cada cliente ocupe solo el hueco de su IP.
+
+
+RED: `test_client_ip + test_nginx_routes + test_compose_limits + test_nginx_portal (44 pruebas, código de 7f934b5 con web/nginx.conf y docker-compose.yml de HEAD)` falló con 5 fallos y 2 errores: no existe client_address en app ni trusted_proxies en config; X-Forwarded-For ausente en /memory-api/, /v1/ y /health/ready (0 != 3) · 2026-11-27.
+
+**Notas**: Commit (este). `app.client_address(peer, cabeceras, redes)`: sin proxies de confianza, o con un par que no lo es, la IP es la del par y la cabecera se ignora; si no, se recorre `X-Forwarded-For` (todas sus líneas, en orden) desde la derecha y la primera dirección que no es de confianza es el cliente; una entrada de ese tramo que no es una IP (puerto, corchetes, vacía) devuelve el par; todo de confianza, la de más a la izquierda; IPv4 en IPv6 se normaliza. La usan el login, `POST /v1/auth/password` y `POST /v1/users` (hueco de la compuerta y sesiones, nota de la revisión de la fase 2). `config.trusted_proxies`: lista de IP o CIDR; sin bits de máquina y nunca `/0` (ValueError que nombra la variable: no arranca). `SERVER_OPTIONS` con `proxy_headers=False`: uvicorn ya no reescribe el cliente por su cuenta (lo hacía para 127.0.0.1). `web/nginx.conf`: `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` en `/memory-api/`, `/v1/` y `/health/ready` (no en `/mcp`). `docker-compose.yml`: `MEMORY_TRUSTED_PROXIES: ${MEMORY_TRUSTED_PROXIES:-172.16.0.0/12,192.168.0.0/16}` en el entorno compartido. Nada desplegado se tocó (R-07): ni `up` ni contenedores `knowledge-graphs-*`. Manuales: tres filas nuevas en `configuration.md` (con el riesgo de una lista mal configurada) y en `operations.md` la tabla del 429, «Cómo leer el 429 de inicio de sesión», `user_id`/`login_user_failures` y `kairos_login_user_failures_total`. **DECISIÓN ABIERTA (seguridad):** las redes de Docker no tienen subred fija, así que el Compose confía en los rangos privados por defecto de Docker, que incluyen la pasarela por la que llegan los puertos publicados en el anfitrión (`127.0.0.1:5173` y `:8790`): un proceso del anfitrión (o un túnel SSH) puede elegir su IP con la cabecera. Alternativas: subredes fijas en el Compose (recrea redes en el próximo `up`) o una lista más estrecha. Por defecto se deja así y documentado. Mutantes (copias; intacta 40 OK): cualquier par de confianza → 2 rojas; la de más a la izquierda → 5; entrada mal formada saltada → 1; cambio de contraseña, alta de usuario o login con la IP del par → 1, 1 y 2; `/0` admitida → rojo; bits de máquina admitidos → rojo; `/v1/` sin cabecera → 2; Compose sin la variable → error. Guarda T-02 sin cambios.
 
 ### T-28 — Pruebas de login con proxy simulado y nginx real (CA-13, CA-14)
 

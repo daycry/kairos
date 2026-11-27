@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import ipaddress
 import json
 import math
 import os
@@ -182,6 +183,29 @@ def check_login_failures(max_failures, window):
         if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
             raise ValueError(LOGIN_FAILURES_ERROR)
     return max_failures, window
+
+
+TRUSTED_PROXIES_ERROR = ('MEMORY_TRUSTED_PROXIES must be a comma-separated list of IP addresses or CIDR networks (such as 172.16.0.0/12), '
+                         'without host bits and never a whole address family (0.0.0.0/0, ::/0)')
+
+
+def trusted_proxies(raw):
+    """The networks of MEMORY_TRUSTED_PROXIES (CA-14): the peers whose `X-Forwarded-For` the API believes. `raw` is the text of the variable or an iterable of entries; empty = none
+    (the header is ignored, the peer is the client). An entry that is not an address or a network, a network with host bits, or one that covers a whole family is a ValueError
+    that names the variable: the process does not start with a list it cannot trust."""
+    items = raw.split(',') if isinstance(raw, str) else list(raw)
+    if isinstance(raw, str) and not raw.strip():
+        return ()
+    networks = []
+    for item in items:
+        try:
+            network = ipaddress.ip_network(item.strip() if isinstance(item, str) else item, strict=True)
+        except (TypeError, ValueError):
+            raise ValueError(TRUSTED_PROXIES_ERROR) from None
+        if network.prefixlen == 0:
+            raise ValueError(TRUSTED_PROXIES_ERROR)
+        networks.append(network)
+    return tuple(networks)
 
 
 def login_failure_settings(environ=None):
@@ -594,6 +618,7 @@ class Settings:
     login_concurrency: int = DEFAULT_LOGIN_CONCURRENCY  # MEMORY_LOGIN_CONCURRENCY: password derivations of the API at once (passwords.LoginGate)
     login_max_failures: int = DEFAULT_LOGIN_MAX_FAILURES  # MEMORY_LOGIN_MAX_FAILURES: failures of one client IP that block its logins (limits.py)
     login_window: int = DEFAULT_LOGIN_WINDOW  # MEMORY_LOGIN_WINDOW: seconds those failures count
+    trusted_proxies: tuple[str, ...] = ()  # MEMORY_TRUSTED_PROXIES: networks whose X-Forwarded-For the API believes (app.client_address); empty = the peer is the client
 
     def __post_init__(self):
         if self.metrics_mode not in METRICS_MODES:
@@ -606,6 +631,7 @@ class Settings:
         check_tcp(self.keepalives_idle, self.keepalives_interval, self.keepalives_count, self.tcp_user_timeout_ms)
         check_login_concurrency(self.login_concurrency)
         check_login_failures(self.login_max_failures, self.login_window)
+        trusted_proxies(self.trusted_proxies)
 
     @classmethod
     def from_env(cls):
@@ -635,6 +661,7 @@ class Settings:
         abstain_default, abstain_thresholds = abstain_from_env()
         metrics_mode = metrics_mode_from_env()
         login_max_failures, login_window = login_failure_settings()
+        proxies = tuple(str(network) for network in trusted_proxies(os.environ.get('MEMORY_TRUSTED_PROXIES', '')))
         extract_enabled = switch_from_env('MEMORY_EXTRACT_ENABLED', ('1',), ('0',), '0')
         corpus_answer_enabled = switch_from_env('MEMORY_CORPUS_ANSWER', ('on',), ('off',), 'off')
         mount_mcp = switch_from_env('MEMORY_MOUNT_MCP', ('1',), ('0',), '1')
@@ -665,5 +692,5 @@ class Settings:
             pool_min=pool_min, pool_max=pool_max, pool_timeout=pool_timeout, connect_timeout=connect_timeout, statement_timeout_ms=statement_timeout,
             keepalives_idle=keepalives_idle, keepalives_interval=keepalives_interval, keepalives_count=keepalives_count, tcp_user_timeout_ms=tcp_user_timeout_ms,
             metrics_mode=metrics_mode, mount_mcp=mount_mcp, login_concurrency=login_concurrency(),
-            login_max_failures=login_max_failures, login_window=login_window,
+            login_max_failures=login_max_failures, login_window=login_window, trusted_proxies=proxies,
         )
