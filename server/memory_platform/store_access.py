@@ -11,8 +11,8 @@ those to change an access is declared on `READ_EXCEPTIONS` of that walk, with it
 import secrets
 from contextlib import nullcontext
 
-from . import passwords
-from .auth import KEY_EXPIRY_MAX, RECENT_ATTEMPTS, lock_attempts, token_hash
+from . import limits, passwords
+from .auth import KEY_EXPIRY_MAX, lock_attempts, token_hash
 from .auth_scope import invalidate_auth
 from .errors import Conflict, Forbidden, MemoryError, NotFound
 from .store_common import as_dict, canonical, new_id
@@ -23,11 +23,13 @@ from .store_common import as_dict, canonical, new_id
 PASSWORD_CHANGES_PER_WINDOW = 5
 # The count does not read `audit_events` whole (fix2 of the review of phase 2, gap 2: 1 M old rows cost 190 ms per request). There is no index on `happened_at` and the schema is closed (version 13), so it
 # is bounded by the primary key: `id` is an identity that the same INSERT assigns together with `happened_at`, so both grow together. LAST_OLD_EVENT is a backward walk of the key that stops at the first row
-# older than the window (a few buffers however large the table is) and RECENT_CHANGES counts only the `id` above it, still filtering by `happened_at`. Limit declared in design.md DC-5: the order by `id` is the
+# older than the window (a few buffers however large the table is) and CHANGES_WAIT reads only the `id` above it, still filtering by `happened_at`. Limit declared in design.md DC-5: the order by `id` is the
 # order of the clock only to the microsecond, so a row whose `id` and `happened_at` disagree at the very edge of the window (two sessions inserting in the same microsecond, or a clock stepped back by minutes)
 # may be counted or missed by that margin.
 LAST_OLD_EVENT = "SELECT id FROM memory.audit_events WHERE happened_at<=clock_timestamp()-interval '15 minutes' ORDER BY id DESC LIMIT 1"
-RECENT_CHANGES = "SELECT count(*) AS n FROM memory.audit_events WHERE id>%s AND actor_id=%s AND action='password.changed' AND happened_at>clock_timestamp()-interval '15 minutes'"
+# The seconds until the oldest of the last PASSWORD_CHANGES_PER_WINDOW changes leaves the window (the `Retry-After` of the 429), or no row when there are fewer.
+CHANGES_WAIT = ("SELECT ceil(extract(epoch FROM happened_at + interval '15 minutes' - clock_timestamp()))::bigint AS wait FROM memory.audit_events WHERE id>%s AND actor_id=%s "
+                "AND action='password.changed' AND happened_at>clock_timestamp()-interval '15 minutes' ORDER BY happened_at DESC OFFSET %s LIMIT 1")
 
 
 # The advisory lock that serialises every disabling and enabling (T-13): «the last active administrator» is a count over several rows, and two disablings of two different administrators at once
@@ -41,10 +43,12 @@ ROTATION_GRACE_MAX = 7 * 86400
 
 
 def password_changes_left(c, actor):
-    """429 `too_many_attempts` when the user already made `PASSWORD_CHANGES_PER_WINDOW` correct changes in the last 15 minutes (counted in the audit events of `password.changed`, bounded by the key: see above)."""
+    """429 `too_many_attempts` (`limits.too_many`, with `Retry-After`) when the user already made `PASSWORD_CHANGES_PER_WINDOW` correct changes in the last 15 minutes (counted in the audit
+    events of `password.changed`, bounded by the key: see above)."""
     old = c.execute(LAST_OLD_EVENT).fetchone()
-    if c.execute(RECENT_CHANGES, (old['id'] if old else 0, actor['id'])).fetchone()['n'] >= PASSWORD_CHANGES_PER_WINDOW:
-        raise MemoryError('too_many_attempts', 'Too many password changes; try again later', 429)
+    row = c.execute(CHANGES_WAIT, (old['id'] if old else 0, actor['id'], PASSWORD_CHANGES_PER_WINDOW - 1)).fetchone()
+    if row:
+        raise limits.too_many('too_many_attempts', row['wait'])
 
 
 def live_sessions(c, actor, user_id):
@@ -64,7 +68,8 @@ class AccessMixin:
         """`POST /v1/auth/password`: with the right current password, replace the hash, close every OTHER session of the user and keep this one and the keys.
 
         Only a session may do it (a key is a different credential and gets 403). The order is DC-5's: first the checks that need no derivation and take no slot (the credential is alive, the new
-        password has a valid length, the IP or the user is not blocked by failures: 429 `rate_limited`, the user has not made too many changes: 429 `too_many_attempts`), then the slot of the
+        password has a valid length, the IP or the user is not blocked by failures: 429 `rate_limited`, the user has not made too many changes: 429 `too_many_attempts`, both from `limits.too_many`
+        with `Retry-After`), then the slot of the
         gate (`slot`, a callable that returns a context manager: the route gives `passwords.GATE.hold(ip)`; none in the tests and `admin`), then the derivations: the verification of the current password
         at the cost of ITS hash (a hash of an earlier release costs the cheap check, not a second derivation at the target cost) and the hash of the new one, outside any transaction.
         A wrong current password changes nothing and is a failed login of `client_ip`: it is recorded (committed on its own, under the advisory locks of the login, with the same recount) and
@@ -74,8 +79,7 @@ class AccessMixin:
             if actor.get('credential_type') != 'session':
                 raise Forbidden('Only a signed-in session may change the password')
             passwords.check_length(new)  # before anything is derived
-            if c.execute(RECENT_ATTEMPTS, (actor['username'], client_ip)).fetchone()['n'] >= 10:
-                raise MemoryError('rate_limited', 'Too many login attempts', 429)
+            limits.check_user_or_ip(c, actor['username'], client_ip)
             password_changes_left(c, actor)
             stored = c.execute('SELECT password_hash FROM memory.actors WHERE id=%s', (actor['id'],)).fetchone()['password_hash']
         with (slot or nullcontext)():
@@ -84,8 +88,7 @@ class AccessMixin:
         if not right:
             with self.transaction() as c:  # committed on its own, before the refusal is raised
                 lock_attempts(c, actor['username'], client_ip)
-                if c.execute(RECENT_ATTEMPTS, (actor['username'], client_ip)).fetchone()['n'] >= 10:  # other failures arrived while this request derived: not one more is written
-                    raise MemoryError('rate_limited', 'Too many login attempts', 429)
+                limits.check_user_or_ip(c, actor['username'], client_ip)  # other failures arrived while this request derived: not one more is written
                 c.execute('INSERT INTO memory.login_attempts(username,client_ip) VALUES(%s,%s)', (actor['username'], client_ip))
             raise MemoryError('invalid_current_password', 'The current password is not correct', 403)
         with self.transaction() as c:

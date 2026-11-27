@@ -168,6 +168,29 @@ def login_concurrency(environ=None) -> int:
     if not raw.isascii() or not raw.isdigit():
         raise ValueError(f'MEMORY_LOGIN_CONCURRENCY must be a whole number between 1 and {LOGIN_CONCURRENCY_LIMIT}')
     return check_login_concurrency(int(raw))
+
+
+# The block of the login by the IP of the client (CA-13, P-05; `limits.py`): MEMORY_LOGIN_MAX_FAILURES failures of one IP within MEMORY_LOGIN_WINDOW seconds answer 429 `rate_limited`.
+DEFAULT_LOGIN_MAX_FAILURES, LOGIN_MAX_FAILURES_LIMIT = 10, 1000
+DEFAULT_LOGIN_WINDOW, LOGIN_WINDOW_RANGE = 900, (60, 86400)
+LOGIN_FAILURES_ERROR = (f'MEMORY_LOGIN_MAX_FAILURES must be a whole number between 1 and {LOGIN_MAX_FAILURES_LIMIT}, and MEMORY_LOGIN_WINDOW a whole number of seconds '
+                        f'between {LOGIN_WINDOW_RANGE[0]} and {LOGIN_WINDOW_RANGE[1]}')
+
+
+def check_login_failures(max_failures, window):
+    for value, low, high in ((max_failures, 1, LOGIN_MAX_FAILURES_LIMIT), (window, *LOGIN_WINDOW_RANGE)):
+        if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+            raise ValueError(LOGIN_FAILURES_ERROR)
+    return max_failures, window
+
+
+def login_failure_settings(environ=None):
+    """(MEMORY_LOGIN_MAX_FAILURES, MEMORY_LOGIN_WINDOW): whole numbers, 1 to 1000 failures (default 10) in 60 to 86400 seconds (default 900, 15 minutes)."""
+    environ = os.environ if environ is None else environ
+    raw = (environ.get('MEMORY_LOGIN_MAX_FAILURES', str(DEFAULT_LOGIN_MAX_FAILURES)), environ.get('MEMORY_LOGIN_WINDOW', str(DEFAULT_LOGIN_WINDOW)))
+    if not all(value.isascii() and value.isdigit() for value in raw):
+        raise ValueError(LOGIN_FAILURES_ERROR)
+    return check_login_failures(int(raw[0]), int(raw[1]))
 POOL_MAX_LIMIT = 100
 
 
@@ -569,6 +592,8 @@ class Settings:
     metrics_mode: str = 'internal'
     mount_mcp: bool = True  # MEMORY_MOUNT_MCP: the internal MCP at `/mcp`, deprecated since 0.4.0 and removed in 0.5.0 (P-07)
     login_concurrency: int = DEFAULT_LOGIN_CONCURRENCY  # MEMORY_LOGIN_CONCURRENCY: password derivations of the API at once (passwords.LoginGate)
+    login_max_failures: int = DEFAULT_LOGIN_MAX_FAILURES  # MEMORY_LOGIN_MAX_FAILURES: failures of one client IP that block its logins (limits.py)
+    login_window: int = DEFAULT_LOGIN_WINDOW  # MEMORY_LOGIN_WINDOW: seconds those failures count
 
     def __post_init__(self):
         if self.metrics_mode not in METRICS_MODES:
@@ -580,6 +605,7 @@ class Settings:
         check_timeout_pair(self.connect_timeout, self.pool_timeout)
         check_tcp(self.keepalives_idle, self.keepalives_interval, self.keepalives_count, self.tcp_user_timeout_ms)
         check_login_concurrency(self.login_concurrency)
+        check_login_failures(self.login_max_failures, self.login_window)
 
     @classmethod
     def from_env(cls):
@@ -608,6 +634,7 @@ class Settings:
         fusion_k, fusion_bonus, fusion_weights = fusion_from_env()
         abstain_default, abstain_thresholds = abstain_from_env()
         metrics_mode = metrics_mode_from_env()
+        login_max_failures, login_window = login_failure_settings()
         extract_enabled = switch_from_env('MEMORY_EXTRACT_ENABLED', ('1',), ('0',), '0')
         corpus_answer_enabled = switch_from_env('MEMORY_CORPUS_ANSWER', ('on',), ('off',), 'off')
         mount_mcp = switch_from_env('MEMORY_MOUNT_MCP', ('1',), ('0',), '1')
@@ -638,4 +665,5 @@ class Settings:
             pool_min=pool_min, pool_max=pool_max, pool_timeout=pool_timeout, connect_timeout=connect_timeout, statement_timeout_ms=statement_timeout,
             keepalives_idle=keepalives_idle, keepalives_interval=keepalives_interval, keepalives_count=keepalives_count, tcp_user_timeout_ms=tcp_user_timeout_ms,
             metrics_mode=metrics_mode, mount_mcp=mount_mcp, login_concurrency=login_concurrency(),
+            login_max_failures=login_max_failures, login_window=login_window,
         )

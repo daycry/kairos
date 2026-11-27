@@ -23,7 +23,7 @@ from .privacy import redact_log
 LOGGER = logging.getLogger('kairos')
 LOGGER.addHandler(logging.NullHandler())  # silent until `configure_logging` runs (tests, imports)
 REQUEST_ID = contextvars.ContextVar('kairos_request_id', default=None)
-FIELDS = ('request_id', 'layer', 'duration_ms', 'exc_type', 'code', 'status', 'method', 'route', 'destination', 'provider', 'reason', 'outcome', 'caller', 'count', 'stage', 'key_id')
+FIELDS = ('request_id', 'layer', 'duration_ms', 'exc_type', 'code', 'status', 'method', 'route', 'destination', 'provider', 'reason', 'outcome', 'caller', 'count', 'stage', 'key_id', 'user_id')
 MAX_FIELD = 200
 FOREIGN_LOGGERS = ('uvicorn.error',)
 QUIET_LOGGERS = ('httpx', 'httpcore')
@@ -215,6 +215,9 @@ EMBED_WAIT = Histogram('kairos_embedding_wait_seconds', 'Time spent waiting for 
                        buckets=(0.005, 0.05, 0.25, 1, 5, 15, 60, 120))
 EMBED_IN_USE = Gauge('kairos_embedding_slots_in_use', 'Embeddings slots held right now, by caller', ['caller'], registry=REGISTRY)
 WORKER_JOBS = Counter('kairos_worker_jobs', 'Jobs finished by this process, by destination and outcome', ['destination', 'outcome'], registry=REGISTRY)
+# The failed logins (P-05, `auth.Auth.login`): published, never a block. No label (no name, no IP: an unbounded label would be a way to fill the registry); the log line
+# `login_user_failures` says which user (its id, when it exists) and how many failures its name has in the window.
+LOGIN_USER_FAILURES = Counter('kairos_login_user_failures', 'Failed logins of this process (wrong password, unknown or disabled user); the log line login_user_failures says which user and how many in the window', registry=REGISTRY)
 WORKER_JOB_SECONDS = Histogram('kairos_worker_job_seconds', 'Duration of a job in this process, by destination', ['destination'], registry=REGISTRY,
                                buckets=(0.1, 0.5, 1, 5, 15, 60, 180, 600, 1200))
 OFFSITE_REGISTRY = CollectorRegistry()  # apart from REGISTRY: memory-api never runs a cycle, so its /metrics must not claim a result (a constant 0 would page someone)

@@ -272,6 +272,13 @@ class ContractAdditiveTests(unittest.TestCase):
                 with self.subTest(route=(method, path), status=status):
                     self.assertEqual(paths[path][method]['responses'][status]['content']['application/json']['schema'], {'$ref': '#/components/schemas/Error'})
         self.assertEqual(sorted(schemas['Error']['required']), ['error', 'request_id'])
+        # T-26 (review of phase 3, attempt 2, outside the lens): the 404 of an unknown user is published, and `Error` declares the real envelope `{code, message}` (`retry_after` optional,
+        # open to more fields: a refusal may grow), without making any answer stricter for a client
+        self.assertEqual(paths['/v1/users/{user_id}/sessions']['get']['responses']['404']['content']['application/json']['schema'], {'$ref': '#/components/schemas/Error'})
+        self.assertEqual(schemas['Error']['properties']['error'], {'$ref': '#/components/schemas/ErrorBody'})
+        self.assertEqual(sorted(schemas['ErrorBody']['required']), ['code', 'message'])
+        self.assertEqual(set(schemas['ErrorBody']['properties']), {'code', 'message', 'retry_after'})
+        self.assertNotEqual(schemas['ErrorBody'].get('additionalProperties'), False)
         operation_ids = [operation['operationId'] for item in paths.values() for operation in item.values()]
         self.assertEqual(sorted({i for i in operation_ids if operation_ids.count(i) > 1}), [], 'an operationId names one operation (a generated client would merge two)')
         self.assertNotIn('required', schemas['UserUpdate'], 'every field of a PATCH is optional, so the body may grow')

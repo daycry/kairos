@@ -5,8 +5,15 @@ from pydantic import BaseModel, ConfigDict, Field, AwareDatetime
 class Model(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+class ErrorBody(BaseModel):
+    # The envelope every refusal of the API answers with (`app.error`): a stable code and a fixed message; `retry_after`, whole seconds, when the answer carries `Retry-After`
+    # (a 429 of `limits.py`, a 503 `login_busy`). Open to more fields (no `extra="forbid"`): an answer may grow.
+    code: str
+    message: str
+    retry_after: int | None = None
+
 class Error(Model):
-    error: dict[str, Any]
+    error: ErrorBody
     request_id: str
 
 class Source(Model):

@@ -7,12 +7,11 @@ from datetime import datetime, timezone
 
 from .errors import Forbidden, MemoryError, NotFound, Unauthorized
 from .auth_scope import invalidate_auth, savepoint
-from . import observability, passwords
+from . import limits, observability, passwords
 from .store_pool import connection_wait
 from .passwords import check_login, hash_password, verify_password  # noqa: F401  (re-exported: the callers and tests that import them from here)
 
 SCOPES = frozenset({'read', 'write', 'publish', 'validate', 'admin'})
-RECENT_ATTEMPTS = "SELECT count(*) AS n FROM memory.login_attempts WHERE happened_at>clock_timestamp()-interval '15 minutes' AND (username=%s OR client_ip=%s)"
 # `last_used_at` of a key (CA-06, DC-7): written by the authentication of the key at most once per LAST_USED_EVERY seconds and key, in a short transaction of its own whose
 # `lock_timeout` is LAST_USED_LOCK_TIMEOUT and that waits for a connection of the pool at most LAST_USED_POOL_WAIT seconds. A row held by another transaction (the `FOR SHARE` of
 # `extended_store.py` and `corpus_answers.py`) or a full pool makes the write give up, not the request. The clock of the process moves BEFORE every attempt (fix1 of the review of
@@ -93,57 +92,68 @@ class Auth:
             return self._actor(c, row, 'session', row['credential_id'])
 
     def login(self, username, password, client_ip=''):
-        # 1) An IP (or a name) blocked by failures is answered 429 before anything else: no slot of the gate, no derivation, nothing written.
+        """Open a session (CA-09, CA-12, CA-13, DC-5). Only failures stay in `login_attempts`, and only the IP of the client blocks (`limits.py`; P-05: never the name).
+
+        Order (DC-5): 1) an IP with `limits.LOGIN.max_failures` failures in the window is answered 429 `rate_limited` with `Retry-After`, before anything else (no slot of the gate, no derivation,
+        nothing written); 2) the slot of the IP in the gate (full: 503 `login_busy`, not a failure); 3) under the advisory locks of the IP and the name, the IP is counted again and the attempt
+        is written BEFORE the derivation, so attempts in flight count (with several processes, twenty attempts of one IP at once never get more than `max_failures` derivations); 4) one derivation;
+        5) a right password removes ITS row in the transaction that opens the session (a success neither counts nor clears the failures of its IP); every refusal after 3 keeps it as a failure
+        and publishes `login_user_failures` (the count of the name in the window and, for a user that exists, its id; never the name typed nor the password: it blocks nothing)."""
         with self.store.transaction() as c:
-            if c.execute(RECENT_ATTEMPTS, (username, client_ip)).fetchone()['n'] >= 10:
-                raise MemoryError('rate_limited', 'Too many login attempts', 429)
-        # 2) One slot per IP and a bounded wait (passwords.LoginGate): full = 503 `login_busy`, which is not a failed attempt, so it is decided before the attempt is recorded.
+            limits.check_ip(c, client_ip)
         with passwords.GATE.hold(client_ip):
-            # A separate committed transaction records failures even when authentication raises.
+            # A separate committed transaction keeps the attempt even when authentication raises.
             with self.store.transaction() as c:
                 lock_attempts(c, username, client_ip)
-                if c.execute(RECENT_ATTEMPTS, (username, client_ip)).fetchone()['n'] >= 10:
-                    raise MemoryError('rate_limited', 'Too many login attempts', 429)
-                c.execute('INSERT INTO memory.login_attempts(username,client_ip) VALUES(%s,%s)', (username, client_ip))
+                limits.check_ip(c, client_ip)
+                attempt = c.execute('INSERT INTO memory.login_attempts(username,client_ip) VALUES(%s,%s) RETURNING id', (username, client_ip)).fetchone()['id']
+                failures = limits.user_failures(c, username)  # read on every attempt, a user that exists or not: the same statements whatever the name
                 row = c.execute('SELECT * FROM memory.actors WHERE username=%s AND NOT disabled', (username,)).fetchone()
-            # One derivation at the target cost for every attempt: unknown or disabled user (the dummy hash), wrong password and right password alike (passwords.py).
-            right, rehash = check_login(password, row['password_hash'] if row else None)
-            if not right or not row:
-                raise Unauthorized()
-            session, csrf, sid = secrets.token_urlsafe(48), secrets.token_urlsafe(32), secrets.token_hex(16)
-            for retried in (False, True):
-                with self.store.transaction() as c:
-                    # Between the verification above and this insert another transaction may have changed the password (`admin set-password`, `POST /v1/auth/password`, another login that replaced an
-                    # old hash) or disabled the user. The row is read again under a lock that waits for it, and the session is opened only if the hash is still the verified one and the user is enabled
-                    # (no session otherwise: a session born of the old password would outlive the closing of the sessions that change made).
-                    # `FOR SHARE` waits for a transaction that changed the row and has not committed; a login that is going to replace an old hash takes `FOR NO KEY UPDATE` instead, because it writes the
-                    # row next and two of them must not wait for each other (a share lock that is then upgraded).
-                    current = c.execute('SELECT * FROM memory.actors WHERE id=%s FOR NO KEY UPDATE' if rehash else 'SELECT * FROM memory.actors WHERE id=%s FOR SHARE', (row['id'],)).fetchone()
-                    if not current or current['disabled']:
+            user_id = row['id'] if row else None
+            try:
+                # One derivation at the target cost for every attempt: unknown or disabled user (the dummy hash), wrong password and right password alike (passwords.py).
+                right, rehash = check_login(password, row['password_hash'] if row else None)
+                if not right or not row:
+                    raise Unauthorized()
+                session, csrf, sid = secrets.token_urlsafe(48), secrets.token_urlsafe(32), secrets.token_hex(16)
+                for retried in (False, True):
+                    with self.store.transaction() as c:
+                        # Between the verification above and this insert another transaction may have changed the password (`admin set-password`, `POST /v1/auth/password`, another login that replaced an
+                        # old hash) or disabled the user. The row is read again under a lock that waits for it, and the session is opened only if the hash is still the verified one and the user is enabled
+                        # (no session otherwise: a session born of the old password would outlive the closing of the sessions that change made).
+                        # `FOR SHARE` waits for a transaction that changed the row and has not committed; a login that is going to replace an old hash takes `FOR NO KEY UPDATE` instead, because it writes the
+                        # row next and two of them must not wait for each other (a share lock that is then upgraded).
+                        current = c.execute('SELECT * FROM memory.actors WHERE id=%s FOR NO KEY UPDATE' if rehash else 'SELECT * FROM memory.actors WHERE id=%s FOR SHARE', (row['id'],)).fetchone()
+                        if not current or current['disabled']:
+                            raise Unauthorized()
+                        if current['password_hash'] == row['password_hash']:
+                            row = current
+                            if rehash:
+                                # The hash of an earlier release becomes one at the target cost. `WHERE password_hash=<the one read>`: a password changed meanwhile is not overwritten, and a failed write
+                                # (a savepoint, so the transaction goes on) does not stop the login.
+                                try:
+                                    with savepoint(c):
+                                        c.execute('UPDATE memory.actors SET password_hash=%s WHERE id=%s AND password_hash=%s', (rehash, row['id'], row['password_hash']))
+                                except Exception as exc:
+                                    observability.log_failure('password_rehash_failed', exc, 'warning')  # the type only, never the message; the login goes on
+                            saved = c.execute("INSERT INTO memory.web_sessions(id,actor_id,token_hash,csrf_hash,expires_at,client_ip) VALUES(%s,%s,%s,%s,clock_timestamp()+(%s * interval '1 second'),%s) RETURNING expires_at", (sid, row['id'], token_hash(session), token_hash(csrf), self.session_ttl, client_ip)).fetchone()
+                            c.execute('DELETE FROM memory.login_attempts WHERE id=%s', (attempt,))  # a success is not a failure: only its own row goes
+                            invalidate_auth(c)
+                            actor = self._actor(c, row, 'session', sid)
+                            return {'actor': actor, 'session_token': session, 'csrf_token': csrf, 'expires_at': saved['expires_at'].isoformat()}
+                    # The hash is not the verified one. Most often a second login of the same user replaced an old hash a moment ago, and the password is still right: the transaction above is closed,
+                    # the password is verified ONCE against the hash that is there now (one more derivation, inside the same slot of the gate) and the session is tried one more time. If the hash changes
+                    # again, or the password does not verify (`set-password`, a change of password), 401 and no session: the old password never opens a session with a new hash.
+                    if retried:
                         raise Unauthorized()
-                    if current['password_hash'] == row['password_hash']:
-                        row = current
-                        if rehash:
-                            # The hash of an earlier release becomes one at the target cost. `WHERE password_hash=<the one read>`: a password changed meanwhile is not overwritten, and a failed write
-                            # (a savepoint, so the transaction goes on) does not stop the login.
-                            try:
-                                with savepoint(c):
-                                    c.execute('UPDATE memory.actors SET password_hash=%s WHERE id=%s AND password_hash=%s', (rehash, row['id'], row['password_hash']))
-                            except Exception as exc:
-                                observability.log_failure('password_rehash_failed', exc, 'warning')  # the type only, never the message; the login goes on
-                        saved = c.execute("INSERT INTO memory.web_sessions(id,actor_id,token_hash,csrf_hash,expires_at,client_ip) VALUES(%s,%s,%s,%s,clock_timestamp()+(%s * interval '1 second'),%s) RETURNING expires_at", (sid, row['id'], token_hash(session), token_hash(csrf), self.session_ttl, client_ip)).fetchone()
-                        invalidate_auth(c)
-                        actor = self._actor(c, row, 'session', sid)
-                        return {'actor': actor, 'session_token': session, 'csrf_token': csrf, 'expires_at': saved['expires_at'].isoformat()}
-                # The hash is not the verified one. Most often a second login of the same user replaced an old hash a moment ago, and the password is still right: the transaction above is closed,
-                # the password is verified ONCE against the hash that is there now (one more derivation, inside the same slot of the gate) and the session is tried one more time. If the hash changes
-                # again, or the password does not verify (`set-password`, a change of password), 401 and no session: the old password never opens a session with a new hash.
-                if retried:
-                    raise Unauthorized()
-                row = current
-                right, rehash = check_login(password, row['password_hash'])
-                if not right:
-                    raise Unauthorized()
+                    row = current
+                    right, rehash = check_login(password, row['password_hash'])
+                    if not right:
+                        raise Unauthorized()
+            except Unauthorized:
+                observability.LOGIN_USER_FAILURES.inc()
+                observability.log_event('login_user_failures', 'warning', user_id=user_id, count=failures)
+                raise
 
     def logout(self, token):
         with self.store.transaction() as c:

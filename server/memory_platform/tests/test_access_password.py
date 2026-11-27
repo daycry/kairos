@@ -75,7 +75,7 @@ class PasswordRouteTests(pw.Fixture):
         before = self.count('SELECT count(*) FROM memory.login_attempts')
         refused = self.change(client, headers, current='not-the-password-999')
         self.assertEqual((refused.status_code, refused.json()['error']['code']), (403, 'invalid_current_password'))
-        self.assertEqual(self.count('SELECT count(*) FROM memory.login_attempts WHERE username=%s AND client_ip=%s', 'ana', 'testclient'), 2, 'the login of the fixture and the wrong current password')
+        self.assertEqual(self.count('SELECT count(*) FROM memory.login_attempts WHERE username=%s AND client_ip=%s', 'ana', 'testclient'), 1, 'the wrong current password (the correct login of the fixture is not a failure, T-26)')
         self.assertEqual(self.count('SELECT count(*) FROM memory.login_attempts'), before + 1)
         self.assertEqual(self.count("SELECT count(*) FROM memory.audit_events WHERE action='password.changed'"), 0)
         self.assertEqual(self.auth.login('ana', pw.PASSWORD, '192.0.2.71')['actor']['username'], 'ana', 'the old password still works')
@@ -83,18 +83,21 @@ class PasswordRouteTests(pw.Fixture):
 
     def test_ten_wrong_currents_block_the_ip_with_429_before_any_derivation(self):
         client, headers = self.session()
-        for _ in range(9):  # the login of the fixture is the first of the ten attempts of this IP
+        for _ in range(10):  # only failures count (T-26): the correct login of the fixture is not one of them
             self.assertEqual(self.change(client, headers, current='not-the-password-999').status_code, 403)
         with pw.Derivations() as spy:
             blocked = self.change(client, headers)  # even the right one: the IP is blocked
         self.assertEqual((blocked.status_code, blocked.json()['error']['code'], spy.calls), (429, 'rate_limited', []))
+        seconds = int(blocked.headers['Retry-After'])  # DC-2: the one constructor of the 429 (review of phase 2, attempt 2, gap 6)
+        self.assertTrue(1 <= seconds <= 900, seconds)
+        self.assertEqual(blocked.json()['error'], {'code': 'rate_limited', 'message': f'Rate limit exceeded [code=rate_limited retry_after={seconds}]', 'retry_after': seconds})
 
     def test_a_new_password_under_twelve_characters_is_422_and_derives_nothing(self):
         client, headers = self.session()
         with pw.Derivations() as spy:
             short = self.change(client, headers, new='short')
         self.assertEqual((short.status_code, short.json()['error']['code'], spy.calls), (422, 'invalid_password', []))
-        self.assertEqual(self.count("SELECT count(*) FROM memory.login_attempts WHERE username='ana'"), 1, 'only the login of the fixture')
+        self.assertEqual(self.count("SELECT count(*) FROM memory.login_attempts WHERE username='ana'"), 0, 'nothing: the correct login of the fixture is not a failure (T-26)')
 
     def test_only_a_session_with_csrf_may_change_it_a_key_gets_403(self):
         client, headers = self.session()
@@ -157,6 +160,9 @@ class PasswordRouteTests(pw.Fixture):
         with patch.object(passwords, 'GATE', self.busy_gate()), pw.Derivations() as spy:  # a full gate: the 429 is decided before the slot, so it is not a 503
             blocked = self.change(client, headers, current=current, new=NEW)
         self.assertEqual((blocked.status_code, blocked.json()['error']['code'], spy.calls), (429, 'too_many_attempts', []))
+        seconds = int(blocked.headers['Retry-After'])  # DC-2: the one constructor of the 429; the oldest of the five changes leaves the window in about 15 minutes
+        self.assertTrue(880 <= seconds <= 900, seconds)
+        self.assertEqual(blocked.json()['error'], {'code': 'too_many_attempts', 'message': f'Too many password changes [code=too_many_attempts retry_after={seconds}]', 'retry_after': seconds})
         self.assertEqual(self.count('SELECT count(*) FROM memory.login_attempts'), before, 'it is not a failed login either')
         self.assertTrue(passwords.verify_password(current, self.stored_hash()), 'nothing changed')
         self.assertEqual(self.count("SELECT count(*) FROM memory.audit_events WHERE action='password.changed'"), 5)
@@ -236,6 +242,16 @@ class PasswordRouteTests(pw.Fixture):
         with patch.object(passwords, 'GATE', self.busy_gate()), pw.Derivations() as spy:
             blocked = self.change(client, headers)
         self.assertEqual((blocked.status_code, blocked.json()['error']['code'], spy.calls), (429, 'rate_limited', []))
+        self.assertGreaterEqual(int(blocked.headers['Retry-After']), 1)
+
+    def test_the_failures_of_the_user_block_the_change_with_the_plazo_of_the_user(self):
+        """DC-5 keeps the user bucket for the change of password (an attacker with a stolen session and many IPs): ten failures of the name from other IPs, the oldest 14 minutes ago."""
+        client, headers = self.session()
+        with self.psycopg.connect(self.dsn) as c:
+            c.execute("INSERT INTO memory.login_attempts(username,client_ip,happened_at) SELECT 'ana','198.51.100.'||g,clock_timestamp()-make_interval(mins => 14) FROM generate_series(1,10) g")
+        blocked = self.change(client, headers)
+        self.assertEqual((blocked.status_code, blocked.json()['error']['code']), (429, 'rate_limited'))
+        self.assertTrue(1 <= int(blocked.headers['Retry-After']) <= 60, blocked.headers['Retry-After'])
 
     def test_the_failure_of_the_current_password_is_recorded_under_the_advisory_locks_of_the_login(self):
         client, headers = self.session()
@@ -258,8 +274,8 @@ class PasswordRouteTests(pw.Fixture):
 
         def failures_arrive(password, encoded):
             result = real(password, encoded)
-            with self.psycopg.connect(self.dsn) as c:  # the login of the fixture made one: nine more make ten
-                for _ in range(9):
+            with self.psycopg.connect(self.dsn) as c:  # ten failures of the IP (the correct login of the fixture is not one, T-26)
+                for _ in range(10):
                     c.execute("INSERT INTO memory.login_attempts(username,client_ip) VALUES('someone','testclient')")
             return result
         with patch('memory_platform.store_access.passwords.verify_password', failures_arrive):
@@ -541,7 +557,7 @@ class LoginRetryTests(pw.Fixture):
         self.assertEqual(self.sessions(), 2)
         self.assertEqual(json.loads(self.stored_hash())['n'], passwords.TARGET[0], 'the hash was replaced by one of the two')
         self.assertEqual([call.args[0] for call in failed.call_args_list if call.args], [], 'the write of the new hash did not fail (no deadlock)')
-        self.assertEqual(self.attempts(), 2, 'one attempt per login, as always: the retry of the second is not another one')
+        self.assertEqual(self.attempts(), 0, 'two correct logins, no failure (T-26: a success removes its own row); the retry of the second is not another attempt')
 
     def test_the_retry_verifies_once_against_the_new_hash_and_only_once(self):
         """The hash changes again while the retry verifies: 401, no session, and exactly two verifications (the first and the single retry)."""
@@ -662,7 +678,7 @@ class RecentChangesCostTests(pw.Fixture):
         method = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == 'change_password')
         calls = [n for n in ast.walk(method) if isinstance(n, ast.Call) and getattr(n.func, 'id', '') == 'password_changes_left']
         self.assertEqual(len(calls), 2, 'the one before the slot and the one of the last transaction')
-        self.assertFalse([n for n in ast.walk(method) if isinstance(n, ast.Name) and n.id == 'RECENT_CHANGES'], 'no count of its own')
+        self.assertFalse([n for n in ast.walk(method) if isinstance(n, ast.Name) and n.id == 'CHANGES_WAIT'], 'no count of its own')
 
 
 class AccessChangedTests(pw.Fixture):

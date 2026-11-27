@@ -535,9 +535,7 @@
         "additionalProperties": false,
         "properties": {
           "error": {
-            "additionalProperties": true,
-            "title": "Error",
-            "type": "object"
+            "$ref": "#/components/schemas/ErrorBody"
           },
           "request_id": {
             "title": "Request Id",
@@ -549,6 +547,35 @@
           "request_id"
         ],
         "title": "Error",
+        "type": "object"
+      },
+      "ErrorBody": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "retry_after": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry After"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorBody",
         "type": "object"
       },
       "Event": {
@@ -5192,6 +5219,16 @@
               }
             },
             "description": "A key, a session that may not do it, or a state change without an allowed origin and the CSRF token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "No such user"
           },
           "422": {
             "content": {

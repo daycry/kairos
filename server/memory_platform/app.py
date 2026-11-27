@@ -13,7 +13,7 @@ from . import models as m
 from . import observability
 from . import schemas
 from .auth import Auth
-from . import passwords
+from . import limits, passwords
 from .config import Settings
 from .errors import MemoryError, StoreBusy, Unauthorized, Forbidden, public_store_failure
 from .store import Store
@@ -29,6 +29,9 @@ ACCESS_ERRORS = {401: {'model': m.Error, 'description': 'No credential, or one t
 # and the scopes of the key, too), so its 403 is not the one of the session routes; to anyone else a key of another user is the 404 of an unknown key.
 ROTATION_ERRORS = {401: ACCESS_ERRORS[401], 403: {'model': m.Error, 'description': 'The owner of the key or the global administrator with a credential that may not issue it (admin and each of its permissions on each of its projects), or a session without an allowed origin and the CSRF token'},
                    404: {'model': m.Error, 'description': 'No such key, or a key of another user and the caller is not the global administrator (a session or the bootstrap actor; never a key)'}, 409: {'model': m.Error, 'description': 'The key is revoked, expired or already rotated: no key is issued'}}
+
+# `GET /v1/users/{id}/sessions` also answers 404 for an unknown user (fix1 of the review of phase 3, gap 10), published since T-26 (review of phase 3, attempt 2, outside the lens).
+USER_SESSIONS_ERRORS = {**ACCESS_ERRORS, 404: {'model': m.Error, 'description': 'No such user'}}
 
 
 class BodyLimit:
@@ -95,6 +98,7 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
         attach_pool(store, settings, 'api')
     auth = auth or Auth(store, settings.allowed_origins, settings.session_ttl)
     passwords.configure_gate(settings.login_concurrency)  # the semaphore of every password derivation of this process
+    limits.configure_login(settings.login_max_failures, settings.login_window)  # the block of the login by the IP of the client (CA-13)
     if retrieval is None:
         from .retrieval import Retrieval
         retrieval = Retrieval(store, settings)
@@ -142,9 +146,12 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
     def error(request, code, message, status, retry_after=None):
         request_id = getattr(request.state, 'request_id', str(uuid.uuid4()))
         headers = {'X-Request-ID': request_id}
+        body = {'code': code, 'message': message}
         if retry_after:
-            headers['Retry-After'] = str(int(retry_after))
-        return JSONResponse({'error': {'code': code, 'message': message}, 'request_id': request_id}, status_code=status, headers=headers)
+            # DC-2: the plazo in whole seconds, in the header and in the body (a 429 of `limits.too_many` also carries it in its fixed message)
+            body['retry_after'] = int(retry_after)
+            headers['Retry-After'] = str(body['retry_after'])
+        return JSONResponse({'error': body, 'request_id': request_id}, status_code=status, headers=headers)
 
     @app.exception_handler(MemoryError)
     async def domain_error(request, exc):
@@ -430,7 +437,7 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
         # Global administrator with a session and CSRF; the next request of the user's sessions and keys sees the new grants (the cache lives one transaction).
         return store.replace_grants(actor, user_id, payload.grants)
 
-    @app.get('/v1/users/{user_id}/sessions', operation_id='memory_user_sessions', response_model=m.WebSessions, responses=ACCESS_ERRORS)
+    @app.get('/v1/users/{user_id}/sessions', operation_id='memory_user_sessions', response_model=m.WebSessions, responses=USER_SESSIONS_ERRORS)
     def user_sessions(user_id: str, actor=Depends(identity)):
         # Global administrator with a session (CA-42): the live sessions of a user, the fields of `GET /v1/auth/sessions`; a key or anyone else gets 403.
         return {'items': store.list_user_sessions(actor, user_id)}

@@ -59,7 +59,7 @@ test-plan: test-plan.md
 | Fase 2 — Esquema 13, scrypt y contraseñas (C-01) | 7 | 7 | 100% | 0 / 36.0h | 3.88 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 3 — Usuarios, permisos y sesiones (C-01) | 6 | 6 | 100% | 0 / 36.0h | 5.14 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01) | 7 | 7 | 100% | 0 / 48.0h | 3.11 / 4.9h | 0 / 1.2h | 0 / 1232 k |
-| Fase 5 — Login que no se bloquea entre clientes (C-02) | 0 | 5 | 0% | 0 / 43.2h | 0 / 4.4h | 0 / 1.1h | 0 / 1109 k |
+| Fase 5 — Login que no se bloquea entre clientes (C-02) | 1 | 5 | 20.0% | 0 / 43.2h | 0 / 4.4h | 0 / 1.1h | 0 / 1109 k |
 | Fase 6 — Cierre del hito A: acceso que se puede retirar | 0 | 4 | 0% | 0 / 9.6h | 0 / 3.5h | 0 / 0.9h | 0 / 873 k |
 | Fase 7 — Mediciones del hito B y superficie de secretos (C-06) | 0 | 8 | 0% | 0 / 44.4h | 0 / 12.3h | 0 / 3.1h | 0 / 3082 k |
 | Fase 8 — Redacción: casos compartidos, patrones y entropía (C-04) | 0 | 6 | 0% | 0 / 42.0h | 0 / 4.3h | 0 / 1.1h | 0 / 1078 k |
@@ -73,7 +73,7 @@ test-plan: test-plan.md
 | Fase 16 — Identidad: guía probada y extensibilidad (C-05) | 0 | 5 | 0% | 0 / 23.4h | 0 / 2.4h | 0 / 0.6h | 0 / 601 k |
 | Fase 17 — Revisión del hito C y revisión de seguridad (C-07) | 0 | 5 | 0% | 0 / 27.0h | 0 / 5.3h | 0 / 1.3h | 0 / 1320 k |
 | Fase 18 — Cierre del hito C y de la iniciativa: ensayo, versión 0.4.2 y PR | 0 | 4 | 0% | 0 / 11.4h | 0 / 1.2h | 0 / 0.3h | 0 / 293 k |
-| **TOTAL** | **24** | **106** | **22.6%** | **0 / 616.2h** | **15.69 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
+| **TOTAL** | **26** | **106** | **24.5%** | **0 / 616.2h** | **15.69 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -852,28 +852,34 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 
 - **Descripción**: `login_attempts` solo recibe fallos; un acierto no cuenta ni borra los de su IP. Bloqueo solo por IP de cliente: `MEMORY_LOGIN_MAX_FAILURES` en `MEMORY_LOGIN_WINDOW` (10 en 15 min) → 429 `rate_limited` con `Retry-After`, decidido antes del semáforo de T-08 y de scrypt. Lo construye `server/memory_platform/limits.py`, que nace aquí solo con el constructor único del 429 (DC-2) y crece en el hito B. Los fallos por usuario se publican como `login_user_failures`, sin bloquear (P-05). El recuento es correcto con logins concurrentes y usa el índice `login_attempt_ip_time`. Fuente: CA-12, CA-13, CA-15; S-02; DC-2; DC-5.
 - **Changelog**: El inicio de sesión cuenta solo los fallos y bloquea por IP de cliente (10 fallos en 15 min, 429 con `Retry-After`); ya no bloquea por nombre de usuario.
-- **Estado**: borrador
+- **Estado**: completado
+- **Cerrada**: 2026-11-27
 - **Tiempo humano**: est. 6.5h · real —
-- **Tiempo IA (ejec.)**: est. 0.67h · real —
+- **Tiempo IA (ejec.)**: est. 0.67h · real 1.22h (medido; la ventana incluye los borradores de las pruebas, los manuales, `web/nginx.conf` y `docker-compose.yml` de T-27 y T-28, escritos mientras corrían las pruebas)
 - **Supervisión**: est. 0.17h · real —
 - **Previsión IA**: 184 k in / 16 k out tok · ⚠️ verificar €
 - **Dependencias**: T-25
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/auth.py`, `server/memory_platform/limits.py`, `server/memory_platform/passwords.py`, `server/memory_platform/app.py`, `server/memory_platform/config.py`, `server/memory_platform/observability.py`, `server/memory_platform/tests/test_login_limits.py`, `server/memory_platform/tests/test_auth.py`, `server/memory_platform/tests/test_auth_race.py`, `server/memory_platform/tests/test_observability.py`, `server/memory_platform/tests/test_prune_tables.py`, `server/memory_platform/store_access.py`, `server/memory_platform/tests/test_access_password.py`, `docs/contracts/memory-platform.openapi.json`, `server/memory_platform/tests/test_contract_additive.py` (añadidos con nota: 429 de `POST /v1/auth/password` sin `Retry-After` (revisión fase 2, intento 2, gap 6; intento 3, gap 5); 404 y esquema `Error` en el OpenAPI (revisión fase 3, intento 2))
+- **Archivos**: `server/memory_platform/auth.py`, `server/memory_platform/limits.py`, `server/memory_platform/passwords.py`, `server/memory_platform/app.py`, `server/memory_platform/config.py`, `server/memory_platform/observability.py`, `server/memory_platform/tests/test_login_limits.py`, `server/memory_platform/tests/test_auth.py`, `server/memory_platform/tests/test_auth_race.py`, `server/memory_platform/tests/test_observability.py`, `server/memory_platform/tests/test_prune_tables.py`, `server/memory_platform/store_access.py`, `server/memory_platform/tests/test_access_password.py`, `docs/contracts/memory-platform.openapi.json`, `server/memory_platform/tests/test_contract_additive.py` (añadidos con nota: 429 de `POST /v1/auth/password` sin `Retry-After` (revisión fase 2, intento 2, gap 6; intento 3, gap 5); 404 y esquema `Error` en el OpenAPI (revisión fase 3, intento 2); `server/memory_platform/models.py` añadido con nota en T-26: el esquema `Error` declara su sobre con el modelo nuevo `ErrorBody`)
 - **Cubre (tests)**: —
-- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_login_limits|test_auth|test_auth_race|test_observability|test_prune_tables|MEMORY_TEST_RESULT"` → nombradas en `ok`; 0 fallos y 0 omitidos
+- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_login_limits|test_auth|test_auth_race|test_observability|test_prune_tables|MEMORY_TEST_RESULT"` → nombradas en `ok`; 0 fallos y 0 omitidos. Evidencia (dirigidas en `kairos-test:i4p4-fix2`, árbol montado, PostgreSQL efímero, sin red): `test_login_limits`, `test_access_password`, `test_auth`, `test_passwords`, `test_auth_cache`, `test_contract_additive`, `test_observability`, `test_prune_tables`, `test_auth_race`, `test_metrics`, `test_access_sessions`, `test_access_users` → `SEL_RESULT tests=320 failures=1 errors=0 skipped=0`; la roja, `test_metrics…test_the_providers_own_timeout_is_counted_once` (`1.0 != 2.0`), falla igual sobre el código de 5963463 en esta forma de ejecución; tras renombrar `fail_login`: `test_login_limits`, `test_contract_additive`, `test_auth`, `test_observability` → `SEL_RESULT tests=62 failures=0 errors=0 skipped=0`. La suite completa la cierra T-29
 
 **Criterios de aceptación**
-- [ ] Treinta logins correctos seguidos desde la misma IP no producen 429
-- [ ] Diez fallos desde la IP `a` para U: el login correcto de U desde la IP `b` responde 200 y el undécimo de `a` recibe 429 con `Retry-After` ≥ 1
-- [ ] Veinte fallos concurrentes de una IP no dejan pasar más de diez verificaciones; una IP bloqueada no deriva scrypt ni ocupa hueco
-- [ ] `login_user_failures` se publica sin bloquear; ningún registro guarda la contraseña; `prune-tables` sigue purgando `login_attempts`
-- [ ] Los 429 de `POST /v1/auth/password` (`rate_limited` y `too_many_attempts`, `store_access.py`) salen del constructor único de DC-2 con `Retry-After` ≥ 1 (revisión de la fase 2, intento 2, gap 6)
-- [ ] El OpenAPI publica el 404 de `GET /v1/users/{id}/sessions` y el esquema `Error` declara el sobre real `{code, message}` (revisión de la fase 3, intento 2, fuera de lente)
+- [x] Treinta logins correctos seguidos desde la misma IP no producen 429
+- [x] Diez fallos desde la IP `a` para U: el login correcto de U desde la IP `b` responde 200 y el undécimo de `a` recibe 429 con `Retry-After` ≥ 1
+- [x] Veinte fallos concurrentes de una IP no dejan pasar más de diez verificaciones; una IP bloqueada no deriva scrypt ni ocupa hueco
+- [x] `login_user_failures` se publica sin bloquear; ningún registro guarda la contraseña; `prune-tables` sigue purgando `login_attempts`
+- [x] Los 429 de `POST /v1/auth/password` (`rate_limited` y `too_many_attempts`, `store_access.py`) salen del constructor único de DC-2 con `Retry-After` ≥ 1 (revisión de la fase 2, intento 2, gap 6)
+- [x] El OpenAPI publica el 404 de `GET /v1/users/{id}/sessions` y el esquema `Error` declara el sobre real `{code, message}` (revisión de la fase 3, intento 2, fuera de lente)
 
 **Subtareas**
-- [ ] Pruebas en rojo (oráculo de A-02) y de carrera
-- [ ] Contador de fallos, cubo por IP, métrica y variables
+- [x] Pruebas en rojo (oráculo de A-02) y de carrera
+- [x] Contador de fallos, cubo por IP, métrica y variables
+
+
+RED: `server/memory_platform/tests/test_login_limits.py (14 pruebas, código de 5963463 con limits.py de relleno)` falló con 12 errores y 2 fallos: treinta logins correctos dan MemoryError Too many login attempts; 15 fallos de U desde 15 IP bloquean a U; 10 != 9 (el acierto contaba); 0 != 4 login_user_failures; sin login_failure_settings ni login_max_failures · 2026-11-27.
+
+**Notas**: Commit (este). `limits.py` nuevo: `too_many(code, retry_after)` es el constructor único del 429 (DC-2: entero ≥ 1 redondeado hacia arriba en `retry_after`, mensaje fijo `Rate limit exceeded [code=rate_limited retry_after=N]` o `Too many password changes [code=too_many_attempts retry_after=N]`; `app.error` lo pone en la cabecera `Retry-After` y en `error.retry_after` del cuerpo) y el bloqueo por IP (`IP_WAIT`: el décimo fallo más reciente de la IP en la ventana y los segundos hasta que sale, por `login_attempt_ip_time`; `EXPLAIN` con 20 000 filas lo usa). `Auth.login`: 1) IP bloqueada → 429 antes del semáforo y de scrypt; 2) hueco de la IP; 3) bajo los bloqueos consultivos de la IP y del nombre se vuelve a contar y se escribe el intento ANTES de derivar (los intentos en vuelo cuentan: con varios procesos, veinte fallos a la vez no pasan de diez verificaciones); 4) una derivación; 5) un acierto borra SOLO su fila en la transacción que abre la sesión. Todo 401 posterior publica `login_user_failures` (log `warning` con `count` del nombre en la ventana y `user_id` si existe; nunca el nombre escrito ni la contraseña) y `kairos_login_user_failures_total` (sin etiquetas); la consulta del recuento se hace en todo intento, exista o no el usuario (sin oráculo de enumeración). Variables `MEMORY_LOGIN_MAX_FAILURES` (10, 1-1000) y `MEMORY_LOGIN_WINDOW` (900 s, 60-86400) en `config.py`; `create_app` las aplica. `POST /v1/auth/password`: sus dos 429 salen de `limits.too_many` (el de fallos por usuario o IP, con el plazo mayor; el de cambios con el plazo del quinto cambio, `CHANGES_WAIT`, misma cota por clave primaria). OpenAPI: 404 de `GET /v1/users/{id}/sessions` y `Error.error` → `ErrorBody` `{code, message, retry_after?}` abierto; exportado en `kairos-test:i4p4-fix2`; `openapi-lint --diff` contra 5963463: «sin cambios» (0 rompedores); `kairos-mcp.json` igual salvo sangría de Python 3.11 (no se reescribe). **Decisión por defecto:** el cambio de contraseña conserva el cubo por usuario de DC-5 (una sesión robada desde muchas IP); solo el login deja de bloquear por nombre (P-05). Guarda T-02 sin cambios (`ResolverBoundaryTests` en verde; el login sigue en `Auth.login`). Pruebas ajustadas: las de `test_access_password` que contaban el login correcto del fixture como intento. Mutantes (copias, pruebas nombradas; copia intacta 14 OK): sin recuento bajo el bloqueo → rojo (veinte concurrentes); el acierto conserva su fila → rojo; el acierto borra los de su IP → rojo; nombre como cubo → 2 errores; sin control antes del semáforo → rojo (ocupa hueco); `Retry-After` 0 → rojo; cuerpo sin `retry_after` → rojo; 429 propios en el cambio de contraseña → error (×2); sin `login_user_failures` → 2 rojas; sin cubo por usuario en el cambio → error; sin métrica → rojo. Hallazgo propio: el ayudante `fail` del fichero tapaba `TestCase.fail` y se tragaba las aserciones fallidas (dos mutantes sobrevivían); renombrado a `fail_login` y mutantes repetidos.
 
 ### T-27 — IP real del cliente: `MEMORY_TRUSTED_PROXIES` y `X-Forwarded-For` en nginx (CA-14)
 
