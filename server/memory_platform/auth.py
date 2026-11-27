@@ -15,10 +15,14 @@ SCOPES = frozenset({'read', 'write', 'publish', 'validate', 'admin'})
 RECENT_ATTEMPTS = "SELECT count(*) AS n FROM memory.login_attempts WHERE happened_at>clock_timestamp()-interval '15 minutes' AND (username=%s OR client_ip=%s)"
 # `last_used_at` of a key (CA-06, DC-7): written by the authentication of the key at most once per LAST_USED_EVERY seconds and key, in a short transaction of its own whose
 # `lock_timeout` is LAST_USED_LOCK_TIMEOUT and that waits for a connection of the pool at most LAST_USED_POOL_WAIT seconds. A row held by another transaction (the `FOR SHARE` of
-# `extended_store.py` and `corpus_answers.py`) or a full pool makes the write give up, not the request. The clock of the process moves on every ATTEMPT (fix1 of the review of phase 4,
-# gap 8): a write that gave up is tried again a minute later, not on every request of the key, and it warns once a minute at most. The statement also skips a row written less than a
-# minute ago (by another process).
+# `extended_store.py` and `corpus_answers.py`) or a full pool makes the write give up, not the request. The clock of the process moves BEFORE every attempt (fix1 of the review of
+# phase 4, gap 8: requests in between never try again): a minute after a write that got in, LAST_USED_RETRY seconds after one that gave up (fix2, attempt 2, row 2, CWE-778: a
+# minute after a failure let whoever holds one write a minute freeze the last use of a stolen key). A write that gives up warns at most once per LAST_USED_WARN_EVERY seconds and key,
+# with the id of the key (public; never its token or prefix). The statement also skips a row written less than a minute ago (by another process). `last_used_at` is best effort:
+# it may lag the real use by a minute plus the failed attempts; it is not an audit record.
 LAST_USED_EVERY = 60
+LAST_USED_RETRY = 5
+LAST_USED_WARN_EVERY = 60
 LAST_USED_LOCK_TIMEOUT = '50ms'
 LAST_USED_POOL_WAIT = 0.05
 # The latest expiry a key may have (fix1 of the review of phase 4, gap 5). The database stores later ones, but the driver loads a `timestamptz` into a Python datetime, whose last year
@@ -45,7 +49,8 @@ class Auth:
         self.allowed_origins = frozenset(allowed_origins)
         self.session_ttl = session_ttl
         self.clock = clock or time.monotonic  # injected by the tests of `last_used_at`
-        self.last_used = {}  # key id -> clock of the last attempt to write its `last_used_at` by this process
+        self.next_use = {}  # key id -> clock from which this process may try again to write its `last_used_at`
+        self.warned = {}  # key id -> clock of the last `key_last_used_deferred` of the key by this process
         self.record_use = record_use  # False: a check of a key that is not a request (`probe.valid_key`) leaves its last use alone (fix1 of the review of phase 4, gap 9)
 
     def _actor(self, c, row, credential_type, credential_id=None):
@@ -60,17 +65,22 @@ class Auth:
                 raise Unauthorized()
             actor = self._actor(c, row, 'bearer', row['credential_id'])
         # The last use of the key, at most once a minute per key, in a short transaction of its own (DC-7). It never fails the request: a connection it cannot get within
-        # LAST_USED_POOL_WAIT, a lock it cannot get within LAST_USED_LOCK_TIMEOUT, or any other failure, leaves it for a minute later (the clock moves before the attempt).
+        # LAST_USED_POOL_WAIT, a lock it cannot get within LAST_USED_LOCK_TIMEOUT, or any other failure, leaves it for LAST_USED_RETRY seconds later (the clock moves before the
+        # attempt, so the requests that come meanwhile do not try again); a write that got in, for a minute later.
         now, kid = self.clock(), actor['key_id']
-        if self.record_use and (kid not in self.last_used or now - self.last_used[kid] >= LAST_USED_EVERY):
-            self.last_used[kid] = now
+        if self.record_use and now >= self.next_use.get(kid, now):
+            self.next_use[kid] = now + LAST_USED_RETRY
             try:
                 with connection_wait(LAST_USED_POOL_WAIT), self.store.transaction() as c:
                     c.execute("SELECT set_config('lock_timeout', %s, true)", (LAST_USED_LOCK_TIMEOUT,))
                     c.execute(TOUCH_KEY, (kid,))
                     invalidate_auth(c)  # nothing was resolved in this transaction; the walk of the writers asks every writer of `api_keys` to end like this
             except Exception as exc:
-                observability.log_failure('key_last_used_deferred', exc, 'warning')  # the type only; the request goes on
+                if kid not in self.warned or now - self.warned[kid] >= LAST_USED_WARN_EVERY:
+                    self.warned[kid] = now
+                    observability.log_failure('key_last_used_deferred', exc, 'warning', key_id=kid)  # the type and the id of the key only; the request goes on
+            else:
+                self.next_use[kid] = now + LAST_USED_EVERY
         return actor
 
     def authenticate_session(self, token):

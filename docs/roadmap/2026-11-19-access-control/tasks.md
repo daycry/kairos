@@ -636,12 +636,12 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 - **Estado**: completado
 - **Cerrada**: 2026-11-27
 - **Tiempo humano**: est. 4.5h · real —
-- **Tiempo IA (ejec.)**: est. 0.46h · real 1.24h (medido; fix1 de la fase 4: 0.53h, ventana que incluye también el código y las pruebas de T-20 y T-22)
+- **Tiempo IA (ejec.)**: est. 0.46h · real 1.40h (medido; fix1 de la fase 4: 0.53h, ventana que incluye también el código y las pruebas de T-20 y T-22; fix2: 0.16h, ventana 14:38-15:03Z, incluye el texto de T-23)
 - **Supervisión**: est. 0.12h · real —
 - **Previsión IA**: 128 k in / 11 k out tok · ⚠️ verificar €
 - **Dependencias**: T-18
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/store_auth.py`, `server/memory_platform/auth.py`, `server/memory_platform/app.py`, `server/memory_platform/models.py`, `server/memory_platform/tests/test_access_keys.py`, `docs/contracts/memory-platform.openapi.json`, `server/memory_platform/store_pool.py`, `server/memory_platform/probe.py`, `server/memory_platform/tests/test_probe_provisioning.py` (añadidos con nota: fix1 de la revisión de la fase 4, gaps 8 y 9: la espera corta de conexión de `last_used_at` y la comprobación de la sonda que no es un uso)
+- **Archivos**: `server/memory_platform/store_auth.py`, `server/memory_platform/auth.py`, `server/memory_platform/app.py`, `server/memory_platform/models.py`, `server/memory_platform/tests/test_access_keys.py`, `docs/contracts/memory-platform.openapi.json`, `server/memory_platform/store_pool.py`, `server/memory_platform/probe.py`, `server/memory_platform/tests/test_probe_provisioning.py` (añadidos con nota: fix1 de la revisión de la fase 4, gaps 8 y 9: la espera corta de conexión de `last_used_at` y la comprobación de la sonda que no es un uso), `server/memory_platform/observability.py` (añadido con nota: fix2, intento 2, fila 2: `key_id` en el vocabulario cerrado de campos del log)
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_access_keys|MEMORY_TEST_RESULT"` → nombradas en `ok`; 0 fallos y 0 omitidos
@@ -659,6 +659,8 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 **Notas**: RED: `test_access_keys (10 pruebas, contra el código de e9646a5)` falló con KeyError: 'expires_at' y 'token' (la respuesta no traía la caducidad), KeyError: 'key' (`/v1/auth/me`), TypeError: Auth.__init__() got an unexpected keyword argument 'clock' y (422, 'invalid_request') != (422, 'invalid_key_expiry') · 2026-11-27. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `6e6cb1c3af32`.
 
 **Notas**: fix1 (revisión de la fase 4, intento 1, gaps 5, 8 y 9): RED: `test_access_keys.ExpiryTests + LastUsedTests + test_probe_provisioning.ProvisioningTests.test_checking_the_key_is_not_a_use_of_it (13 pruebas, contra el código de f098c1e)` falló con psycopg.DataError: timestamp too large (after year 10K): '10000-01-01 04:00:00+00' (el 503 de una caducidad `9999-12-31T23:00:00-05:00`), AssertionError:… Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `f0632541f18a`.
+
+**Notas**: fix2 (revisión de la fase 4, intento 2, fila 2, CWE-778; decisión del usuario «Fix it in fix2»): un intento de `last_used_at` que no entra se reintenta a los `LAST_USED_RETRY` = 5 s (`auth.py:24, :72`), no al minuto; tras uno que entra, al minuto (`:83`); el reloj sigue moviéndose antes del intento (las peticiones de en medio no reintentan) y la espera de conexión sigue en 0,05 s. Aviso `key_last_used_deferred` como mucho uno por minuto y clave (`LAST_USED_WARN_EVERY`, `:79-81`) con `key_id` (`observability.py:26`), nunca el token ni el `prefix`. RED: `LastUsedTests` (3 pruebas nuevas, contra el código de 748d1a4 con solo la constante añadida) falló con Tuples differ: (1, 0) != (2, 1), Lists differ: [1000.0, 1060.0, 1120.0] != [1000.0, 1005.0, …] y KeyError: 'key_id' · 2026-11-27. La prueba del fix1 que fijaba el reintento al minuto se sustituye. Mutantes (copias; intacta 8 OK): fallo al minuto, sin retroceso, aviso por fallo, éxito sin minuto, aviso sin `key_id`, `key_id` fuera de `FIELDS`, sin espera corta de conexión → los 7 en rojo. Dirigidas: `test_access_keys`, `test_probe_provisioning`, `test_store_pool`, `test_observability`, `test_auth`, `test_auth_cache`, `test_auth_race`, `test_revocation_matrix` → `RESULT run=186 fail=0 err=0 skip=0`.
 
 ### T-20 — Rotación con gracia: `POST /v1/keys/{id}/rotate` (CA-07)
 

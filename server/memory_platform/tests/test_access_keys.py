@@ -5,15 +5,17 @@ after the caller is authorized. `last_used_at` is written by the authentication 
 in a row write it once (injected clock), and a `FOR SHARE` held on the row of the key does not make the request fail (the write is deferred to the next request).
 The rotation of a key (T-20) is at the end: `RotationTests`.
 """
+import json
+import logging
 import threading
 import time
 import unittest
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from memory_platform import auth as auth_module
+from memory_platform import auth as auth_module, observability
 from memory_platform.app import create_app
 from memory_platform.auth import LAST_USED_EVERY, Auth, token_hash
 from memory_platform.config import Settings
@@ -204,28 +206,85 @@ class LastUsedTests(KeysFixture):
         self.assertEqual(self.client().get('/v1/projects', headers=self.bearer(self.token)).status_code, 200)
         self.assertEqual(self.writes(), 1, 'the next request after the minute writes it')
 
-    def test_a_write_that_did_not_get_in_is_not_tried_again_within_the_minute_and_warns_once(self):
-        # fix1 of the review of phase 4, gap 8: the clock of the process moves on every attempt, not only on a write that got in; else every request of the key tries again and warns
-        holder = self.psycopg.connect(self.dsn)
+    def spied(self):
+        """Every attempt to write the last use (each one asks for its short wait for a connection) and every warning, with its fields."""
+        attempts, warnings = [], []
+        real_wait, real_log = auth_module.connection_wait, auth_module.observability.log_failure
+
+        def wait(seconds):
+            attempts.append(self.now[0])
+            return real_wait(seconds)
+
+        def log(event, exc, level='error', **fields):
+            warnings.append((event, type(exc).__name__, fields))
+            return real_log(event, exc, level, **fields)
+        spying = ExitStack()
+        spying.enter_context(patch.object(auth_module, 'connection_wait', wait))
+        spying.enter_context(patch.object(auth_module.observability, 'log_failure', log))
+        return attempts, warnings, spying
+
+    def hold_the_row(self):
+        holder = self.psycopg.connect(self.dsn)  # a `FOR SHARE` on the row of the key, as `extended_store.py` and `corpus_answers.py` take
         self.addCleanup(holder.close)
         holder.execute('SELECT 1 FROM memory.api_keys WHERE id=%s FOR SHARE', (self.kid,))
-        client, warnings = self.client(), []
-        real = auth_module.observability.log_failure
+        return holder
 
-        def spy(event, exc, level='error', **fields):
-            warnings.append((event, type(exc).__name__))
-            return real(event, exc, level, **fields)
-        with patch.object(auth_module.observability, 'log_failure', spy):
+    def test_a_write_that_did_not_get_in_is_tried_again_after_the_short_backoff_and_not_before(self):
+        # fix2 of the review of phase 4 (attempt 2, row 2, CWE-778): a failure moves the clock of the key LAST_USED_RETRY seconds, not a minute; else holding one write a minute
+        # (a `FOR SHARE` of more than 50 ms) freezes the last use of a stolen key. Requests in between do not try again.
+        holder, (attempts, warnings, spying) = self.hold_the_row(), self.spied()
+        with spying:
             for _ in range(5):
-                self.assertEqual(client.get('/v1/projects', headers=self.bearer(self.token)).status_code, 200)
-            holder.rollback()  # the lock goes away: within the same minute nothing is tried again
-            self.now[0] += LAST_USED_EVERY - 1
-            self.assertEqual(client.get('/v1/projects', headers=self.bearer(self.token)).status_code, 200)
-        self.assertEqual(warnings, [('key_last_used_deferred', 'LockNotAvailable')], 'one attempt and one warning in the minute, not one per request')
-        self.assertEqual(self.writes(), 0)
-        self.now[0] += 1
-        self.assertEqual(client.get('/v1/projects', headers=self.bearer(self.token)).status_code, 200)
-        self.assertEqual(self.writes(), 1, 'a minute after the attempt the write gets in')
+                self.auth.authenticate_bearer(self.token)
+            holder.rollback()  # the lock goes away
+            self.now[0] += auth_module.LAST_USED_RETRY - 1
+            self.auth.authenticate_bearer(self.token)
+            self.assertEqual((len(attempts), self.writes()), (1, 0), 'within the backoff nothing is tried again')
+            self.now[0] += 1
+            self.auth.authenticate_bearer(self.token)
+        self.assertEqual((len(attempts), self.writes()), (2, 1), 'after the backoff the write is tried again and gets in')
+        self.assertEqual([(event, kind) for event, kind, _ in warnings], [('key_last_used_deferred', 'LockNotAvailable')], 'one warning, not one per request')
+        self.assertLess(auth_module.LAST_USED_RETRY, LAST_USED_EVERY)
+
+    def test_with_failures_that_go_on_one_attempt_per_backoff_one_warning_a_minute_and_a_success_goes_back_to_the_minute(self):
+        holder, (attempts, warnings, spying) = self.hold_the_row(), self.spied()
+        retry, start = auth_module.LAST_USED_RETRY, self.now[0]
+        with spying:
+            for _ in range(130):  # a request a second for 130 s, every attempt refused
+                self.auth.authenticate_bearer(self.token)
+                self.now[0] += 1
+            self.assertEqual(attempts, [start + n * retry for n in range(-(-130 // retry))], 'one attempt per backoff, not one per request')
+            self.assertEqual(len(warnings), 3, 'one warning a minute (at 0, 60 and 120 s), not one per attempt')
+            self.assertEqual({fields.get('key_id') for _, _, fields in warnings}, {self.kid}, 'the warning names the key by its id')
+            holder.rollback()
+            del attempts[:]
+            self.now[0] = start + 130 + retry  # past the last backoff: the write gets in
+            self.auth.authenticate_bearer(self.token)
+            self.assertEqual((len(attempts), self.writes()), (1, 1))
+            back = self.now[0]
+            self.observer.execute("UPDATE memory.api_keys SET last_used_at=last_used_at-interval '2 minutes' WHERE id=%s", (self.kid,))  # the database guard of the minute is not what is tested
+            for second in range(1, LAST_USED_EVERY):
+                self.now[0] = back + second
+                self.auth.authenticate_bearer(self.token)
+            self.assertEqual(len(attempts), 1, 'after a success the next attempt is a minute later, not a backoff later')
+            self.now[0] = back + LAST_USED_EVERY
+            self.auth.authenticate_bearer(self.token)
+        self.assertEqual((len(attempts), self.writes()), (2, 2))
+        self.assertEqual(len(warnings), 3)
+
+    def test_the_warning_carries_the_id_of_the_key_and_not_its_token_nor_its_prefix(self):
+        lines, handler = [], logging.Handler(logging.WARNING)
+        handler.emit = lambda record: lines.append(observability.JsonFormatter().format(record))
+        observability.LOGGER.addHandler(handler)
+        self.addCleanup(observability.LOGGER.removeHandler, handler)
+        holder = self.hold_the_row()
+        self.auth.authenticate_bearer(self.token)
+        holder.rollback()
+        self.assertEqual(len(lines), 1, lines)
+        entry = json.loads(lines[0])
+        self.assertEqual((entry['event'], entry['level'], entry['exc_type'], entry['key_id']), ('key_last_used_deferred', 'warning', 'LockNotAvailable', self.kid))
+        self.assertNotIn(self.token[:10], lines[0])
+        self.assertNotIn(self.token, lines[0])
 
     def test_with_the_pool_full_the_write_waits_for_a_connection_only_a_short_margin(self):
         # fix1 of the review of phase 4, gap 8: the write is not worth a request waiting the whole MEMORY_POOL_TIMEOUT (5 s) for a connection; it gives up after LAST_USED_POOL_WAIT

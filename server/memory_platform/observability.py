@@ -23,7 +23,7 @@ from .privacy import redact_log
 LOGGER = logging.getLogger('kairos')
 LOGGER.addHandler(logging.NullHandler())  # silent until `configure_logging` runs (tests, imports)
 REQUEST_ID = contextvars.ContextVar('kairos_request_id', default=None)
-FIELDS = ('request_id', 'layer', 'duration_ms', 'exc_type', 'code', 'status', 'method', 'route', 'destination', 'provider', 'reason', 'outcome', 'caller', 'count', 'stage')
+FIELDS = ('request_id', 'layer', 'duration_ms', 'exc_type', 'code', 'status', 'method', 'route', 'destination', 'provider', 'reason', 'outcome', 'caller', 'count', 'stage', 'key_id')
 MAX_FIELD = 200
 FOREIGN_LOGGERS = ('uvicorn.error',)
 QUIET_LOGGERS = ('httpx', 'httpcore')
