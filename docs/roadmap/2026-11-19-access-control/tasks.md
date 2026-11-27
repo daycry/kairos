@@ -58,7 +58,7 @@ test-plan: test-plan.md
 | Fase 1 — Medición de scrypt y guarda del resolvedor (CA-09, CA-38 a) | 5 | 5 | 100% | 0 / 19.8h | 4.77 / 6.3h | 0 / 1.6h | 0 / 1570 k |
 | Fase 2 — Esquema 13, scrypt y contraseñas (C-01) | 7 | 7 | 100% | 0 / 36.0h | 3.88 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 3 — Usuarios, permisos y sesiones (C-01) | 6 | 6 | 100% | 0 / 36.0h | 5.14 / 3.7h | 0 / 0.9h | 0 / 924 k |
-| Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01) | 6 | 7 | 85.7% | 0 / 48.0h | 1.90 / 4.9h | 0 / 1.2h | 0 / 1232 k |
+| Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01) | 7 | 7 | 100% | 0 / 48.0h | 3.11 / 4.9h | 0 / 1.2h | 0 / 1232 k |
 | Fase 5 — Login que no se bloquea entre clientes (C-02) | 0 | 5 | 0% | 0 / 43.2h | 0 / 4.4h | 0 / 1.1h | 0 / 1109 k |
 | Fase 6 — Cierre del hito A: acceso que se puede retirar | 0 | 4 | 0% | 0 / 9.6h | 0 / 3.5h | 0 / 0.9h | 0 / 873 k |
 | Fase 7 — Mediciones del hito B y superficie de secretos (C-06) | 0 | 8 | 0% | 0 / 44.4h | 0 / 12.3h | 0 / 3.1h | 0 / 3082 k |
@@ -627,7 +627,7 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 
 ## Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01)
 
-**Estado**: borrador · **Hito**: A · **Estimado**: 48.0h (40h base, de ellas 20h de revisión adversarial) · **Real**: — · **Coste est.**: 2.400 € · **Tokens est.**: 1232 k
+**Estado**: completado · **Hito**: A · **Estimado**: 48.0h (40h base, de ellas 20h de revisión adversarial) · **Real**: 3.11h IA (medido; incluye fix1 y fix2; 0.18h del fix2 de T-20 estimadas y no sumadas; revisión T-25 del orquestador sin medir) · **Coste est.**: 2.400 € · **Tokens est.**: 1232 k
 
 ### T-19 — Claves: caducidad opcional, `expires_at` visible y `last_used_at` (CA-06)
 
@@ -820,7 +820,8 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 
 - **Descripción**: Protocolo de revisión adversarial (cabecera), a 1,0 × la implementación. Superficie: rotación (carreras, gracia, `replaced_by`), caducidad, `last_used_at` en el camino de autenticación, `credential.json` sin secreto y huecos de la matriz de revocación.
 - **Changelog**: Interno: revisión adversarial de la fase.
-- **Estado**: en-progreso
+- **Estado**: completado
+- **Cerrada**: 2026-11-27
 - **Tiempo humano**: est. 20h · real —
 - **Tiempo IA (ejec.)**: est. 2.05h · real —
 - **Supervisión**: est. 0.51h · real —
@@ -834,10 +835,12 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
   - `python3 "$SHAREDKIT/scope-check.py" docs/roadmap/2026-11-19-access-control` → exit 0
 
 **Criterios de aceptación**
-- [ ] Sin Critical ni Important abiertos; cada control nuevo con su mutante comprobado y cada fix con su revisión completa
+- [x] Sin Critical ni Important abiertos; cada control nuevo con su mutante comprobado y cada fix con su revisión completa
 
 **Subtareas**
-- [ ] Lentes A y B; corregir y repetir hasta cero abiertos
+- [x] Lentes A y B; corregir y repetir hasta cero abiertos
+
+**Notas**: dos intentos con lentes A, B, C y D en Opus 5.5 (tabla en `review.md`; detalle del intento 1 en `execution-history.md`, el 2 en este ledger). Intento 1: 2 Important (un admin de proyecto rotaba la clave de otro usuario y recibía su token; el bloqueo del llamante en `rotate_key` sin prueba) y 9 Minor → fix1 (`786eebb`..`725c374`, suite 1783) con las decisiones del usuario «Owner or global admin» e «Important + all Minors». Intento 2: sin Critical ni Important; 3 Minor → fix2 (`748d1a4`..`3985cf4`, suite 1786) con las decisiones «Small fix2 and close» y «Fix it in fix2». Desviación declarada del criterio «cada fix con su revisión completa»: el fix2 se verificó con una comprobación dirigida del orquestador en `kairos-test:i4p4-fix2` (`test_access_keys` 33 OK; el mutante n1, segunda comprobación de la rotación sustituida por `_delegate`, deja 2 rojas; el reintento de `last_used_at` al minuto deja 2 rojas), por decisión del usuario. Verificación: `scope-check.py --base main` exit 0 · `openapi-lint --diff` contra `e9646a5` 0 rompedores de 1 · `ledger-lint` 0 incoherencias.
 
 ---
 
@@ -2987,26 +2990,7 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 - 2026-11-27 · «Revisión de dos lentes — intento 3: Fase 2 (fix2) (T-06, T-07, T-08, T-09, T-10, T-11) — sin Critical ni Important; 6 Minor» → [execution-history.md](execution-history.md) · SHA-256 `c01d7449717046602020417abca565bc6ce748de1aeb5ed5f3620f55d592f7ff`
 - 2026-11-27 · «Revisión de dos lentes — intento 1: Fase 3 (T-13, T-14, T-15, T-16, T-17) — 3 Important: alta en carrera con la revocación, cambio de contraseña desde una sesión cerrada, fines de línea» → [execution-history.md](execution-history.md) · SHA-256 `4e2c3669d547113c2b102dcaa40567268c65c975f56e940c0bc3656799a71542`
 - 2026-11-27 · «Revisión de dos lentes — intento 2: Fase 3 (fix1) (T-13, T-14, T-15, T-16, T-17) — sin Critical ni Important; 3 Minor» → [execution-history.md](execution-history.md) · SHA-256 `a469127c2e6b20fb6d2d4887f289f114630c180034a590e7b52bf38463796d99`
-
-## Revisión de dos lentes — intento 1: Fase 4 (T-19, T-20, T-21, T-22, T-23, T-24) — 2 Important: rotación de una clave ajena por un admin de proyecto, bloqueo del llamante sin prueba
-
-Lentes: A+B+C+D (Opus 5.5) sobre `e9646a5..c84e1cf`; solo B ejecutó Docker, con `kairos-test:i4p4` sin red y PostgreSQL efímero. B: carreras de la rotación frente a revocación, `set-password --revoke-keys`, deshabilitar o cerrar la credencial del llamante, y dos rotaciones, correctas en los dos órdenes (sondas C1-C8); estrés de 8 hilos × 30 s (1 755 operaciones) sin interbloqueos; el aplazamiento de `last_used_at` deja la conexión del pool sana; 93 pruebas dirigidas OK; cliente 105/105. A: todos los criterios de T-19..T-24 cumplidos salvo el texto del mutante de T-22; `openapi-lint --diff` 0 rompedores de 1; `kairos-mcp.json` intacto; mínimo 1771 = 1745 + 26 en los cuatro sitios; fines de línea conservados. D: la comprobación del minuto va en memoria; sin anidar conexiones.
-
-| # | Grado | Gap | Tarea | Corrección | Evidencia |
-|---|---|---|---|---|---|
-| 1 | Important | Un administrador de proyecto rota la clave de otro usuario (con proyectos y permisos que él cubre) y recibe un token que actúa como ese usuario: `_delegate` no mira al dueño, la nueva conserva el `actor_id` y el token vuelve al llamante; lee los datos privados del dueño en el proyecto (`work-state`, corpus) y lo que hace queda a nombre del dueño; la máquina del dueño sigue en gracia sin notarlo (lente C; B fuera de lente) | T-20 | corregido (fix1, b7698cf): decisión del usuario «owner or global admin»: `may_rotate` (`store_access.py:272-279`) admite al dueño o a `_global_admin` (sesión o bootstrap; nunca una clave) y a cualquier otro le da el 404 de una clave inexistente, antes de los bloqueos (`:284`) y otra vez bajo ellos (`:288`); el `actor_id` se conserva. Prueba `test_access_keys.py:425` (admin de proyecto con sesión y con clave, clave del admin global: 404, sin clave emitida, sin `key.rotated`, la de bea intacta; el admin global sí; el admin de proyecto aún revoca) y `:451` (el dueño con su propia clave). Mutante sin la comprobación → rojo | `store_access.py:273, :283, :289`; `agent_store.py:202, :242, :252` · CWE-639, CWE-269 |
-| 2 | Important | Ningún test protege el bloqueo de la fila del llamante en `rotate_key`: con el mutante `[found['actor_id']]` pasan los 178 tests de acceso; una revocación de la clave con que se rota quedaría sin esperar y la rotación entregaría un token nuevo (lente B) | T-20 | corregido (fix1, b7698cf): prueba `test_access_keys.py:475`: el logout del admin global que rota una clave de bea, en los dos órdenes (la rotación espera y da 401 sin emitir; o el logout espera), espera vista en `pg_stat_activity` sin sleep. Mutante `[found['actor_id']]` (`store_access.py:285`, el m1 de la lente B) → rojo en los dos órdenes | `store_access.py:270`; mutante m1 en `scratchpad/p4a1-B/mutants.out` |
-| 3 | Minor | La rotación responde 404 antes de autorizar: una credencial cualquiera distingue un id de clave existente (403) de uno inventado (404); `revoke_key` ya lo hacía; ids UUID4, no enumerables (lente C) | T-20 | corregido (fix1, b7698cf) en la rotación por la fila 1: un no dueño que no es admin global recibe siempre el 404 (`store_access.py:277`; `test_access_keys.py:425` compara el cuerpo con el de un id inventado). En `revoke_key` no cambia (Decisión por defecto, nota en T-22): igualar su 403 con el 404 cambiaría las respuestas de `DELETE /v1/keys/{id}` | `store_access.py:267-269` · CWE-204 |
-| 4 | Minor | `revoke_key` y `rotate_key` toman los bloqueos (fila del dueño; fila de la clave) antes de autorizar: un llamante sin permiso sobre la clave serializa las peticiones del dueño en cada intento; acotado (lente C) | T-22, T-20 | corregido (fix1, b7698cf y 9df5be2): `rotate_key` autoriza sin bloqueo (`store_access.py:284`) y `revoke_key` igual (`store_auth.py:293`), y los dos vuelven a autorizar tras bloquear (`store_access.py:288`, `store_auth.py:301`). Pruebas `test_access_keys.py:459` (ana 404 y la clave lectora de bea 403, sin esperar la fila de bea que retiene otra revocación) y `test_access_users.py:623`. Mutantes sin la autorización previa → rojos | `store_auth.py:290-293`; `store_access.py:270-273` · CWE-400 |
-| 5 | Minor | `expires_at` (o la vida heredada) más allá del año 9999 en UTC: `DataError` sin gestionar → 503 `service_unavailable`; una clave con `9999-12-31` ya no se puede rotar (lente B) | T-19, T-20 | corregido (fix1, 786eebb y b7698cf): `KEY_EXPIRY_MAX` = `9999-12-31T00:00:00Z` (`auth.py:27`); `create_key` la juzga antes de cargar el valor → 422 `invalid_key_expiry` tras autorizar (`store_auth.py:262`); la rotación acota la nueva con `LEAST` (`store_access.py:301`). Pruebas `test_access_keys.py:80` (`9999-12-31T23:00:00-05:00` → 422, `9999-12-31T00:00:00Z` → 200) y `:497` (rotada un día después → 200 con `9999-12-31T00:00:00`). Mutantes sin la cota y `LEAST` → `COALESCE` → rojos | `store_access.py:284`; `store_auth.py:258`; `models.py:88` |
-| 6 | Minor | Ningún test protege el bloqueo de la fila del llamante en `revoke_key` (mutante m3 sobrevive) (lente B) | T-22 | corregido (fix1, 9df5be2): prueba `test_access_users.py:603`: el admin global revoca una clave de bea mientras se cierra su sesión, en los dos órdenes (401 sin revocar, o el logout espera). Mutante m3 `[row['actor_id']]` (`store_auth.py:299`) → rojo en los dos órdenes | `store_auth.py:290` |
-| 7 | Minor | La vida heredada se suma como `interval` de días: con un `TimeZone` de sesión con horario de verano la clave nueva dura ±1 h (3624 h en UTC frente a 3623 h en Europe/Madrid); hoy el servidor va en UTC (lente B) | T-20 | corregido (fix1, b7698cf): la vida heredada en segundos, `extract(epoch FROM expires_at-created_at)*interval '1 second'` (`store_access.py:301`). Prueba `test_access_keys.py:507` con `SET LOCAL TimeZone='Europe/Madrid'` y un periodo que cruza el cambio de hora (RED: 3600 s menos). Mutante con el `interval` de días → rojo | `store_access.py:284` |
-| 8 | Minor | `last_used_at` con el pool saturado: el touch espera conexión hasta `MEMORY_POOL_TIMEOUT` (5 s), no 50 ms, y como el reloj del proceso solo avanza si la escritura entra, cada petición de la clave lo reintenta (una espera de conexión más por petición y un aviso por petición); igual con un `FOR SHARE` largo sobre la clave (50 ms por petición) (lentes D, A y B) | T-19 | corregido (fix1, 786eebb): el reloj avanza antes de cada intento (`auth.py:66`: un fallo se reintenta al minuto y avisa una vez) y la escritura espera conexión `LAST_USED_POOL_WAIT` = 0.05 s (`auth.py:68`, `store_pool.py:192, :235`). Pruebas con reloj inyectado `test_access_keys.py:207` (cinco peticiones con la fila retenida: un aviso; sin reintento en el minuto) y `:230` (pool de una conexión ocupada: 5.07 s → < 2 s, `StoreBusy` aplazado). Mutantes (sin la espera corta; reloj solo en el éxito) → rojos | `auth.py:53-66` |
-| 9 | Minor | `probe.valid_key` actualiza `last_used_at` de la clave del probe solo por comprobarla (lente D, fuera de lente) | T-19 | corregido (fix1, 786eebb): `probe.valid_key` usa `Auth(store, record_use=False)` (`probe.py:743`, `auth.py:43, :65`). Prueba `test_probe_provisioning.py:321` (`last_used_at` sigue NULL tras comprobar y reutilizar la clave). Mutante con `Auth(store)` → rojo | `probe.py:742-744` |
-| 10 | Minor | El criterio «Mutante: quitar el vaciado de caché de un escritor deja la matriz en rojo» estaba marcado aunque su texto no se cumple (la caché vive una transacción); la protección existe por el recorrido estático y por la matriz con la caché que sobrevive a su transacción (lente A) | T-22 | corregido (orquestador): R-01 del plan con su changelog; el criterio conserva su texto aprobado y se amplía detrás con «cumplido por otra vía» (la guarda de `scope-check` no deja reescribir un criterio aprobado) | `tasks.md` T-22; `improvement-plan.md` R-01 |
-| 11 | Minor | El ledger superaba su límite práctico de 245 000 bytes (247 140) (lente A) | T-24 | parcial (orquestador, en este commit): sección del intento 2 de la fase 3 archivada (−6 KB); esta sección lo devolvió a 250 042 bytes; el fix1 lo bajó a 241 085 archivando sus notas y el párrafo largo de T-02 | `tasks.md`; `execution-history.md` |
-
-Fuera de lente, sin fila: `docs/operations.md` no recomienda gracia 0 al rotar una clave comprometida (lente C; corregido en fix1, d364cd9: `docs/operations.md:400`); `test_mcp…test_semantic_budget_ms` falló una vez por plazo de reloj en T-22 (posible prueba inestable; lente A).
+- 2026-11-27 · «Revisión de dos lentes — intento 1: Fase 4 (T-19, T-20, T-21, T-22, T-23, T-24) — 2 Important: rotación de una clave ajena por un admin de proyecto, bloqueo del llamante sin prueba» → [execution-history.md](execution-history.md) · SHA-256 `91184050d384f318c7228a6b2292b664d6542384bdb282fd75577ce65d526d3c`
 
 ## Revisión de dos lentes — intento 2: Fase 4 (fix1) (T-19, T-20, T-22, T-23, T-24) — sin Critical ni Important; 3 Minor
 

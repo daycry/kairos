@@ -101,3 +101,31 @@ En el docstring de `ResolverBoundaryTests` y en la nota DC-1 de `design.md`:
 
 - Revocar la clave o cerrar la sesión con que está en curso un `create_user` o un `create_key` → T-22 (criterio y ficheros añadidos).
 - 404 de `GET /v1/users/{id}/sessions` y sobre `{code, message}` del esquema `Error` en el OpenAPI → T-26 (criterio añadido).
+
+## Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (T-19 a T-25)
+
+- **Fecha**: 2026-11-27
+- **Lentes**: A, B, C y D en Opus 5.5 en los dos intentos (C por `auth`, `keys` y el cliente; D por `last_used_at` en el camino de autenticación). Las lentes ejecutaron solo imágenes locales de pruebas (`kairos-test:i4p4`, `-fix1`) sin red, con PostgreSQL efímero dentro del contenedor.
+- **Veredicto**: cerrada. El intento 2 no dejó Critical ni Important. Sus tres Minor: uno de archivo corregido por el orquestador y dos corregidos en el fix2, que se verificó con una comprobación dirigida y no con una ronda completa, por decisión del usuario («Small fix2 and close», 2026-11-27).
+- **Evidencia**: suite del servidor 1786 tests, 0 fallos, errores y omitidos (`kairos-test:i4p4-fix2`); cliente 105/105; `KAIROS_MIN_TESTS` y `MIN_FLOOR` 1786; `scope-check.py --base main` exit 0; `openapi-lint --diff` contra `e9646a5` 0 rompedores (solo `POST /v1/keys/{key_id}/rotate`); `kairos-mcp.json` sin cambios; sin migraciones (las columnas ya estaban en la versión 13); estrés de 1 755 operaciones de acceso concurrentes sin interbloqueos. Comprobación dirigida del fix2: `test_access_keys` 33 OK; el mutante que quita la segunda comprobación de la rotación y el que vuelve a reintentar `last_used_at` al minuto dejan 2 rojas cada uno.
+
+| Intento | Diff | Important | Hallazgo principal | Estado |
+|---|---|---|---|---|
+| 1 | `e9646a5..c84e1cf` | 2 | Un admin de proyecto rotaba la clave de otro usuario y recibía un token que actuaba como él; el bloqueo de la fila del llamante en `rotate_key` sin prueba | Fix1, OK del usuario («Owner or global admin», «Important + all Minors») |
+| 2 | `f098c1e..c7326e8` | 0 | Segunda comprobación de la rotación sin prueba; `last_used_at` congelable una vez por minuto con una clave robada; cabeceras del archivo | Fix2 fuera del bucle y comprobación dirigida, OK del usuario («Small fix2 and close», «Fix it in fix2») |
+
+### Decisiones del usuario (2026-11-27)
+
+- Solo rotan una clave su dueño o el administrador global (sesión o actor bootstrap, nunca una clave). Para cualquier otro, una clave ajena responde 404 como una inexistente. El administrador de proyecto puede seguir revocando. Nota en DC-1.
+- Fix1 con los Important y todos los Minor; fix2 pequeño con comprobación dirigida; el retraso de `last_used_at` se corrige (reintento a los 5 s, avisos acotados con `key_id`).
+
+### Límites declarados
+
+- `last_used_at` es un dato de mejor esfuerzo, no un registro de auditoría: un minuto por detrás con el servidor sano; quien retenga la fila de la clave más de 50 ms cada 5 s puede mantenerlo atrasado (`docs/operations.md`).
+- `revoke_key` conserva su 404 frente a 403 (igualarlo cambiaría las respuestas publicadas de `DELETE /v1/keys/{id}`); los ids de clave son aleatorios.
+- La caducidad se acota en `9999-12-31T00:00:00Z`.
+- El criterio de T-22 «Mutante: quitar el vaciado de caché de un escritor deja la matriz en rojo» se cumple por otra vía: lo atrapa el recorrido estático; la matriz atrapa la caché que sobrevive a su transacción.
+
+### Diferido a otras tareas
+
+- Nada nuevo. El 404 de `GET /v1/users/{id}/sessions` y el esquema `Error` siguen en T-26 (fase 3).
