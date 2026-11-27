@@ -222,7 +222,11 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
 
     @app.get('/v1/auth/me', operation_id='memory_identity')
     def me(actor=Depends(identity)):
-        return {'actor': public_actor(actor), 'csrf_token': auth.refresh_csrf(actor) if actor.get('credential_type') == 'session' else ''}
+        # A key also says which one it is and when it expires (DC-7: `kairos doctor` keeps it, without the key): `key: {id, name, prefix, expires_at}`; a session has no `key`.
+        found = {'actor': public_actor(actor), 'csrf_token': auth.refresh_csrf(actor) if actor.get('credential_type') == 'session' else ''}
+        if actor.get('credential_type') == 'bearer' and actor.get('key'):
+            found['key'] = actor['key']
+        return found
 
     @app.post('/v1/auth/logout', operation_id='memory_logout')
     def logout(request: Request, actor=Depends(identity)):

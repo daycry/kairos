@@ -2,6 +2,7 @@
 import hashlib
 import hmac
 import secrets
+import time
 from datetime import datetime, timezone
 
 from .errors import Forbidden, MemoryError, NotFound, Unauthorized
@@ -11,6 +12,12 @@ from .passwords import check_login, hash_password, verify_password  # noqa: F401
 
 SCOPES = frozenset({'read', 'write', 'publish', 'validate', 'admin'})
 RECENT_ATTEMPTS = "SELECT count(*) AS n FROM memory.login_attempts WHERE happened_at>clock_timestamp()-interval '15 minutes' AND (username=%s OR client_ip=%s)"
+# `last_used_at` of a key (CA-06, DC-7): written by the authentication of the key at most once per LAST_USED_EVERY seconds and key, in a short transaction of its own whose
+# `lock_timeout` is LAST_USED_LOCK_TIMEOUT. A row held by another transaction (the `FOR SHARE` of `extended_store.py` and `corpus_answers.py`) makes the write give up, not the
+# request: it is tried again on the next request of that key. The statement also skips a row written less than a minute ago (by another process).
+LAST_USED_EVERY = 60
+LAST_USED_LOCK_TIMEOUT = '50ms'
+TOUCH_KEY = "UPDATE memory.api_keys SET last_used_at=clock_timestamp() WHERE id=%s AND (last_used_at IS NULL OR last_used_at<=clock_timestamp()-interval '1 minute')"
 
 
 def lock_attempts(c, username, client_ip):
@@ -25,10 +32,12 @@ def token_hash(token):
 
 
 class Auth:
-    def __init__(self, store, allowed_origins=(), session_ttl=43200):
+    def __init__(self, store, allowed_origins=(), session_ttl=43200, clock=None):
         self.store = store
         self.allowed_origins = frozenset(allowed_origins)
         self.session_ttl = session_ttl
+        self.clock = clock or time.monotonic  # injected by the tests of `last_used_at`
+        self.last_used = {}  # key id -> clock of the last write of its `last_used_at` by this process
 
     def _actor(self, c, row, credential_type, credential_id=None):
         return self.store._describe(c, row, credential_type, credential_id)  # permissions are resolved in one place (store_auth.py)
@@ -40,7 +49,20 @@ class Auth:
             row = c.execute('SELECT a.*, k.id AS credential_id FROM memory.api_keys k JOIN memory.actors a ON a.id=k.actor_id WHERE k.token_hash=%s AND k.revoked_at IS NULL AND (k.expires_at IS NULL OR k.expires_at>clock_timestamp()) AND NOT a.disabled', (token_hash(token),)).fetchone()
             if not row:
                 raise Unauthorized()
-            return self._actor(c, row, 'bearer', row['credential_id'])
+            actor = self._actor(c, row, 'bearer', row['credential_id'])
+        # The last use of the key, at most once a minute per key, in a short transaction of its own (DC-7). It never fails the request: a lock it cannot get within
+        # LAST_USED_LOCK_TIMEOUT, or any other failure, leaves it for the next request of the key (the clock of this process is only advanced by a write that got in).
+        now, kid = self.clock(), actor['key_id']
+        if kid not in self.last_used or now - self.last_used[kid] >= LAST_USED_EVERY:
+            try:
+                with self.store.transaction() as c:
+                    c.execute("SELECT set_config('lock_timeout', %s, true)", (LAST_USED_LOCK_TIMEOUT,))
+                    c.execute(TOUCH_KEY, (kid,))
+                    invalidate_auth(c)  # nothing was resolved in this transaction; the walk of the writers asks every writer of `api_keys` to end like this
+                self.last_used[kid] = now
+            except Exception as exc:
+                observability.log_failure('key_last_used_deferred', exc, 'warning')  # the type only; the request goes on
+        return actor
 
     def authenticate_session(self, token):
         if not token:

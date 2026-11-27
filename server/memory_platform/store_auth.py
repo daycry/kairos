@@ -95,7 +95,8 @@ class AuthMixin:
                  'project_ids': sorted({g['project_id'] for g in grants}), 'grants': grants}
         if credential_type == 'bearer':
             key = c.execute('SELECT * FROM memory.api_keys WHERE id=%s', (credential_id,)).fetchone()
-            actor.update(is_admin=False, key_id=credential_id, scopes=key['scopes'], project_ids=key['project_ids'])
+            actor.update(is_admin=False, key_id=credential_id, scopes=key['scopes'], project_ids=key['project_ids'],
+                         key={'id': key['id'], 'name': key['name'], 'prefix': key['prefix'], 'expires_at': key['expires_at'].isoformat() if key['expires_at'] else None})
         else:
             actor['session_id'] = credential_id
         actor['permissions'] = actor['scopes']
@@ -253,23 +254,28 @@ class AuthMixin:
                 c.execute('SELECT 1 FROM memory.actors WHERE id=%s FOR SHARE', (actor['id'],))
                 invalidate_auth(c)
             self._delegate(c, actor, data['project_ids'], data['scopes'])
-            c.execute('INSERT INTO memory.api_keys(id,actor_id,name,token_hash,prefix,project_ids,scopes) VALUES(%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb)', (kid, actor['id'], data['name'], token_hash(token), token[:10], canonical(data['project_ids']), canonical(data['scopes'])))
+            # An expiry is optional (P-03: without it the key never expires) and must be in the future by the clock of the database; it is judged AFTER the caller is authorized (403 first).
+            expires = c.execute('SELECT %s::timestamptz AS at, %s::timestamptz<=clock_timestamp() AS past', (data.get('expires_at'), data.get('expires_at'))).fetchone()
+            if expires['past']:
+                raise MemoryError('invalid_key_expiry', 'The expiry of a key must be in the future', 422)
+            c.execute('INSERT INTO memory.api_keys(id,actor_id,name,token_hash,prefix,project_ids,scopes,expires_at) VALUES(%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s)', (kid, actor['id'], data['name'], token_hash(token), token[:10], canonical(data['project_ids']), canonical(data['scopes']), expires['at']))
             invalidate_auth(c)
             self._audit(c, actor, 'key.created', resource_id=kid)
-        return {'id': kid, 'name': data['name'], 'token': token, 'key': token, 'project_ids': data['project_ids'], 'scopes': data['scopes']}
+        return {'id': kid, 'name': data['name'], 'token': token, 'key': token, 'project_ids': data['project_ids'], 'scopes': data['scopes'],
+                'expires_at': expires['at'].isoformat() if expires['at'] else None}
 
     def list_keys(self, actor):
         with self.transaction() as c:
             key, every_key = self._admin_somewhere(c, actor)
             if not every_key:
-                rows = c.execute('SELECT id,name,prefix,project_ids,scopes,revoked_at,created_at FROM memory.api_keys WHERE actor_id=%s ORDER BY created_at,id', (actor['id'],)).fetchall()
+                rows = c.execute('SELECT id,name,prefix,project_ids,scopes,revoked_at,created_at,expires_at,last_used_at FROM memory.api_keys WHERE actor_id=%s ORDER BY created_at,id', (actor['id'],)).fetchall()
                 if key:
                     rows = [r for r in rows if set(r['project_ids']) <= set(key['project_ids']) and set(r['scopes']) <= set(key['scopes'])]
                 for r in rows:
                     for p in r['project_ids']:
                         self._require(c, actor, p, 'admin')
             else:
-                rows = c.execute('SELECT id,name,prefix,project_ids,scopes,revoked_at,created_at FROM memory.api_keys ORDER BY created_at,id').fetchall()
+                rows = c.execute('SELECT id,name,prefix,project_ids,scopes,revoked_at,created_at,expires_at,last_used_at FROM memory.api_keys ORDER BY created_at,id').fetchall()
             return clean(rows)
 
     def revoke_key(self, actor, key_id):

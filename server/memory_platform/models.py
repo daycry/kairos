@@ -84,6 +84,8 @@ class KeyInput(Model):
     name: Annotated[str, Field(max_length=128)]
     project_ids: Annotated[list[Annotated[str, Field(pattern='^[a-z0-9][a-z0-9_-]{0,63}$')]], Field(max_length=100)]
     scopes: Annotated[list[Literal['read', 'write', 'admin', 'publish', 'validate']], Field(max_length=5)]
+    # Optional (P-03): without it the key never expires; one in the past is 422 `invalid_key_expiry` (the store judges it after authorizing the caller).
+    expires_at: AwareDatetime | None = None
 
 class UserInput(Model):
     username: Annotated[str, Field(max_length=128)]

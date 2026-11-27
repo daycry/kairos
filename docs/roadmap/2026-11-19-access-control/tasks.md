@@ -58,7 +58,7 @@ test-plan: test-plan.md
 | Fase 1 — Medición de scrypt y guarda del resolvedor (CA-09, CA-38 a) | 5 | 5 | 100% | 0 / 19.8h | 4.77 / 6.3h | 0 / 1.6h | 0 / 1570 k |
 | Fase 2 — Esquema 13, scrypt y contraseñas (C-01) | 7 | 7 | 100% | 0 / 36.0h | 3.88 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 3 — Usuarios, permisos y sesiones (C-01) | 6 | 6 | 100% | 0 / 36.0h | 5.14 / 3.7h | 0 / 0.9h | 0 / 924 k |
-| Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01) | 0 | 7 | 0% | 0 / 48.0h | 0 / 4.9h | 0 / 1.2h | 0 / 1232 k |
+| Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01) | 1 | 7 | 14.3% | 0 / 48.0h | 0 / 4.9h | 0 / 1.2h | 0 / 1232 k |
 | Fase 5 — Login que no se bloquea entre clientes (C-02) | 0 | 5 | 0% | 0 / 43.2h | 0 / 4.4h | 0 / 1.1h | 0 / 1109 k |
 | Fase 6 — Cierre del hito A: acceso que se puede retirar | 0 | 4 | 0% | 0 / 9.6h | 0 / 3.5h | 0 / 0.9h | 0 / 873 k |
 | Fase 7 — Mediciones del hito B y superficie de secretos (C-06) | 0 | 8 | 0% | 0 / 44.4h | 0 / 12.3h | 0 / 3.1h | 0 / 3082 k |
@@ -73,7 +73,7 @@ test-plan: test-plan.md
 | Fase 16 — Identidad: guía probada y extensibilidad (C-05) | 0 | 5 | 0% | 0 / 23.4h | 0 / 2.4h | 0 / 0.6h | 0 / 601 k |
 | Fase 17 — Revisión del hito C y revisión de seguridad (C-07) | 0 | 5 | 0% | 0 / 27.0h | 0 / 5.3h | 0 / 1.3h | 0 / 1320 k |
 | Fase 18 — Cierre del hito C y de la iniciativa: ensayo, versión 0.4.2 y PR | 0 | 4 | 0% | 0 / 11.4h | 0 / 1.2h | 0 / 0.3h | 0 / 293 k |
-| **TOTAL** | **17** | **106** | **16%** | **0 / 616.2h** | **13.79 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
+| **TOTAL** | **19** | **106** | **17.9%** | **0 / 616.2h** | **13.79 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -633,9 +633,10 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 
 - **Descripción**: `KeyInput` admite `expires_at` opcional; sin él la clave no caduca (P-03). La lista de claves muestra `expires_at` y `last_used_at`, y `/v1/auth/me` añade, para una clave, `key: {id, name, prefix, expires_at}`. `last_used_at` se escribe desde el camino de autenticación como mucho una vez por minuto y clave, en transacción corta propia con `lock_timeout` corto; si no entra, se aplaza. En el hito B, T-56 integra esa escritura con la de la cuota. Fuente: CA-06; P-03; DC-7.
 - **Changelog**: Una clave puede crearse con caducidad opcional; la lista de claves muestra su caducidad y su último uso, y `/v1/auth/me`, `expires_at`.
-- **Estado**: borrador
+- **Estado**: completado
+- **Cerrada**: 2026-11-27
 - **Tiempo humano**: est. 4.5h · real —
-- **Tiempo IA (ejec.)**: est. 0.46h · real —
+- **Tiempo IA (ejec.)**: est. 0.46h · real 0.71h (medido)
 - **Supervisión**: est. 0.12h · real —
 - **Previsión IA**: 128 k in / 11 k out tok · ⚠️ verificar €
 - **Dependencias**: T-18
@@ -647,13 +648,15 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
   - `PYTHONPATH=server python -m unittest memory_platform.tests.test_contract_additive` → `OK`
 
 **Criterios de aceptación**
-- [ ] Sin caducidad la clave no caduca; con caducidad recibe 401 al vencer (fila fechada hacia atrás, sin `sleep`); una caducidad en el pasado al crear → 422
-- [ ] Las claves anteriores a la migración conservan «sin caducidad»; los campos nuevos son aditivos en el OpenAPI
-- [ ] Cien peticiones seguidas producen una sola escritura de `last_used_at` (reloj inyectado); un `FOR SHARE` sobre la fila no hace fallar la petición
+- [x] Sin caducidad la clave no caduca; con caducidad recibe 401 al vencer (fila fechada hacia atrás, sin `sleep`); una caducidad en el pasado al crear → 422
+- [x] Las claves anteriores a la migración conservan «sin caducidad»; los campos nuevos son aditivos en el OpenAPI
+- [x] Cien peticiones seguidas producen una sola escritura de `last_used_at` (reloj inyectado); un `FOR SHARE` sobre la fila no hace fallar la petición
 
 **Subtareas**
-- [ ] Pruebas en rojo
-- [ ] Modelo, escritor, listados y escritura acotada
+- [x] Pruebas en rojo
+- [x] Modelo, escritor, listados y escritura acotada
+
+**Notas**: RED: `test_access_keys (10 pruebas, contra el código de e9646a5)` falló con KeyError: 'expires_at' y 'token' (la respuesta no traía la caducidad), KeyError: 'key' (`/v1/auth/me`), TypeError: Auth.__init__() got an unexpected keyword argument 'clock' y (422, 'invalid_request') != (422, 'invalid_key_expiry') · 2026-11-27. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `6e6cb1c3af32`.
 
 ### T-20 — Rotación con gracia: `POST /v1/keys/{id}/rotate` (CA-07)
 
