@@ -636,12 +636,12 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 - **Estado**: completado
 - **Cerrada**: 2026-11-27
 - **Tiempo humano**: est. 4.5h · real —
-- **Tiempo IA (ejec.)**: est. 0.46h · real 0.71h (medido)
+- **Tiempo IA (ejec.)**: est. 0.46h · real 1.24h (medido; fix1 de la fase 4: 0.53h, ventana que incluye también el código y las pruebas de T-20 y T-22)
 - **Supervisión**: est. 0.12h · real —
 - **Previsión IA**: 128 k in / 11 k out tok · ⚠️ verificar €
 - **Dependencias**: T-18
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/store_auth.py`, `server/memory_platform/auth.py`, `server/memory_platform/app.py`, `server/memory_platform/models.py`, `server/memory_platform/tests/test_access_keys.py`, `docs/contracts/memory-platform.openapi.json`
+- **Archivos**: `server/memory_platform/store_auth.py`, `server/memory_platform/auth.py`, `server/memory_platform/app.py`, `server/memory_platform/models.py`, `server/memory_platform/tests/test_access_keys.py`, `docs/contracts/memory-platform.openapi.json`, `server/memory_platform/store_pool.py`, `server/memory_platform/probe.py`, `server/memory_platform/tests/test_probe_provisioning.py` (añadidos con nota: fix1 de la revisión de la fase 4, gaps 8 y 9: la espera corta de conexión de `last_used_at` y la comprobación de la sonda que no es un uso)
 - **Cubre (tests)**: —
 - **Verificación**:
   - `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_access_keys|MEMORY_TEST_RESULT"` → nombradas en `ok`; 0 fallos y 0 omitidos
@@ -657,6 +657,8 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 - [x] Modelo, escritor, listados y escritura acotada
 
 **Notas**: RED: `test_access_keys (10 pruebas, contra el código de e9646a5)` falló con KeyError: 'expires_at' y 'token' (la respuesta no traía la caducidad), KeyError: 'key' (`/v1/auth/me`), TypeError: Auth.__init__() got an unexpected keyword argument 'clock' y (422, 'invalid_request') != (422, 'invalid_key_expiry') · 2026-11-27. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `6e6cb1c3af32`.
+
+**Notas fix1** (revisión de la fase 4, intento 1, gaps 5, 8 y 9): RED: `test_access_keys.ExpiryTests + LastUsedTests + test_probe_provisioning.ProvisioningTests.test_checking_the_key_is_not_a_use_of_it (13 pruebas, contra el código de f098c1e)` falló con psycopg.DataError: timestamp too large (after year 10K): '10000-01-01 04:00:00+00' (el 503 de una caducidad `9999-12-31T23:00:00-05:00`), AssertionError: Lists differ (un aviso `key_last_used_deferred` por petición), 5.067 not less than 2.0 (el último uso esperó el `MEMORY_POOL_TIMEOUT` entero) y `last_used_at` escrito por `probe.valid_key` · 2026-11-27. Hecho: `KEY_EXPIRY_MAX = '9999-12-31T00:00:00+00:00'` (`auth.py`: la última que el driver carga en cualquier zona horaria); `create_key` la juzga antes de cargar el valor y responde 422 `invalid_key_expiry` (tras autorizar: 403 primero). `last_used_at`: el reloj del proceso avanza en cada intento, no solo en el éxito (un fallo se reintenta un minuto después y avisa como mucho una vez por minuto y clave); la transacción espera conexión del pool `LAST_USED_POOL_WAIT` = 0.05 s (`store_pool.connection_wait`, una `ContextVar` que lee `StorePool.connection`; la firma de `Store.transaction` no cambia); `Auth(record_use=False)` en `probe.valid_key`. Pruebas nuevas: `test_an_expiry_after_the_last_one_a_key_may_have_is_422_and_one_on_it_is_kept`, `test_a_write_that_did_not_get_in_is_not_tried_again_within_the_minute_and_warns_once`, `test_with_the_pool_full_the_write_waits_for_a_connection_only_a_short_margin` (pool de una conexión tomada por otro hilo, reloj inyectado), `test_checking_the_key_is_not_a_use_of_it`; ampliadas `test_authorization_comes_before_the_422_of_the_expiry` y `test_a_share_lock_on_the_row_of_the_key…` (el reintento llega al minuto). Mutantes (copias en /tmp del contenedor, `kairos-test:i4p4`): sin la cota al crear, sin la espera corta, reloj solo en el éxito y la sonda con `Auth(store)` → los cuatro en rojo. Verificación: `test_access_keys`, `test_probe_provisioning`, `test_store_pool`, `test_store_surface`, `test_auth_cache` → `RESULT run=137 fail=0 err=0 skip=0`; la suite completa la cierra T-24.
 
 ### T-20 — Rotación con gracia: `POST /v1/keys/{id}/rotate` (CA-07)
 

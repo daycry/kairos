@@ -6,19 +6,23 @@ in a row write it once (injected clock), and a `FOR SHARE` held on the row of th
 The rotation of a key (T-20) is at the end: `RotationTests`.
 """
 import threading
+import time
 import unittest
+from contextlib import contextmanager
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from memory_platform import auth as auth_module
 from memory_platform.app import create_app
-from memory_platform.auth import Auth, token_hash
+from memory_platform.auth import LAST_USED_EVERY, Auth, token_hash
 from memory_platform.config import Settings
 from memory_platform.errors import Conflict, MemoryError
 from memory_platform.store import Store
+from memory_platform.store_pool import close_pool
 from memory_platform.tests import test_passwords as pw
 from memory_platform.tests.test_access_users import ORIGIN, UsersFixture
+from memory_platform.tests.test_store_pool import pool_store
 
 KEY_FIELDS = {'id', 'name', 'prefix', 'expires_at'}
 # Every update of `last_used_at` that moves it forward is one write (a row dated back by the test is not)
@@ -68,8 +72,23 @@ class ExpiryTests(KeysFixture):
 
     def test_authorization_comes_before_the_422_of_the_expiry(self):
         reader, headers = self.session('ana')  # read on p1, no admin: she may not issue keys
-        refused = reader.post('/v1/keys', json={'name': 'past', 'project_ids': ['p1'], 'scopes': ['read'], 'expires_at': '2000-01-01T00:00:00Z'}, headers=headers)
-        self.assertEqual(refused.status_code, 403, refused.text)
+        for value in ('2000-01-01T00:00:00Z', '9999-12-31T23:00:00-05:00'):
+            with self.subTest(expires_at=value):
+                refused = reader.post('/v1/keys', json={'name': 'past', 'project_ids': ['p1'], 'scopes': ['read'], 'expires_at': value}, headers=headers)
+                self.assertEqual(refused.status_code, 403, refused.text)
+
+    def test_an_expiry_after_the_last_one_a_key_may_have_is_422_and_one_on_it_is_kept(self):
+        # fix1 of the review of phase 4, gap 5: an expiry past the year 9999 in UTC was a 503 (the driver cannot load it); it is a 422 of the request, and nothing is created
+        client, headers = self.admin_session()
+        for value in ('9999-12-31T23:00:00-05:00', '9999-12-31T00:00:01Z'):
+            with self.subTest(expires_at=value):
+                refused = client.post('/v1/keys', json={'name': 'far', 'project_ids': ['p1'], 'scopes': ['read'], 'expires_at': value}, headers=headers)
+                self.assertEqual((refused.status_code, refused.json()['error']['code']), (422, 'invalid_key_expiry'), refused.text)
+        self.assertEqual(self.count("SELECT count(*) FROM memory.api_keys WHERE name='far'"), 0)
+        self.assertEqual(self.count("SELECT count(*) FROM memory.audit_events WHERE action='key.created'"), 0)
+        kept = client.post('/v1/keys', json={'name': 'far', 'project_ids': ['p1'], 'scopes': ['read'], 'expires_at': '9999-12-31T00:00:00Z'}, headers=headers)
+        self.assertEqual(kept.status_code, 200, kept.text)
+        self.assertTrue(kept.json()['expires_at'].startswith('9999-12-31T00:00:00'), kept.json())
 
     def test_the_list_shows_the_expiry_and_the_last_use_of_each_key(self):
         client, headers = self.admin_session()
@@ -181,8 +200,74 @@ class LastUsedTests(KeysFixture):
         self.assertFalse(stuck, 'the request waited for the lock instead of giving up on the write')
         self.assertEqual(out.get('status'), 200)
         self.assertEqual(self.writes(), 0, 'the write did not get in')
+        self.now[0] += LAST_USED_EVERY  # a write that did not get in is tried again a minute later (fix1 of the review of phase 4, gap 8)
         self.assertEqual(self.client().get('/v1/projects', headers=self.bearer(self.token)).status_code, 200)
-        self.assertEqual(self.writes(), 1, 'the next request writes it')
+        self.assertEqual(self.writes(), 1, 'the next request after the minute writes it')
+
+    def test_a_write_that_did_not_get_in_is_not_tried_again_within_the_minute_and_warns_once(self):
+        # fix1 of the review of phase 4, gap 8: the clock of the process moves on every attempt, not only on a write that got in; else every request of the key tries again and warns
+        holder = self.psycopg.connect(self.dsn)
+        self.addCleanup(holder.close)
+        holder.execute('SELECT 1 FROM memory.api_keys WHERE id=%s FOR SHARE', (self.kid,))
+        client, warnings = self.client(), []
+        real = auth_module.observability.log_failure
+
+        def spy(event, exc, level='error', **fields):
+            warnings.append((event, type(exc).__name__))
+            return real(event, exc, level, **fields)
+        with patch.object(auth_module.observability, 'log_failure', spy):
+            for _ in range(5):
+                self.assertEqual(client.get('/v1/projects', headers=self.bearer(self.token)).status_code, 200)
+            holder.rollback()  # the lock goes away: within the same minute nothing is tried again
+            self.now[0] += LAST_USED_EVERY - 1
+            self.assertEqual(client.get('/v1/projects', headers=self.bearer(self.token)).status_code, 200)
+        self.assertEqual(warnings, [('key_last_used_deferred', 'LockNotAvailable')], 'one attempt and one warning in the minute, not one per request')
+        self.assertEqual(self.writes(), 0)
+        self.now[0] += 1
+        self.assertEqual(client.get('/v1/projects', headers=self.bearer(self.token)).status_code, 200)
+        self.assertEqual(self.writes(), 1, 'a minute after the attempt the write gets in')
+
+    def test_with_the_pool_full_the_write_waits_for_a_connection_only_a_short_margin(self):
+        # fix1 of the review of phase 4, gap 8: the write is not worth a request waiting the whole MEMORY_POOL_TIMEOUT (5 s) for a connection; it gives up after LAST_USED_POOL_WAIT
+        pooled = pool_store(self.dsn, minimum=1, maximum=1, timeout=5.0)
+        self.addCleanup(close_pool, pooled)
+        auth = Auth(pooled, [ORIGIN], clock=lambda: self.now[0])
+        token = self.key_of()
+        kid = self.key_id(token)
+        real, calls, got, release, warnings = pooled.transaction, [], threading.Event(), threading.Event(), []
+
+        def hold():
+            with pooled.pool.connection():
+                got.set()
+                release.wait(30)
+        holder = threading.Thread(target=hold)
+
+        @contextmanager
+        def transaction(*args, **kwargs):
+            calls.append(1)
+            if len(calls) == 2:  # the write of the last use: the only connection of the pool is taken by somebody else first
+                holder.start()
+                self.assertTrue(got.wait(30))
+            with real(*args, **kwargs) as c:
+                yield c
+        real_log = auth_module.observability.log_failure
+
+        def spy(event, exc, level='error', **fields):
+            warnings.append((event, type(exc).__name__))
+            return real_log(event, exc, level, **fields)
+        try:
+            with patch.object(pooled, 'transaction', transaction), patch.object(auth_module.observability, 'log_failure', spy):
+                started = time.monotonic()
+                actor = auth.authenticate_bearer(token)
+                took = time.monotonic() - started
+        finally:
+            release.set()
+            if holder.is_alive():
+                holder.join(30)
+        self.assertEqual(actor['key_id'], kid, 'the request goes on')
+        self.assertLess(took, 2.0, 'the write waited %.2f s for a connection (MEMORY_POOL_TIMEOUT is 5 s)' % took)
+        self.assertEqual(warnings, [('key_last_used_deferred', 'StoreBusy')])
+        self.assertIsNone(self.count('SELECT last_used_at FROM memory.api_keys WHERE id=%s', kid))
 
     def test_the_write_runs_in_a_transaction_of_its_own_with_a_short_lock_timeout(self):
         seen, spying = self.attempts()

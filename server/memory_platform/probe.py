@@ -738,8 +738,9 @@ def valid_key(store, token, project_id, owner_id):
     """The id of the key `token` when the API itself would accept it TODAY, for the service actor `owner_id`, with read and write on exactly this project; else None.
 
     It goes through the same code as a request (`Auth.authenticate_bearer`, which refuses a revoked or expired key and a disabled owner, then `require_permission`, which refuses an
-    owner without the grant), so there is no second copy of the access predicate to drift from it. A wider key, or one owned by anybody else, is never reused."""
-    auth = Auth(store)
+    owner without the grant), so there is no second copy of the access predicate to drift from it. A wider key, or one owned by anybody else, is never reused.
+    The check is not a use of the key: `last_used_at` is left as the requests left it (fix1 of the review of phase 4, gap 9)."""
+    auth = Auth(store, record_use=False)
     try:
         actor = auth.authenticate_bearer(token)
         for permission in PROBE_SCOPES:

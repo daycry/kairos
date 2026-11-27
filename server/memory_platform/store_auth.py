@@ -6,7 +6,7 @@ from pathlib import Path
 from psycopg import errors as pg_errors
 
 from .config import migration_maintenance_work_mem
-from .auth import SCOPES, token_hash
+from .auth import KEY_EXPIRY_MAX, SCOPES, token_hash
 from .passwords import check_length, hash_password
 from .errors import Conflict, Forbidden, MemoryError, NotFound, Unauthorized
 from .auth_scope import _cached, _identity, invalidate_auth
@@ -254,10 +254,14 @@ class AuthMixin:
                 c.execute('SELECT 1 FROM memory.actors WHERE id=%s FOR SHARE', (actor['id'],))
                 invalidate_auth(c)
             self._delegate(c, actor, data['project_ids'], data['scopes'])
-            # An expiry is optional (P-03: without it the key never expires) and must be in the future by the clock of the database; it is judged AFTER the caller is authorized (403 first).
-            expires = c.execute('SELECT %s::timestamptz AS at, %s::timestamptz<=clock_timestamp() AS past', (data.get('expires_at'), data.get('expires_at'))).fetchone()
-            if expires['past']:
+            # An expiry is optional (P-03: without it the key never expires), must be in the future by the clock of the database and not later than KEY_EXPIRY_MAX (fix1 of the review of
+            # phase 4, gap 5: it is judged before the value is loaded); it is judged AFTER the caller is authorized (403 first).
+            judged = c.execute('SELECT %s::timestamptz<=clock_timestamp() AS past, %s::timestamptz>%s::timestamptz AS late', (data.get('expires_at'), data.get('expires_at'), KEY_EXPIRY_MAX)).fetchone()
+            if judged['past']:
                 raise MemoryError('invalid_key_expiry', 'The expiry of a key must be in the future', 422)
+            if judged['late']:
+                raise MemoryError('invalid_key_expiry', 'The expiry of a key must not be later than %s' % KEY_EXPIRY_MAX, 422)
+            expires = c.execute('SELECT %s::timestamptz AS at', (data.get('expires_at'),)).fetchone()
             c.execute('INSERT INTO memory.api_keys(id,actor_id,name,token_hash,prefix,project_ids,scopes,expires_at) VALUES(%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s)', (kid, actor['id'], data['name'], token_hash(token), token[:10], canonical(data['project_ids']), canonical(data['scopes']), expires['at']))
             invalidate_auth(c)
             self._audit(c, actor, 'key.created', resource_id=kid)

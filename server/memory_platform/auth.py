@@ -8,15 +8,23 @@ from datetime import datetime, timezone
 from .errors import Forbidden, MemoryError, NotFound, Unauthorized
 from .auth_scope import invalidate_auth, savepoint
 from . import observability, passwords
+from .store_pool import connection_wait
 from .passwords import check_login, hash_password, verify_password  # noqa: F401  (re-exported: the callers and tests that import them from here)
 
 SCOPES = frozenset({'read', 'write', 'publish', 'validate', 'admin'})
 RECENT_ATTEMPTS = "SELECT count(*) AS n FROM memory.login_attempts WHERE happened_at>clock_timestamp()-interval '15 minutes' AND (username=%s OR client_ip=%s)"
 # `last_used_at` of a key (CA-06, DC-7): written by the authentication of the key at most once per LAST_USED_EVERY seconds and key, in a short transaction of its own whose
-# `lock_timeout` is LAST_USED_LOCK_TIMEOUT. A row held by another transaction (the `FOR SHARE` of `extended_store.py` and `corpus_answers.py`) makes the write give up, not the
-# request: it is tried again on the next request of that key. The statement also skips a row written less than a minute ago (by another process).
+# `lock_timeout` is LAST_USED_LOCK_TIMEOUT and that waits for a connection of the pool at most LAST_USED_POOL_WAIT seconds. A row held by another transaction (the `FOR SHARE` of
+# `extended_store.py` and `corpus_answers.py`) or a full pool makes the write give up, not the request. The clock of the process moves on every ATTEMPT (fix1 of the review of phase 4,
+# gap 8): a write that gave up is tried again a minute later, not on every request of the key, and it warns once a minute at most. The statement also skips a row written less than a
+# minute ago (by another process).
 LAST_USED_EVERY = 60
 LAST_USED_LOCK_TIMEOUT = '50ms'
+LAST_USED_POOL_WAIT = 0.05
+# The latest expiry a key may have (fix1 of the review of phase 4, gap 5). The database stores later ones, but the driver loads a `timestamptz` into a Python datetime, whose last year
+# is 9999: a later expiry was a 503 when created and made the key impossible to rotate or list. A day short of the end of 9999 in UTC, so that it loads in any session time zone. A
+# creation past it is 422 `invalid_key_expiry`; a rotation gives the new key at most this expiry.
+KEY_EXPIRY_MAX = '9999-12-31T00:00:00+00:00'
 TOUCH_KEY = "UPDATE memory.api_keys SET last_used_at=clock_timestamp() WHERE id=%s AND (last_used_at IS NULL OR last_used_at<=clock_timestamp()-interval '1 minute')"
 
 
@@ -32,12 +40,13 @@ def token_hash(token):
 
 
 class Auth:
-    def __init__(self, store, allowed_origins=(), session_ttl=43200, clock=None):
+    def __init__(self, store, allowed_origins=(), session_ttl=43200, clock=None, record_use=True):
         self.store = store
         self.allowed_origins = frozenset(allowed_origins)
         self.session_ttl = session_ttl
         self.clock = clock or time.monotonic  # injected by the tests of `last_used_at`
-        self.last_used = {}  # key id -> clock of the last write of its `last_used_at` by this process
+        self.last_used = {}  # key id -> clock of the last attempt to write its `last_used_at` by this process
+        self.record_use = record_use  # False: a check of a key that is not a request (`probe.valid_key`) leaves its last use alone (fix1 of the review of phase 4, gap 9)
 
     def _actor(self, c, row, credential_type, credential_id=None):
         return self.store._describe(c, row, credential_type, credential_id)  # permissions are resolved in one place (store_auth.py)
@@ -50,16 +59,16 @@ class Auth:
             if not row:
                 raise Unauthorized()
             actor = self._actor(c, row, 'bearer', row['credential_id'])
-        # The last use of the key, at most once a minute per key, in a short transaction of its own (DC-7). It never fails the request: a lock it cannot get within
-        # LAST_USED_LOCK_TIMEOUT, or any other failure, leaves it for the next request of the key (the clock of this process is only advanced by a write that got in).
+        # The last use of the key, at most once a minute per key, in a short transaction of its own (DC-7). It never fails the request: a connection it cannot get within
+        # LAST_USED_POOL_WAIT, a lock it cannot get within LAST_USED_LOCK_TIMEOUT, or any other failure, leaves it for a minute later (the clock moves before the attempt).
         now, kid = self.clock(), actor['key_id']
-        if kid not in self.last_used or now - self.last_used[kid] >= LAST_USED_EVERY:
+        if self.record_use and (kid not in self.last_used or now - self.last_used[kid] >= LAST_USED_EVERY):
+            self.last_used[kid] = now
             try:
-                with self.store.transaction() as c:
+                with connection_wait(LAST_USED_POOL_WAIT), self.store.transaction() as c:
                     c.execute("SELECT set_config('lock_timeout', %s, true)", (LAST_USED_LOCK_TIMEOUT,))
                     c.execute(TOUCH_KEY, (kid,))
                     invalidate_auth(c)  # nothing was resolved in this transaction; the walk of the writers asks every writer of `api_keys` to end like this
-                self.last_used[kid] = now
             except Exception as exc:
                 observability.log_failure('key_last_used_deferred', exc, 'warning')  # the type only; the request goes on
         return actor

@@ -26,6 +26,7 @@ What the pool guarantees, and `tests/test_store_pool.py` / `tests/test_store_fau
 from __future__ import annotations
 
 from contextlib import contextmanager
+from contextvars import ContextVar
 import threading
 
 from .config import service_statement_timeout
@@ -36,6 +37,9 @@ GUARD_MARGIN_SECONDS = 5.0  # added to the longest statement_timeout in force: t
 CHECK_SECONDS = 1.0  # client-side plazo of the check at hand-out and of the RESET (a one-packet round trip): a request never waits for a half-open connection longer than this
 READY_WAIT = 0.5  # seconds `/health/ready` waits for a connection (the healthcheck client gives up at 3 s: this, the check and its query add up to 2.5)
 READY_GUARD = 1.0  # client-side plazo of the one-row query of `/health/ready`
+# The wait for a connection that a block of code asks for (`connection_wait`) when the call itself names none: the write of the last use of a key (`auth.py`, fix1 of the review of
+# phase 4, gap 8) is not worth a request waiting the whole `MEMORY_POOL_TIMEOUT`. It goes through `Store.transaction()`, the one place that gives a connection, whose signature stays.
+_CONNECTION_WAIT = ContextVar('kairos_connection_wait', default=None)
 RECONNECT_TIMEOUT = 10.0  # seconds a pool keeps retrying one connection (the pool default is 300): the waits of its backoff (1, 2, 4... s) are cut at this, so once the database is back a
 # request never waits behind a retry scheduled minutes ahead; a slot that gives up is made again by the next request that finds the pool empty
 
@@ -184,6 +188,8 @@ class StorePool:
         one transaction, the wait for a connection and the client-side plazo of its statements (`/health/ready` uses short ones)."""
         from psycopg_pool import PoolClosed, PoolTimeout
         pool = self._open()
+        if wait is None:
+            wait = _CONNECTION_WAIT.get()
         try:
             connection = pool.getconn(timeout=wait)
         except PoolTimeout:
@@ -223,6 +229,17 @@ class StorePool:
             already, self.closed = self.closed, True
         if not already and self._opened:
             self._pool.close(timeout=2.0)  # a thread stuck in a connect (libpq cannot be interrupted) is a daemon: the process still exits
+
+
+@contextmanager
+def connection_wait(seconds):
+    """Inside the block, a transaction of a pool waits at most `seconds` for a connection (then `StoreBusy`, as at the timeout of the pool). A store without a pool (`admin`, the tests) is not
+    affected: a direct connection has no queue to wait in."""
+    token = _CONNECTION_WAIT.set(seconds)
+    try:
+        yield
+    finally:
+        _CONNECTION_WAIT.reset(token)
 
 
 def client_guard_seconds(statement_timeout_ms):

@@ -318,6 +318,14 @@ class ProvisioningTests(IsolatedDatabase, unittest.TestCase):
             c.execute('UPDATE memory.api_keys SET expires_at=NULL, revoked_at=clock_timestamp() WHERE id=%s', (report['key_id'],))
         self.assertIsNone(probe.valid_key(self.store, token, probe.PROBE_PROJECT, owner))
 
+    def test_checking_the_key_is_not_a_use_of_it(self):
+        """fix1 of the review of phase 4, gap 9: `valid_key` asks what the API would answer, it is not a request: the last use of the key stays what the requests left."""
+        report = self.provision()
+        token = self.key_file.read_text(encoding='utf-8').strip()
+        self.assertEqual(probe.valid_key(self.store, token, probe.PROBE_PROJECT, self.service_actor()['id']), report['key_id'])
+        self.assertEqual(self.provision()['key'], 'reused')
+        self.assertIsNone(self.rows('SELECT last_used_at FROM memory.api_keys WHERE id=%s', report['key_id'])[0]['last_used_at'])
+
     def test_a_key_of_an_earlier_provisioning_owned_by_an_administrator_is_rotated_to_the_service_actor(self):
         """The keys made before this change belong to an administrator; they are replaced (and revoked), so the audit stops naming a human."""
         self.store.create_project(self.actor, {'id': probe.PROBE_PROJECT, 'title': probe.PROBE_TITLE})
