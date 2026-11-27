@@ -950,7 +950,7 @@ RED: `nginx_portal_probe.py (routes + login) con el web/nginx.conf de 7f934b5, s
 
 - **Descripción**: Protocolo de cierre de fase (cabecera) con las suites: servidor.
 - **Changelog**: Interno: cierre de fase.
-- **Estado**: borrador
+- **Estado**: en-progreso
 - **Tiempo humano**: est. 0.5h · real —
 - **Tiempo IA (ejec.)**: est. 0.05h · real —
 - **Supervisión**: est. 0.01h · real —
