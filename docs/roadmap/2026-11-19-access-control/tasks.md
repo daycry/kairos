@@ -59,7 +59,7 @@ test-plan: test-plan.md
 | Fase 2 — Esquema 13, scrypt y contraseñas (C-01) | 7 | 7 | 100% | 0 / 36.0h | 3.88 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 3 — Usuarios, permisos y sesiones (C-01) | 6 | 6 | 100% | 0 / 36.0h | 5.14 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01) | 7 | 7 | 100% | 0 / 48.0h | 3.11 / 4.9h | 0 / 1.2h | 0 / 1232 k |
-| Fase 5 — Login que no se bloquea entre clientes (C-02) | 2 | 5 | 40.0% | 0 / 43.2h | 0 / 4.4h | 0 / 1.1h | 0 / 1109 k |
+| Fase 5 — Login que no se bloquea entre clientes (C-02) | 3 | 5 | 60.0% | 0 / 43.2h | 0 / 4.4h | 0 / 1.1h | 0 / 1109 k |
 | Fase 6 — Cierre del hito A: acceso que se puede retirar | 0 | 4 | 0% | 0 / 9.6h | 0 / 3.5h | 0 / 0.9h | 0 / 873 k |
 | Fase 7 — Mediciones del hito B y superficie de secretos (C-06) | 0 | 8 | 0% | 0 / 44.4h | 0 / 12.3h | 0 / 3.1h | 0 / 3082 k |
 | Fase 8 — Redacción: casos compartidos, patrones y entropía (C-04) | 0 | 6 | 0% | 0 / 42.0h | 0 / 4.3h | 0 / 1.1h | 0 / 1078 k |
@@ -73,7 +73,7 @@ test-plan: test-plan.md
 | Fase 16 — Identidad: guía probada y extensibilidad (C-05) | 0 | 5 | 0% | 0 / 23.4h | 0 / 2.4h | 0 / 0.6h | 0 / 601 k |
 | Fase 17 — Revisión del hito C y revisión de seguridad (C-07) | 0 | 5 | 0% | 0 / 27.0h | 0 / 5.3h | 0 / 1.3h | 0 / 1320 k |
 | Fase 18 — Cierre del hito C y de la iniciativa: ensayo, versión 0.4.2 y PR | 0 | 4 | 0% | 0 / 11.4h | 0 / 1.2h | 0 / 0.3h | 0 / 293 k |
-| **TOTAL** | **27** | **106** | **25.5%** | **0 / 616.2h** | **15.69 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
+| **TOTAL** | **28** | **106** | **26.4%** | **0 / 616.2h** | **15.69 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -919,26 +919,32 @@ RED: `test_client_ip + test_nginx_routes + test_compose_limits + test_nginx_port
 
 - **Descripción**: Casos de extremo a extremo: proxy HTTP simulado delante de la API, dos proxies encadenados y la configuración real de `web/nginx.conf` con `nginx_portal_probe.py`. El cliente A falla diez veces a través del proxy y el cliente B, desde otra IP, entra. Fuente: CA-13, CA-14; criterio de cierre 3 del plan director.
 - **Changelog**: Interno: pruebas de login a través del proxy.
-- **Estado**: borrador
+- **Estado**: completado
+- **Cerrada**: 2026-11-27
 - **Tiempo humano**: est. 5.5h · real —
-- **Tiempo IA (ejec.)**: est. 0.56h · real —
+- **Tiempo IA (ejec.)**: est. 0.56h · real 0.14h (medido; los borradores de las pruebas y de la sonda se escribieron en la ventana de T-26)
 - **Supervisión**: est. 0.14h · real —
 - **Previsión IA**: 156 k in / 14 k out tok · ⚠️ verificar €
 - **Dependencias**: T-27
 - **Tipo**: test
 - **Archivos**: `server/memory_platform/tests/test_login_proxy.py`, `server/memory_platform/tests/nginx_portal_probe.py`, `server/memory_platform/tests/test_nginx_portal.py`
 - **Cubre (tests)**: —
-- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_login_proxy|test_nginx_portal|MEMORY_TEST_RESULT"` → nombradas en `ok`; 0 fallos y 0 omitidos
+- **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_login_proxy|test_nginx_portal|MEMORY_TEST_RESULT"` → nombradas en `ok`; 0 fallos y 0 omitidos. Evidencia: `test_login_proxy` + `test_nginx_portal` (dirigidas, `kairos-test:i4p4-fix2`, sin red) → `SEL_RESULT tests=12 failures=0 errors=0 skipped=0` (tras la corrección de cabeceras: `test_login_proxy` → 6 OK); `KAIROS_PORTAL_PROBE_API_IMAGE=kairos-test:i4p4-fix2 python -u server/memory_platform/tests/nginx_portal_probe.py` → `PORTAL_PROBE_RESULT {"cases": 17, "failures": []}` y `PORTAL_LOGIN_PROBE_RESULT {"checks": 8, "failures": []}` (A `192.168.48.3` falla diez veces, B `192.168.48.4` entra; `login_attempts` = [A], `web_sessions` = [B]; el undécimo de A, 429 `retry_after=883`). La suite completa la cierra T-29
 
 **Criterios de aceptación**
-- [ ] A través de nginx real, la API registra la IP del cliente y no la del proxy
-- [ ] CA-13 completo a través del proxy: B recibe 200 y el undécimo intento de A, 429 con `Retry-After`
-- [ ] Mutante: quitar la cabecera de `web/nginx.conf` o la comprobación del par de confianza deja la prueba en rojo
+- [x] A través de nginx real, la API registra la IP del cliente y no la del proxy
+- [x] CA-13 completo a través del proxy: B recibe 200 y el undécimo intento de A, 429 con `Retry-After`
+- [x] Mutante: quitar la cabecera de `web/nginx.conf` o la comprobación del par de confianza deja la prueba en rojo
 
 **Subtareas**
-- [ ] Proxy simulado y encadenado
-- [ ] Caso con nginx real
-- [ ] Mutantes
+- [x] Proxy simulado y encadenado
+- [x] Caso con nginx real
+- [x] Mutantes
+
+
+RED: `nginx_portal_probe.py (routes + login) con el web/nginx.conf de 7f934b5, sin la cabecera` falló con 8 de 17 rutas sin X-Forwarded-For (forwarded null) y 4 de 8 comprobaciones de login: B recibe 429 por los fallos de A, la API guarda la IP de nginx, y A esquiva su bloqueo con una cabecera propia (200) · 2026-11-27.
+
+**Notas**: Commit (este). `test_login_proxy.py`: la API en un uvicorn real con `SERVER_OPTIONS` y proxies HTTP simulados en hilos que añaden el par a `X-Forwarded-For` como `$proxy_add_x_forwarded_for`; cada parte con su dirección de loopback (clientes 127.0.0.11 y .12, proxies .2 y .3). Casos: CA-13 a través del proxy (y la API guarda A en `login_attempts` y B en `web_sessions`); dos proxies encadenados (lo que el cliente escribe a la izquierda no cuenta); par que no es de confianza; proxy sin cabecera (todos detrás de una IP: B recibe 429); sin proxies de confianza; uvicorn no toma la cabecera de 127.0.0.1 por su cuenta. `nginx_portal_probe.py`: los stubs devuelven la cabecera recibida (las rutas a la API llevan `127.0.0.1`, `/mcp` ninguna) y la parte nueva `login` pone la API real (imagen de pruebas, código del árbol montado, PostgreSQL propio, `MEMORY_TRUSTED_PROXIES` = subred de la red interna) detrás del nginx real con dos clientes en otra red. Solo redes y contenedores `kairos-portal-probe-*`, todos retirados; nada desplegado (R-07). `test_nginx_portal.py` fija esas reglas de la sonda en texto. Mutantes: `web/nginx.conf` sin la cabecera (el de 7f934b5) → sonda en rojo (8 rutas y 4 comprobaciones de login, también A esquiva su bloqueo con su propia cabecera); en `test_login_proxy` (intacta 6 OK): sin comprobar el par → rojo; la de más a la izquierda → rojo; `proxy_headers` de uvicorn activado → rojo; cabecera siempre ignorada → 2 rojas. Encontrado al probar: la base de la sonda debía ser UTF8 (con SQL_ASCII psycopg devuelve bytes) y el contenedor necesita `docs/contracts`.
 
 ### T-29 — Cierre de fase: suites y subida del mínimo
 

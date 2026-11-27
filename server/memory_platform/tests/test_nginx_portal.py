@@ -49,6 +49,18 @@ class PortalNginxTests(unittest.TestCase):
         self.assertIn('location /api/ { return 404; }', CONF)
         self.assertEqual(len(re.findall(r'proxy_pass http', CONF)), 4)
 
+    def test_t28_the_probe_checks_the_header_and_the_login_through_the_real_nginx_in_isolation(self):
+        # `nginx_portal_probe.py` (T-28, CA-13, CA-14) needs Docker, so the suite does not run it: its rules are kept from being edited away here
+        probe = (Path(__file__).parent / 'nginx_portal_probe.py').read_text(encoding='utf-8')
+        self.assertIn("seen['forwarded'] == '127.0.0.1' or not api", probe)
+        self.assertIn("trusted_proxies=(os.environ['TRUSTED'],)", probe)
+        self.assertIn('uvicorn.run(create_app(settings), **SERVER_OPTIONS)', probe)
+        for check in ('B, from another IP, enters (200)', 'the session of B keeps the address of B, not the one of nginx', 'the eleventh of A is 429 with Retry-After',
+                      'a header written by A does not dodge the block'):
+            self.assertIn(check, probe)
+        self.assertRegex(probe, r"PREFIX = os\.environ\.get\('KAIROS_PORTAL_PROBE_PREFIX', 'kairos-portal-probe-'\)")
+        self.assertIn("assert not re.search('knowledge-graphs', PREFIX, re.I)", probe)
+
 
 if __name__ == '__main__':
     unittest.main()
