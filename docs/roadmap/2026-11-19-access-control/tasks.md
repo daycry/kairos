@@ -758,7 +758,7 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 - **Estado**: completado
 - **Cerrada**: 2026-11-27
 - **Tiempo humano**: est. 1.5h · real —
-- **Tiempo IA (ejec.)**: est. 0.15h · real 0.03h (medido; el borrador está en la ventana de T-20)
+- **Tiempo IA (ejec.)**: est. 0.15h · real 0.04h (medido; el borrador está en la ventana de T-20; fix1 de la fase 4: 0.01h; el texto se redactó en la ventana de T-19)
 - **Supervisión**: est. 0.04h · real —
 - **Previsión IA**: 43 k in / 4 k out tok · ⚠️ verificar €
 - **Dependencias**: T-22
@@ -775,6 +775,8 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 - [x] Redactar y cotejar con el código
 
 **Notas**: TDD n/a: documentación. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `c243050854b9`.
+
+**Notas fix1** (revisión de la fase 4, intento 1, gaps 1, 5, 7 y 8, y la nota fuera de lente): `docs/operations.md` dice quién puede rotar (dueño o administrador general con sesión; para cualquier otro, también un administrador de proyecto, 404 como una clave inexistente; el administrador de proyecto sí revoca), que la nueva dura los mismos segundos como mucho hasta `9999-12-31T00:00:00Z`, la caducidad posterior a esa fecha → 422 `invalid_key_expiry` (también en la tabla de respuestas), el último uso con espera de conexión de 50 ms, reintento al minuto, un aviso por minuto y clave y la sonda que no cuenta, y recomienda gracia 0 al rotar una clave comprometida. Cotejado con `auth.py` (`KEY_EXPIRY_MAX`, `LAST_USED_POOL_WAIT`, `LAST_USED_EVERY`) y `store_access.py`. TDD n/a: documentación.
 
 ### T-24 — Cierre de fase: suites y subida del mínimo
 
