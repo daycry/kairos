@@ -58,7 +58,7 @@ test-plan: test-plan.md
 | Fase 1 — Medición de scrypt y guarda del resolvedor (CA-09, CA-38 a) | 5 | 5 | 100% | 0 / 19.8h | 4.77 / 6.3h | 0 / 1.6h | 0 / 1570 k |
 | Fase 2 — Esquema 13, scrypt y contraseñas (C-01) | 7 | 7 | 100% | 0 / 36.0h | 3.88 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 3 — Usuarios, permisos y sesiones (C-01) | 6 | 6 | 100% | 0 / 36.0h | 5.14 / 3.7h | 0 / 0.9h | 0 / 924 k |
-| Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01) | 2 | 7 | 28.6% | 0 / 48.0h | 0 / 4.9h | 0 / 1.2h | 0 / 1232 k |
+| Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01) | 3 | 7 | 42.9% | 0 / 48.0h | 0 / 4.9h | 0 / 1.2h | 0 / 1232 k |
 | Fase 5 — Login que no se bloquea entre clientes (C-02) | 0 | 5 | 0% | 0 / 43.2h | 0 / 4.4h | 0 / 1.1h | 0 / 1109 k |
 | Fase 6 — Cierre del hito A: acceso que se puede retirar | 0 | 4 | 0% | 0 / 9.6h | 0 / 3.5h | 0 / 0.9h | 0 / 873 k |
 | Fase 7 — Mediciones del hito B y superficie de secretos (C-06) | 0 | 8 | 0% | 0 / 44.4h | 0 / 12.3h | 0 / 3.1h | 0 / 3082 k |
@@ -73,7 +73,7 @@ test-plan: test-plan.md
 | Fase 16 — Identidad: guía probada y extensibilidad (C-05) | 0 | 5 | 0% | 0 / 23.4h | 0 / 2.4h | 0 / 0.6h | 0 / 601 k |
 | Fase 17 — Revisión del hito C y revisión de seguridad (C-07) | 0 | 5 | 0% | 0 / 27.0h | 0 / 5.3h | 0 / 1.3h | 0 / 1320 k |
 | Fase 18 — Cierre del hito C y de la iniciativa: ensayo, versión 0.4.2 y PR | 0 | 4 | 0% | 0 / 11.4h | 0 / 1.2h | 0 / 0.3h | 0 / 293 k |
-| **TOTAL** | **20** | **106** | **18.9%** | **0 / 616.2h** | **13.79 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
+| **TOTAL** | **21** | **106** | **19.8%** | **0 / 616.2h** | **13.79 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -690,9 +690,10 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 
 - **Descripción**: `doctor --online` llama a `GET /v1/auth/me` con la clave y, con un 200, guarda `credential.json` en el directorio de estado del enlace (`key_id`, `prefix`, `expires_at`, `checked_at`; nunca la clave). El dato solo vale si su `prefix` coincide con el de la clave actual. Avisa a menos de 14 días del vencimiento; ante un 401 dice «clave caducada» si el dato vale y ya venció, y «clave inválida» en otro caso. Fuente: CA-08; DC-7; D-04.
 - **Changelog**: `kairos doctor` avisa cuando una clave con caducidad vence en menos de 14 días y distingue una clave caducada de una inválida.
-- **Estado**: borrador
+- **Estado**: completado
+- **Cerrada**: 2026-11-27
 - **Tiempo humano**: est. 3h · real —
-- **Tiempo IA (ejec.)**: est. 0.31h · real —
+- **Tiempo IA (ejec.)**: est. 0.31h · real 0.02h (medido; el trabajo de la tarea está medido en la ventana de T-19, ver Notas)
 - **Supervisión**: est. 0.08h · real —
 - **Previsión IA**: 85 k in / 7 k out tok · ⚠️ verificar €
 - **Dependencias**: T-20
@@ -702,14 +703,16 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 - **Verificación**: `cd client && npm test` → `fail 0`
 
 **Criterios de aceptación**
-- [ ] Con reloj controlado y servidor simulado: avisa a menos de 14 días, no avisa sin caducidad y distingue «caducada» de «inválida» según el dato guardado
-- [ ] Otro fichero de clave (otro `prefix`) no hereda la caducidad
-- [ ] Ni los mensajes ni `credential.json` contienen la clave entera
+- [x] Con reloj controlado y servidor simulado: avisa a menos de 14 días, no avisa sin caducidad y distingue «caducada» de «inválida» según el dato guardado
+- [x] Otro fichero de clave (otro `prefix`) no hereda la caducidad
+- [x] Ni los mensajes ni `credential.json` contienen la clave entera
 
 **Subtareas**
-- [ ] Pruebas en rojo
-- [ ] Lectura de `/v1/auth/me` y `credential.json`
-- [ ] Mensajes de `doctor`
+- [x] Pruebas en rojo
+- [x] Lectura de `/v1/auth/me` y `credential.json`
+- [x] Mensajes de `doctor`
+
+**Notas**: RED: `client/tests/mcp.test.mjs (4 pruebas nuevas de doctor, contra lib/mcp.mjs y lib/lifecycle-config.mjs de 00a8f82)` falló con SyntaxError: The requested module '../lib/lifecycle-config.mjs' does not provide an export named 'credentialFile' (no había lectura de `/v1/auth/me` ni `credential.json`) · 2026-11-27. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `6e6fe31c7a01`.
 
 ### T-22 — Matriz de revocación: `/v1`, los dos `/mcp`, un flujo abierto y la sesión del portal (CA-11)
 

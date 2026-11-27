@@ -1,6 +1,6 @@
 import os from 'node:os';
 import path from 'node:path';
-import { checked, within, readBytes, text } from './files.mjs';
+import { checked, within, readBytes, text, atomicWrite, jsonBytes } from './files.mjs';
 import { digest } from './capture.mjs';
 import { fail } from './errors.mjs';
 
@@ -33,4 +33,34 @@ export function assertDispatcherStopped(root,data) {
     try { process.kill(owner.pid,0); } catch(error) { if(error.code==='ESRCH') continue; throw error; }
     fail('dispatcher_upgrade_requires_stop');
   }
+}
+
+// What `kairos doctor --online` learnt of the key the last time `/v1/auth/me` accepted it (CA-08, DC-7): `credential.json` in the state directory of this binding, with
+// `key_id`, `prefix`, `expires_at` and `checked_at`, never the key. The record is only worth something for the key whose first ten characters are `prefix` (the prefix the
+// server keeps and lists): another key file, or the same file with another key in it, does not inherit the expiry of the previous one.
+export const CREDENTIAL_PREFIX_LENGTH = 10;
+const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+const validTime = value => typeof value === 'string' && ISO.test(value) && Number.isFinite(Date.parse(value));
+
+export function credentialFile(root, data) {
+  const directory = lifecycleConfig(root, data).directory;
+  return checked(path.join(directory, 'credential.json'), directory);
+}
+
+export function readCredential(file, key) {
+  const raw = readBytes(file, 8192);
+  if (!raw) return null;
+  let record; try { record = JSON.parse(text(raw)); } catch { return null; }  // a damaged record is no record: the next online check writes it again
+  if (!record || typeof record !== 'object' || typeof record.key_id !== 'string' || typeof record.prefix !== 'string' || !validTime(record.checked_at) ||
+      !(record.expires_at === null || validTime(record.expires_at))) return null;
+  return record.prefix === key.slice(0, CREDENTIAL_PREFIX_LENGTH) ? { key_id: record.key_id, prefix: record.prefix, expires_at: record.expires_at, checked_at: record.checked_at } : null;
+}
+
+export function writeCredential(file, key, seen, checkedAt) {
+  // `seen` is the `key` object of `/v1/auth/me`; it is kept only when it describes this key (its prefix), and only its four fields
+  if (!seen || typeof seen.id !== 'string' || !seen.id || seen.id.length > 200 || seen.prefix !== key.slice(0, CREDENTIAL_PREFIX_LENGTH) ||
+      !(seen.expires_at === null || validTime(seen.expires_at))) return null;
+  const record = { key_id: seen.id, prefix: seen.prefix, expires_at: seen.expires_at, checked_at: checkedAt };
+  atomicWrite(file, jsonBytes(record));
+  return record;
 }

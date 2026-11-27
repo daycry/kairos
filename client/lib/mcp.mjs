@@ -94,13 +94,30 @@ export class MCPTransport {
   }
 }
 
+// `GET /v1/auth/me` with the key (CA-08, DC-7): a new read of the client, in the `identity` class of the server. 200 gives the `key` object ({id, name, prefix, expires_at});
+// 401 is the only answer that says the key is refused (the server answers the same to an expired and to an invalid key); anything else (no network, an older server without
+// `key`, a 5xx, a redirect) says nothing about the key and leaves the rest of `doctor` to report it.
+export const KEY_WARNING_DAYS = 14;
+const DAY = 86400000;
+export async function keyIdentity(url, key, { fetcher = globalThis.fetch, timeout = 12000 } = {}) {
+  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    let response;
+    try { response = await fetcher(baseURL(url) + '/v1/auth/me', { method: 'GET', headers: { Accept: 'application/json', Authorization: 'Bearer ' + key }, redirect: 'manual', signal: controller.signal }); }
+    catch { return { status: 0 }; }
+    if (response.status !== 200) { await response.body?.cancel().catch(() => {}); return { status: response.status }; }
+    let body; try { body = JSON.parse(await responseText(response, 65536)); } catch { return { status: 0 }; }
+    return { status: 200, key: body && typeof body.key === 'object' ? body.key : null };
+  } finally { clearTimeout(timer); }
+}
+
 const QUEUE_STALE_SECONDS = 900;  // the default threshold of the capture queue on disk (the same number as the server's MEMORY_QUEUE_STUCK_SECONDS)
 function staleThreshold(option) {
   const value = Number(option ?? process.env.KAIROS_QUEUE_STALE_SECONDS ?? QUEUE_STALE_SECONDS);
   return Number.isFinite(value) && value > 0 ? value : QUEUE_STALE_SECONDS;  // a value that is no positive number never switches the warning off
 }
 
-export async function doctor(root, { online = false, transport, now = Date.now, queueStaleSeconds } = {}) {
+export async function doctor(root, { online = false, transport, fetcher, now = Date.now, queueStaleSeconds } = {}) {
   const { data } = loadInstallation(root);
   const result = { status: 'configured', network_checked: false, clients: data.clients, project_id: data.project_id };
   if(data.automation&&(data.automation.capture!=='off'||data.automation.context!=='off')) {
@@ -121,8 +138,24 @@ export async function doctor(root, { online = false, transport, now = Date.now, 
       }
     } catch { result.capture_queue={status:'unreadable'}; }
   }
+  // The expiry of the key (CA-08): what the last accepted `/v1/auth/me` said of THIS key (credential.json, matched by its prefix), refreshed now when online. Never the key itself.
+  const {credentialFile,readCredential,writeCredential}=await import('./lifecycle-config.mjs');
+  let key=null,file=null,saved=null;
+  try { key=readKey(data.key_file); file=credentialFile(root,data); saved=readCredential(file,key); } catch { key=null; }  // an unreadable key file is reported by the online check
+  // The read uses the fetch of the MCP connection (an injected transport without one, as in the tests of the other checks, makes no request of its own).
+  const connection = online ? transport || new MCPTransport(data.url, data.key_file, { timeout: 12000 }) : null;
+  const fetchKey = fetcher ?? connection?.fetcher;
+  if (online && key && typeof fetchKey === 'function') {
+    const seen=await keyIdentity(data.url,key,{fetcher:fetchKey,timeout:12000});
+    if (seen.status===401) fail(saved?.expires_at&&Date.parse(saved.expires_at)<=now() ? 'key_expired' : 'key_invalid');  // the 401 is the same for both: the record tells them apart
+    if (seen.status===200) saved=writeCredential(file,key,seen.key,new Date(now()).toISOString())??saved;
+  }
+  if (saved) {
+    const left=saved.expires_at===null?null:Date.parse(saved.expires_at)-now();
+    result.key={id:saved.key_id,prefix:saved.prefix,expires_at:saved.expires_at,checked_at:saved.checked_at,...(left===null?{}:{expires_in_days:Math.max(0,Math.floor(left/DAY))})};
+    if (left!==null&&left<KEY_WARNING_DAYS*DAY) { result.warnings=[...(result.warnings??[]),left<=0?'key_expired':'key_expires_soon']; result.status='degraded'; }
+  }
   if (!online) return result;
-  const connection = transport || new MCPTransport(data.url, data.key_file, { timeout: 12000 });
   await connection.call(1, 'initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'kairos-doctor', version: VERSION } });
   await connection.request({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} });
   const listed = await connection.call(2, 'tools/list');
