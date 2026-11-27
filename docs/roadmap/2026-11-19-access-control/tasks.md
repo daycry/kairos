@@ -992,6 +992,8 @@ RED: `nginx_portal_probe.py (routes + login) con el web/nginx.conf de 7f934b5, s
 **Subtareas**
 - [ ] Lentes A y B; corregir y repetir hasta cero abiertos
 
+**Notas**: Parada del día 2026-11-27 (decisión del usuario): T-26 (7f934b5), T-27 (283d87c) y T-28 (4de6edd) cerradas y subidas; en esta tarea aún no se ha ejecutado la suite completa ni subido el mínimo (sigue en 1786). El implementer se detuvo mientras depuraba un script de pruebas contra un contenedor de la API, sin dejar contenedores en marcha y sin informe final. Para retomar: comprobar las notas de T-26..T-28, `scope-check`, `ledger-lint` y `openapi-lint --diff` contra `5963463`; después suite completa (`kairos-test:i4p5*`), mínimo en los cuatro sitios y archivo de notas; luego T-30.
+
 ---
 
 ## Fase 6 — Cierre del hito A: acceso que se puede retirar
