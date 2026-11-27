@@ -12,7 +12,7 @@ import secrets
 from contextlib import nullcontext
 
 from . import passwords
-from .auth import RECENT_ATTEMPTS, lock_attempts, token_hash
+from .auth import KEY_EXPIRY_MAX, RECENT_ATTEMPTS, lock_attempts, token_hash
 from .auth_scope import invalidate_auth
 from .errors import Conflict, Forbidden, MemoryError, NotFound
 from .store_common import as_dict, canonical, new_id
@@ -252,25 +252,40 @@ class AccessMixin:
 
     def rotate_key(self, actor, key_id, grace_seconds=None):
         """`POST /v1/keys/{id}/rotate` (CA-07): a new key with the name, projects and permissions of the old one and the SAME owner (`actor_id`: the rotation replaces the key of
-        a machine, whoever asks for it), shown once in this answer. The old key stops at the end of the grace (`grace_seconds`, ROTATION_GRACE by default, 0 = at once; never later
-        than its own expiry) and keeps the id of its successor in `replaced_by`. The new key expires after the same lifetime the old one was given (from now), or never if the old
-        one never did (P-03): a rotation neither widens nor shortens what the key was made for.
+        a machine, whichever of the two that may do it asks for it), shown once in this answer. The old key stops at the end of the grace (`grace_seconds`, ROTATION_GRACE by default,
+        0 = at once; never later than its own expiry) and keeps the id of its successor in `replaced_by`. The new key expires after the same number of SECONDS the old one was given
+        (from now, whatever the time zone of the session; at most KEY_EXPIRY_MAX), or never if the old one never did (P-03): a rotation neither widens nor shortens what the key was
+        made for.
 
-        Order: the credential is alive (401), the key exists (404), then the rows of the caller and of the owner of the key (`FOR SHARE`, in the order of their ids: a disabling,
-        `set-password --revoke-keys` or a revocation that changes them waits for this rotation or makes it wait, never both) and the row of the key (`FOR NO KEY UPDATE`: two
-        rotations of one key wait for each other and the second sees `replaced_by`), the cache emptied and the caller authorized AGAIN as for issuing that key (`_delegate`: admin
-        and each scope on each project of the key; 401/403/404), and only then the state of the key: revoked, expired or already rotated is 409 and nothing is issued. The event
-        `key.rotated` carries `{"key": <old id>, "replaced_by": <new id>}` (canonical JSON in `resource_id`, as `grants.replaced`), never the token."""
+        Who may (decision of the user, 2026-11-27; fix1 of the review of phase 4, gap 1): the OWNER of the key or the global administrator (a session or the bootstrap, never a key:
+        `_global_admin`), with a credential that may issue the key (`_delegate`: admin and each scope on each project of the key). Anyone else gets the 404 of an unknown key
+        (gap 3: no answer tells a key of another user from an invented id); a project administrator who could issue a key like it would otherwise get a token that acts as its owner.
+
+        Order: the credential is alive (401), the key exists (404) and the caller may rotate it (404/403), all WITHOUT a lock (gap 4: a caller that may not rotate the key never waits
+        for, nor makes wait, the rows of its owner); then the rows of the caller and of the owner of the key (`FOR SHARE`, in the order of their ids: a disabling, `set-password
+        --revoke-keys`, a logout or a revocation that changes them waits for this rotation or makes it wait, never both) and the row of the key (`FOR NO KEY UPDATE`: two rotations of
+        one key wait for each other and the second sees `replaced_by`), the cache emptied and the caller authorized AGAIN (401/403/404), and only then the state of the key: revoked,
+        expired or already rotated is 409 and nothing is issued. The event `key.rotated` carries `{"key": <old id>, "replaced_by": <new id>}` (canonical JSON in `resource_id`, as
+        `grants.replaced`), never the token."""
         grace = ROTATION_GRACE if grace_seconds is None else grace_seconds
+
+        def may_rotate(c, key):
+            if key['actor_id'] != actor['id']:
+                try:
+                    self._global_admin(c, actor)
+                except Forbidden:
+                    raise NotFound() from None  # the answer of an unknown key
+            self._delegate(c, actor, key['project_ids'], key['scopes'])
         with self.transaction() as c:
             self._active(c, actor)  # a dead credential is 401 before anything is said about the key
-            found = c.execute('SELECT actor_id FROM memory.api_keys WHERE id=%s', (key_id,)).fetchone()
+            found = c.execute('SELECT actor_id,project_ids,scopes FROM memory.api_keys WHERE id=%s', (key_id,)).fetchone()
             if not found:
                 raise NotFound()
+            may_rotate(c, found)  # before any lock
             c.execute('SELECT id FROM memory.actors WHERE id=ANY(%s) ORDER BY id FOR SHARE', ([actor['id'], found['actor_id']],))
-            key = c.execute("SELECT name,project_ids,scopes,revoked_at,replaced_by,expires_at IS NOT NULL AND expires_at<=clock_timestamp() AS expired FROM memory.api_keys WHERE id=%s FOR NO KEY UPDATE", (key_id,)).fetchone()
+            key = c.execute("SELECT actor_id,name,project_ids,scopes,revoked_at,replaced_by,expires_at IS NOT NULL AND expires_at<=clock_timestamp() AS expired FROM memory.api_keys WHERE id=%s FOR NO KEY UPDATE", (key_id,)).fetchone()
             invalidate_auth(c)
-            self._delegate(c, actor, key['project_ids'], key['scopes'])  # authorization before the 422 and the 409s
+            may_rotate(c, key)  # again, after the waits: authorization before the 422 and the 409s
             if not isinstance(grace, int) or isinstance(grace, bool) or not 0 <= grace <= ROTATION_GRACE_MAX:  # the route's model refuses it first; this is for the other callers
                 raise MemoryError('invalid_rotation', 'The grace of a rotation is a whole number of seconds between 0 and %d' % ROTATION_GRACE_MAX, 422)
             if key['revoked_at']:
@@ -280,9 +295,12 @@ class AccessMixin:
             if key['replaced_by']:
                 raise Conflict('This key was already rotated')
             token, kid = 'mp_'+secrets.token_urlsafe(48), new_id()
+            # The lifetime in seconds (gap 7: `expires_at-created_at` is an interval of days, which a session with summer time adds as calendar days, an hour more or less), and
+            # never past KEY_EXPIRY_MAX (gap 5: a key that expires on the last day a key may have is rotated, not a 503)
             new = c.execute("INSERT INTO memory.api_keys(id,actor_id,name,token_hash,prefix,project_ids,scopes,expires_at) SELECT %s,actor_id,name,%s,%s,project_ids,scopes,"
-                            "CASE WHEN expires_at IS NULL THEN NULL ELSE clock_timestamp()+(expires_at-created_at) END FROM memory.api_keys WHERE id=%s RETURNING expires_at",
-                            (kid, token_hash(token), token[:10], key_id)).fetchone()
+                            "CASE WHEN expires_at IS NULL THEN NULL ELSE LEAST(clock_timestamp()+(extract(epoch FROM expires_at-created_at)*interval '1 second'),%s::timestamptz) END "
+                            "FROM memory.api_keys WHERE id=%s RETURNING expires_at",
+                            (kid, token_hash(token), token[:10], KEY_EXPIRY_MAX, key_id)).fetchone()
             old = c.execute("UPDATE memory.api_keys SET replaced_by=%s, expires_at=LEAST(COALESCE(expires_at,'infinity'::timestamptz),clock_timestamp()+(%s * interval '1 second')) WHERE id=%s RETURNING expires_at",
                             (kid, grace, key_id)).fetchone()
             self._access_changed(c, actor, 'key.rotated', resource_id=canonical({'key': key_id, 'replaced_by': kid}))

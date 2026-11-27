@@ -2959,7 +2959,7 @@
                 }
               }
             },
-            "description": "The credential may not issue this key (admin and each of its permissions on each of its projects), or a session without an allowed origin and the CSRF token"
+            "description": "The owner of the key or the global administrator with a credential that may not issue it (admin and each of its permissions on each of its projects), or a session without an allowed origin and the CSRF token"
           },
           "404": {
             "content": {
@@ -2969,7 +2969,7 @@
                 }
               }
             },
-            "description": "No such key"
+            "description": "No such key, or a key of another user and the caller is not the global administrator with a session"
           },
           "409": {
             "content": {

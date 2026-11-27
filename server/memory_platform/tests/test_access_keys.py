@@ -17,7 +17,7 @@ from memory_platform import auth as auth_module
 from memory_platform.app import create_app
 from memory_platform.auth import LAST_USED_EVERY, Auth, token_hash
 from memory_platform.config import Settings
-from memory_platform.errors import Conflict, MemoryError
+from memory_platform.errors import Conflict, Forbidden, MemoryError, NotFound, Unauthorized
 from memory_platform.store import Store
 from memory_platform.store_pool import close_pool
 from memory_platform.tests import test_passwords as pw
@@ -402,13 +402,15 @@ class RotationTests(KeysFixture):
 
     def test_authorization_and_existence_come_before_the_state_of_the_key(self):
         self.assertEqual(self.bea_client.delete('/v1/keys/' + self.old['id'], headers=self.headers).status_code, 200)
-        reader, headers = self.session('ana')  # read on p1: may not issue keys there
-        self.assertEqual(self.rotate(client=reader, headers=headers).status_code, 403, 'a revoked key is 403 to someone who may not rotate it, not 409')
+        reader, headers = self.session('ana')  # read on p1, neither the owner nor the global administrator
+        self.assertEqual(self.rotate(client=reader, headers=headers).status_code, 404, 'a revoked key of another user is 404 to her, as an unknown one, not 409')
         self.assertEqual(self.rotate('nobody').status_code, 404)
         self.assertEqual(self.rotate(headers={}).status_code, 403, 'a session needs the origin and the CSRF token')
         reading_key = self.bea_client.post('/v1/keys', json={'name': 'reader', 'project_ids': ['p1'], 'scopes': ['read']}, headers=self.headers).json()
         target = self.bea_client.post('/v1/keys', json={'name': 'target', 'project_ids': ['p1'], 'scopes': ['read']}, headers=self.headers).json()
         self.assertEqual(self.client().post('/v1/keys/%s/rotate' % target['id'], headers=self.bearer(reading_key['token'])).status_code, 403, 'a key without admin may not')
+        self.assertEqual(self.client().post('/v1/keys/%s/rotate' % self.old['id'], headers=self.bearer(reading_key['token'])).status_code, 403,
+                         'a revoked key is 403 to its owner when her credential may not rotate it, not 409')
         for body in ({'grace_seconds': -1}, {'grace_seconds': 7 * 86400 + 1}, {'grace_seconds': '10'}, {'other': 1}):
             with self.subTest(body=body):
                 self.assertEqual(self.rotate(target['id'], body=body).status_code, 422)
@@ -416,6 +418,112 @@ class RotationTests(KeysFixture):
         with self.assertRaises(MemoryError) as raised:
             self.store.rotate_key(self.auth.login('bea', pw.PASSWORD, '198.51.100.93')['actor'], reading_key['id'], -5)
         self.assertEqual(raised.exception.code, 'invalid_rotation')
+
+    def rotated(self, key_id):
+        return self.count("SELECT count(*) FROM memory.audit_events WHERE action='key.rotated' AND resource_id LIKE %s", '{"key":"%s"%%' % key_id)
+
+    def test_only_the_owner_or_the_global_administrator_may_rotate_a_key_anyone_else_gets_the_404_of_an_unknown_one(self):
+        # fix1 of the review of phase 4, gaps 1 and 3 (decision of the user, 2026-11-27: «owner or global admin»). cid administers p1 with every permission of bea's key, so
+        # she could issue one like it; rotating bea's key would hand her a token that acts as bea. She gets what an unknown id gets, and nothing changes.
+        self.store.create_user(self.admin, {'username': 'cid', 'password': pw.PASSWORD, 'project_ids': ['p1'], 'scopes': ['read', 'write', 'admin']})
+        cid, cid_headers = self.session('cid')
+        cid_key = cid.post('/v1/keys', json={'name': 'cid', 'project_ids': ['p1'], 'scopes': ['read', 'write', 'admin']}, headers=cid_headers).json()
+        root_key = self.store.create_key(self.admin, {'name': 'root', 'project_ids': ['p1'], 'scopes': ['read', 'write', 'admin']})  # a key is never the global administrator
+        before = self.keys()
+        unknown = self.rotate('nobody', client=cid, headers=cid_headers)
+        self.assertEqual(unknown.status_code, 404, unknown.text)
+        for who, sent in (('project administrator', {'client': cid, 'headers': cid_headers}), ('her key', {'client': self.client(), 'headers': self.bearer(cid_key['token'])}),
+                          ('a key of the global administrator', {'client': self.client(), 'headers': self.bearer(root_key['token'])})):
+            with self.subTest(who=who):
+                refused = self.rotate(**sent)
+                self.assertEqual(refused.status_code, 404, refused.text)
+                self.assertEqual(refused.json()['error'], unknown.json()['error'], 'the answer of a key that does not exist')
+        self.assertEqual(self.keys(), before, 'no key issued')
+        self.assertEqual(self.rotated(self.old['id']), 0, 'no `key.rotated`')
+        self.assertEqual(self.row(self.old['id'], 'actor_id,replaced_by,revoked_at,expires_at'), (self.bea, None, None, None), 'the key of bea is untouched')
+        self.assertEqual(self.with_key(self.old['token']), 200)
+        root, root_headers = self.root()
+        done = self.rotate(client=root, headers=root_headers)
+        self.assertEqual(done.status_code, 200, 'the global administrator with a session may')
+        self.assertEqual(self.row(done.json()['id'], 'actor_id')[0], self.bea)
+        self.assertEqual(cid.delete('/v1/keys/' + done.json()['id'], headers=cid_headers).status_code, 200, 'the project administrator still revokes it: that policy does not change')
+
+    def test_the_owner_rotates_her_key_with_that_key_and_the_new_one_is_still_hers(self):
+        # the plugin rotates the key it runs with: the owner (here with a key that has admin and the permissions of the key) may, and the new key keeps her `actor_id`
+        own = self.bea_client.post('/v1/keys', json={'name': 'plugin', 'project_ids': ['p1'], 'scopes': ['read', 'write', 'admin']}, headers=self.headers).json()
+        done = self.client().post('/v1/keys/%s/rotate' % own['id'], headers=self.bearer(own['token']))
+        self.assertEqual(done.status_code, 200, done.text)
+        self.assertEqual(self.row(done.json()['id'], 'actor_id')[0], self.bea)
+        self.assertEqual(self.client().get('/v1/auth/me', headers=self.bearer(done.json()['token'])).json()['actor']['id'], self.bea)
+
+    def test_a_caller_that_may_not_rotate_the_key_is_refused_before_it_waits_for_any_lock(self):
+        # fix1 of the review of phase 4, gap 4: the caller is authorized without locks first; only then the rows of the owner and of the key are locked (and the caller authorized again)
+        root = self.auth.login('root-user', 'root-password-123', '198.51.100.94')['actor']
+        ana = self.auth.login('ana', pw.PASSWORD, '198.51.100.95')['actor']
+        reading = self.bea_client.post('/v1/keys', json={'name': 'reader', 'project_ids': ['p1'], 'scopes': ['read']}, headers=self.headers).json()
+        reader = self.auth.authenticate_bearer(reading['token'])
+        for refused, expected in ((lambda: self.store.rotate_key(ana, self.old['id']), NotFound), (lambda: self.store.rotate_key(reader, self.old['id']), Forbidden)):
+            with self.subTest(expected=expected.__name__):
+                other = self.bea_client.post('/v1/keys', json={'name': 'other', 'project_ids': ['p1'], 'scopes': ['read']}, headers=self.headers).json()
+                # the revocation of another key of bea holds the rows of bea and of root (`FOR NO KEY UPDATE`) with its transaction open
+                waited, revoked, outcome = self.run_pair(lambda: self.store.revoke_key(root, other['id']), refused, 'key.revoked')
+                self.assertFalse(waited, 'a credential that may not rotate the key waited for a lock')
+                self.assertIsInstance(revoked, dict, revoked)
+                self.assertIsInstance(outcome, expected, outcome)
+        self.assertEqual(self.rotated(self.old['id']), 0)
+
+    def test_the_end_of_the_credential_of_the_caller_and_a_rotation_wait_for_each_other(self):
+        # fix1 of the review of phase 4, gap 2: the rotation locks the row of the CALLER too (here the global administrator, not the owner). If the end of her session gets there
+        # first, the rotation waits for it and is refused with 401 without issuing a key; if the rotation gets there first, the end of the session waits for it.
+        for order, n in (('the end of the session first', 96), ('the rotation first', 97)):
+            with self.subTest(order=order):
+                login = self.auth.login('root-user', 'root-password-123', '198.51.100.%d' % n)
+                made = self.bea_client.post('/v1/keys', json={'name': 'm', 'project_ids': ['p1'], 'scopes': ['read']}, headers=self.headers).json()
+                before = self.keys()
+                if order == 'the end of the session first':
+                    waited, ended, rotated = self.run_held(lambda: self.auth.logout(login['session_token']), lambda: self.store.rotate_key(login['actor'], made['id']), auth_module, 'invalidate_auth')
+                    self.assertTrue(waited, 'the rotation did not wait for the end of the session of its caller')
+                    self.assertIsInstance(rotated, Unauthorized, rotated)
+                    self.assertEqual((self.keys(), self.rotated(made['id'])), (before, 0), 'no key issued')
+                else:
+                    waited, rotated, ended = self.run_pair(lambda: self.store.rotate_key(login['actor'], made['id']), lambda: self.auth.logout(login['session_token']), 'key.rotated')
+                    self.assertTrue(waited, 'the end of the session did not wait for the rotation in progress')
+                    self.assertIsInstance(rotated, dict, rotated)
+                    self.assertEqual(self.keys(), before + 1)
+                self.assertNotIsInstance(ended, BaseException, ended)
+                with self.assertRaises(Unauthorized):
+                    self.store.list_keys(login['actor'])  # and the session is closed
+
+    def test_a_key_that_expires_on_the_last_day_a_key_may_have_is_rotated_and_the_new_one_keeps_that_day(self):
+        # fix1 of the review of phase 4, gap 5: its lifetime counted from now passes the year 9999; the new key gets KEY_EXPIRY_MAX instead of a 503
+        far = self.bea_client.post('/v1/keys', json={'name': 'far', 'project_ids': ['p1'], 'scopes': ['read'], 'expires_at': '9999-12-31T00:00:00Z'}, headers=self.headers)
+        self.assertEqual(far.status_code, 200, far.text)
+        self.observer.execute("UPDATE memory.api_keys SET created_at=created_at-interval '1 day' WHERE id=%s", (far.json()['id'],))
+        done = self.rotate(far.json()['id'])
+        self.assertEqual(done.status_code, 200, done.text)
+        self.assertTrue(done.json()['expires_at'].startswith('9999-12-31T00:00:00'), done.json())
+        self.assertTrue(86400 - 120 < self.seconds_left(far.json()['id']) <= 86400, 'the old one keeps the grace')
+
+    def test_the_new_key_lasts_the_seconds_the_old_one_was_given_whatever_the_time_zone_of_the_session(self):
+        # fix1 of the review of phase 4, gap 7: the lifetime is added in seconds; an interval of days would follow the calendar of the session's time zone (one hour more or less
+        # across a change of summer time in Europe/Madrid)
+        real = self.store.transaction
+
+        @contextmanager
+        def madrid():
+            with real() as c:
+                c.execute("SET LOCAL TimeZone='Europe/Madrid'")
+                yield c
+        with madrid() as c:  # a day after the first number of days from now whose calendar days are not as many times 86400 seconds: it crosses one change of the hour
+            days = 1 + c.execute("SELECT d FROM (SELECT clock_timestamp() AS t0) n, generate_series(1, 400) d WHERE t0+d*interval '1 day'<>t0+d*interval '86400 seconds' ORDER BY d LIMIT 1").fetchone()['d']
+        made = self.bea_client.post('/v1/keys', json={'name': 'dst', 'project_ids': ['p1'], 'scopes': ['read'], 'expires_at': '2999-01-01T00:00:00Z'}, headers=self.headers).json()
+        self.observer.execute("UPDATE memory.api_keys SET created_at=t0, expires_at=t0+%s*interval '1 second' FROM (SELECT clock_timestamp()-interval '1 hour' AS t0) n WHERE id=%s",
+                              (days * 86400, made['id']))  # one instant for both: the lifetime is exactly that many days
+        bea = self.auth.login('bea', pw.PASSWORD, '198.51.100.98')['actor']
+        with patch.object(self.store, 'transaction', madrid):
+            done = self.store.rotate_key(bea, made['id'])
+        given = float(self.count('SELECT extract(epoch FROM expires_at-created_at) FROM memory.api_keys WHERE id=%s', done['id']))
+        self.assertAlmostEqual(given, days * 86400, delta=60, msg='the new key lasts %s s, the old one was given %s s (%d days)' % (given, days * 86400, days))
 
     def test_the_route_publishes_its_body_answer_and_errors(self):
         document = self.app.openapi()
