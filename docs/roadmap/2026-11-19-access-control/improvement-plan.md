@@ -364,7 +364,7 @@ Los riesgos R-01 a R-13 de la evaluación y los de la sección 6 del diseño sig
 
 | Riesgo | Probabilidad | Impacto | Mitigación |
 |--------|-------------|---------|------------|
-| R-01 Caché de permisos sin vaciar en un escritor nuevo | Media | Alto | `_access_changed` por construcción (T-09); recorrido y lista de módulos (T-02); matriz de revocación con mutante (T-22); revisión a 1,0 × |
+| R-01 Caché de permisos sin vaciar en un escritor nuevo | Media | Alto | `_access_changed` por construcción (T-09); recorrido y lista de módulos (T-02); matriz de revocación con el mutante de la caché que sobrevive a su transacción y recorrido estático con el del escritor sin vaciado (T-22); revisión a 1,0 × |
 | R-02 scrypt agota la memoria o no cabe en `memory-bootstrap` | Media | Alto | Medición en los tres contenedores antes de fijar (T-01); semáforo (T-08); test con N = huecos + 5 |
 | R-03 / R-04 Límites mal dimensionados o capturas perdidas con un 429 | Alta | Alto | Perfil real medido (T-35); `0` desactiva; el 429 no consume intentos (T-62); cadena de extremo a extremo (T-63) |
 | R-05 Redacción que consume CPU o rechaza de más | Media | Alto | Coste medido antes de implementar (T-37); cota con mutante (T-46); ≥ 15 casos «no redactar» (T-43); nota a la Iniciativa 7 (T-51) |
@@ -399,6 +399,7 @@ Los riesgos R-01 a R-13 de la evaluación y los de la sección 6 del diseño sig
 | Fecha | Cambio | Autor |
 |-------|--------|-------|
 | 2026-11-20 | Creación del plan a partir de `spec.md` (aprobada), `evaluation.md` (go con condiciones) y `design.md` (aprobado, O2): 106 tareas en 18 fases y 3 hitos. Hereda las cifras de la evaluación y declara +34,2 h por O2 y por dos aclaraciones del usuario | planner |
+| 2026-11-27 | R-01: la mitigación de T-22 dice qué mutante atrapa la matriz (caché que sobrevive a su transacción) y cuál el recorrido estático (escritor sin vaciado); revisión de la fase 4, intento 1, gap 10 | orquestador |
 
 ---
 

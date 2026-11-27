@@ -621,7 +621,7 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 **Subtareas**
 - [x] Lentes A y B; corregir y repetir hasta cero abiertos
 
-**Notas**: dos intentos con lentes A, B, C y D en Opus 5.5 (tabla en `review.md`; detalle del intento 1 en `execution-history.md`, el 2 en este ledger). Intento 1: 3 Important → fix1 (`b57b0df`..`3e6c4af`, suite 1745). Intento 2: sin Critical ni Important; 3 Minor: uno de ledger corregido por el orquestador, uno aceptado como límite del marco y uno diferido a T-22. Verificación: `scope-check.py --base main` exit 0 · `openapi-lint --diff` contra `cc44e76` 0 rompedores de 6 · `ledger-lint` 0 incoherencias.
+**Notas**: dos intentos con lentes A, B, C y D en Opus 5.5 (tabla en `review.md`; detalle de los dos intentos en `execution-history.md`). Intento 1: 3 Important → fix1 (`b57b0df`..`3e6c4af`, suite 1745). Intento 2: sin Critical ni Important; 3 Minor: uno de ledger corregido por el orquestador, uno aceptado como límite del marco y uno diferido a T-22. Verificación: `scope-check.py --base main` exit 0 · `openapi-lint --diff` contra `cc44e76` 0 rompedores de 6 · `ledger-lint` 0 incoherencias.
 
 ---
 
@@ -733,7 +733,7 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 **Criterios de aceptación**
 - [x] Tres causas (revocar, caducar, deshabilitar al dueño) × cuatro rutas → 401 en la petición siguiente; el flujo se cierra en un sondeo más un margen
 - [x] Sesión del portal cerrada o de un usuario deshabilitado → 401
-- [x] Mutante: quitar el vaciado de caché de un escritor deja la matriz en rojo
+- [x] Mutante: quitar el vaciado de caché de un escritor deja en rojo el recorrido estático (`WritersEmptyTheCacheTests`); una caché que sobrevive a su transacción deja en rojo la matriz (texto corregido por el orquestador en la revisión de la fase 4, intento 1, gap 10: la caché vive una transacción y la matriz no puede ver el primer mutante)
 - [x] Revocar la clave (`revoke_key`) o cerrar la sesión (logout) con que está en curso un `create_user` o un `create_key` bloquea la fila del dueño: el alta espera y falla con 401 sin crear nada; prueba en los dos órdenes y mutante (revisión de la fase 3, intento 2, gap 1)
 
 **Subtareas**
@@ -802,7 +802,7 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 
 - **Descripción**: Protocolo de revisión adversarial (cabecera), a 1,0 × la implementación. Superficie: rotación (carreras, gracia, `replaced_by`), caducidad, `last_used_at` en el camino de autenticación, `credential.json` sin secreto y huecos de la matriz de revocación.
 - **Changelog**: Interno: revisión adversarial de la fase.
-- **Estado**: borrador
+- **Estado**: en-progreso
 - **Tiempo humano**: est. 20h · real —
 - **Tiempo IA (ejec.)**: est. 2.05h · real —
 - **Supervisión**: est. 0.51h · real —
@@ -2968,15 +2968,24 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 - 2026-11-27 · «Revisión de dos lentes — intento 12: Fase 1 (fix11) (T-01, T-02, T-03, T-04) — 1 Important: la retirada de RAISE» → [execution-history.md](execution-history.md) · SHA-256 `1bca766ffaff62849ab9e7ecb074d4fad8d6eafa8c0fd1bf2bcae1ef6a39194f`
 - 2026-11-27 · «Revisión de dos lentes — intento 3: Fase 2 (fix2) (T-06, T-07, T-08, T-09, T-10, T-11) — sin Critical ni Important; 6 Minor» → [execution-history.md](execution-history.md) · SHA-256 `c01d7449717046602020417abca565bc6ce748de1aeb5ed5f3620f55d592f7ff`
 - 2026-11-27 · «Revisión de dos lentes — intento 1: Fase 3 (T-13, T-14, T-15, T-16, T-17) — 3 Important: alta en carrera con la revocación, cambio de contraseña desde una sesión cerrada, fines de línea» → [execution-history.md](execution-history.md) · SHA-256 `4e2c3669d547113c2b102dcaa40567268c65c975f56e940c0bc3656799a71542`
+- 2026-11-27 · «Revisión de dos lentes — intento 2: Fase 3 (fix1) (T-13, T-14, T-15, T-16, T-17) — sin Critical ni Important; 3 Minor» → [execution-history.md](execution-history.md) · SHA-256 `a469127c2e6b20fb6d2d4887f289f114630c180034a590e7b52bf38463796d99`
 
-## Revisión de dos lentes — intento 2: Fase 3 (fix1) (T-13, T-14, T-15, T-16, T-17) — sin Critical ni Important; 3 Minor
+## Revisión de dos lentes — intento 1: Fase 4 (T-19, T-20, T-21, T-22, T-23, T-24) — 2 Important: rotación de una clave ajena por un admin de proyecto, bloqueo del llamante sin prueba
 
-Lentes: A+B+C+D (Opus 5.5) sobre `baef4b6..3e6c4af` (fix1: `b57b0df`..`3e6c4af`); solo B ejecutó Docker, con `kairos-test:i4p3-fix1` sin red y PostgreSQL efímero. Las 11 filas del intento 1 están corregidas (A las cita en código y prueba). B: las pruebas de acceso, sesiones, contraseña y carreras, 282, tres veces seguidas en verde; los tres mutantes (sin `FOR SHARE` en `create_user`, `_active` antes del bloqueo en `change_password`, sin la fila del llamante en `_set_disabled`) fallan por aserción; carga de 8 hilos × 250 operaciones al azar (1 905 operaciones) sin interbloqueos ni excepciones inesperadas. C: gaps 1, 2 y 4 cerrados sin desplazar la carrera; la ruta nueva da 403 antes del 404 y no expone tokens ni hashes. D: sin hallazgos; los bloqueos nuevos solo afectan a operaciones de administración, no al login ni a `/mcp`. `openapi-lint --diff` contra `cc44e76` 0 rompedores de 6; `kairos-mcp.json` intacto; suite 1745, mínimo 1745; fines de línea conservados.
+Lentes: A+B+C+D (Opus 5.5) sobre `e9646a5..c84e1cf`; solo B ejecutó Docker, con `kairos-test:i4p4` sin red y PostgreSQL efímero. B: carreras de la rotación frente a revocación, `set-password --revoke-keys`, deshabilitar o cerrar la credencial del llamante, y dos rotaciones, correctas en los dos órdenes (sondas C1-C8); estrés de 8 hilos × 30 s (1 755 operaciones) sin interbloqueos; el aplazamiento de `last_used_at` deja la conexión del pool sana; 93 pruebas dirigidas OK; cliente 105/105. A: todos los criterios de T-19..T-24 cumplidos salvo el texto del mutante de T-22; `openapi-lint --diff` 0 rompedores de 1; `kairos-mcp.json` intacto; mínimo 1771 = 1745 + 26 en los cuatro sitios; fines de línea conservados. D: la comprobación del minuto va en memoria; sin anidar conexiones.
 
 | # | Grado | Gap | Tarea | Corrección | Evidencia |
 |---|---|---|---|---|---|
-| 1 | Minor | Revocar la clave (`revoke_key`) o cerrar la sesión (logout) que usa un `create_user` en curso no bloquea la fila del dueño: el alta no espera y se confirma (auditoría `key.revoked` antes que `user.created`); misma exposición en `create_key` desde la fase 2; serializable, ventana de milisegundos (lentes B y C) | T-13 | diferido a T-22 (criterio y Archivos añadidos con nota, orquestador) | `store_auth.py:221-224, :275-285`; `auth.py:107-110` |
-| 2 | Minor | «403 antes de 422» solo vale para los 422 del store: un cuerpo que no pasa Pydantic da 422 a un no administrador, porque FastAPI valida antes del handler (lente B) | T-13, T-14 | aceptado: límite del marco, declarado en `review.md` | `app.py:409, :414` |
-| 3 | Minor | La ruta nueva `GET /v1/users/{id}/sessions` no constaba en la Descripción ni en el Changelog de T-15 ni en la trazabilidad de CA-42 del plan (lente A) | T-15 | corregido (orquestador, en este commit) | `tasks.md` T-15; `improvement-plan.md` CA-42 |
+| 1 | Important | Un administrador de proyecto rota la clave de otro usuario (con proyectos y permisos que él cubre) y recibe un token que actúa como ese usuario: `_delegate` no mira al dueño, la nueva conserva el `actor_id` y el token vuelve al llamante; lee los datos privados del dueño en el proyecto (`work-state`, corpus) y lo que hace queda a nombre del dueño; la máquina del dueño sigue en gracia sin notarlo (lente C; B fuera de lente) | T-20 | pendiente (decisión del usuario) | `store_access.py:273, :283, :289`; `agent_store.py:202, :242, :252` · CWE-639, CWE-269 |
+| 2 | Important | Ningún test protege el bloqueo de la fila del llamante en `rotate_key`: con el mutante `[found['actor_id']]` pasan los 178 tests de acceso; una revocación de la clave con que se rota quedaría sin esperar y la rotación entregaría un token nuevo (lente B) | T-20 | pendiente | `store_access.py:270`; mutante m1 en `scratchpad/p4a1-B/mutants.out` |
+| 3 | Minor | La rotación responde 404 antes de autorizar: una credencial cualquiera distingue un id de clave existente (403) de uno inventado (404); `revoke_key` ya lo hacía; ids UUID4, no enumerables (lente C) | T-20 | pendiente | `store_access.py:267-269` · CWE-204 |
+| 4 | Minor | `revoke_key` y `rotate_key` toman los bloqueos (fila del dueño; fila de la clave) antes de autorizar: un llamante sin permiso sobre la clave serializa las peticiones del dueño en cada intento; acotado (lente C) | T-22, T-20 | pendiente | `store_auth.py:290-293`; `store_access.py:270-273` · CWE-400 |
+| 5 | Minor | `expires_at` (o la vida heredada) más allá del año 9999 en UTC: `DataError` sin gestionar → 503 `service_unavailable`; una clave con `9999-12-31` ya no se puede rotar (lente B) | T-19, T-20 | pendiente | `store_access.py:284`; `store_auth.py:258`; `models.py:88` |
+| 6 | Minor | Ningún test protege el bloqueo de la fila del llamante en `revoke_key` (mutante m3 sobrevive) (lente B) | T-22 | pendiente | `store_auth.py:290` |
+| 7 | Minor | La vida heredada se suma como `interval` de días: con un `TimeZone` de sesión con horario de verano la clave nueva dura ±1 h (3624 h en UTC frente a 3623 h en Europe/Madrid); hoy el servidor va en UTC (lente B) | T-20 | pendiente | `store_access.py:284` |
+| 8 | Minor | `last_used_at` con el pool saturado: el touch espera conexión hasta `MEMORY_POOL_TIMEOUT` (5 s), no 50 ms, y como el reloj del proceso solo avanza si la escritura entra, cada petición de la clave lo reintenta (una espera de conexión más por petición y un aviso por petición); igual con un `FOR SHARE` largo sobre la clave (50 ms por petición) (lentes D, A y B) | T-19 | pendiente | `auth.py:53-66` |
+| 9 | Minor | `probe.valid_key` actualiza `last_used_at` de la clave del probe solo por comprobarla (lente D, fuera de lente) | T-19 | pendiente | `probe.py:742-744` |
+| 10 | Minor | El criterio «Mutante: quitar el vaciado de caché de un escritor deja la matriz en rojo» estaba marcado aunque su texto no se cumple (la caché vive una transacción); la protección existe por el recorrido estático y por la matriz con la caché que sobrevive a su transacción (lente A) | T-22 | corregido (orquestador, en este commit): texto del criterio y R-01 del plan con su changelog | `tasks.md` T-22; `improvement-plan.md` R-01 |
+| 11 | Minor | El ledger superaba su límite práctico de 245 000 bytes (247 140) (lente A) | T-24 | parcial (orquestador, en este commit): sección del intento 2 de la fase 3 archivada (−6 KB); esta sección lo devuelve a 250 042 bytes, se archiva al cerrar la fase | `tasks.md`; `execution-history.md` |
 
-Fuera de lente, sin fila: el OpenAPI de la ruta nueva no publica su 404 y el esquema `Error` declara `error` como objeto libre en vez de `{code, message}`; es solo documentación y se recoge en T-26 junto al constructor único de errores de DC-2 (criterio añadido).
+Fuera de lente, sin fila: `docs/operations.md` no recomienda gracia 0 al rotar una clave comprometida (lente C); `test_mcp…test_semantic_budget_ms` falló una vez por plazo de reloj en T-22 (posible prueba inestable; lente A).
