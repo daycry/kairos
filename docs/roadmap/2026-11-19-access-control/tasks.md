@@ -58,7 +58,7 @@ test-plan: test-plan.md
 | Fase 1 — Medición de scrypt y guarda del resolvedor (CA-09, CA-38 a) | 5 | 5 | 100% | 0 / 19.8h | 4.77 / 6.3h | 0 / 1.6h | 0 / 1570 k |
 | Fase 2 — Esquema 13, scrypt y contraseñas (C-01) | 7 | 7 | 100% | 0 / 36.0h | 3.88 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 3 — Usuarios, permisos y sesiones (C-01) | 6 | 6 | 100% | 0 / 36.0h | 5.14 / 3.7h | 0 / 0.9h | 0 / 924 k |
-| Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01) | 4 | 7 | 57.1% | 0 / 48.0h | 0 / 4.9h | 0 / 1.2h | 0 / 1232 k |
+| Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01) | 5 | 7 | 71.4% | 0 / 48.0h | 0 / 4.9h | 0 / 1.2h | 0 / 1232 k |
 | Fase 5 — Login que no se bloquea entre clientes (C-02) | 0 | 5 | 0% | 0 / 43.2h | 0 / 4.4h | 0 / 1.1h | 0 / 1109 k |
 | Fase 6 — Cierre del hito A: acceso que se puede retirar | 0 | 4 | 0% | 0 / 9.6h | 0 / 3.5h | 0 / 0.9h | 0 / 873 k |
 | Fase 7 — Mediciones del hito B y superficie de secretos (C-06) | 0 | 8 | 0% | 0 / 44.4h | 0 / 12.3h | 0 / 3.1h | 0 / 3082 k |
@@ -73,7 +73,7 @@ test-plan: test-plan.md
 | Fase 16 — Identidad: guía probada y extensibilidad (C-05) | 0 | 5 | 0% | 0 / 23.4h | 0 / 2.4h | 0 / 0.6h | 0 / 601 k |
 | Fase 17 — Revisión del hito C y revisión de seguridad (C-07) | 0 | 5 | 0% | 0 / 27.0h | 0 / 5.3h | 0 / 1.3h | 0 / 1320 k |
 | Fase 18 — Cierre del hito C y de la iniciativa: ensayo, versión 0.4.2 y PR | 0 | 4 | 0% | 0 / 11.4h | 0 / 1.2h | 0 / 0.3h | 0 / 293 k |
-| **TOTAL** | **22** | **106** | **20.8%** | **0 / 616.2h** | **13.79 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
+| **TOTAL** | **23** | **106** | **21.7%** | **0 / 616.2h** | **13.79 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -749,9 +749,10 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 
 - **Descripción**: `docs/configuration.md` (`MEMORY_LOGIN_CONCURRENCY` y el coste de scrypt medido), `docs/operations.md` (recuperación del administrador, deshabilitar, rotar, y la deuda declarada del ataque de login desde muchas IP, a cargo del proxy de la Iniciativa 5) y `client/README.md` (`doctor --online`). Fuente: CA-37; DC-5.
 - **Changelog**: Los manuales explican el cambio de contraseña, la baja de usuarios, las sesiones, la caducidad y la rotación de claves.
-- **Estado**: borrador
+- **Estado**: completado
+- **Cerrada**: 2026-11-27
 - **Tiempo humano**: est. 1.5h · real —
-- **Tiempo IA (ejec.)**: est. 0.15h · real —
+- **Tiempo IA (ejec.)**: est. 0.15h · real 0.03h (medido; el borrador está en la ventana de T-20)
 - **Supervisión**: est. 0.04h · real —
 - **Previsión IA**: 43 k in / 4 k out tok · ⚠️ verificar €
 - **Dependencias**: T-22
@@ -761,11 +762,13 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 - **Verificación**: lectura: variables y valores iguales a `config.py` y a «Valores medidos»; cada comando `admin` citado existe con esas opciones
 
 **Criterios de aceptación**
-- [ ] Nombres y valores coinciden con `config.py`
-- [ ] `docs/operations.md` explica la recuperación del administrador y qué significa cada 401, 409 y 503 nuevo
+- [x] Nombres y valores coinciden con `config.py`
+- [x] `docs/operations.md` explica la recuperación del administrador y qué significa cada 401, 409 y 503 nuevo
 
 **Subtareas**
-- [ ] Redactar y cotejar con el código
+- [x] Redactar y cotejar con el código
+
+**Notas**: TDD n/a: documentación. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `c243050854b9`.
 
 ### T-24 — Cierre de fase: suites y subida del mínimo
 
