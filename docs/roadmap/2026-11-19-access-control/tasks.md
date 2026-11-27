@@ -791,7 +791,7 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 - **Estado**: completado
 - **Cerrada**: 2026-11-27
 - **Tiempo humano**: est. 0.5h · real —
-- **Tiempo IA (ejec.)**: est. 0.05h · real 0.23h (medido; la suite completa, 33 min de reloj, corre fuera de la medición de tokens; fix1 de la fase 4: 0.15h)
+- **Tiempo IA (ejec.)**: est. 0.05h · real 0.33h (medido; la suite completa, 33 min de reloj, corre fuera de la medición de tokens; fix1 de la fase 4: 0.15h; fix2: 0.10h, ventana 15:06-15:39Z)
 - **Supervisión**: est. 0.01h · real —
 - **Previsión IA**: 14 k in / 1 k out tok · ⚠️ verificar €
 - **Dependencias**: T-23
@@ -813,6 +813,8 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 **Notas**: TDD n/a: cierre de fase. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `8cdb1bd0d57d`.
 
 **Notas**: fix1 (revisión de la fase 4, intento 1): suite completa una vez, en primer plano, sobre `d364cd9` (`docker build -f server/memory_platform/Dockerfile --target test --progress=plain -t kairos-test:i4p4-fix1 .`, exit 0, 898 s): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1783}`. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `4d7ce4f931dd`.
+
+**Notas**: fix2 (revisión de la fase 4, intento 2): TDD n/a: cierre. Suite completa una vez, en primer plano, sobre `f0d5119` (`docker build -f server/memory_platform/Dockerfile --target test --progress=plain -t kairos-test:i4p4-fix2 .`, exit 0, 1674 s): `MEMORY_TEST_RESULT {"errors": 0, "failures": 0, "llm_chat_calls": 0, "passed": true, "skipped": 0, "tests": 1786}` (1783 + 1 de T-20 + 3 de T-19 − 1 sustituida de T-19); las cuatro pruebas nuevas en `ok`; guarda T-02 sin cambios (sin SQL nuevo). Mínimo 1783 → 1786 en `ci.yml` (`KAIROS_MIN_TESTS`), `scripts/tests/test_ci_workflow.py` (`MIN_FLOOR`), `docs/operations.md:500` y `README.md:252`; `python -m unittest discover -s scripts/tests -p test_ci_workflow.py` → `Ran 48 tests … OK`. Cliente sin cambios (no se repite `npm test`).
 
 ### T-25 — Revisión adversarial de la fase (dos lentes)
 
