@@ -762,7 +762,7 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 - **Estado**: completado
 - **Cerrada**: 2026-11-27
 - **Tiempo humano**: est. 1.5h · real —
-- **Tiempo IA (ejec.)**: est. 0.15h · real 0.04h (medido; el borrador está en la ventana de T-20; fix1 de la fase 4: 0.01h; el texto se redactó en la ventana de T-19)
+- **Tiempo IA (ejec.)**: est. 0.15h · real 0.04h (medido; el borrador está en la ventana de T-20; fix1 de la fase 4: 0.01h; el texto se redactó en la ventana de T-19; fix2: también en la ventana de T-19)
 - **Supervisión**: est. 0.04h · real —
 - **Previsión IA**: 43 k in / 4 k out tok · ⚠️ verificar €
 - **Dependencias**: T-22
@@ -781,6 +781,8 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 **Notas**: TDD n/a: documentación. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `c243050854b9`.
 
 **Notas**: fix1 (revisión de la fase 4, intento 1, gaps 1, 5, 7 y 8, y la nota fuera de lente): `docs/operations.md` dice quién puede rotar (dueño o administrador general con sesión; para cualquier otro, también un administrador de proyecto, 404 como una clave inexistente; el administrador de proyecto sí revoca), que la nueva dura los mismos segundos como mucho hasta `9999-12-31T00:00:00Z`, la caducidad… Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `2f2c02feaa3a`.
+
+**Notas**: fix2 (revisión de la fase 4, intento 2, fila 2 y nota fuera de lente): TDD n/a: documentación. `docs/operations.md:398` dice que un intento de `last_used_at` que no entra se reintenta a los 5 s, que el aviso lleva `key_id` (uno por minuto y clave), cuánto puede retrasarse (un minuto con el servidor sano; quien retenga la fila más de 50 ms cada 5 s lo mantiene atrasado), que es un dato de mejor esfuerzo y no de auditoría, y qué hacer si se sospecha de una clave (rotar con gracia 0 o revocar; `key_last_used_deferred` por `key_id`; `audit_events` por el dueño). `:400`: el administrador general rota con sesión o como actor de bootstrap de `memory-admin`; `:440`: `key_id` entre los campos del log. Cotejado con `auth.py:21-28` y `observability.py:26`.
 
 ### T-24 — Cierre de fase: suites y subida del mínimo
 
