@@ -343,6 +343,11 @@
       "kind": "function",
       "signature": "(self, actor, user_id)"
     },
+    "rotate_key": {
+      "contextmanager": false,
+      "kind": "function",
+      "signature": "(self, actor, key_id, grace_seconds=None)"
+    },
     "search_documents": {
       "contextmanager": false,
       "kind": "function",

@@ -8,13 +8,14 @@ have one implementation.
 What decides an access is NOT here: the resolver (`store_auth.py`) reads `is_admin`, `project_grants` and the permissions of a key. A function of this module that has to read one of
 those to change an access is declared on `READ_EXCEPTIONS` of that walk, with its reason.
 """
+import secrets
 from contextlib import nullcontext
 
 from . import passwords
-from .auth import RECENT_ATTEMPTS, lock_attempts
+from .auth import RECENT_ATTEMPTS, lock_attempts, token_hash
 from .auth_scope import invalidate_auth
 from .errors import Conflict, Forbidden, MemoryError, NotFound
-from .store_common import as_dict, canonical
+from .store_common import as_dict, canonical, new_id
 
 # `POST /v1/auth/password`: at most this many CORRECT changes per user in the last 15 minutes (fix1 of the review of phase 2, gap 1). The failures have their own limit (10 per user or per IP,
 # the one of the login). A person changes a password once; five leave room for a typing mistake that was accepted, a password manager and a second device, and bound what a stolen session
@@ -32,6 +33,11 @@ RECENT_CHANGES = "SELECT count(*) AS n FROM memory.audit_events WHERE id>%s AND 
 # The advisory lock that serialises every disabling and enabling (T-13): «the last active administrator» is a count over several rows, and two disablings of two different administrators at once
 # would each see the other one still active. Under it the count is exact: each statement of READ COMMITTED sees what the previous holder committed.
 ADMINS_LOCK = 'access-admins'
+
+# `POST /v1/keys/{id}/rotate` (CA-07, decision 9.1): the old key keeps working this long after the rotation unless the request says otherwise (0 = it stops at once). The
+# longest grace a request may ask for is ROTATION_GRACE_MAX (the model refuses more with 422): the point of a rotation is that the old key goes away.
+ROTATION_GRACE = 86400
+ROTATION_GRACE_MAX = 7 * 86400
 
 
 def password_changes_left(c, actor):
@@ -243,3 +249,42 @@ class AccessMixin:
             closed = c.execute('UPDATE memory.web_sessions SET revoked_at=clock_timestamp() WHERE actor_id=%s AND revoked_at IS NULL AND expires_at>clock_timestamp()', (user_id,)).rowcount
             self._access_changed(c, actor, 'sessions.revoked', resource_id=user_id)
         return {'id': user_id, 'revoked': closed}
+
+    def rotate_key(self, actor, key_id, grace_seconds=None):
+        """`POST /v1/keys/{id}/rotate` (CA-07): a new key with the name, projects and permissions of the old one and the SAME owner (`actor_id`: the rotation replaces the key of
+        a machine, whoever asks for it), shown once in this answer. The old key stops at the end of the grace (`grace_seconds`, ROTATION_GRACE by default, 0 = at once; never later
+        than its own expiry) and keeps the id of its successor in `replaced_by`. The new key expires after the same lifetime the old one was given (from now), or never if the old
+        one never did (P-03): a rotation neither widens nor shortens what the key was made for.
+
+        Order: the credential is alive (401), the key exists (404), then the rows of the caller and of the owner of the key (`FOR SHARE`, in the order of their ids: a disabling,
+        `set-password --revoke-keys` or a revocation that changes them waits for this rotation or makes it wait, never both) and the row of the key (`FOR NO KEY UPDATE`: two
+        rotations of one key wait for each other and the second sees `replaced_by`), the cache emptied and the caller authorized AGAIN as for issuing that key (`_delegate`: admin
+        and each scope on each project of the key; 401/403/404), and only then the state of the key: revoked, expired or already rotated is 409 and nothing is issued. The event
+        `key.rotated` carries `{"key": <old id>, "replaced_by": <new id>}` (canonical JSON in `resource_id`, as `grants.replaced`), never the token."""
+        grace = ROTATION_GRACE if grace_seconds is None else grace_seconds
+        with self.transaction() as c:
+            self._active(c, actor)  # a dead credential is 401 before anything is said about the key
+            found = c.execute('SELECT actor_id FROM memory.api_keys WHERE id=%s', (key_id,)).fetchone()
+            if not found:
+                raise NotFound()
+            c.execute('SELECT id FROM memory.actors WHERE id=ANY(%s) ORDER BY id FOR SHARE', ([actor['id'], found['actor_id']],))
+            key = c.execute("SELECT name,project_ids,scopes,revoked_at,replaced_by,expires_at IS NOT NULL AND expires_at<=clock_timestamp() AS expired FROM memory.api_keys WHERE id=%s FOR NO KEY UPDATE", (key_id,)).fetchone()
+            invalidate_auth(c)
+            self._delegate(c, actor, key['project_ids'], key['scopes'])  # authorization before the 422 and the 409s
+            if not isinstance(grace, int) or isinstance(grace, bool) or not 0 <= grace <= ROTATION_GRACE_MAX:  # the route's model refuses it first; this is for the other callers
+                raise MemoryError('invalid_rotation', 'The grace of a rotation is a whole number of seconds between 0 and %d' % ROTATION_GRACE_MAX, 422)
+            if key['revoked_at']:
+                raise Conflict('A revoked key cannot be rotated')
+            if key['expired']:
+                raise Conflict('An expired key cannot be rotated')
+            if key['replaced_by']:
+                raise Conflict('This key was already rotated')
+            token, kid = 'mp_'+secrets.token_urlsafe(48), new_id()
+            new = c.execute("INSERT INTO memory.api_keys(id,actor_id,name,token_hash,prefix,project_ids,scopes,expires_at) SELECT %s,actor_id,name,%s,%s,project_ids,scopes,"
+                            "CASE WHEN expires_at IS NULL THEN NULL ELSE clock_timestamp()+(expires_at-created_at) END FROM memory.api_keys WHERE id=%s RETURNING expires_at",
+                            (kid, token_hash(token), token[:10], key_id)).fetchone()
+            old = c.execute("UPDATE memory.api_keys SET replaced_by=%s, expires_at=LEAST(COALESCE(expires_at,'infinity'::timestamptz),clock_timestamp()+(%s * interval '1 second')) WHERE id=%s RETURNING expires_at",
+                            (kid, grace, key_id)).fetchone()
+            self._access_changed(c, actor, 'key.rotated', resource_id=canonical({'key': key_id, 'replaced_by': kid}))
+        return {'id': kid, 'name': key['name'], 'token': token, 'project_ids': key['project_ids'], 'scopes': key['scopes'],
+                'expires_at': new['expires_at'].isoformat() if new['expires_at'] else None, 'previous_id': key_id, 'previous_expires_at': old['expires_at'].isoformat()}

@@ -116,6 +116,22 @@ class UserGrants(Model):
     username: str
     grants: list[ProjectGrant]
 
+class KeyRotation(Model):
+    """`POST /v1/keys/{id}/rotate`: how long the old key keeps working, in seconds (86400 by default, 0 = it stops on the next request, at most seven days). Every field is optional and so
+    is the body itself, so that it may grow."""
+    grace_seconds: Annotated[int, Field(ge=0, le=604800, strict=True)] | None = None
+
+class KeyRotated(Model):
+    """The new key of a rotation, shown once: the token is in no list, no event and no log. `previous_expires_at` is when the old key stops (the end of the grace, never later than its own expiry)."""
+    id: str
+    name: str
+    token: str
+    project_ids: list[str]
+    scopes: list[PERMISSION]
+    expires_at: AwareDatetime | None = None
+    previous_id: str
+    previous_expires_at: AwareDatetime
+
 class WebSession(Model):
     """One session of the user, as `GET /v1/auth/sessions` shows it: never its token, its CSRF token or their hashes. `created_at` and `client_ip` are null for a session opened before version 13 kept them."""
     id: str

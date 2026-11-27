@@ -58,7 +58,7 @@ test-plan: test-plan.md
 | Fase 1 — Medición de scrypt y guarda del resolvedor (CA-09, CA-38 a) | 5 | 5 | 100% | 0 / 19.8h | 4.77 / 6.3h | 0 / 1.6h | 0 / 1570 k |
 | Fase 2 — Esquema 13, scrypt y contraseñas (C-01) | 7 | 7 | 100% | 0 / 36.0h | 3.88 / 3.7h | 0 / 0.9h | 0 / 924 k |
 | Fase 3 — Usuarios, permisos y sesiones (C-01) | 6 | 6 | 100% | 0 / 36.0h | 5.14 / 3.7h | 0 / 0.9h | 0 / 924 k |
-| Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01) | 1 | 7 | 14.3% | 0 / 48.0h | 0 / 4.9h | 0 / 1.2h | 0 / 1232 k |
+| Fase 4 — Claves: caducidad, último uso, rotación y `kairos doctor` (C-01) | 2 | 7 | 28.6% | 0 / 48.0h | 0 / 4.9h | 0 / 1.2h | 0 / 1232 k |
 | Fase 5 — Login que no se bloquea entre clientes (C-02) | 0 | 5 | 0% | 0 / 43.2h | 0 / 4.4h | 0 / 1.1h | 0 / 1109 k |
 | Fase 6 — Cierre del hito A: acceso que se puede retirar | 0 | 4 | 0% | 0 / 9.6h | 0 / 3.5h | 0 / 0.9h | 0 / 873 k |
 | Fase 7 — Mediciones del hito B y superficie de secretos (C-06) | 0 | 8 | 0% | 0 / 44.4h | 0 / 12.3h | 0 / 3.1h | 0 / 3082 k |
@@ -73,7 +73,7 @@ test-plan: test-plan.md
 | Fase 16 — Identidad: guía probada y extensibilidad (C-05) | 0 | 5 | 0% | 0 / 23.4h | 0 / 2.4h | 0 / 0.6h | 0 / 601 k |
 | Fase 17 — Revisión del hito C y revisión de seguridad (C-07) | 0 | 5 | 0% | 0 / 27.0h | 0 / 5.3h | 0 / 1.3h | 0 / 1320 k |
 | Fase 18 — Cierre del hito C y de la iniciativa: ensayo, versión 0.4.2 y PR | 0 | 4 | 0% | 0 / 11.4h | 0 / 1.2h | 0 / 0.3h | 0 / 293 k |
-| **TOTAL** | **19** | **106** | **17.9%** | **0 / 616.2h** | **13.79 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
+| **TOTAL** | **20** | **106** | **18.9%** | **0 / 616.2h** | **13.79 / 82.8h** | **0 / 20.7h** | **0 / 20700 k** |
 
 > **Imputación externa opcional.** El adaptador elegido recibe las mediciones disponibles y aplica su contrato de jornada, supervisión e idempotencia. No inventes tiempo real ni recalcules horas fuera de su dueño; sin integración los datos permanecen locales.
 
@@ -662,26 +662,29 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 
 - **Descripción**: Escritor y ruta que emiten una clave nueva con el mismo nombre, proyectos y permisos, mostrada una sola vez. La antigua caduca al acabar la gracia (24 h por defecto; 0 = inmediata) y guarda `replaced_by`. Rotar una clave revocada, caducada o ya rotada y aún en gracia responde 409 y no emite clave. Fuente: CA-07; decisión 9.1.
 - **Changelog**: Nuevo `POST /v1/keys/{id}/rotate`: emite una clave nueva y deja valer la antigua durante un periodo de gracia (24 h por defecto).
-- **Estado**: borrador
+- **Estado**: completado
+- **Cerrada**: 2026-11-27
 - **Tiempo humano**: est. 4.5h · real —
-- **Tiempo IA (ejec.)**: est. 0.46h · real —
+- **Tiempo IA (ejec.)**: est. 0.46h · real 0.89h (medido)
 - **Supervisión**: est. 0.12h · real —
 - **Previsión IA**: 128 k in / 11 k out tok · ⚠️ verificar €
 - **Dependencias**: T-19
 - **Tipo**: backend
-- **Archivos**: `server/memory_platform/store_access.py`, `server/memory_platform/app.py`, `server/memory_platform/models.py`, `server/memory_platform/tests/test_access_keys.py`, `server/memory_platform/tests/test_auth_cache.py`, `docs/contracts/memory-platform.openapi.json`
+- **Archivos**: `server/memory_platform/store_access.py`, `server/memory_platform/app.py`, `server/memory_platform/models.py`, `server/memory_platform/tests/test_access_keys.py`, `server/memory_platform/tests/test_auth_cache.py`, `docs/contracts/memory-platform.openapi.json`, `server/memory_platform/tests/store_surface.json` (añadido con nota: el método nuevo `rotate_key` en la superficie de `Store`)
 - **Cubre (tests)**: —
 - **Verificación**: `docker build -f server/memory_platform/Dockerfile --target test --progress=plain . 2>&1 | grep -E "test_access_keys|test_auth_cache|MEMORY_TEST_RESULT"` → nombradas en `ok`; 0 fallos y 0 omitidos
 
 **Criterios de aceptación**
-- [ ] La antigua vale hasta el fin de la gracia y después recibe 401; con gracia 0, en la petición siguiente (filas fechadas hacia atrás)
-- [ ] 409 sin emitir clave al rotar una revocada, una caducada o una ya rotada en gracia, también con dos rotaciones concurrentes
-- [ ] La clave nueva solo aparece en la respuesta de la rotación; evento `key.rotated` sin el token
+- [x] La antigua vale hasta el fin de la gracia y después recibe 401; con gracia 0, en la petición siguiente (filas fechadas hacia atrás)
+- [x] 409 sin emitir clave al rotar una revocada, una caducada o una ya rotada en gracia, también con dos rotaciones concurrentes
+- [x] La clave nueva solo aparece en la respuesta de la rotación; evento `key.rotated` sin el token
 
 **Subtareas**
-- [ ] Prueba en rojo
-- [ ] Escritor con `replaced_by`
-- [ ] Ruta, modelo y OpenAPI
+- [x] Prueba en rojo
+- [x] Escritor con `replaced_by`
+- [x] Ruta, modelo y OpenAPI
+
+**Notas**: RED: `test_access_keys.RotationTests + test_auth_cache.AccessRoutesTableTests + RevocationTableTests (16 pruebas, contra el código de 00a8f82)` falló con AssertionError: 404 != 200 : {"detail":"Not Found"} (la ruta no existía), AttributeError: 'Store' object has no attribute 'rotate_key', KeyError: '/v1/keys/{key_id}/rotate' y la tabla de rutas sin la nueva · 2026-11-27. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `94da3960a503`.
 
 ### T-21 — `kairos doctor`: caducidad guardada, aviso a 14 días y «caducada» frente a «inválida» (CA-08)
 

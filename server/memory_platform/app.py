@@ -25,6 +25,9 @@ PROXY_HEADERS = ('x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-
 # The 401 and 403 of the session routes, published in the OpenAPI (fix1 of the review of phase 3, gap 9): the body is the error envelope of every refusal.
 ACCESS_ERRORS = {401: {'model': m.Error, 'description': 'No credential, or one that is revoked, expired or of a disabled user'},
                  403: {'model': m.Error, 'description': 'A key, a session that may not do it, or a state change without an allowed origin and the CSRF token'}}
+# The rotation of a key (T-20): who may issue that key may rotate it (a key with `admin` and the scopes of the key, too), so its 403 is not the one of the session routes.
+ROTATION_ERRORS = {401: ACCESS_ERRORS[401], 403: {'model': m.Error, 'description': 'The credential may not issue this key (admin and each of its permissions on each of its projects), or a session without an allowed origin and the CSRF token'},
+                   404: {'model': m.Error, 'description': 'No such key'}, 409: {'model': m.Error, 'description': 'The key is revoked, expired or already rotated: no key is issued'}}
 
 
 class BodyLimit:
@@ -394,6 +397,12 @@ def create_app(settings=None, store=None, auth=None, retrieval=None, *, activity
     def corpus_answer_status(project_id: str, name: str, request_id: str, actor=Depends(identity)):
         from .corpus_answers import CorpusAnswers
         return CorpusAnswers(store, settings).status(actor, project_id, name, request_id)
+
+    @app.post('/v1/keys/{key_id}/rotate', operation_id='memory_rotate_key', response_model=m.KeyRotated, responses=ROTATION_ERRORS)
+    def rotate_key(key_id: str, payload: m.KeyRotation | None = None, actor=Depends(identity)):
+        # CA-07: a new key with the name, projects, permissions and owner of the old one, shown once; the old one stops at the end of the grace (24 h without a body, 0 = at once).
+        # The store authorizes (401/403) before it says anything of the state of the key (409).
+        return store.rotate_key(actor, key_id, payload.grace_seconds if payload else None)
 
     @app.delete('/v1/keys/{key_id}', operation_id='memory_revoke_key')
     def revoke(key_id: str, actor=Depends(identity)):

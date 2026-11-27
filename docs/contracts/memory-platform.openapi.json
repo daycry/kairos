@@ -935,6 +935,98 @@
         "title": "KeyInput",
         "type": "object"
       },
+      "KeyRotated": {
+        "additionalProperties": false,
+        "description": "The new key of a rotation, shown once: the token is in no list, no event and no log. `previous_expires_at` is when the old key stops (the end of the grace, never later than its own expiry).",
+        "properties": {
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "previous_expires_at": {
+            "format": "date-time",
+            "title": "Previous Expires At",
+            "type": "string"
+          },
+          "previous_id": {
+            "title": "Previous Id",
+            "type": "string"
+          },
+          "project_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Project Ids",
+            "type": "array"
+          },
+          "scopes": {
+            "items": {
+              "enum": [
+                "read",
+                "write",
+                "admin",
+                "publish",
+                "validate"
+              ],
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "token",
+          "project_ids",
+          "scopes",
+          "previous_id",
+          "previous_expires_at"
+        ],
+        "title": "KeyRotated",
+        "type": "object"
+      },
+      "KeyRotation": {
+        "additionalProperties": false,
+        "description": "`POST /v1/keys/{id}/rotate`: how long the old key keeps working, in seconds (86400 by default, 0 = it stops on the next request, at most seven days). Every field is optional and so\nis the body itself, so that it may grow.",
+        "properties": {
+          "grace_seconds": {
+            "anyOf": [
+              {
+                "maximum": 604800.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grace Seconds"
+          }
+        },
+        "title": "KeyRotation",
+        "type": "object"
+      },
       "Login": {
         "additionalProperties": false,
         "properties": {
@@ -2805,6 +2897,102 @@
           }
         },
         "summary": "Revoke"
+      }
+    },
+    "/v1/keys/{key_id}/rotate": {
+      "post": {
+        "operationId": "memory_rotate_key",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "title": "Key Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/KeyRotation"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyRotated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "No credential, or one that is revoked, expired or of a disabled user"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The credential may not issue this key (admin and each of its permissions on each of its projects), or a session without an allowed origin and the CSRF token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "No such key"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The key is revoked, expired or already rotated: no key is issued"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rotate Key"
       }
     },
     "/v1/notes": {

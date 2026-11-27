@@ -393,7 +393,7 @@ class WritersEmptyTheCacheTests(unittest.TestCase):
             writers.append(node.name)
             ends = [(c.lineno, c.col_offset) for c in ast.walk(node) if isinstance(c, ast.Call) and called(c) == CHANGED]
             self.assertTrue(ends and min(ends) > max(writes), '%s writes a permission table and does not end in `%s`' % (node.name, CHANGED))
-        self.assertTrue({'change_password', 'set_password', '_set_disabled', 'replace_grants', 'revoke_other_sessions', 'revoke_user_sessions'} <= set(writers), 'the walk sees the writers of T-09, T-10, T-13, T-14 and T-15: a scan that finds none would pass for the wrong reason')
+        self.assertTrue({'change_password', 'set_password', '_set_disabled', 'replace_grants', 'revoke_other_sessions', 'revoke_user_sessions', 'rotate_key'} <= set(writers), 'the walk sees the writers of T-09, T-10, T-13, T-14, T-15 and T-20: a scan that finds none would pass for the wrong reason')
         self.assertIsNotNone(door, '`_access_changed` is gone from store_access.py')
         inside = {called(c) for c in ast.walk(door) if isinstance(c, ast.Call)}
         self.assertTrue({'_audit', EMPTIES} <= inside, '`_access_changed` must audit and empty the cache, it calls %s' % sorted(inside))
@@ -508,6 +508,8 @@ READ_EXCEPTIONS = {
     ('store_auth.py', 'AuthMixin.bootstrap_user'): ({'is_admin'}, False, 'first start only: writes `is_admin=true` of the first actor and returns the row it stored; it decides no access (the advisory lock and the `Conflict` when an actor exists limit it to the first run)'),
     ('store_access.py', 'AccessMixin._set_disabled'): ({'is_admin'}, False, 'reads `is_admin` of the TARGET user and counts the active administrators, to keep at least one (409); the caller is decided by `_global_admin` before and again after the locks, not by this read'),
     ('store_access.py', 'AccessMixin.replace_grants'): ({'project_grants'}, False, 'reads the grants of the TARGET user (the resource it replaces) only to audit the ones before; the caller is decided by `_global_admin`, before and again after the locks'),
+    # T-20, listed in DC-1 with `list_keys` and `revoke_key` («la rotación nueva»): the key read is the resource rotated, not the credential of the caller
+    ('store_access.py', 'AccessMixin.rotate_key'): ({'api_keys'}, False, 'reads the key it rotates as the resource (its owner, to lock that row; its name, projects, permissions and state, to copy them and to refuse a revoked, expired or rotated one); the caller is decided by `_active` and, after the locks, by `_delegate` on the projects and permissions of that key'),
     ('probe.py', 'probe_state'): ({'project_grants', 'is_admin'}, False, _PROBE + 'it reads whether the probe project already has grants of another actor and whether the service actor is an administrator, to refuse to adopt them'),
     ('probe.py', 'admin_actor'): ({'is_admin'}, False, _PROBE + 'it finds the administrator the command acts as (named by the operator, or the first one), no request is being decided'),
     ('probe.py', 'provision_locked'): ({'is_admin', 'api_keys', 'project_grants'}, False, _PROBE + 'it refuses a service actor that became administrator, WRITES its own `is_admin=false` when it creates it (`probe.py` INSERT of the service actor), inserts the grants of that actor and reads `RETURNING 1` to know which were new, and looks up its own key by hash to rotate it, under an advisory lock'),
@@ -1275,7 +1277,7 @@ class ResolverBoundaryTests(unittest.TestCase):
         # T-13 and T-14: `_set_disabled` reads `is_admin` of the target and counts the active administrators, `replace_grants` reads the grants it replaces; without its entry each one is
         # outside the resolver, and an entry does not cover a sibling
         base = package_sources()
-        for key in (('store_access.py', 'AccessMixin._set_disabled'), ('store_access.py', 'AccessMixin.replace_grants')):
+        for key in (('store_access.py', 'AccessMixin._set_disabled'), ('store_access.py', 'AccessMixin.replace_grants'), ('store_access.py', 'AccessMixin.rotate_key')):
             with patch.dict(READ_EXCEPTIONS):
                 del READ_EXCEPTIONS[key]
                 outside, _ = reads_outside_the_resolver(base)
@@ -1875,7 +1877,7 @@ def store_calls(store, actor, pid, other, key_id):
         'set_policy': lambda: store.set_policy(actor, pid, {'capture_mode': 'summary', 'temporal_projection': True}), 'stats': lambda: store.stats(actor, pid),
         'set_user_disabled': lambda: store.set_user_disabled(actor, 'nobody', True), 'replace_grants': lambda: store.replace_grants(actor, 'nobody', []),
         'list_own_sessions': lambda: store.list_own_sessions(actor), 'revoke_other_sessions': lambda: store.revoke_other_sessions(actor), 'revoke_user_sessions': lambda: store.revoke_user_sessions(actor, 'nobody'),
-        'list_user_sessions': lambda: store.list_user_sessions(actor, 'nobody'),
+        'list_user_sessions': lambda: store.list_user_sessions(actor, 'nobody'), 'rotate_key': lambda: store.rotate_key(actor, key_id),
         'timeline': lambda: store.timeline(actor, {'project_ids': [pid]}),
     }
 
@@ -1964,11 +1966,13 @@ class RouteTableTests(Fixture):
                 self.assertEqual(second.status_code, 401, second.text[:200])
 
 
-# T-16 (CA-37, R-01): the routes of the changes of access (T-09, T-13, T-14, T-15). Every route under /v1/auth and /v1/users that is not one of the five that were there before is here
-# (`GET /v1/users/{user_id}/sessions`: fix1 of the review of phase 3, gap 10, CA-42).
+# T-16 (CA-37, R-01): the routes of the changes of access (T-09, T-13, T-14, T-15, and the rotation of a key of T-20). Every route under /v1/auth, /v1/users and /v1/keys that is not one of
+# the eight that were there before is here (`GET /v1/users/{user_id}/sessions`: fix1 of the review of phase 3, gap 10, CA-42).
 ACCESS_ROUTES = (('POST', '/v1/auth/password'), ('PATCH', '/v1/users/{user_id}'), ('PUT', '/v1/users/{user_id}/grants'), ('GET', '/v1/auth/sessions'),
-                 ('POST', '/v1/auth/sessions/revoke-others'), ('POST', '/v1/users/{user_id}/sessions/revoke'), ('GET', '/v1/users/{user_id}/sessions'))
-EARLIER_ACCOUNT_ROUTES = {('POST', '/v1/auth/login'), ('GET', '/v1/auth/me'), ('POST', '/v1/auth/logout'), ('GET', '/v1/users'), ('POST', '/v1/users')}
+                 ('POST', '/v1/auth/sessions/revoke-others'), ('POST', '/v1/users/{user_id}/sessions/revoke'), ('GET', '/v1/users/{user_id}/sessions'),
+                 ('POST', '/v1/keys/{key_id}/rotate'))
+EARLIER_ACCOUNT_ROUTES = {('POST', '/v1/auth/login'), ('GET', '/v1/auth/me'), ('POST', '/v1/auth/logout'), ('GET', '/v1/users'), ('POST', '/v1/users'),
+                          ('GET', '/v1/keys'), ('POST', '/v1/keys'), ('DELETE', '/v1/keys/{key_id}')}
 ORIGIN = 'http://127.0.0.1:5173'
 
 
@@ -1983,11 +1987,12 @@ class AccessRoutesTableTests(Fixture):
         self.client.__enter__()
         self.addCleanup(self.client.__exit__, None, None, None)
         self.target = self.user([self.pid])['id']
+        self.target_key = self.store.create_key(self.admin, {'name': 'target', 'project_ids': [self.pid], 'scopes': ['read']})['id']  # what a live call of the rotation rotates
 
     def call(self, method, path, **kwargs):
         body = {'/v1/auth/password': {'current_password': 'synthetic-password-123', 'new_password': 'another-password-456'}, '/v1/users/{user_id}': {'disabled': True},
                 '/v1/users/{user_id}/grants': {'grants': []}}.get(path)
-        return self.client.request(method, path.replace('{user_id}', self.target), **({'json': body} if body is not None else {}), **kwargs)
+        return self.client.request(method, path.replace('{user_id}', self.target).replace('{key_id}', self.target_key), **({'json': body} if body is not None else {}), **kwargs)
 
     def dead(self, kind):
         """A fresh credential of a fresh user (administrator of the project), alive, and the function that kills it the way `kind` says."""
@@ -2010,7 +2015,7 @@ class AccessRoutesTableTests(Fixture):
 
     def test_the_table_is_every_new_route_of_account_and_users(self):
         found = {(method, route.path) for route in self.client.app.routes for method in getattr(route, 'methods', set()) - {'HEAD', 'OPTIONS'}
-                 if route.path.startswith(('/v1/auth', '/v1/users'))}
+                 if route.path.startswith(('/v1/auth', '/v1/users', '/v1/keys'))}
         self.assertEqual(found - EARLIER_ACCOUNT_ROUTES, set(ACCESS_ROUTES), 'a new route of account or users needs its row here')
 
     def test_every_access_route_answers_401_to_a_dead_credential(self):
