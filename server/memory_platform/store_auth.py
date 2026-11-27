@@ -288,12 +288,17 @@ class AuthMixin:
             row = c.execute('SELECT id,actor_id,project_ids FROM memory.api_keys WHERE id=%s', (key_id,)).fetchone()
             if not row:
                 raise NotFound()
+            # The caller is authorized WITHOUT any lock first (fix1 of the review of phase 4, gap 4): one that may not revoke the key never waits for, nor makes wait, the rows of its
+            # owner. The 404 of an unknown id before the 403 of a key the caller may not revoke stays (gap 3: the policy of `revoke_key` does not change; the ids are random UUIDs).
+            for project in row['project_ids']:
+                self._require(c, actor, project, 'admin')
             # The rows of the OWNER of the key and of the caller, in the order of their ids (T-22; revision of phase 3, attempt 2, gap 1). `create_key`, `create_user` and
             # `rotate_key` take `FOR SHARE` on the row of their actor before they check the credential again: a creation in progress with this key makes the revocation wait
-            # for it (what it created stays, it was authorized when it committed), and a creation that comes after the revocation waits for it and is refused with 401.
+            # for it (what it created stays, it was authorized when it committed), and a creation that comes after the revocation waits for it and is refused with 401. The row of
+            # the caller: the end of its own credential (a logout, a revocation, a disabling) waits for this revocation, or makes it wait and then refuse it with 401 (gap 6).
             c.execute('SELECT id FROM memory.actors WHERE id=ANY(%s) ORDER BY id FOR NO KEY UPDATE', ([actor['id'], row['actor_id']],))
             invalidate_auth(c)
-            for project in row['project_ids']:
+            for project in row['project_ids']:  # again, after the waits
                 self._require(c, actor, project, 'admin')
             c.execute('UPDATE memory.api_keys SET revoked_at=clock_timestamp() WHERE id=%s', (key_id,))
             invalidate_auth(c)

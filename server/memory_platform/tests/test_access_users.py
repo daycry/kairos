@@ -585,5 +585,52 @@ class CredentialEndRaceTests(UsersFixture):
         self.key_id, self.key_actor = key['id'], self.auth.authenticate_bearer(key['token'])
 
 
+class RevokeKeyLocksTests(UsersFixture):
+    """fix1 of the review of phase 4, gaps 4 and 6: `revoke_key` authorizes the caller without any lock first, then locks the rows of the caller and of the owner of the key
+    (`FOR NO KEY UPDATE`, in the order of their ids) and authorizes again. The end of the caller's own credential and the revocation wait for each other; a caller that may not
+    revoke the key is refused before it waits for the rows of the owner."""
+
+    def setUp(self):
+        super().setUp()
+        self.bea_actor = self.auth.login('bea', pw.PASSWORD, '198.51.100.120')['actor']
+
+    def key(self):
+        return self.store.create_key(self.bea_actor, {'name': 'k', 'project_ids': ['p1'], 'scopes': ['read']})
+
+    def revoked(self, key_id):
+        return self.count('SELECT revoked_at IS NOT NULL FROM memory.api_keys WHERE id=%s', key_id)
+
+    def test_the_end_of_the_session_of_the_caller_and_a_revocation_wait_for_each_other(self):
+        for order, n in (('the end of the session first', 121), ('the revocation first', 122)):
+            with self.subTest(order=order):
+                login = self.auth.login('root-user', 'root-password-123', '198.51.100.%d' % n)
+                made = self.key()
+                if order == 'the end of the session first':
+                    waited, ended, revoked = self.run_held(lambda: self.auth.logout(login['session_token']), lambda: self.store.revoke_key(login['actor'], made['id']), auth_module, 'invalidate_auth')
+                    self.assertTrue(waited, 'the revocation did not wait for the end of the session of its caller')
+                    self.assertIsInstance(revoked, Unauthorized, revoked)
+                    self.assertFalse(self.revoked(made['id']), 'nothing revoked by a session that ended first')
+                    self.assertEqual(self.events('key.revoked', made['id']), 0)
+                else:
+                    waited, revoked, ended = self.run_pair(lambda: self.store.revoke_key(login['actor'], made['id']), lambda: self.auth.logout(login['session_token']), 'key.revoked')
+                    self.assertTrue(waited, 'the end of the session did not wait for the revocation in progress')
+                    self.assertIsInstance(revoked, dict, revoked)
+                    self.assertTrue(self.revoked(made['id']))
+                self.assertNotIsInstance(ended, BaseException, ended)
+                with self.assertRaises(Unauthorized):
+                    self.store.list_keys(login['actor'])
+
+    def test_a_caller_that_may_not_revoke_the_key_is_refused_before_it_waits_for_any_lock(self):
+        root = self.auth.login('root-user', 'root-password-123', '198.51.100.123')['actor']
+        ana = self.auth.login('ana', pw.PASSWORD, '198.51.100.124')['actor']  # read on p1: may not revoke the keys of p1
+        target, other = self.key(), self.key()
+        # the revocation of another key of bea holds the rows of bea and of root with its transaction open
+        waited, revoked, refused = self.run_pair(lambda: self.store.revoke_key(root, other['id']), lambda: self.store.revoke_key(ana, target['id']), 'key.revoked')
+        self.assertFalse(waited, 'a credential that may not revoke the key waited for a lock')
+        self.assertIsInstance(revoked, dict, revoked)
+        self.assertIsInstance(refused, Forbidden, refused)
+        self.assertFalse(self.revoked(target['id']))
+
+
 if __name__ == '__main__':
     unittest.main()

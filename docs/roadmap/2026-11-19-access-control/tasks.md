@@ -725,7 +725,7 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 - **Estado**: completado
 - **Cerrada**: 2026-11-27
 - **Tiempo humano**: est. 6h · real —
-- **Tiempo IA (ejec.)**: est. 0.62h · real 0.17h (medido; parte del trabajo está en las ventanas de T-19 y T-20, ver Notas)
+- **Tiempo IA (ejec.)**: est. 0.62h · real 0.20h (medido; parte del trabajo está en las ventanas de T-19 y T-20, ver Notas; fix1 de la fase 4: 0.03h, su código y sus pruebas en la ventana de T-19)
 - **Supervisión**: est. 0.15h · real —
 - **Previsión IA**: 170 k in / 15 k out tok · ⚠️ verificar €
 - **Dependencias**: T-21
@@ -748,6 +748,8 @@ fix1 (revisión de la fase 3, T-18 intento 1): suite completa una vez, en primer
 **Notas**: Confirma la hipótesis de la spec: el `/mcp` interno autentica con las mismas funciones que `/v1`.
 
 **Notas**: RED: `test_access_users.CredentialEndRaceTests (2 pruebas, 8 casos: clave o sesión × alta de clave o de usuario × dos órdenes, contra el código de 28a6cd3)` falló con AssertionError: False is not true : the creation did not wait for the end of its credential (×4) y the end of the credential did not wait for the creation in progress (×4) · 2026-11-27. Detalle archivado: [execution-history.md](execution-history.md) · SHA-256 `16897903c2fd`.
+
+**Notas fix1** (revisión de la fase 4, intento 1, gaps 3, 4 y 6): RED: `test_access_users.RevokeKeyLocksTests (2 pruebas, contra el código de f098c1e)` falló con AssertionError: True is not false : a credential that may not revoke the key waited for a lock (ana, lectora de p1, esperaba la fila de bea que tenía otra revocación) · 2026-11-27; la prueba de la fila del llamante ya pasaba con el código (el control existía sin prueba) y su evidencia es el mutante. Hecho (`store_auth.py`): `revoke_key` autoriza (`_require` admin en cada proyecto de la clave) sin bloqueo, luego bloquea las filas del llamante y del dueño (`FOR NO KEY UPDATE`, por id), vacía la caché y vuelve a autorizar. Gap 3 en `revoke_key`: Decisión por defecto, sin cambio: igualar el 403 de una clave existente con el 404 de una inventada cambiaría las respuestas publicadas de `DELETE /v1/keys/{id}` (la política de revocar no cambia; ids UUID4 no enumerables); queda como nota para la revisión. Pruebas nuevas: `test_the_end_of_the_session_of_the_caller_and_a_revocation_wait_for_each_other` (el administrador global revoca una clave de bea mientras se cierra su sesión, en los dos órdenes: 401 sin revocar, o el logout espera) y `test_a_caller_that_may_not_revoke_the_key_is_refused_before_it_waits_for_any_lock`. Mutantes (copias, `kairos-test:i4p4`): `[row['actor_id']]` (el m3 de la lente B) y la autorización solo tras los bloqueos → los dos en rojo. Verificación: con T-20, `RESULT run=153 fail=0 err=0 skip=0`.
 
 ### T-23 — Documentar credenciales: contraseña, usuarios, sesiones, claves y scrypt
 
