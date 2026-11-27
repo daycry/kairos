@@ -28,7 +28,7 @@ ACCESS_ERRORS = {401: {'model': m.Error, 'description': 'No credential, or one t
 # The rotation of a key (T-20; fix1 of the review of phase 4, gaps 1 and 3): its owner or the global administrator may rotate it, with a credential that may issue it (a key with `admin`
 # and the scopes of the key, too), so its 403 is not the one of the session routes; to anyone else a key of another user is the 404 of an unknown key.
 ROTATION_ERRORS = {401: ACCESS_ERRORS[401], 403: {'model': m.Error, 'description': 'The owner of the key or the global administrator with a credential that may not issue it (admin and each of its permissions on each of its projects), or a session without an allowed origin and the CSRF token'},
-                   404: {'model': m.Error, 'description': 'No such key, or a key of another user and the caller is not the global administrator with a session'}, 409: {'model': m.Error, 'description': 'The key is revoked, expired or already rotated: no key is issued'}}
+                   404: {'model': m.Error, 'description': 'No such key, or a key of another user and the caller is not the global administrator (a session or the bootstrap actor; never a key)'}, 409: {'model': m.Error, 'description': 'The key is revoked, expired or already rotated: no key is issued'}}
 
 
 class BodyLimit:

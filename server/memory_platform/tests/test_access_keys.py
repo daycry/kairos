@@ -494,6 +494,48 @@ class RotationTests(KeysFixture):
                 with self.assertRaises(Unauthorized):
                     self.store.list_keys(login['actor'])  # and the session is closed
 
+    def test_a_global_administrator_demoted_while_the_rotation_waits_gets_the_404_and_no_key(self):
+        # fix2 of the review of phase 4 (attempt 2, row 1): the caller is authorized AGAIN under the locks, with the same rule (owner or global administrator), not only with
+        # `_delegate`. zed is the global administrator and administers p1 with every permission of the key, so `_delegate` alone would let her through; another transaction takes
+        # `is_admin` away from her and holds the row (hers, or hers and bea's) while the rotation waits for it. After the wait: the 404 of an unknown key and nothing issued.
+        self.store.create_user(self.admin, {'username': 'zed', 'password': pw.PASSWORD, 'project_ids': ['p1'], 'scopes': ['read', 'write', 'admin']})
+        zed_id = self.count("SELECT id FROM memory.actors WHERE username='zed'")
+        for held, n in (('her row', 120), ('her row and the row of bea', 121)):
+            with self.subTest(held=held):
+                self.make_admin('zed')
+                zed = self.auth.login('zed', pw.PASSWORD, '198.51.100.%d' % n)['actor']
+                made = self.bea_client.post('/v1/keys', json={'name': 'm', 'project_ids': ['p1'], 'scopes': ['read', 'write']}, headers=self.headers).json()
+                before = self.keys()
+                holder = self.psycopg.connect(self.dsn)
+                self.addCleanup(holder.close)
+                holder.execute('UPDATE memory.actors SET is_admin=false WHERE id=%s', (zed_id,))
+                if held != 'her row':
+                    holder.execute('SELECT 1 FROM memory.actors WHERE id=%s FOR NO KEY UPDATE', (self.bea,))
+                out = {}
+
+                def rotate():
+                    try:
+                        out['r'] = self.store.rotate_key(zed, made['id'])
+                    except BaseException as exc:  # reported by the assertions
+                        out['r'] = exc
+                thread = threading.Thread(target=rotate)
+                thread.start()
+                try:
+                    deadline = time.monotonic() + 60
+                    while thread.is_alive() and not self.someone_waits_for_a_lock() and time.monotonic() < deadline:
+                        pass  # no sleep: each pass is a round trip to the database
+                    waited = self.someone_waits_for_a_lock()
+                finally:
+                    holder.commit()
+                    thread.join(60)
+                self.assertFalse(thread.is_alive())
+                self.assertTrue(waited, 'the rotation did not wait for the row held by the demotion')
+                self.assertIsInstance(out.get('r'), NotFound, out.get('r'))
+                self.assertEqual(self.keys(), before, 'no key issued')
+                self.assertEqual(self.row(made['id'], 'replaced_by,revoked_at')[:2], (None, None), 'the key of bea is untouched')
+                self.assertEqual(self.rotated(made['id']), 0, 'no `key.rotated`')
+                self.assertEqual(self.with_key(made['token']), 200)
+
     def test_a_key_that_expires_on_the_last_day_a_key_may_have_is_rotated_and_the_new_one_keeps_that_day(self):
         # fix1 of the review of phase 4, gap 5: its lifetime counted from now passes the year 9999; the new key gets KEY_EXPIRY_MAX instead of a 503
         far = self.bea_client.post('/v1/keys', json={'name': 'far', 'project_ids': ['p1'], 'scopes': ['read'], 'expires_at': '9999-12-31T00:00:00Z'}, headers=self.headers)

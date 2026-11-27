@@ -2969,7 +2969,7 @@
                 }
               }
             },
-            "description": "No such key, or a key of another user and the caller is not the global administrator with a session"
+            "description": "No such key, or a key of another user and the caller is not the global administrator (a session or the bootstrap actor; never a key)"
           },
           "409": {
             "content": {
